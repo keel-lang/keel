@@ -1,0 +1,68 @@
+# Code Review Agent
+# Analyzes code changes and provides structured feedback
+
+type Severity = info | warning | error
+type ReviewResult {
+  severity: Severity
+  message: str
+}
+
+task review_code(diff: str) -> str {
+  draft "code review feedback for this diff:\n{diff}" {
+    tone: "constructive",
+    guidance: "focus on bugs, security issues, and readability"
+  } ?? "(review failed)"
+}
+
+task assess_risk(diff: str) -> Severity {
+  classify diff as Severity considering [
+    "changes authentication or authorization" => error,
+    "modifies database schema"                => warning,
+    "formatting or comment changes only"      => info
+  ] fallback warning
+}
+
+agent CodeReviewer {
+  role "You are a thorough but kind code reviewer"
+  model "claude-sonnet"
+
+  state {
+    reviews_done: int = 0
+  }
+
+  task process(pr: {title: str, diff: str, author: str}) {
+    risk = assess_risk(pr.diff)
+    feedback = review_code(pr.diff)
+
+    show user {
+      title:    pr.title,
+      author:   pr.author,
+      risk:     risk,
+      feedback: feedback
+    }
+
+    when risk {
+      error => {
+        notify user "HIGH RISK: {pr.title} needs careful review"
+        approved = confirm user "Approve this PR?"
+        if approved { notify user "PR approved" }
+      }
+      warning => {
+        notify user "Review feedback posted for: {pr.title}"
+      }
+      info => {
+        notify user "Auto-approved: {pr.title} (low risk)"
+      }
+    }
+
+    self.reviews_done = self.reviews_done + 1
+  }
+
+  every 5.minutes {
+    notify user "Checking for PRs to review..."
+    # In production, this would fetch from GitHub API
+    notify user "Reviews completed: {self.reviews_done}"
+  }
+}
+
+run CodeReviewer

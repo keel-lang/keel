@@ -1,0 +1,38 @@
+# Test Keel with a local LLM via Ollama
+# Run: KEEL_OLLAMA_MODEL=gemma4 cargo run -- run examples/test_ollama.keel
+
+type Mood = happy | neutral | sad
+
+task analyze(text: str) -> Mood {
+  classify text as Mood fallback neutral
+}
+
+task shorten(text: str) -> str {
+  summarize text in 1 sentence fallback "(no summary)"
+}
+
+agent LocalTest {
+  role "Tests local LLM integration"
+  model "claude-haiku"
+
+  every 1.min {
+    notify user "--- Classify test ---"
+    mood = analyze("I just launched my own programming language and it works!")
+    notify user "Mood: {mood}"
+
+    notify user "--- Summarize test ---"
+    brief = shorten("Keel is a new programming language where AI agents are first-class citizens. It makes building AI agents as simple as writing pseudocode, drastically less verbose than Python with frameworks like LangChain.")
+    notify user "Summary: {brief}"
+
+    notify user "--- Draft test ---"
+    reply = draft "a welcome message for new Keel users" {
+      tone: "enthusiastic",
+      max_length: 100
+    } ?? "(draft failed)"
+    notify user "Draft: {reply}"
+
+    notify user "--- Done ---"
+  }
+}
+
+run LocalTest

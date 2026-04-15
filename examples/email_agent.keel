@@ -1,0 +1,119 @@
+# ============================================================
+# Keel PoC — Intelligent Email Agent
+# ============================================================
+# This agent:
+#   1. Connects to your inbox
+#   2. Fetches new unread emails every 5 minutes
+#   3. Classifies each by urgency
+#   4. Auto-replies to easy ones
+#   5. Asks you for guidance on important ones
+# ============================================================
+
+# --- Types ---
+type Urgency = low | medium | high | critical
+
+# --- Connection setup ---
+connect email via imap {
+  host: env.IMAP_HOST,
+  user: env.EMAIL_USER,
+  pass: env.EMAIL_PASS
+}
+
+# --- Top-level tasks: reusable, testable, composable ---
+
+task triage(email: {body: str, from: str, subject: str}) -> Urgency {
+  classify email.body as Urgency considering [
+    "from a known VIP or executive"     => critical,
+    "mentions a deadline within 24h"    => high,
+    "asks a direct question"            => medium,
+    "newsletter or automated message"   => low
+  ] fallback medium using "claude-haiku"
+}
+
+task brief(email: {body: str}) -> str {
+  summarize email.body in 1 sentence fallback "(no summary)" using "claude-haiku"
+}
+
+task compose(email: {body: str, from: str}, guidance: str? = none) -> str {
+  if guidance != none {
+    draft "response to {email}" {
+      tone: "professional",
+      guidance: guidance
+    }
+  } else {
+    draft "response to {email}" {
+      tone: "friendly",
+      max_length: 150
+    }
+  } ?? "(draft failed)"
+}
+
+# --- The agent: focused on orchestration ---
+agent EmailAssistant {
+
+  role  "You are a professional email assistant for {env.USER_NAME}.
+         You triage incoming mail, reply to routine messages,
+         and escalate anything important."
+
+  model   "claude-sonnet"
+  tools   [email]
+  memory  persistent
+
+  state {
+    handled_count: int = 0
+  }
+
+  task handle(email: {body: str, from: str, subject: str}) {
+    urgency = triage(email)
+    summary = brief(email)
+
+    when urgency {
+      low => {
+        notify user "Archived: {email.subject} [{urgency}]"
+        archive email
+      }
+
+      medium => {
+        reply = compose(email)
+        confirm user "Auto-reply to '{email.subject}':\n\n{reply}" then send reply to email
+      }
+
+      high, critical => {
+        notify user "{urgency} email from {email.from}"
+        show user {
+          from:    email.from,
+          subject: email.subject,
+          summary: summary,
+          urgency: urgency
+        }
+
+        guidance = ask user "How should I respond?"
+        reply = compose(email, guidance)
+        confirm user reply then send reply to email
+      }
+    }
+
+    # Remember this interaction for future context
+    remember {
+      contact:    email.from,
+      subject:    email.subject,
+      urgency:    urgency,
+      handled_at: now
+    }
+
+    self.handled_count = self.handled_count + 1
+  }
+
+  # -- Scheduled polling --
+  every 5.minutes {
+    emails = fetch email where unread
+    notify user "{emails.count} new emails"
+
+    for email in emails {
+      handle(email)
+    }
+  }
+}
+
+# --- Launch ---
+run EmailAssistant

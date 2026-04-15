@@ -1,0 +1,160 @@
+{
+  "name": "Keel",
+  "scopeName": "source.keel",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#ai-keywords" },
+    { "include": "#human-keywords" },
+    { "include": "#type-keywords" },
+    { "include": "#control-keywords" },
+    { "include": "#operators" },
+    { "include": "#constants" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.keel",
+          "match": "#.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.keel",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.keel",
+              "match": "\\\\[ntr\\\\\"{}]"
+            },
+            {
+              "name": "meta.interpolation.keel",
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": { "0": { "name": "punctuation.definition.interpolation.begin.keel" } },
+              "endCaptures": { "0": { "name": "punctuation.definition.interpolation.end.keel" } },
+              "patterns": [
+                { "include": "source.keel" }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.keel",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.keel",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.declaration.keel",
+          "match": "\\b(agent|task|type|connect|run|stop|use|from|extern)\\b"
+        },
+        {
+          "name": "keyword.agent.keel",
+          "match": "\\b(role|model|tools|memory|state|config|team|rules|limits)\\b"
+        },
+        {
+          "name": "keyword.scheduling.keel",
+          "match": "\\b(every|after|at|wait)\\b"
+        },
+        {
+          "name": "keyword.data.keel",
+          "match": "\\b(fetch|send|search|archive|http|sql|remember|recall|forget)\\b"
+        },
+        {
+          "name": "keyword.other.keel",
+          "match": "\\b(via|with|to|in|where|as|on|using|fallback|considering|format|options|delegate|broadcast|parallel|race|prompt|set)\\b"
+        }
+      ]
+    },
+    "ai-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.ai.keel",
+          "match": "\\b(classify|extract|summarize|draft|translate|decide)\\b"
+        }
+      ]
+    },
+    "human-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.human.keel",
+          "match": "\\b(ask|confirm|notify|show)\\b"
+        }
+      ]
+    },
+    "type-keywords": {
+      "patterns": [
+        {
+          "name": "storage.type.keel",
+          "match": "\\b(str|int|float|bool|none|duration|datetime|dynamic|list|map|set)\\b"
+        }
+      ]
+    },
+    "control-keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.keel",
+          "match": "\\b(if|else|when|for|return|try|catch|retry|then|and|or|not)\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.keel",
+          "match": "=>|->|\\|>|==|!=|<=|>=|\\?\\?|\\?\\."
+        },
+        {
+          "name": "keyword.operator.keel",
+          "match": "[=+\\-*/%<>!|]"
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.keel",
+          "match": "\\b(true|false|none|now)\\b"
+        },
+        {
+          "name": "variable.language.keel",
+          "match": "\\b(self|env|user)\\b"
+        },
+        {
+          "name": "keyword.memory.keel",
+          "match": "\\b(persistent|session|background)\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "entity.name.type.keel",
+          "match": "\\b[A-Z][a-zA-Z0-9_]*\\b"
+        },
+        {
+          "name": "variable.other.keel",
+          "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
+        }
+      ]
+    }
+  }
+}

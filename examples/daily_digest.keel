@@ -1,0 +1,42 @@
+connect inbox via imap {
+  host: env.IMAP_HOST,
+  user: env.EMAIL_USER,
+  pass: env.EMAIL_PASS
+}
+
+# Daily Digest Agent
+# Fetches content, summarizes it, and sends a morning briefing
+
+task shorten(text: str) -> str {
+  summarize text in 2 sentences fallback "(no summary available)"
+}
+
+agent DailyDigest {
+  role "You compile a daily digest of important updates"
+  model "claude-sonnet"
+
+  state {
+    days_run: int = 0
+  }
+
+  every 1.day {
+    self.days_run = self.days_run + 1
+    notify user "--- Daily Digest #{self.days_run} ---"
+
+    # Summarize any pending emails
+    emails = fetch inbox where unread
+    if emails.count > 0 {
+      notify user "{emails.count} unread emails:"
+      for email in emails {
+        brief = shorten(email.body)
+        notify user "  - {email.from}: {brief}"
+      }
+    } else {
+      notify user "No unread emails"
+    }
+
+    notify user "--- End of Digest ---"
+  }
+}
+
+run DailyDigest

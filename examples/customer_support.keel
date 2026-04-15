@@ -1,0 +1,81 @@
+# Customer Support Bot
+# Classifies tickets, drafts responses, escalates critical issues
+
+connect inbox via imap {
+  host: env.IMAP_HOST,
+  user: env.EMAIL_USER,
+  pass: env.EMAIL_PASS
+}
+
+type Priority = low | medium | high | critical
+type Category = billing | technical | account | general
+
+task categorize(ticket: {body: str}) -> Category {
+  classify ticket.body as Category fallback general
+}
+
+task prioritize(ticket: {body: str}) -> Priority {
+  classify ticket.body as Priority considering [
+    "account locked or hacked"     => critical,
+    "payment failed or overcharged" => high,
+    "feature request"               => low
+  ] fallback medium
+}
+
+task respond(ticket: {body: str, from: str}, category: Category) -> str {
+  draft "support response to {ticket}" {
+    tone: "empathetic and professional",
+    guidance: "address the {category} issue directly"
+  } ?? "(could not draft response)"
+}
+
+agent SupportBot {
+  role "You handle customer support tickets with empathy and precision"
+  model "claude-sonnet"
+
+  state {
+    resolved: int = 0
+    escalated: int = 0
+  }
+
+  task handle(ticket: {body: str, from: str, subject: str}) {
+    category = categorize(ticket)
+    priority = prioritize(ticket)
+
+    notify user "{priority} {category}: {ticket.subject}"
+
+    when priority {
+      low, medium => {
+        reply = respond(ticket, category)
+        confirm user "Reply to {ticket.from}:\n\n{reply}" then send reply to ticket
+        self.resolved = self.resolved + 1
+      }
+      high => {
+        reply = respond(ticket, category)
+        show user {from: ticket.from, category: category, priority: priority}
+        guidance = ask user "Any additions to the draft?"
+        final = draft "revised response to {ticket}" {
+          tone: "professional",
+          guidance: guidance
+        } ?? reply
+        confirm user final then send final to ticket
+        self.resolved = self.resolved + 1
+      }
+      critical => {
+        notify user "ESCALATING: {ticket.subject} from {ticket.from}"
+        self.escalated = self.escalated + 1
+      }
+    }
+
+    notify user "Stats: {self.resolved} resolved, {self.escalated} escalated"
+  }
+
+  every 2.minutes {
+    tickets = fetch inbox where unread
+    for ticket in tickets {
+      handle(ticket)
+    }
+  }
+}
+
+run SupportBot

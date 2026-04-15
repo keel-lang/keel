@@ -1,0 +1,29 @@
+# Minimal Keel program — tests basic parsing and execution
+
+type Priority = low | medium | high
+
+task greet(name: str) -> str {
+  "Hello, {name}!"
+}
+
+agent Greeter {
+  role "A friendly greeter that demonstrates Keel basics"
+  model "claude-haiku"
+
+  state {
+    count: int = 0
+  }
+
+  task welcome() {
+    msg = greet("World")
+    notify user msg
+    self.count = self.count + 1
+    notify user "Greeted {self.count} times"
+  }
+
+  every 1.day {
+    welcome()
+  }
+}
+
+run Greeter

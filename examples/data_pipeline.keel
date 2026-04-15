@@ -1,0 +1,77 @@
+# Data Pipeline Agent
+# Demonstrates collection operations, lambdas, and data transformation
+
+type Status = valid | invalid | needs_review
+
+task validate(record: {name: str, email: str, score: int}) -> Status {
+  if record.email.is_empty {
+    return invalid
+  }
+  if record.score < 0 {
+    return invalid
+  }
+  if record.score > 100 {
+    return needs_review
+  }
+  valid
+}
+
+task enrich(record: {name: str, email: str, score: int}) -> str {
+  draft "one-line profile summary for {record.name} (score: {record.score})" {
+    tone: "factual",
+    max_length: 50
+  } ?? "{record.name}: score {record.score}"
+}
+
+agent DataPipeline {
+  role "You process and validate data records"
+  model "claude-haiku"
+
+  state {
+    total: int = 0
+    valid_count: int = 0
+    invalid_count: int = 0
+  }
+
+  every 1.hour {
+    records = [
+      {name: "Alice",   email: "alice@co.com",  score: 95},
+      {name: "Bob",     email: "",               score: 72},
+      {name: "Charlie", email: "charlie@co.com", score: 150},
+      {name: "Diana",   email: "diana@co.com",   score: 88},
+      {name: "Eve",     email: "eve@co.com",     score: -5}
+    ]
+
+    notify user "Processing {records.count} records..."
+
+    # Validate all records
+    for record in records {
+      status = validate(record)
+      self.total = self.total + 1
+
+      when status {
+        valid => {
+          self.valid_count = self.valid_count + 1
+          summary = enrich(record)
+          notify user "  OK: {summary}"
+        }
+        invalid => {
+          self.invalid_count = self.invalid_count + 1
+          notify user "  SKIP: {record.name} (invalid)"
+        }
+        needs_review => {
+          notify user "  REVIEW: {record.name} (score: {record.score})"
+        }
+      }
+    }
+
+    # Use lambdas for collection ops
+    valid_records = records.filter(r => validate(r) == valid)
+    valid_names = valid_records.map(r => r.name)
+
+    notify user "Valid: {valid_names}"
+    notify user "Stats: {self.valid_count}/{self.total} valid, {self.invalid_count} invalid"
+  }
+}
+
+run DataPipeline
