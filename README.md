@@ -36,20 +36,28 @@ run EmailBot
 
 The same agent in Python + LangChain: [180+ lines](examples/comparison_python_vs_keel.md).
 
+## Install
+
+```bash
+# One-liner (macOS / Linux)
+curl -sSf https://keel-lang.dev/install.sh | sh
+
+# Homebrew
+brew install keel-lang/tap/keel
+
+# From source
+git clone https://github.com/keel-lang/keel.git && cd keel && cargo build --release
+```
+
 ## Quick Start
 
 ```bash
-# Build from source (requires Rust)
-git clone https://github.com/keel-lang/keel.git
-cd keel
-cargo build --release
-
 # Set up a local LLM (no API key needed)
 ollama pull gemma4
 export KEEL_OLLAMA_MODEL=gemma4
 
 # Run your first agent
-./target/release/keel run examples/minimal.keel
+keel run examples/minimal.keel
 ```
 
 Or with the Anthropic API:
