@@ -24,7 +24,7 @@ jobs:
         run: cargo install mdbook --no-default-features
 
       - name: Build docs
-        run: cd docs && mdbook build
+        run: cd docs && mdbook build && echo "keel-lang.dev" > ../target/book/CNAME
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
