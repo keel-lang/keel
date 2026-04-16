@@ -32,3 +32,15 @@ pre code .language-text,
 pre code .language-bash + pre {
   background-color: #1a1a2e;
 }
+
+/* Footer */
+.content main::after {
+  content: "Made with ❤ by Zied Maktouf";
+  display: block;
+  text-align: center;
+  padding: 3em 0 1em;
+  margin-top: 4em;
+  border-top: 1px solid var(--table-border-color);
+  color: var(--sidebar-non-existant);
+  font-size: 0.85em;
+}
