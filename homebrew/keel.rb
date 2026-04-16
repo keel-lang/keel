@@ -5,14 +5,8 @@ class Keel < Formula
   version "0.9.0"
 
   on_macos do
-    on_arm do
-      url "https://github.com/keel-lang/keel/releases/download/v0.9.0/keel-aarch64-apple-darwin.tar.gz"
-      # sha256 "UPDATE_AFTER_RELEASE"
-    end
-    on_intel do
-      url "https://github.com/keel-lang/keel/releases/download/v0.9.0/keel-x86_64-apple-darwin.tar.gz"
-      # sha256 "UPDATE_AFTER_RELEASE"
-    end
+    url "https://github.com/keel-lang/keel/releases/download/v0.9.0/keel-aarch64-apple-darwin.tar.gz"
+    # sha256 "UPDATE_AFTER_RELEASE"
   end
 
   on_linux do
