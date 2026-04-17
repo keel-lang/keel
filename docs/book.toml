@@ -13,4 +13,5 @@ default-theme = "navy"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/keel-lang/keel"
 site-url = "https://keel-lang.dev/"
+favicon-svg = "theme/favicon.svg"
 additional-css = ["theme/keel.css"]
