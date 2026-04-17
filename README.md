@@ -1,6 +1,8 @@
-# Keel
-
-**Build AI agents in 40 lines, not 180.**
+<p align="center">
+  <img src="assets/logos/keel-wordmark.svg" alt="Keel" width="280"/>
+  <br/>
+  <strong>Build AI agents in 40 lines, not 180.</strong>
+</p>
 
 Keel is a programming language where AI agents are first-class citizens. Classify emails, draft replies, and schedule workflows — all with built-in keywords, not library imports.
 

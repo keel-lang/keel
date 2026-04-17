@@ -33,6 +33,12 @@ pre code .language-bash + pre {
   background-color: #1a1a2e;
 }
 
+/* Logo: show light/dark variant based on theme */
+.light-only { display: inline; }
+.dark-only { display: none; }
+.navy .light-only, .coal .light-only, .ayu .light-only { display: none; }
+.navy .dark-only, .coal .dark-only, .ayu .dark-only { display: inline; }
+
 /* Footer */
 .content main::after {
   content: "Made with ❤ by Zied Maktouf";

@@ -1,3 +1,9 @@
+<div style="text-align: center; margin-bottom: 2em;">
+  <img src="wordmark.svg" alt="Keel" style="max-width: 280px; margin-bottom: 0.5em;" class="light-only"/>
+  <img src="wordmark-dark.svg" alt="Keel" style="max-width: 280px; margin-bottom: 0.5em;" class="dark-only"/>
+  <p style="color: #64748b; font-size: 1.1em;">A programming language where AI agents are first-class citizens</p>
+</div>
+
 # The Keel Language
 
 **Keel** is a programming language where AI agents are first-class citizens.
