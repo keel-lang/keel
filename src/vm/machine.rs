@@ -1,4 +1,4 @@
-//! VM machine — placeholder for v0.1.
+//! VM machine — deferred post-v0.1 (see `compiler.rs`).
 
 use super::bytecode::CompiledProgram;
 
@@ -10,7 +10,7 @@ impl VM {
     }
 
     pub fn execute(&mut self, _program: &CompiledProgram) -> Result<(), String> {
-        Err("Keel VM is not available in v0.1 alpha yet".to_string())
+        Err("Keel VM is deferred post-v0.1 — use `keel run` (tree-walking interpreter)".to_string())
     }
 }
 
