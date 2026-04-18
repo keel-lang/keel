@@ -1,0 +1,60 @@
+/* Keel brand tokens — import into any site or app
+ * Source of truth: brand/BRAND.md §2–§3
+ */
+:root {
+  /* Core palette */
+  --keel-onyx:   #0B0D10;
+  --keel-ivory:  #F2EFE6;
+  --keel-amber:  #FFB84A;
+  --keel-burnt:  #D2691A;
+
+  /* Extended neutrals (derived) */
+  --keel-onyx-2: #13161B;
+  --keel-onyx-3: #1E232A;
+  --keel-ash:    #3A4048;
+  --keel-fog:    #9BA3AE;
+  --keel-mist:   #D8D4C7;
+  --keel-paper:  #FAF8F1;
+
+  /* Semantic */
+  --keel-bg:       var(--keel-onyx);
+  --keel-surface:  var(--keel-onyx-2);
+  --keel-fg:       var(--keel-ivory);
+  --keel-muted:    var(--keel-fog);
+  --keel-accent:   var(--keel-amber);
+  --keel-link:     var(--keel-amber);
+  --keel-border:   var(--keel-onyx-3);
+
+  /* Type */
+  --keel-font-wordmark: "Fraunces", "Times New Roman", serif;
+  --keel-font-display:  "Söhne", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --keel-font-body:     "Söhne", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --keel-font-mono:     "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Scale (major-second, 1.125) */
+  --keel-step-0: 0.889rem;
+  --keel-step-1: 1rem;
+  --keel-step-2: 1.125rem;
+  --keel-step-3: 1.266rem;
+  --keel-step-4: 1.424rem;
+  --keel-step-5: 1.602rem;
+  --keel-step-6: 1.802rem;
+  --keel-step-7: 2.027rem;
+  --keel-step-8: 2.281rem;
+
+  /* Geometry */
+  --keel-radius-sm: 4px;
+  --keel-radius:    8px;
+  --keel-radius-lg: 14px;
+}
+
+/* Light theme override */
+[data-theme="light"] {
+  --keel-bg:      var(--keel-paper);
+  --keel-surface: var(--keel-ivory);
+  --keel-fg:      var(--keel-onyx);
+  --keel-muted:   var(--keel-ash);
+  --keel-accent:  var(--keel-burnt);
+  --keel-link:    var(--keel-burnt);
+  --keel-border:  var(--keel-mist);
+}

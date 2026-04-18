@@ -1,0 +1,388 @@
+/* ============================================================
+ * Keel — mdbook theme
+ * Drop this into your mdbook `theme/` directory as `css/general.css`
+ * overrides, OR load it via `additional-css` in book.toml:
+ *
+ *   [output.html]
+ *   additional-css = ["brand/keel-docs.css"]
+ *   preferred-dark-theme = "keel"
+ *   default-theme      = "keel"
+ *
+ * Then register the theme in theme/index.hbs if you want the toggle.
+ * ============================================================ */
+
+/* ---------- Fonts ------------------------------------------------ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ---------- Palette & tokens ------------------------------------ */
+:root {
+  --keel-onyx:  #0B0D10;
+  --keel-onyx-2:#13161B;
+  --keel-onyx-3:#1E232A;
+  --keel-ash:   #3A4048;
+  --keel-fog:   #9BA3AE;
+  --keel-ivory: #F2EFE6;
+  --keel-mist:  #D8D4C7;
+  --keel-paper: #FAF8F1;
+  --keel-amber: #FFB84A;
+  --keel-burnt: #D2691A;
+
+  --keel-font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --keel-font-body:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --keel-font-mono:    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------- Dark theme (default: "keel") ------------------------ */
+.keel,
+.navy,            /* alias mdbook's navy to keel */
+.ayu,
+html.keel body,
+html.navy body {
+  --bg:                var(--keel-onyx);
+  --fg:                var(--keel-ivory);
+  --sidebar-bg:        var(--keel-onyx-2);
+  --sidebar-fg:        var(--keel-mist);
+  --sidebar-non-existant: #2a2f37;
+  --sidebar-active:    var(--keel-amber);
+  --sidebar-spacer:    var(--keel-onyx-3);
+
+  --scrollbar:         var(--keel-ash);
+
+  --icons:             var(--keel-fog);
+  --icons-hover:       var(--keel-amber);
+
+  --links:             var(--keel-amber);
+
+  --inline-code-color: var(--keel-amber);
+
+  --theme-popup-bg:        var(--keel-onyx-2);
+  --theme-popup-border:    var(--keel-onyx-3);
+  --theme-hover:           var(--keel-onyx-3);
+
+  --quote-bg:              var(--keel-onyx-2);
+  --quote-border:          var(--keel-amber);
+
+  --table-border-color:    var(--keel-onyx-3);
+  --table-header-bg:       var(--keel-onyx-2);
+  --table-alternate-bg:    #0f1217;
+
+  --searchbar-border-color: var(--keel-onyx-3);
+  --searchbar-bg:          var(--keel-onyx-2);
+  --searchbar-fg:          var(--keel-ivory);
+  --searchbar-shadow-color:#000;
+  --searchresults-header-fg: var(--keel-fog);
+  --searchresults-border-color: var(--keel-onyx-3);
+  --searchresults-li-bg:   var(--keel-onyx-2);
+  --search-mark-bg:        var(--keel-amber);
+
+  --color-scheme: dark;
+}
+
+/* ---------- Light theme: "keel-light" --------------------------- */
+.keel-light,
+.light,
+.rust {
+  --bg:                var(--keel-paper);
+  --fg:                var(--keel-onyx);
+  --sidebar-bg:        var(--keel-ivory);
+  --sidebar-fg:        var(--keel-onyx);
+  --sidebar-non-existant: var(--keel-fog);
+  --sidebar-active:    var(--keel-burnt);
+  --sidebar-spacer:    var(--keel-mist);
+
+  --scrollbar:         var(--keel-mist);
+
+  --icons:             var(--keel-ash);
+  --icons-hover:       var(--keel-burnt);
+
+  --links:             var(--keel-burnt);
+
+  --inline-code-color: var(--keel-burnt);
+
+  --theme-popup-bg:        #fff;
+  --theme-popup-border:    var(--keel-mist);
+  --theme-hover:           var(--keel-ivory);
+
+  --quote-bg:              var(--keel-ivory);
+  --quote-border:          var(--keel-burnt);
+
+  --table-border-color:    var(--keel-mist);
+  --table-header-bg:       var(--keel-ivory);
+  --table-alternate-bg:    #f6f2e6;
+
+  --searchbar-border-color: var(--keel-mist);
+  --searchbar-bg:          #fff;
+  --searchbar-fg:          var(--keel-onyx);
+  --searchbar-shadow-color:rgba(0,0,0,0.08);
+  --searchresults-header-fg: var(--keel-ash);
+  --searchresults-border-color: var(--keel-mist);
+  --searchresults-li-bg:   var(--keel-ivory);
+  --search-mark-bg:        var(--keel-amber);
+
+  --color-scheme: light;
+}
+
+/* ---------- Global type ---------------------------------------- */
+html { font-family: var(--keel-font-body); font-feature-settings: "ss01", "cv11"; }
+body { font-family: var(--keel-font-body); line-height: 1.6; }
+
+.content h1, .content h2, .content h3, .content h4, .content h5 {
+  font-family: var(--keel-font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+}
+.content h1 { font-size: 2.5em; margin-top: 0; padding-bottom: 0.4em; border-bottom: 1px solid var(--quote-bg); }
+.content h2 { font-size: 1.8em; margin-top: 2.2em; }
+.content h3 { font-size: 1.35em; margin-top: 1.8em; }
+.content h4 { font-size: 1.12em; margin-top: 1.5em; }
+
+.content a, .content a:visited { color: var(--links); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 120ms; }
+.content a:hover { border-bottom-color: var(--links); }
+
+.content p, .content li { font-size: 1em; }
+
+/* ---------- Sidebar -------------------------------------------- */
+.sidebar { font-family: var(--keel-font-body); font-size: 0.9em; }
+/* Leave room for the mark bar (::before) so chapter items never scroll under it. */
+.sidebar .sidebar-scrollbox { padding: 72px 18px 16px; }
+.sidebar .chapter li.chapter-item {
+  line-height: 1.5;
+  margin: 0.15rem 0;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.sidebar .chapter li a {
+  color: var(--sidebar-fg);
+  padding: 2px 0;
+  border: none;
+}
+.sidebar .chapter li a:hover { color: var(--sidebar-active); }
+.sidebar .chapter li a.active {
+  color: var(--sidebar-active);
+  font-weight: 600;
+}
+.sidebar .chapter li.part-title {
+  font-family: var(--keel-font-mono);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--keel-fog);
+  margin: 1.8rem 0 0.4rem;
+  padding: 0;
+}
+
+/* Sidebar Keel mark — sticky header bar at top, opaque so chapter items
+   can scroll underneath without showing through. */
+.sidebar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 72px;
+  background-color: var(--sidebar-bg);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><circle cx='100' cy='100' r='92' fill='none' stroke='%23F2EFE6' stroke-width='6'/><path d='M 100 22 L 148 150 L 52 150 Z' fill='%23F2EFE6'/><line x1='100' y1='22' x2='100' y2='178' stroke='%23FFB84A' stroke-width='10'/><path d='M 40 150 Q 100 192 160 150 L 148 150 Q 100 172 52 150 Z' fill='%23F2EFE6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: center 16px;
+  background-size: 40px 40px;
+  border-bottom: 1px solid var(--sidebar-spacer);
+  z-index: 2;
+  pointer-events: none;
+}
+.keel-light .sidebar::before, .light .sidebar::before, .rust .sidebar::before {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><circle cx='100' cy='100' r='92' fill='none' stroke='%230B0D10' stroke-width='6'/><path d='M 100 22 L 148 150 L 52 150 Z' fill='%230B0D10'/><line x1='100' y1='22' x2='100' y2='178' stroke='%23D2691A' stroke-width='10'/><path d='M 40 150 Q 100 192 160 150 L 148 150 Q 100 172 52 150 Z' fill='%230B0D10'/></svg>");
+}
+
+/* ---------- Menu bar ------------------------------------------- */
+#menu-bar {
+  border-bottom: 1px solid var(--quote-bg);
+  background: var(--bg);
+}
+#menu-bar .left-buttons button,
+#menu-bar .right-buttons button { color: var(--icons); }
+#menu-bar .menu-title {
+  font-family: var(--keel-font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* ---------- Code ----------------------------------------------- */
+code { font-family: var(--keel-font-mono); font-size: 0.92em; }
+.content :not(pre) > code {
+  background: var(--quote-bg);
+  color: var(--inline-code-color);
+  padding: 0.15em 0.45em;
+  border-radius: 4px;
+  font-weight: 500;
+}
+pre {
+  background: var(--quote-bg) !important;
+  border: 1px solid var(--quote-bg);
+  border-left: 3px solid var(--keel-amber);
+  border-radius: 6px;
+  padding: 16px 20px;
+  font-size: 0.88em;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+pre > code { background: transparent !important; padding: 0; color: var(--fg); }
+
+/* Syntax highlighting — keel-flavored */
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--keel-amber); font-weight: 500; }
+.hljs-string, .hljs-attr, .hljs-symbol, .hljs-bullet { color: #E8C078; }
+.hljs-number, .hljs-literal { color: #9CD8C3; }
+.hljs-comment, .hljs-quote { color: var(--keel-fog); font-style: italic; }
+.hljs-title, .hljs-section, .hljs-function { color: #CBB8FF; }
+.hljs-variable, .hljs-name, .hljs-type { color: #A6D6FF; }
+.hljs-meta, .hljs-tag { color: var(--keel-burnt); }
+.keel-light .hljs-keyword, .light .hljs-keyword, .rust .hljs-keyword { color: var(--keel-burnt); }
+.keel-light .hljs-string, .light .hljs-string, .rust .hljs-string { color: #8B5A1F; }
+.keel-light .hljs-number, .light .hljs-number, .rust .hljs-number { color: #2F7D5B; }
+.keel-light .hljs-comment, .light .hljs-comment, .rust .hljs-comment { color: var(--keel-ash); }
+
+/* ---------- Blockquotes / callouts ------------------------------ */
+blockquote {
+  background: var(--quote-bg);
+  border-left: 3px solid var(--keel-amber);
+  border-radius: 0 6px 6px 0;
+  padding: 14px 20px;
+  margin: 1.5em 0;
+  color: var(--fg);
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+/* Admonition-style callouts — use `> **Note:**`, `> **Warning:**` etc. */
+blockquote p:first-child strong:first-child {
+  font-family: var(--keel-font-mono);
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--keel-amber);
+  display: block;
+  margin-bottom: 0.4em;
+}
+
+/* ---------- Status badges --------------------------------------
+   Used inline in docs as <span class="badge badge-soon">Coming soon</span>
+   to mark features that are planned or partially implemented. */
+.badge {
+  display: inline-block;
+  font-family: var(--keel-font-mono);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-left: 0.4em;
+}
+.badge-soon {
+  background: rgba(255, 184, 74, 0.15);
+  color: var(--keel-amber);
+  border: 1px solid rgba(255, 184, 74, 0.4);
+}
+.keel-light .badge-soon, .light .badge-soon, .rust .badge-soon {
+  background: rgba(210, 105, 26, 0.12);
+  color: var(--keel-burnt);
+  border: 1px solid rgba(210, 105, 26, 0.35);
+}
+.badge-partial {
+  background: rgba(155, 163, 174, 0.15);
+  color: var(--keel-fog);
+  border: 1px solid rgba(155, 163, 174, 0.35);
+}
+
+/* ---------- Tables --------------------------------------------- */
+table {
+  border-collapse: collapse;
+  margin: 1.5em 0;
+  font-size: 0.95em;
+}
+table thead tr { background: var(--table-header-bg); }
+table th, table td {
+  border: 1px solid var(--table-border-color);
+  padding: 8px 14px;
+}
+table th {
+  font-family: var(--keel-font-display);
+  font-weight: 600;
+  text-align: left;
+}
+table tr:nth-child(even) td { background: var(--table-alternate-bg); }
+
+/* ---------- Search --------------------------------------------- */
+#searchbar {
+  border: 1px solid var(--searchbar-border-color);
+  background: var(--searchbar-bg);
+  color: var(--searchbar-fg);
+  border-radius: 6px;
+  font-family: var(--keel-font-body);
+}
+#searchbar:focus {
+  border-color: var(--keel-amber);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255,184,74,0.18);
+}
+.searchresults-header { color: var(--searchresults-header-fg); font-family: var(--keel-font-mono); font-size: 0.75em; letter-spacing: 0.1em; text-transform: uppercase; }
+mark { background: var(--search-mark-bg); color: var(--keel-onyx); padding: 0 2px; border-radius: 2px; }
+
+/* ---------- Page nav buttons ----------------------------------- */
+.nav-chapters {
+  color: var(--icons);
+  transition: color 160ms;
+}
+.nav-chapters:hover { color: var(--keel-amber); }
+
+/* ---------- Theme popup ---------------------------------------- */
+.theme-popup {
+  background: var(--theme-popup-bg);
+  border: 1px solid var(--theme-popup-border);
+  border-radius: 6px;
+  font-family: var(--keel-font-body);
+}
+.theme-popup .theme:hover { background: var(--theme-hover); }
+
+/* ---------- Footer / print ------------------------------------- */
+@media print {
+  .sidebar, #menu-bar, .nav-chapters { display: none !important; }
+  body { color: #000; background: #fff; }
+  pre { border: 1px solid #ccc; border-left: 3px solid #000; }
+}
+
+/* ---------- Content width -------------------------------------- */
+.content main { max-width: 780px; padding: 0 20px 80px; }
+
+/* ---------- Horizontal rules ----------------------------------- */
+hr {
+  border: 0;
+  border-top: 1px solid var(--quote-bg);
+  margin: 2.5em 0;
+  position: relative;
+  text-align: center;
+}
+hr::after {
+  content: "◆";
+  position: absolute;
+  top: -0.75em;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  padding: 0 1em;
+  color: var(--keel-amber);
+  font-size: 0.7em;
+}
+
+/* ---------- Keyboard keys -------------------------------------- */
+kbd {
+  font-family: var(--keel-font-mono);
+  font-size: 0.82em;
+  background: var(--quote-bg);
+  border: 1px solid var(--table-border-color);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.1em 0.5em;
+  color: var(--fg);
+}

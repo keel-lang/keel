@@ -1,6 +1,10 @@
 <p align="center">
-  <img src="assets/logos/keel-wordmark.svg" alt="Keel" width="280"/>
-  <br/>
+  <img src="brand/svg/keel-primary.svg" alt="Keel" width="120"/>
+</p>
+
+<h1 align="center">Keel</h1>
+
+<p align="center">
   <strong>A programming language where AI agents are first-class citizens.</strong>
 </p>
 

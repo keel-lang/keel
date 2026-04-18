@@ -1,12 +1,11 @@
-<div style="text-align: center; margin-bottom: 2em;">
-  <img src="wordmark.svg" alt="Keel" style="max-width: 280px; margin-bottom: 0.5em;" class="light-only"/>
-  <img src="wordmark-dark.svg" alt="Keel" style="max-width: 280px; margin-bottom: 0.5em;" class="dark-only"/>
-  <p style="color: #64748b; font-size: 1.1em;">A programming language where AI agents are first-class citizens</p>
+<div style="text-align: center; margin: 2em 0 1em;">
+  <img src="keel-logo.svg" alt="Keel" style="width: 140px; height: 140px;"/>
 </div>
+
+# The Keel Language
 
 > **Alpha (v0.1).** Keel is in early design. Breaking changes expected between 0.x releases. No production users, no binary release yet — build from source. See [versioning](#versioning-and-breaking-changes).
 
-# The Keel Language
 
 **Keel** is a small, statically-typed language for building AI agents. The actor model is its one concurrency primitive. Everything else — AI calls, scheduling, human-in-the-loop, HTTP, email, memory — lives in a **standard library that is auto-imported** into every program.
 
