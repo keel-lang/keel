@@ -15,24 +15,28 @@ This page explains how the prelude works, why it exists, and how to swap in your
 
 ## The Namespaces
 
-| Namespace | Purpose |
-|---|---|
-| `Ai` | LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt`, `embed` |
-| `Io` | Human interaction: `ask`, `confirm`, `notify`, `show` |
-| `Http` | HTTP client: `get`, `post`, `request` |
-| `Email` | IMAP/SMTP: `fetch`, `send`, `archive` |
-| `Search` | Web search providers: `web(query)` |
-| `Db` | SQL: `connect`, `query`, `exec` |
-| `Memory` | Persistent semantic memory: `remember`, `recall`, `forget` |
-| `Schedule` | Time-based scheduling: `every`, `after`, `at`, `cron` |
-| `Async` | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
-| `Control` | Control combinators: `retry`, `with_timeout`, `with_deadline` |
-| `Env` | Environment and config: `get(name)`, `require(name)` |
-| `Time` | Time utilities: `now`, `parse`, `format` |
-| `Log` | Structured logging: `info`, `warn`, `error`, `debug` |
-| `Agent` | Lifecycle: `run`, `stop`, `delegate`, `broadcast` |
+Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon">Coming soon</span>
+
+| Namespace | Status | Purpose |
+|---|---|---|
+| `Ai` | 🟡 | LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳ |
+| `Io` | ✅ | Human interaction: `ask`, `confirm`, `notify`, `show` |
+| `Http` | ✅ | HTTP client: `get`, `post`, `request` |
+| `Email` | 🟡 | IMAP/SMTP: `fetch`, `send` · `archive` ⏳ |
+| `Search` | ⏳ | Web search providers: `web(query)` |
+| `Db` | ⏳ | SQL: `connect`, `query`, `exec` |
+| `Memory` | ⏳ | Persistent semantic memory: `remember`, `recall`, `forget` (stubbed — no vector store yet) |
+| `Schedule` | ✅ | Time-based scheduling: `every`, `after`, `at`, `sleep` · `cron` ⏳ |
+| `Async` | 🟡 | `sleep` shipping · `spawn`, `join_all`, `select` ⏳ |
+| `Control` | ⏳ | `retry`, `with_timeout`, `with_deadline` (stubbed) |
+| `Env` | ✅ | Environment: `get(name)`, `require(name)` |
+| `Time` | ⏳ | Time utilities: `now`, `parse`, `format` (use the `now` keyword for now) |
+| `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug` |
+| `Agent` | 🟡 | `run`, `stop`, `send` · `delegate`, `broadcast` ⏳ |
 
 `run` and `stop` are re-exported at the top level so programs can end with `run(MyAgent)` without the namespace prefix.
+
+> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired — calls will either return `none` (stubs) or raise an "unknown method" error (missing namespaces). Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces
 
@@ -71,11 +75,11 @@ Install a custom implementation at startup:
 
 ```keel
 # Use a custom LLM provider for the whole program
-Ai.install(MyCustomProvider)
+Ai.install(MyCustomProvider)                 # Coming soon
 
 # Or per-agent, via a stdlib attribute
 agent Specialist {
-  @provider MyFinetunedProvider
+  @provider MyFinetunedProvider              # Coming soon
   @role "..."
 }
 
@@ -84,6 +88,8 @@ urgency = Ai.classify(body, as: Urgency, using: "smart")
 ```
 
 The language doesn't know what an LLM is. It dispatches through `LlmProvider`. Any value with `complete` and `embed` methods of the right shape works.
+
+> **Status:** `using:` is wired in v0.1 (resolves via `KEEL_MODEL_*` env vars and Ollama tags). `Ai.install(...)` and `@provider` <span class="badge badge-soon">Coming soon</span> — v0.1 ships with Ollama only.
 
 ## Shadowing the Prelude
 

@@ -299,13 +299,14 @@ fn ai_namespace() -> Namespace {
             let variants = classify_variants(interp, &args)?;
             let criteria = extract_criteria(&args);
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let enum_type = find_arg(&args, "as").and_then(|v| match v {
                 Value::Namespace(n) => Some(n.clone()),
                 _ => None,
             }).unwrap_or_default();
 
             let llm = interp.llm.clone();
-            match llm.classify(&input, &variants, &criteria, &model).await {
+            match llm.classify(role.as_deref(), &input, &variants, &criteria, &model).await {
                 Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant, None)),
                 Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
                 Err(msg) => Err(miette::miette!("{msg}")),
@@ -321,8 +322,9 @@ fn ai_namespace() -> Namespace {
                 _ => None,
             };
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let llm = interp.llm.clone();
-            match llm.summarize(&input, length, &model).await {
+            match llm.summarize(role.as_deref(), &input, length, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
                 Err(msg) => Err(miette::miette!("{msg}")),
@@ -337,9 +339,10 @@ fn ai_namespace() -> Namespace {
             let guidance = find_arg(&args, "guidance").map(|v| v.as_string());
             let max_length = find_arg(&args, "max_length").and_then(|v| v.as_int());
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let llm = interp.llm.clone();
             match llm
-                .draft(&description, tone.as_deref(), guidance.as_deref(), max_length, &model)
+                .draft(role.as_deref(), &description, tone.as_deref(), guidance.as_deref(), max_length, &model)
                 .await
             {
                 Ok(Some(s)) => Ok(Value::String(s)),
@@ -361,8 +364,9 @@ fn ai_namespace() -> Namespace {
                 _ => Vec::new(),
             };
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let llm = interp.llm.clone();
-            match llm.extract(&input, &schema, &model).await {
+            match llm.extract(role.as_deref(), &input, &schema, &model).await {
                 Ok(Some(json)) => {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
                         Ok(json_to_value(&parsed))
@@ -385,8 +389,9 @@ fn ai_namespace() -> Namespace {
                 None => return Err(miette::miette!("Ai.translate: missing `to:` argument")),
             };
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let llm = interp.llm.clone();
-            match llm.translate(&input, &target_langs, &model).await {
+            match llm.translate(role.as_deref(), &input, &target_langs, &model).await {
                 Ok(Some(map)) if target_langs.len() == 1 => {
                     Ok(Value::String(map.into_values().next().unwrap_or_default()))
                 }
@@ -409,8 +414,9 @@ fn ai_namespace() -> Namespace {
                 _ => Vec::new(),
             };
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let llm = interp.llm.clone();
-            match llm.decide(&input, &options, &model).await {
+            match llm.decide(role.as_deref(), &input, &options, &model).await {
                 Ok(Some((choice, reason))) => {
                     let mut m = HashMap::new();
                     m.insert("choice".to_string(), Value::String(choice));
@@ -427,8 +433,9 @@ fn ai_namespace() -> Namespace {
             let system = find_arg(&args, "system").map(|v| v.as_string()).unwrap_or_default();
             let user = find_arg(&args, "user").map(|v| v.as_string()).unwrap_or_default();
             let model = resolve_model(interp, &args);
+            let role = interp.current_role();
             let llm = interp.llm.clone();
-            match llm.prompt(&system, &user, &model).await {
+            match llm.prompt(role.as_deref(), &system, &user, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
                 Err(msg) => Err(miette::miette!("{msg}")),

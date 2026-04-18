@@ -34,13 +34,13 @@ Email.send(reply, to: address, subject: "Re: hello")
 
 Positional body can be a `str` or a `map` with `body` (and optional `subject`). `to:` can be an address string or a map with `from`.
 
-### Archive
+### Archive <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 Email.archive(email)
 ```
 
-v0.1: no-op placeholder. Future release will implement IMAP folder move.
+> **Status:** v0.1 no-op placeholder. IMAP folder-move is tracked in [ROADMAP](../../ROADMAP.md).
 
 ## `Http`
 
@@ -83,7 +83,7 @@ response = Http.request(
 
 **Returns:** `HttpResponse?` — see [Types](./types.md) for the shape.
 
-## `Db`
+## `Db` <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 db = Db.connect("postgres://localhost/mydb")
@@ -97,7 +97,9 @@ rows = Db.query(db,
 Db.exec(db, "UPDATE status SET seen = true WHERE id = ?", params: [ticket.id])
 ```
 
-## Swapping the backend
+> **Status:** the `Db` namespace is documented for v0.1 but not registered in the runtime. Calls will raise an "unknown method" error until the SQL backend lands. Tracked in [ROADMAP](../../ROADMAP.md).
+
+## Swapping the backend <span class="badge badge-soon">Coming soon</span>
 
 Each namespace dispatches through an interface. To plug in a custom transport:
 
@@ -106,6 +108,8 @@ Each namespace dispatches through an interface. To plug in a custom transport:
 Email.install(MyProprietaryEmailTransport)
 Http.install(MyRateLimitedClient)
 ```
+
+> **Status:** `Email.install` / `Http.install` are reserved but not registered in v0.1 — the default transports are the only ones wired.
 
 See [The Prelude & Interfaces](./prelude.md) for how interface dispatch works.
 

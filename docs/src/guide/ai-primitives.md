@@ -12,7 +12,7 @@ urgency = Ai.classify(email.body, as: Urgency, fallback: Urgency.medium)
 sentiment = Ai.classify(review, as: Sentiment)   # returns Sentiment? (nullable)
 ```
 
-With hints:
+With hints: <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 urgency = Ai.classify(email.body,
@@ -25,7 +25,7 @@ urgency = Ai.classify(email.body,
 )
 ```
 
-`considering:` is a **map from hint string to enum variant**. The LLM gets the hints as classification nudges; typos or extra keys are caught by the type checker.
+`considering:` is a **map from hint string to enum variant**. The LLM gets the hints as classification nudges; typos or extra keys are caught by the type checker. *In v0.1 the argument is accepted but not forwarded to the LLM — tracked in [ROADMAP](../../ROADMAP.md).*
 
 **Returns:** `T?` without `fallback:`, `T` with `fallback:` (where `T` is the enum).
 
@@ -43,16 +43,20 @@ dates = Ai.extract(from: contract, schema: { start: str, end: str })
 
 **Returns:** a struct matching `schema:`, nullable.
 
+> **Status:** v0.1 accepts the map form `schema: { field: "str" }` (string type names). Full type-literal schemas (`list[str]`, nested struct types) are <span class="badge badge-soon">Coming soon</span>.
+
 ## `Ai.summarize` — condense content
 
 ```keel
 brief = Ai.summarize(article, in: 3, unit: sentences)
-bullets = Ai.summarize(report, format: bullets)
+bullets = Ai.summarize(report, format: bullets)    # `format:` Coming soon
 tldr = Ai.summarize(thread, in: 1, unit: line)
 safe = Ai.summarize(article, in: 3, unit: sentences, fallback: "No summary")
 ```
 
 **Returns:** `str?` without `fallback:`, `str` with.
+
+> **Status:** `in:` / `unit:` are wired; the `format:` argument <span class="badge badge-soon">Coming soon</span> is parsed but not yet forwarded to the LLM.
 
 ## `Ai.draft` — generate text
 
@@ -86,13 +90,15 @@ multi  = Ai.translate(ui_strings, to: [spanish, german, japanese])
 ```keel
 action = Ai.decide(email,
   options: [reply, forward, archive, escalate],
-  based_on: [urgency, sender, content]
+  based_on: [urgency, sender, content]     # `based_on:` Coming soon
 )
 # action: Decision[Action]?
 # action.choice — one of the enum options
 # action.reason — LLM's explanation
 # action.confidence — 0.0..1.0
 ```
+
+> **Status:** v0.1 returns a plain map `{choice, reason, confidence: 1.0}` instead of a true `Decision[T]` type. The `based_on:` argument <span class="badge badge-soon">Coming soon</span> is parsed but not yet used. Full `Decision[T]` typing is tracked in [ROADMAP](../../ROADMAP.md).
 
 ## `Ai.prompt` — raw LLM access (escape hatch)
 
@@ -111,6 +117,8 @@ score = Ai.prompt(
 
 `Ai.prompt(...)` **must be followed by `as T`**. Use `as dynamic` if the response shape is truly unknown — this is a deliberate, visible opt-out.
 
+> **Status:** `system:` and `user:` are wired; `response_format: json` <span class="badge badge-soon">Coming soon</span> is parsed but not enforced — the LLM is free to respond in any format.
+
 ## Per-call model override
 
 ```keel
@@ -120,7 +128,7 @@ reply   = Ai.draft("response to {email}", using: "smart")
 
 `using:` accepts a model alias that resolves via `KEEL_MODEL_<ALIAS>` environment variables, or a literal Ollama tag (`"ollama:gemma4"` or just `"gemma4"` if a single default is set). See [LLM Providers](../config/llm-providers.md).
 
-## Swapping the provider
+## Swapping the provider <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 # Globally
@@ -134,6 +142,8 @@ agent Specialist {
 ```
 
 Every `Ai.*` call goes through `LlmProvider.complete`. Any type with a matching `complete` method structurally satisfies the interface.
+
+> **Status:** v0.1 ships with Ollama only. `Ai.install(...)` and `@provider` are reserved in the grammar but not registered in the runtime — tracked in [ROADMAP](../../ROADMAP.md).
 
 ## Why functions, not keywords
 

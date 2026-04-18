@@ -219,23 +219,35 @@ impl Interpreter {
     /// `@model` attribute, then to `"default"` (which triggers the
     /// `KEEL_OLLAMA_MODEL` catch-all in the Ollama client).
     pub fn current_model(&self) -> String {
-        if let Some(agent) = &self.current_agent {
-            let def = agent.lock().unwrap().def.clone();
-            for attr in &def.attributes {
-                if attr.name == "model" {
-                    if let AttributeBody::Expr(Expr::StringLit(parts)) = &attr.body {
-                        let s: String = parts.iter().filter_map(|p| match p {
-                            StringPart::Literal(s) => Some(s.clone()),
-                            _ => None,
-                        }).collect();
-                        if !s.is_empty() {
-                            return s;
-                        }
+        self.agent_string_attr("model").unwrap_or_else(|| "default".to_string())
+    }
+
+    /// The current agent's `@role "..."` string, if any. Used by the
+    /// LLM client to prepend an agent-identity preamble to every
+    /// system prompt — so `Ai.draft(...)` inside an agent with
+    /// `@role "Professional email triage"` gets that directive on
+    /// every call. Returns `None` when called outside any agent.
+    pub fn current_role(&self) -> Option<String> {
+        self.agent_string_attr("role")
+    }
+
+    fn agent_string_attr(&self, name: &str) -> Option<String> {
+        let agent = self.current_agent.as_ref()?;
+        let def = agent.lock().unwrap().def.clone();
+        for attr in &def.attributes {
+            if attr.name == name {
+                if let AttributeBody::Expr(Expr::StringLit(parts)) = &attr.body {
+                    let s: String = parts.iter().filter_map(|p| match p {
+                        StringPart::Literal(s) => Some(s.clone()),
+                        _ => None,
+                    }).collect();
+                    if !s.is_empty() {
+                        return Some(s);
                     }
                 }
             }
         }
-        "default".to_string()
+        None
     }
 
     /// Register a namespace (called by runtime::install_prelude).

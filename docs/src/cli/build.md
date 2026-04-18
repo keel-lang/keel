@@ -1,6 +1,6 @@
-# keel build
+# keel build <span class="badge badge-soon">Coming soon</span>
 
-> **Alpha (v0.1).** Breaking changes expected.
+> **Status:** `keel build` is deferred post-v0.1. The tree-walking interpreter handles every alpha workload, so shipping a bytecode compiler is punted until a concrete motivator (LLVM/WASM backend, embeddable runtime) lands. Tracked in [ROADMAP](../../ROADMAP.md).
 
 Compile a Keel program to bytecode.
 

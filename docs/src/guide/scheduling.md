@@ -25,7 +25,7 @@ interval = if load_is_high() { 10.minutes } else { 5.minutes }
 Schedule.every(interval, () => { heartbeat() })
 ```
 
-## `Schedule.every` with calendar alignment
+## `Schedule.every` with calendar alignment <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 Schedule.every(1.day, at: @9am, () => {
@@ -36,6 +36,8 @@ Schedule.every(monday, at: @9am, () => {
   start_of_week_checklist()
 })
 ```
+
+> **Status:** the `at:` alignment argument is parsed but ignored in v0.1 — intervals fire relative to when the schedule is registered, not anchored to a clock time.
 
 ## `Schedule.after` — delayed one-shot
 
@@ -57,13 +59,15 @@ Schedule.at(@2026-04-20_10am, () => {
 })
 ```
 
-## `Schedule.cron` — full cron expressions
+## `Schedule.cron` — full cron expressions <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 Schedule.cron("0 */15 9-17 * * MON-FRI", () => {
   poll_status()
 })
 ```
+
+> **Status:** `Schedule.cron` is reserved in the grammar but not registered in v0.1. Tracked in [ROADMAP](../../ROADMAP.md).
 
 ## Inside an agent
 
@@ -82,7 +86,7 @@ agent DailyDigest {
 }
 ```
 
-## Cancelling a schedule
+## Cancelling a schedule <span class="badge badge-soon">Coming soon</span>
 
 `Schedule.every`, `after`, `at`, and `cron` return a handle you can cancel:
 
@@ -92,6 +96,8 @@ heartbeat = Schedule.every(30.seconds, () => { ping() })
 # Later
 heartbeat.cancel()
 ```
+
+> **Status:** v0.1 scheduling calls return `none` — cancellation handles are not yet plumbed through. Schedules live for the lifetime of the enclosing agent.
 
 ## Duration literals
 

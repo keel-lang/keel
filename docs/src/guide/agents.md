@@ -66,14 +66,16 @@ run(EmailBot)
 
 Attributes are identifier-prefixed metadata clauses. They declare agent identity, capabilities, and lifecycle behavior without needing dedicated keywords. Only **two** attributes are built into the core language:
 
-| Attribute | Core? | Purpose |
-|---|---|---|
-| `@role` | Yes | The agent's identity string, bound to the installed `LlmProvider` for all `Ai.*` calls inside this agent |
-| `@model` | Yes | The model name string; overrides the global default for this agent |
+| Attribute | Core? | Status | Purpose |
+|---|---|---|---|
+| `@role` | Yes | ✅ | The agent's identity string. In v0.1 it's prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt, so the LLM sees the agent's directive on every call |
+| `@model` | Yes | ✅ | The model name string; overrides the global default for this agent |
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-### `@tools` — capability list
+> Of the stdlib attributes below, only `@on_start` is wired in v0.1. The rest (`@on_stop`, `@tools`, `@memory`, `@rules`, `@limits`, `@team`, `@provider`) are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+
+### `@tools` — capability list <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 @tools [Email, Calendar, Http]
@@ -83,7 +85,9 @@ Binds stdlib modules as the agent's declared capabilities. The runtime uses this
 - Allow/deny which stdlib namespaces the agent can use
 - Report the agent's capabilities to the LLM (for tool-use style prompting)
 
-### `@memory` — persistent semantic memory
+> **Status:** parsed in v0.1, no capability gating enforced yet.
+
+### `@memory` — persistent semantic memory <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 @memory persistent    # | session | none
@@ -95,7 +99,9 @@ Binds stdlib modules as the agent's declared capabilities. The runtime uses this
 
 Swap the backend by installing a different `VectorStore` implementation.
 
-### `@rules` — natural-language guardrails
+> **Status:** `@memory` is parsed but ignored in v0.1, and `Memory.remember/recall/forget` are no-op stubs. A real vector-store backend is tracked in [ROADMAP](../../ROADMAP.md).
+
+### `@rules` — natural-language guardrails <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 @rules [
@@ -106,7 +112,9 @@ Swap the backend by installing a different `VectorStore` implementation.
 
 Rules are injected into every LLM prompt this agent makes. They are **LLM-interpreted** — compliance is best-effort. For deterministic constraints, use `@limits`.
 
-### `@limits` — deterministic constraints
+> **Status:** parsed in v0.1, not forwarded to the LLM yet.
+
+### `@limits` — deterministic constraints <span class="badge badge-soon">Coming soon</span>
 
 ```keel
 @limits {
@@ -119,14 +127,18 @@ Rules are injected into every LLM prompt this agent makes. They are **LLM-interp
 
 Enforced by the runtime with deterministic logic. Violations raise errors; they don't just ask the LLM nicely.
 
+> **Status:** parsed as a struct literal in v0.1 but not enforced — no cost, token, timeout, or confirmation gating yet.
+
 ### `@on_start` / `@on_stop` — lifecycle hooks
 
 ```keel
 @on_start { Schedule.every(5.minutes, () => { heartbeat() }) }
-@on_stop  { flush_queue() }
+@on_stop  { flush_queue() }      # Coming soon
 ```
 
 Run when the agent starts and stops.
+
+> **Status:** `@on_start` is fully wired. `@on_stop` <span class="badge badge-soon">Coming soon</span> is parsed but never invoked in v0.1 (graceful-shutdown hook not wired).
 
 ### Custom attributes
 
@@ -155,17 +167,19 @@ agent Counter {
 
 - Handlers for one agent run **sequentially** — no data races on `state`.
 - Different agents run concurrently but share no state.
-- Cross-agent data goes through `Agent.delegate` (not yet implemented in v0.1) or `Memory.*`.
+- Cross-agent messaging uses `Agent.send(Target, data)` (wired in v0.1). `Agent.delegate` and `Agent.broadcast` <span class="badge badge-soon">Coming soon</span>.
 
 ## Lifecycle
 
 ```keel
 run(MyAgent)                      # start
-run(MyAgent, background: true)    # non-blocking
+run(MyAgent, background: true)    # background: Coming soon
 stop(MyAgent)                     # graceful shutdown
 ```
 
 `run` and `stop` are prelude functions re-exported at the top level.
+
+> **Status:** `run(Agent)` and `stop(Agent)` are wired. `run(Agent, background: true)` <span class="badge badge-soon">Coming soon</span> — v0.1 treats every `run` as foreground and uses the event loop for non-blocking behavior.
 
 ## Composition over monoliths
 

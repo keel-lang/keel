@@ -18,17 +18,17 @@ First public release. The language, standard library, and tooling are all new.
 
 ### Language
 
-- **Small core.** 27 reserved keywords total. Everything else (AI calls, scheduling, I/O, HTTP, email, memory, search) is a stdlib function, not syntax.
-- **Prelude-as-stdlib.** The namespaces `Ai`, `Io`, `Email`, `Http`, `Schedule`, `Memory`, `Async`, `Control`, `Env`, `Log`, `Agent` are in scope in every program with no `use` needed.
+- **Small core.** 28 reserved keywords total. Everything else (AI calls, scheduling, I/O, HTTP, email) is a stdlib function, not syntax.
+- **Prelude-as-stdlib.** Namespaces `Ai`, `Io`, `Email`, `Http`, `Schedule`, `Memory`, `Async`, `Control`, `Env`, `Log`, `Agent` are in scope in every program with no `use` needed. (Documented namespaces `Search`, `Db`, `Time` are planned but not yet registered — see [ROADMAP](ROADMAP.md).)
 - **Interfaces.** Structural protocol declarations (`interface LlmProvider { ... }`); any type with matching methods satisfies the interface — no explicit `implements`.
-- **Attributes.** `@role`, `@model`, `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, `@team` on agent bodies. `@role` and `@model` are core; the rest are stdlib-registered plugin handlers.
+- **Attributes.** `@role`, `@model` are core attributes. `@on_start`, `@on_stop`, `@tools`, `@memory`, `@rules`, `@limits`, `@team`, `@provider` are stdlib attributes, parsed by the grammar. Wiring status: `@role`, `@model`, and `@on_start` are executed at runtime — `@role` is prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt so the agent's identity reaches the LLM on every call. The remaining stdlib attributes are parsed but have no runtime effect in v0.1 (tracked in [ROADMAP](ROADMAP.md)).
 - **Named arguments** on calls: `Ai.classify(body, as: Urgency, fallback: Urgency.medium)`.
 - **Algebraic data types.** Simple enums (`type Urgency = low | medium | high`) and rich enums with per-variant fields (`type Action = reply { to: str, tone: str } | archive`). Construction: `Action.reply { to: "x", tone: "y" }`. Destructuring: `when a { reply { to, tone } => ... }`.
 - **Type aliases.** `type Timestamp = datetime`.
 - **Triple-quoted strings.** `"""..."""` preserves newlines and internal quotes; still supports `{expr}` interpolation.
-- **Nullable safety.** `T?` is a distinct type; `?.`, `??`, `fallback:` are the handling tools.
-- **Exhaustive pattern matching.** `when` on an enum must cover every variant or use `_`; compile-time error if missing.
-- **`as` cast.** `Ai.prompt(...) as MyType` narrows; required for `Ai.prompt` to avoid accidental `dynamic`.
+- **Nullable syntax.** `T?` is a distinct type; `?.`, `??`, `fallback:` are the handling tools. *Full nullable-safety enforcement at call sites is still in progress in the type checker — see [ROADMAP](ROADMAP.md).*
+- **Exhaustive pattern matching.** `when` on a simple enum must cover every variant or use `_`; compile-time error if missing.
+- **`as` cast.** `Ai.prompt(...) as MyType` narrows the dynamic return shape.
 - **Duration literals.** `5.minutes`, `2.hours`, `1.day`. `Schedule.*` and `Async.sleep` accept them directly.
 
 ### Runtime
@@ -38,25 +38,33 @@ First public release. The language, standard library, and tooling are all new.
 - **Recurring `Schedule.every`.** Spawns a tokio interval that posts `FireClosure` events at each tick; `Schedule.after` is the one-shot variant; `Schedule.at(datetime_str, fn)` accepts RFC 3339 / ISO 8601.
 - **Message dispatch.** `Agent.send(target, data)` posts a `Dispatch` event that fires the target agent's `on <event>` handler in its own `self` context.
 - **Rich enum runtime values.** `Value::EnumVariant(type, variant, Option<fields>)`; pattern destructuring binds fields by name.
-- **Prelude dispatch.** Every namespace resolves through a runtime registry (`Ai.classify` is a method lookup on a registered namespace value). Swappable at startup.
+- **Prelude dispatch.** Every namespace resolves through a runtime registry (`Ai.classify` is a method lookup on a registered namespace value). Per-call model override via `using:` is wired; provider-level swapping (`Ai.install`, `@provider`) is planned for v0.2.
 
 ### Standard library
 
-- **`Ai`** — Ollama backend only in v0.1 (via `LlmProvider` interface; Anthropic and other providers are follow-up work).
-  - `Ai.classify(input, as: T, fallback: V, considering: { "hint": Variant })` returns `Ty::Enum(T)`.
-  - `Ai.summarize(text, in: N, unit: sentences, fallback: ...)`, `Ai.draft(prompt, tone: …, guidance: …)`, `Ai.extract(from: …, schema: …)`, `Ai.translate(text, to: …)`, `Ai.decide(input, options: […])`, `Ai.prompt(system: …, user: …) as T`.
+- **`Ai`** — Ollama backend only in v0.1 (via `LlmProvider` interface).
+  - Wired: `Ai.classify(input, as: T, fallback: V)`, `Ai.summarize(text, in: N, unit: sentences, fallback: ...)`, `Ai.draft(prompt, tone: …, guidance: …, max_length: …)`, `Ai.extract(from: …, schema: {field: "type"})`, `Ai.translate(text, to: …)`, `Ai.decide(input, options: […])`, `Ai.prompt(system: …, user: …) as T`.
+  - Partial: `Ai.classify(..., considering: {...})` — argument parsed but not forwarded to the LLM yet; `Ai.summarize(..., format: ...)` — ignored; `Ai.prompt(..., response_format: json)` — ignored; `Ai.decide` returns a plain `{choice, reason, confidence: 1.0}` map instead of a typed `Decision[T]`; `Ai.extract` accepts the map-form schema only.
+  - Stubs: `Ai.embed` returns `[]`.
+  - Missing: `Ai.install(provider)` is not registered in the runtime.
   - Model resolution: `using:` arg ≻ enclosing agent's `@model` ≻ `KEEL_OLLAMA_MODEL` catch-all. `KEEL_MODEL_<ALIAS>` maps custom aliases to Ollama tags.
   - `KEEL_LLM=mock` short-circuits every call — used by the integration test suite and `keel run` in offline mode.
-- **`Email`** — real IMAP fetch + SMTP send via env vars `IMAP_HOST`, `SMTP_HOST`, `EMAIL_USER`, `EMAIL_PASS`. Gracefully degrades to empty list / no-op when credentials aren't set.
-- **`Http`** — `reqwest`-backed. `Http.get`, `Http.post`, `Http.request` return a `{status, body, headers, is_ok}` map.
-- **`Io`** — terminal-backed `ask`, `confirm`, `notify`, `show`.
-- **`Env`** — `Env.get(name)` returns `str?`, `Env.require(name)` errors if unset.
-- **`Log`**, **`Memory`**, **`Search`**, **`Db`**, **`Async`**, **`Control`** — stub implementations shipping with the binary; real backends land alongside usage.
+- **`Io`** — terminal-backed `ask`, `confirm`, `notify`, `show`. Fully wired.
+- **`Http`** — `reqwest`-backed. `Http.get`, `Http.post`, `Http.request` return a `{status, body, headers, is_ok}` map. Fully wired.
+- **`Email`** — real IMAP fetch + SMTP send via env vars `IMAP_HOST`, `SMTP_HOST`, `EMAIL_USER`, `EMAIL_PASS`. Gracefully degrades to empty list / no-op when credentials aren't set. `Email.archive` is a no-op placeholder in v0.1 (IMAP folder-move not yet implemented).
+- **`Schedule`** — `every`, `after`, `at` (RFC 3339 / ISO 8601), `sleep`. The `at:` calendar-alignment argument on `Schedule.every` is parsed but not enforced; `Schedule.cron` is not registered. Tracked in [ROADMAP](ROADMAP.md).
+- **`Env`** — `Env.get(name)` returns `str?`, `Env.require(name)` errors if unset. Fully wired.
+- **`Log`** — `info`, `warn`, `error`, `debug` print to stderr. Fully wired.
+- **`Agent`** — `Agent.run(A)` / `Agent.stop(A)` / `Agent.send(target, data, event:)` wired. `Agent.delegate` and `Agent.broadcast` are referenced in the docs but not yet registered in the runtime.
+- **`Memory`** — `remember`, `recall`, `forget` are no-op stubs in v0.1. No vector-store backend yet.
+- **`Control`** — `retry`, `with_timeout`, `with_deadline` are no-op stubs in v0.1.
+- **`Async`** — `sleep` is wired. `spawn`, `join_all`, `select` are no-op stubs; real structured concurrency is planned for v0.2.
+- **`Search`**, **`Db`**, **`Time`** — documented in the prelude guide but **not registered in the runtime**. Calling these namespaces raises an "unknown method" error; they are planned for v0.2.
 
 ### Tooling
 
 - `keel run <file>` — execute.
-- `keel check <file>` — static analysis: undefined identifiers, `self` outside an agent, non-exhaustive `when` on enums, missing `_` on non-enum `when`, `if` condition / `for` iterator types, task argument arity, `Ai.classify` enum inference.
+- `keel check <file>` — static analysis: undefined identifiers, `self` outside an agent, non-exhaustive `when` on simple enums, missing `_` on non-enum `when`, `if` condition / `for` iterator types, task argument arity, basic `Ai.classify` enum inference, rich-variant field checks. **Not yet enforced:** full nullable safety at call sites, return-type matching against declared `-> T`, generic parameter inference.
 - `keel repl` — interactive; persists bindings and declarations across prompts; brace-balance-aware multi-line input; `~/.keel_history`.
 - `keel fmt <file>` — idempotent AST pretty-printer. Two-space indent, multi-line lambda block bodies, automatic string-key quoting for map keys with spaces.
 - `keel lsp` — language server over stdio (tower-lsp). Publishes lex/parse/type-check diagnostics on `did_open` / `did_change`. Hover/completion are placeholders.
@@ -74,7 +82,7 @@ First public release. The language, standard library, and tooling are all new.
 - `SPEC.md` — authoritative language specification, v0.1.
 - `ROADMAP.md` — v0.1 checklist + deferred items.
 - `VISION.md` — design principles and target audience.
-- `docs/src/` (mdBook, 24 pages): getting started, language guide, stdlib namespace reference, CLI reference, configuration, examples.
+- `docs/src/` (mdBook, 29 pages): getting started, language guide, stdlib namespace reference, CLI reference, configuration, examples. Partial / missing features are flagged in-page with a "Coming soon" badge and cross-linked to the roadmap.
 - 15 example `.keel` programs in `examples/` covering scheduling, agents, AI primitives, message dispatch, HTTP, rich enums, multi-agent preview.
 
 ### Tests
