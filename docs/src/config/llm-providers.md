@@ -1,75 +1,55 @@
 # LLM Providers
 
-> **Alpha (v0.1).** Breaking changes expected. LLM providers implement the `LlmProvider` interface — see [The Prelude & Interfaces](../guide/prelude.md).
+> **Alpha (v0.1).** Ollama is the only supported backend. Additional providers implementing the `LlmProvider` interface ([prelude.md](../guide/prelude.md)) will land in a future release.
 
-Keel supports multiple LLM providers. The provider is selected automatically based on environment variables.
+Keel's `Ai.*` operations call a local Ollama instance.
 
-## Provider priority
-
-1. **`ANTHROPIC_API_KEY`** set → Anthropic Claude API
-2. **Otherwise** → Ollama (local)
-
-There is no silent fallback. If a model can't be reached, the program fails with a clear error message.
-
-## Anthropic Claude
+## Required
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-api03-...
-keel run agent.keel
-```
+# Install Ollama from https://ollama.com, then pull a model:
+ollama pull gemma4
 
-Model names in `.keel` files map to API model IDs:
-
-| Keel name | API model ID |
-|-----------|-------------|
-| `claude-haiku` | `claude-haiku-4-5-20251001` |
-| `claude-sonnet` | `claude-sonnet-4-6-20260415` |
-| `claude-opus` | `claude-opus-4-6-20260415` |
-
-## Ollama (local)
-
-See [Ollama Setup](./ollama.md) for detailed instructions.
-
-## Model mapping
-
-When using Ollama, Keel model names (like `claude-haiku`) need to be mapped to local models:
-
-```bash
-# Catch-all: all models → one Ollama model
+# Point Keel at it:
 export KEEL_OLLAMA_MODEL=gemma4
-
-# Per-model: different local models for different roles
-export KEEL_MODEL_CLAUDE_HAIKU=gemma4              # fast/cheap
-export KEEL_MODEL_CLAUDE_SONNET=mistral:7b-instruct  # capable
-export KEEL_MODEL_CLAUDE_OPUS=gpt-oss:20b           # heavy
 ```
 
-## Direct Ollama model names
+That's the minimum. Every `Ai.classify(...)`, `Ai.draft(...)`, etc. now resolves through this model.
 
-You can also use Ollama model names directly in `.keel` files:
-
-```keel
-classify text as Mood using "ollama:gemma4"
-draft "response" using "ollama:mistral:7b-instruct"
-```
-
-## Strict validation
-
-If a model name can't be resolved, Keel fails immediately with instructions:
-
-```
-✗ Model 'claude-haiku' is not available locally.
-Set one of:
-  export KEEL_MODEL_CLAUDE_HAIKU=<ollama_model>
-  export KEEL_OLLAMA_MODEL=<ollama_model>
-```
-
-## Test mode
-
-For automated tests:
+## Custom host
 
 ```bash
-KEEL_LLM=mock keel run agent.keel
+export OLLAMA_HOST=http://192.168.1.10:11434   # default: http://localhost:11434
 ```
 
-AI primitives use `fallback` values. No network calls are made.
+## Named model aliases
+
+If a program uses `@model "fast"` or `using: "smart"`, Keel maps those names to Ollama tags via environment variables:
+
+```bash
+export KEEL_MODEL_FAST=gemma4
+export KEEL_MODEL_SMART=mistral:7b-instruct
+```
+
+The lookup order when a call wants model `X`:
+
+1. `ollama:X` prefix — strip and use `X` directly as the Ollama tag
+2. `KEEL_MODEL_<X>` environment variable (`X` uppercased, `-` → `_`)
+3. `KEEL_OLLAMA_MODEL` (catch-all)
+4. Configuration error — the call fails with instructions for fixing it
+
+## Testing without a real LLM
+
+```bash
+export KEEL_LLM=mock
+```
+
+All `Ai.*` calls return `CallFailed` and hit their `fallback:` / `??` branch. Used by the integration test suite.
+
+## Troubleshooting
+
+**`Ollama unreachable at http://localhost:11434`** — the daemon isn't running. Start it: `ollama serve &`.
+
+**`Model 'X' has no mapping`** — you called `@model "X"` but there's no matching `KEEL_MODEL_X` variable and no `KEEL_OLLAMA_MODEL`. Set one of them.
+
+**`Ollama returned 404`** — the tag isn't pulled locally. Fix it: `ollama pull <tag>`.

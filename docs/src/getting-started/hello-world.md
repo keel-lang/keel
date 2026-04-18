@@ -7,7 +7,6 @@ Create a file called `hello.keel`:
 ```keel
 agent Hello {
   @role "A friendly greeter"
-  @model "claude-haiku"
 
   @on_start {
     Schedule.every(5.seconds, () => {
@@ -66,7 +65,6 @@ task analyze(text: str) -> Mood {
 
 agent MoodBot {
   @role "Analyzes the mood of text"
-  @model "claude-haiku"
 
   @on_start {
     Schedule.every(10.seconds, () => {

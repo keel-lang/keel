@@ -16,7 +16,6 @@ task prep_notes(meeting: {title: str, attendees: list[str]}) -> str {
 
 agent MeetingPrep {
   @role "You prepare briefing notes before meetings"
-  @model "claude-sonnet"
 
   state {
     meetings_prepped: int = 0

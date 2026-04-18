@@ -29,7 +29,7 @@
 - [x] Prelude wiring: `Ai`, `Io`, `Schedule`, `Email`, `Http`, `Memory`, `Async`, `Control`, `Env`, `Log`, `Agent`
 - [x] Examples: 11 `.keel` programs parse and execute
 - [ ] Type checker: exhaustiveness, nullable safety, argument/return types
-- [ ] Real LLM backends wired into `Ai.*` (Anthropic + Ollama)
+- [x] Ollama LLM backend wired into `Ai.*`
 - [ ] Real email backends wired into `Email.*` (IMAP fetch, SMTP send)
 - [ ] Real HTTP client wired into `Http.*` (reqwest)
 - [ ] Recurring `Schedule.every` / `Schedule.after` / `Schedule.at` via the agent event loop

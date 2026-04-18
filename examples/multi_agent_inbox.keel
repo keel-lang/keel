@@ -23,7 +23,6 @@ type TriageResult {
 # -- Agent 1: Classifier (fast, cheap model) --
 agent Classifier {
   @role "You classify emails by urgency and category"
-  @model "claude-haiku"
 
   task triage(email: {body: str}) -> TriageResult {
     urgency  = Ai.classify(email.body, as: Urgency,  fallback: Urgency.medium)
@@ -35,7 +34,6 @@ agent Classifier {
 # -- Agent 2: Responder (capable model for quality) --
 agent Responder {
   @role "You draft professional, helpful email replies"
-  @model "claude-sonnet"
   @memory persistent
 
   task reply_to(email: {body: str, from: str}, guidance: str? = none) -> str {
@@ -53,7 +51,6 @@ agent Responder {
 # -- Agent 3: FollowupScheduler --
 agent FollowupScheduler {
   @role "You manage follow-ups and reminders"
-  @model "claude-haiku"
 
   task plan(email: {subject: str}, urgency: Urgency) {
     when urgency {
@@ -68,7 +65,6 @@ agent FollowupScheduler {
 # -- Orchestrator --
 agent InboxManager {
   @role "You coordinate the email handling team"
-  @model "claude-sonnet"
   @tools [Email]
   @team [Classifier, Responder, FollowupScheduler]
 

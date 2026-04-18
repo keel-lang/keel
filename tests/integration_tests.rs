@@ -27,6 +27,7 @@ fn run_example(name: &str) -> (bool, String, String) {
     let example = project_root().join("examples").join(format!("{name}.keel"));
     let output = Command::new(&bin)
         .env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
         .arg("run")
         .arg(&example)
         .output()

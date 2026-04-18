@@ -44,9 +44,7 @@ Commands:
 
 ## LLM setup
 
-Keel's `Ai.*` functions call an LLM provider. You need at least one configured.
-
-### Option A: Ollama (local, free)
+Keel's `Ai.*` functions call a local Ollama instance. In v0.1 it is the only supported backend.
 
 ```bash
 # Install Ollama from https://ollama.com
@@ -56,13 +54,7 @@ ollama pull gemma4
 export KEEL_OLLAMA_MODEL=gemma4
 ```
 
-### Option B: Anthropic Claude
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-```
-
-See [LLM Providers](../config/llm-providers.md) for details.
+See [LLM Providers](../config/llm-providers.md) and [Ollama Setup](../config/ollama.md) for details.
 
 ## Editor support
 

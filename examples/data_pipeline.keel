@@ -25,7 +25,6 @@ task enrich(record: {name: str, email: str, score: int}) -> str {
 
 agent DataPipeline {
   @role "You process and validate data records"
-  @model "claude-haiku"
 
   state {
     total: int = 0

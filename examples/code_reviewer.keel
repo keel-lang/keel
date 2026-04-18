@@ -29,7 +29,6 @@ task assess_risk(diff: str) -> Severity {
 
 agent CodeReviewer {
   @role "You are a thorough but kind code reviewer"
-  @model "claude-sonnet"
 
   state {
     reviews_done: int = 0

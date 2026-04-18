@@ -71,16 +71,16 @@ Install a custom implementation at startup:
 
 ```keel
 # Use a custom LLM provider for the whole program
-Ai.install(MyAnthropicProvider)
+Ai.install(MyCustomProvider)
 
 # Or per-agent, via a stdlib attribute
 agent Specialist {
-  @provider MyOllamaProvider
+  @provider MyFinetunedProvider
   @role "..."
 }
 
 # Or per-call
-urgency = Ai.classify(body, as: Urgency, using: MyFinetunedProvider)
+urgency = Ai.classify(body, as: Urgency, using: "smart")
 ```
 
 The language doesn't know what an LLM is. It dispatches through `LlmProvider`. Any value with `complete` and `embed` methods of the right shape works.

@@ -7,7 +7,6 @@ task shorten(text: str) -> str {
 
 agent DailyDigest {
   @role "You compile a daily digest of important updates"
-  @model "claude-sonnet"
   @tools [Email]
 
   state {

@@ -17,7 +17,6 @@ type Urgency = low | medium | high | critical
 
 agent EmailAssistant {
   @role "Professional email assistant"
-  @model "claude-sonnet"
   @tools [Email]
 
   on message(msg: Message) {

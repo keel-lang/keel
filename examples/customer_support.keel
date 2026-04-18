@@ -29,7 +29,6 @@ task respond(ticket: {body: str, from: str}, category: Category) -> str {
 
 agent SupportBot {
   @role "You handle customer support tickets with empathy and precision"
-  @model "claude-sonnet"
   @tools [Email]
 
   state {

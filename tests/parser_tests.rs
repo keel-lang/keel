@@ -173,14 +173,13 @@ fn parse_agent_with_string_attributes() {
     let src = r#"
 agent Hello {
   @role "A greeter"
-  @model "claude-haiku"
 }
 "#;
     let prog = parse_ok(src);
     match first_decl(&prog) {
         Decl::Agent(a) => {
             assert_eq!(a.name, "Hello");
-            assert_eq!(a.items.len(), 2);
+            assert_eq!(a.items.len(), 1);
             match &a.items[0] {
                 AgentItem::Attribute(attr) => {
                     assert_eq!(attr.name, "role");

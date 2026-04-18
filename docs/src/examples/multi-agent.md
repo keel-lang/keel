@@ -15,7 +15,6 @@ type TriageResult {
 
 agent Classifier {
   @role "You classify emails by urgency and category"
-  @model "claude-haiku"
 
   task triage(email: {body: str}) -> TriageResult {
     urgency  = Ai.classify(email.body, as: Urgency,  fallback: Urgency.medium)
@@ -26,7 +25,6 @@ agent Classifier {
 
 agent Responder {
   @role "You draft professional, helpful email replies"
-  @model "claude-sonnet"
 
   task reply_to(email: {body: str, from: str}, guidance: str? = none) -> str {
     Ai.draft("response to {email.body}",
@@ -39,7 +37,6 @@ agent Responder {
 
 agent FollowupScheduler {
   @role "You manage follow-ups and reminders"
-  @model "claude-haiku"
 
   task plan(email: {subject: str}, urgency: Urgency) {
     when urgency {
@@ -53,7 +50,6 @@ agent FollowupScheduler {
 
 agent InboxManager {
   @role "You coordinate the email handling team"
-  @model "claude-sonnet"
   @team [Classifier, Responder, FollowupScheduler]
 
   task handle(email: {body: str, from: str, subject: str}) {

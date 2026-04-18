@@ -21,16 +21,14 @@ task triage(email: {body: str, from: str, subject: str}) -> Urgency {
       "asks a direct question":          Urgency.medium,
       "newsletter or automated message": Urgency.low
     },
-    fallback: Urgency.medium,
-    using: "claude-haiku"
+    fallback: Urgency.medium
   )
 }
 
 task brief(email: {body: str}) -> str {
   Ai.summarize(email.body,
     in: 1, unit: sentence,
-    fallback: "(no summary)",
-    using: "claude-haiku"
+    fallback: "(no summary)"
   )
 }
 
@@ -46,7 +44,6 @@ task compose(email: {body: str, from: str}, guidance: str? = none) -> str {
 
 agent EmailAssistant {
   @role "You are a professional email assistant. You triage incoming mail, reply to routine messages, and escalate anything important."
-  @model "claude-sonnet"
   @tools [Email]
   @memory persistent
 

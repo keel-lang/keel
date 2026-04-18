@@ -259,7 +259,6 @@ fn init_project(name: Option<String>) -> Result<()> {
 
 agent {agent_name} {{
   @role "Describe what this agent does"
-  @model "claude-sonnet"
 
   @on_start {{
     Schedule.every(1.hour) {{

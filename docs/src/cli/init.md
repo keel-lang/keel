@@ -23,7 +23,6 @@ The generated `main.keel`:
 
 agent MyProject {
   @role "Describe what this agent does"
-  @model "claude-sonnet"
 
   @on_start {
     Schedule.every(1.hour, () => {

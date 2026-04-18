@@ -114,11 +114,11 @@ score = Ai.prompt(
 ## Per-call model override
 
 ```keel
-urgency = Ai.classify(email.body, as: Urgency, using: "claude-haiku")
-reply   = Ai.draft("response to {email}", using: "claude-sonnet")
+urgency = Ai.classify(email.body, as: Urgency, using: "fast")
+reply   = Ai.draft("response to {email}", using: "smart")
 ```
 
-`using:` accepts a model string, or a concrete `LlmProvider` implementation if you've installed one.
+`using:` accepts a model alias that resolves via `KEEL_MODEL_<ALIAS>` environment variables, or a literal Ollama tag (`"ollama:gemma4"` or just `"gemma4"` if a single default is set). See [LLM Providers](../config/llm-providers.md).
 
 ## Swapping the provider
 
@@ -128,7 +128,7 @@ Ai.install(MyCustomProvider)
 
 # Per-agent
 agent Specialist {
-  @provider MyOllamaProvider
+  @provider MyFinetunedProvider
   @role "..."
 }
 ```

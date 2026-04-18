@@ -8,7 +8,6 @@ task greet(name: str) -> str {
 
 agent Greeter {
   @role "A friendly greeter that demonstrates Keel basics"
-  @model "claude-haiku"
 
   state {
     count: int = 0

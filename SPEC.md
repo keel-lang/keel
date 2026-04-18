@@ -330,7 +330,6 @@ type Urgency = low | medium | high | critical
 
 agent EmailBot {
   @role "Professional email triage"
-  @model "claude-sonnet"
 
   state {
     processed: int = 0
@@ -394,7 +393,7 @@ agent Greeter {
 agent AgentName {
   # --- Attributes (stdlib-defined metadata) ---
   @role "Natural language description"
-  @model "claude-sonnet"             # LLM binding for Ai.* inside this agent
+  @model "smart"                      # LLM binding for Ai.* inside this agent
   @tools [Email, Calendar]           # capability bindings
   @memory persistent                 # stdlib memory binding (none | session | persistent)
   @rules [
@@ -509,7 +508,7 @@ interface Tracer {
 
 ### 5.2 Why interfaces are core
 
-- `Ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding Anthropic/OpenAI into the runtime locks users out of self-hosted, proprietary, or novel providers.
+- `Ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding a single provider into the runtime locks users out of self-hosted, proprietary, or novel backends.
 - `Memory.recall` needs a vector store — there are many, users should pick.
 - `Log.info` needs a sink — users want OTel, Datadog, or plain stdout.
 
@@ -521,7 +520,7 @@ Implementations are installed at runtime startup, typically in the program's top
 
 ```keel
 # At startup — swap the default LLM provider
-Ai.install(MyAnthropicProvider)
+Ai.install(MyCustomProvider)
 
 # Per-agent override
 agent Specialist {
@@ -911,7 +910,7 @@ db_url  = Env.get("DATABASE_URL")          # str? — none if missing
 `keel.config` (YAML) is loaded by the runtime at startup and populates default attribute values:
 
 ```yaml
-model: "claude-sonnet"
+model: "smart"
 ai:
   default_temperature: 0.7
   cost_limit_daily: 10.00

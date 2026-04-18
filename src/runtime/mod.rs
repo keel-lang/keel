@@ -179,22 +179,225 @@ fn schedule_namespace() -> Namespace {
 
 fn ai_namespace() -> Namespace {
     ns!("Ai", {
-        "classify" => |_i, args| Box::pin(async move {
-            // v0.1 MVP: return the `fallback:` value if present, else None.
-            // Full LLM-backed classification lands when the LlmProvider
-            // interface is wired up.
-            Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None))
+        "classify" => |interp, args| Box::pin(async move {
+            let input = positional(&args, 0)
+                .ok_or_else(|| miette::miette!("Ai.classify: missing input"))?
+                .as_string();
+            let variants = classify_variants(interp, &args)?;
+            let criteria = extract_criteria(&args);
+            let model = resolve_model(interp, &args);
+            let enum_type = find_arg(&args, "as").and_then(|v| match v {
+                Value::Namespace(n) => Some(n.clone()),
+                _ => None,
+            }).unwrap_or_default();
+
+            let llm = interp.llm.clone();
+            match llm.classify(&input, &variants, &criteria, &model).await {
+                Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant)),
+                Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
         }),
-        "summarize" => |_i, args| Box::pin(async move {
-            Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None))
+
+        "summarize" => |interp, args| Box::pin(async move {
+            let input = positional(&args, 0)
+                .ok_or_else(|| miette::miette!("Ai.summarize: missing input"))?
+                .as_string();
+            let length = match (find_arg(&args, "in"), find_arg(&args, "unit")) {
+                (Some(Value::Integer(n)), Some(unit)) => Some((*n, unit.as_string())),
+                _ => None,
+            };
+            let model = resolve_model(interp, &args);
+            let llm = interp.llm.clone();
+            match llm.summarize(&input, length, &model).await {
+                Ok(Some(s)) => Ok(Value::String(s)),
+                Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
         }),
-        "draft" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "extract" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "translate" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "decide" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "prompt" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "embed" => |_i, _args| Box::pin(async move { Ok(Value::List(vec![])) }),
+
+        "draft" => |interp, args| Box::pin(async move {
+            let description = positional(&args, 0)
+                .ok_or_else(|| miette::miette!("Ai.draft: missing description"))?
+                .as_string();
+            let tone = find_arg(&args, "tone").map(|v| v.as_string());
+            let guidance = find_arg(&args, "guidance").map(|v| v.as_string());
+            let max_length = find_arg(&args, "max_length").and_then(|v| v.as_int());
+            let model = resolve_model(interp, &args);
+            let llm = interp.llm.clone();
+            match llm
+                .draft(&description, tone.as_deref(), guidance.as_deref(), max_length, &model)
+                .await
+            {
+                Ok(Some(s)) => Ok(Value::String(s)),
+                Ok(None) => Ok(Value::None),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
+        }),
+
+        "extract" => |interp, args| Box::pin(async move {
+            let input = match find_arg(&args, "from") {
+                Some(v) => v.as_string(),
+                None => positional(&args, 0)
+                    .ok_or_else(|| miette::miette!("Ai.extract: missing input"))?
+                    .as_string(),
+            };
+            // Schema is either `schema: { field: "type" }` (map) or unspecified.
+            let schema: Vec<(String, String)> = match find_arg(&args, "schema") {
+                Some(Value::Map(m)) => m.iter().map(|(k, v)| (k.clone(), v.as_string())).collect(),
+                _ => Vec::new(),
+            };
+            let model = resolve_model(interp, &args);
+            let llm = interp.llm.clone();
+            match llm.extract(&input, &schema, &model).await {
+                Ok(Some(json)) => {
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
+                        Ok(json_to_value(&parsed))
+                    } else {
+                        Ok(Value::String(json))
+                    }
+                }
+                Ok(None) => Ok(Value::None),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
+        }),
+
+        "translate" => |interp, args| Box::pin(async move {
+            let input = positional(&args, 0)
+                .ok_or_else(|| miette::miette!("Ai.translate: missing input"))?
+                .as_string();
+            let target_langs: Vec<String> = match find_arg(&args, "to") {
+                Some(Value::List(items)) => items.iter().map(|v| v.as_string()).collect(),
+                Some(other) => vec![other.as_string()],
+                None => return Err(miette::miette!("Ai.translate: missing `to:` argument")),
+            };
+            let model = resolve_model(interp, &args);
+            let llm = interp.llm.clone();
+            match llm.translate(&input, &target_langs, &model).await {
+                Ok(Some(map)) if target_langs.len() == 1 => {
+                    Ok(Value::String(map.into_values().next().unwrap_or_default()))
+                }
+                Ok(Some(map)) => {
+                    let mut out = HashMap::new();
+                    for (k, v) in map { out.insert(k, Value::String(v)); }
+                    Ok(Value::Map(out))
+                }
+                Ok(None) => Ok(Value::None),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
+        }),
+
+        "decide" => |interp, args| Box::pin(async move {
+            let input = positional(&args, 0)
+                .ok_or_else(|| miette::miette!("Ai.decide: missing input"))?
+                .as_string();
+            let options: Vec<String> = match find_arg(&args, "options") {
+                Some(Value::List(items)) => items.iter().map(|v| v.as_string()).collect(),
+                _ => Vec::new(),
+            };
+            let model = resolve_model(interp, &args);
+            let llm = interp.llm.clone();
+            match llm.decide(&input, &options, &model).await {
+                Ok(Some((choice, reason))) => {
+                    let mut m = HashMap::new();
+                    m.insert("choice".to_string(), Value::String(choice));
+                    m.insert("reason".to_string(), Value::String(reason));
+                    m.insert("confidence".to_string(), Value::Float(1.0));
+                    Ok(Value::Map(m))
+                }
+                Ok(None) => Ok(Value::None),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
+        }),
+
+        "prompt" => |interp, args| Box::pin(async move {
+            let system = find_arg(&args, "system").map(|v| v.as_string()).unwrap_or_default();
+            let user = find_arg(&args, "user").map(|v| v.as_string()).unwrap_or_default();
+            let model = resolve_model(interp, &args);
+            let llm = interp.llm.clone();
+            match llm.prompt(&system, &user, &model).await {
+                Ok(Some(s)) => Ok(Value::String(s)),
+                Ok(None) => Ok(Value::None),
+                Err(msg) => Err(miette::miette!("{msg}")),
+            }
+        }),
+
+        "embed" => |_i, _args| Box::pin(async move {
+            // v0.1: embeddings not wired yet.
+            Ok(Value::List(vec![]))
+        }),
     })
+}
+
+/// Resolve the model string for an Ai.* call:
+///   1. explicit `using: "model"` argument
+///   2. enclosing agent's `@model` attribute
+///   3. `"default"` (triggers KEEL_OLLAMA_MODEL catch-all)
+fn resolve_model(interp: &Interpreter, args: &[CallArgValue]) -> String {
+    if let Some(v) = find_arg(args, "using") {
+        return v.as_string();
+    }
+    interp.current_model()
+}
+
+/// Extract enum variants from `as: T` (Value::Namespace(T)) by looking
+/// T up in the interpreter's enum registry.
+fn classify_variants(interp: &Interpreter, args: &[CallArgValue]) -> miette::Result<Vec<String>> {
+    match find_arg(args, "as") {
+        Some(Value::Namespace(name)) => {
+            interp.enum_types.get(name).cloned().ok_or_else(|| {
+                miette::miette!("Ai.classify: `as: {name}` is not a simple enum type")
+            })
+        }
+        Some(Value::List(items)) => {
+            // Inline form: `as: [low, medium, high]`
+            Ok(items.iter().map(|v| v.as_string()).collect())
+        }
+        _ => Err(miette::miette!("Ai.classify: missing `as:` argument")),
+    }
+}
+
+/// Extract classification criteria from `considering: { "hint": Variant }`.
+fn extract_criteria(args: &[CallArgValue]) -> Vec<(String, String)> {
+    match find_arg(args, "considering") {
+        Some(Value::Map(m)) => m
+            .iter()
+            .map(|(k, v)| {
+                let variant_name = match v {
+                    Value::EnumVariant(_, variant) => variant.clone(),
+                    other => other.as_string(),
+                };
+                (k.clone(), variant_name)
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Convert a serde_json::Value to a Keel Value (for Ai.extract results).
+fn json_to_value(v: &serde_json::Value) -> Value {
+    match v {
+        serde_json::Value::Null => Value::None,
+        serde_json::Value::Bool(b) => Value::Bool(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Value::Integer(i)
+            } else if let Some(f) = n.as_f64() {
+                Value::Float(f)
+            } else {
+                Value::None
+            }
+        }
+        serde_json::Value::String(s) => Value::String(s.clone()),
+        serde_json::Value::Array(arr) => Value::List(arr.iter().map(json_to_value).collect()),
+        serde_json::Value::Object(obj) => {
+            let mut m = HashMap::new();
+            for (k, v) in obj {
+                m.insert(k.clone(), json_to_value(v));
+            }
+            Value::Map(m)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

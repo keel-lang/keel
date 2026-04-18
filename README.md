@@ -31,7 +31,6 @@ type Urgency = low | medium | high | critical
 
 agent EmailBot {
   @role "Professional email triage"
-  @model "claude-sonnet"
 
   on message(msg: Message) {
     urgency = Ai.classify(msg.body, as: Urgency, fallback: Urgency.medium)
@@ -90,12 +89,9 @@ Binary releases, a Homebrew tap, and a `curl | sh` installer will ship with v0.1
 ## Quick Start
 
 ```bash
-# Local LLM via Ollama
+# Install Ollama, pull a model, and point Keel at it
 ollama pull gemma4
 export KEEL_OLLAMA_MODEL=gemma4
-
-# Or Anthropic
-export ANTHROPIC_API_KEY=sk-ant-...
 
 # Run an example
 ./target/release/keel run examples/minimal.keel
@@ -132,20 +128,17 @@ keel lsp                  Language server (stdin/stdout)
 
 ---
 
-## LLM Providers
+## LLM Provider
 
-Keel ships with Anthropic and Ollama implementations of the `LlmProvider` interface. Users can install their own. No silent fallbacks — if a model isn't configured, you get a clear error.
+Keel v0.1 ships with a single backend: **Ollama** (local, offline). It implements the `LlmProvider` interface; users can install custom implementations. No silent fallbacks — if a model isn't configured, you get a clear error.
 
 ```bash
-# Local (Ollama)
+# Required: Ollama running locally with a pulled model
 export KEEL_OLLAMA_MODEL=gemma4
 
-# Cloud (Anthropic)
-export ANTHROPIC_API_KEY=sk-ant-...
-
-# Per-model mapping
-export KEEL_MODEL_CLAUDE_HAIKU=gemma4
-export KEEL_MODEL_CLAUDE_SONNET=mistral:7b-instruct
+# Optional: per-alias mapping
+export KEEL_MODEL_FAST=gemma4
+export KEEL_MODEL_SMART=mistral:7b-instruct
 ```
 
 ---

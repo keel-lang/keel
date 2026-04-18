@@ -3,7 +3,6 @@
 
 agent Ticker {
   @role "Demonstrates real scheduling"
-  @model "claude-haiku"
 
   state {
     tick: int = 0

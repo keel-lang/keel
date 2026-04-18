@@ -6,7 +6,6 @@
 
 agent Hello {
   @role "You are a friendly assistant who greets people warmly"
-  @model "claude-haiku"
 
   on message(msg: Message) {
     reply = Ai.draft("response to {msg.body}", tone: "warm")

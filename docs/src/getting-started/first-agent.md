@@ -49,7 +49,6 @@ task prioritize(t: Task) -> Priority {
 ```keel
 agent Prioritizer {
   @role "You help prioritize a task list"
-  @model "claude-sonnet"
 
   state {
     processed: int = 0

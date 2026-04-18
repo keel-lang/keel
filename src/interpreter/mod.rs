@@ -90,6 +90,10 @@ pub struct Interpreter {
     pub current_agent: Option<Arc<Mutex<AgentInstance>>>,
     /// Prelude namespaces installed at startup.
     pub namespaces: HashMap<String, Namespace>,
+    /// Simple-enum type name → variant names. Populated from `type X = a | b` declarations.
+    pub enum_types: HashMap<String, Vec<String>>,
+    /// Shared Ollama client for `Ai.*` operations.
+    pub llm: Arc<crate::runtime::llm::LlmClient>,
     /// Source for diagnostics (optional).
     pub source: Option<NamedSource<String>>,
 }
@@ -102,10 +106,36 @@ impl Interpreter {
             live_agents: Arc::new(Mutex::new(HashMap::new())),
             current_agent: None,
             namespaces: HashMap::new(),
+            enum_types: HashMap::new(),
+            llm: Arc::new(crate::runtime::llm::LlmClient::new()),
             source: None,
         };
         crate::runtime::install_prelude(&mut interp);
         interp
+    }
+
+    /// The model to use for `Ai.*` operations when no explicit
+    /// `using:` argument is given. Falls back to the current agent's
+    /// `@model` attribute, then to `"default"` (which triggers the
+    /// `KEEL_OLLAMA_MODEL` catch-all in the Ollama client).
+    pub fn current_model(&self) -> String {
+        if let Some(agent) = &self.current_agent {
+            let def = agent.lock().unwrap().def.clone();
+            for attr in &def.attributes {
+                if attr.name == "model" {
+                    if let AttributeBody::Expr(Expr::StringLit(parts)) = &attr.body {
+                        let s: String = parts.iter().filter_map(|p| match p {
+                            StringPart::Literal(s) => Some(s.clone()),
+                            _ => None,
+                        }).collect();
+                        if !s.is_empty() {
+                            return s;
+                        }
+                    }
+                }
+            }
+        }
+        "default".to_string()
     }
 
     /// Register a namespace (called by runtime::install_prelude).
@@ -184,9 +214,12 @@ impl Interpreter {
             Decl::Type(t) => {
                 // Bind the type name as a Namespace-like value so that
                 // `Mood.neutral` resolves and `as: Mood` finds a
-                // defined identifier. The runtime doesn't yet use type
-                // info — the type checker will.
+                // defined identifier. For simple enums, also cache
+                // the variant list for Ai.classify.
                 self.globals.insert(t.name.clone(), Value::Namespace(t.name.clone()));
+                if let TypeDef::SimpleEnum(variants) = &t.def {
+                    self.enum_types.insert(t.name.clone(), variants.clone());
+                }
                 Ok(())
             }
             Decl::Interface(_) | Decl::Extern(_) | Decl::Use(_) => Ok(()),

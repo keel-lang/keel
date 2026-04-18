@@ -22,7 +22,6 @@ Before:
 
 ```keel
 agent Bot{@role "helper"
-@model "claude-haiku"
 state{count:int=0}
 @on_start{Schedule.every(1.day, () => {Io.notify("hello")
 self.count=self.count+1})}}
@@ -34,7 +33,6 @@ After `keel fmt`:
 ```keel
 agent Bot {
   @role "helper"
-  @model "claude-haiku"
 
   state {
     count: int = 0

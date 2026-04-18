@@ -13,7 +13,6 @@ task shorten(text: str) -> str {
 
 agent LocalTest {
   @role "Tests local LLM integration"
-  @model "claude-haiku"
 
   @on_start {
     Schedule.every(1.minute, () => {

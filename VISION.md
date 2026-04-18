@@ -41,7 +41,6 @@ type Urgency = low | medium | high | critical
 
 agent EmailBot {
   @role "Professional email triage"
-  @model "claude-sonnet"
 
   on message(msg: Message) {
     urgency = Ai.classify(msg.body, as: Urgency, fallback: Urgency.medium)

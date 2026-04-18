@@ -14,7 +14,7 @@ src/
   types/            # Type checker (inference, nullable safety, exhaustiveness)
   interpreter/      # Tree-walking async interpreter
   vm/               # Bytecode compiler + register-based VM
-  runtime/          # LLM client (Anthropic/Ollama), email (IMAP/SMTP), human I/O
+  runtime/          # LLM client (Ollama), email (IMAP/SMTP), human I/O, prelude namespaces
   formatter.rs      # Pretty-printer (keel fmt)
   repl.rs           # Interactive REPL
   lsp.rs            # Language Server Protocol

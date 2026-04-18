@@ -19,13 +19,10 @@ keel run <file.keel>
 
 ```bash
 # Run an agent
-keel run examples/email_agent.keel
+KEEL_OLLAMA_MODEL=gemma4 keel run examples/email_agent.keel
 
-# With Ollama
-KEEL_OLLAMA_MODEL=gemma4 keel run agent.keel
-
-# With Anthropic
-ANTHROPIC_API_KEY=sk-ant-... keel run agent.keel
+# Test without a real LLM
+KEEL_LLM=mock keel run examples/test_ollama.keel
 ```
 
 ## Behavior

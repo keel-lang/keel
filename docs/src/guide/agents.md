@@ -20,7 +20,6 @@ run(Greeter)
 agent EmailBot {
   # --- Attributes ---
   @role "Professional email triage"
-  @model "claude-sonnet"
   @tools [Email, Calendar]
   @memory persistent
   @rules [
