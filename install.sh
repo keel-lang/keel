@@ -1,6 +1,9 @@
 #!/bin/sh
 # Keel installer — https://keel-lang.dev
-# Usage: curl -sSf https://keel-lang.dev/install.sh | sh
+# Usage:
+#   curl -sSf https://keel-lang.dev/install.sh | sh
+#
+# Respects: KEEL_INSTALL_DIR (default: $HOME/.keel/bin)
 
 set -e
 

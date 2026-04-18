@@ -27,8 +27,9 @@ jobs:
         run: |
           cd docs && mdbook build
           echo "keel-lang.dev" > ../target/book/CNAME
-          cp ../install.sh ../target/book/install.sh
-          cp ../uninstall.sh ../target/book/uninstall.sh
+          cp ../install.sh        ../target/book/install.sh
+          cp ../uninstall.sh      ../target/book/uninstall.sh
+          cp ../homebrew/keel.rb  ../target/book/keel.rb
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

@@ -12,7 +12,7 @@
 
 ## Status: Alpha (v0.1.0)
 
-Keel is in **early design and implementation**. There are **no production users**, no stable API, and no binary distribution. The language and standard library will change — including in ways that break existing `.keel` files — across upcoming 0.x releases.
+Keel is in **early design and implementation**. There are **no production users** and no stable API. The language and standard library will change — including in ways that break existing `.keel` files — across upcoming 0.x releases.
 
 If you're here, you're either curious or contributing. Both are welcome. Neither is shipping to prod.
 
@@ -73,16 +73,22 @@ The core language ships **27 keywords** and the actor model. Everything else is 
 
 ## Install
 
-Alpha — build from source:
+Three options, from easiest to most manual:
 
 ```bash
+# 1. One-liner installer (macOS / Linux, any arch)
+curl -sSf https://keel-lang.dev/install.sh | sh
+
+# 2. Homebrew (macOS / Linux)
+brew install --formula https://keel-lang.dev/keel.rb
+
+# 3. From source
 git clone https://github.com/keel-lang/keel.git
-cd keel
-cargo build --release
+cd keel && cargo build --release
 ./target/release/keel --version
 ```
 
-Binary releases, a Homebrew tap, and a `curl | sh` installer will ship with v0.1.x once the surface is stable.
+The installer and Homebrew formula point at the latest GitHub release. If no release exists yet for your tag, they fall back to build-from-source instructions.
 
 ---
 

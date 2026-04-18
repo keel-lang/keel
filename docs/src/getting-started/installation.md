@@ -1,10 +1,26 @@
 # Installation
 
-> **Alpha (v0.1).** No binary release yet. Build from source.
+> **Alpha (v0.1).** Three install paths below; pick whichever you prefer.
 
-## Build from source
+## One-liner
 
-Keel is built in Rust. You need the Rust toolchain installed (`rustup`).
+```bash
+curl -sSf https://keel-lang.dev/install.sh | sh
+```
+
+Fetches the latest GitHub release matching your OS + architecture, extracts it to `~/.keel/bin` (or `$KEEL_INSTALL_DIR`), and adds that directory to your shell rc file if it isn't already on `$PATH`.
+
+## Homebrew
+
+```bash
+brew install --formula https://keel-lang.dev/keel.rb
+```
+
+Works on both macOS (Apple Silicon and Intel) and Linux. The formula is auto-regenerated from the release workflow on every tag — versions and checksums stay in sync with the binaries.
+
+## From source
+
+Requires the Rust toolchain (`rustup`).
 
 ```bash
 git clone https://github.com/keel-lang/keel.git
@@ -64,14 +80,6 @@ VS Code extension (syntax highlighting + LSP):
 cd editors/vscode
 code --install-extension .
 ```
-
-## What's not available yet
-
-- **Homebrew tap** — returns with the first v0.1.x binary release
-- **One-line installer** (`curl | sh`) — same
-- **Pre-built binaries** on GitHub Releases — same
-
-All three come back once v0.1.0 is cut as a binary release.
 
 ## Next steps
 
