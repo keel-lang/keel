@@ -138,30 +138,21 @@ fn io_namespace() -> Namespace {
 
 fn schedule_namespace() -> Namespace {
     ns!("Schedule", {
-        // v0.1 MVP: `Schedule.every(duration, fn)` runs `fn` once
-        // immediately and returns. Recurring execution lands when the
-        // agent event loop is in place.
+        // `Schedule.every(duration, () => { ... })` fires the closure
+        // once immediately, then again every `duration` for the life
+        // of the enclosing agent. Must be called from an @on_start or
+        // an agent task — outside an agent there's no context to bind
+        // the closure to.
         "every" => |interp, args| Box::pin(async move {
-            if let Some(closure) = args.iter().find_map(|a| match &a.value {
-                Value::Closure(p, b) => Some((p.clone(), b.clone())),
-                _ => None,
-            }) {
-                let (params, body) = closure;
-                interp.call_closure(&params, &body, vec![]).await?;
-            }
-            Ok(Value::None)
+            schedule_fire(interp, args, /* recurring */ true).await
         }),
+        // `Schedule.after(duration, () => { ... })` fires the closure
+        // once after `duration`.
         "after" => |interp, args| Box::pin(async move {
-            if let Some(closure) = args.iter().find_map(|a| match &a.value {
-                Value::Closure(p, b) => Some((p.clone(), b.clone())),
-                _ => None,
-            }) {
-                let (params, body) = closure;
-                interp.call_closure(&params, &body, vec![]).await?;
-            }
-            Ok(Value::None)
+            schedule_fire(interp, args, /* recurring */ false).await
         }),
         "at" => |_i, _args| Box::pin(async move {
+            // datetime parsing not in v0.1
             Ok(Value::None)
         }),
         "sleep" => |_i, args| Box::pin(async move {
@@ -171,6 +162,68 @@ fn schedule_namespace() -> Namespace {
             Ok(Value::None)
         }),
     })
+}
+
+async fn schedule_fire(
+    interp: &mut Interpreter,
+    args: Vec<CallArgValue>,
+    recurring: bool,
+) -> miette::Result<Value> {
+    let duration = args.iter().find_map(|a| match &a.value {
+        Value::Duration(s) => Some(*s),
+        _ => None,
+    }).ok_or_else(|| miette::miette!("Schedule: missing duration argument"))?;
+
+    let (params, body) = args.iter().find_map(|a| match &a.value {
+        Value::Closure(p, b) => Some((p.clone(), b.clone())),
+        _ => None,
+    }).ok_or_else(|| miette::miette!("Schedule: missing closure argument"))?;
+
+    let agent_name = interp
+        .current_agent
+        .as_ref()
+        .ok_or_else(|| miette::miette!("Schedule must be called from within an agent"))?
+        .lock()
+        .unwrap()
+        .def
+        .name
+        .clone();
+
+    let closure_id = interp.register_closure(agent_name.clone(), params, body);
+    let tx = interp.event_tx.clone();
+    let dur = std::time::Duration::from_secs_f64(duration);
+
+    if recurring {
+        // Fire immediately, then on each tick.
+        let _ = tx.send(crate::interpreter::Event::FireClosure {
+            agent_name: agent_name.clone(),
+            closure_id,
+        });
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(dur);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            interval.tick().await; // consume the immediate tick (already fired above)
+            loop {
+                interval.tick().await;
+                if tx.send(crate::interpreter::Event::FireClosure {
+                    agent_name: agent_name.clone(),
+                    closure_id,
+                }).is_err() {
+                    break; // receiver dropped — event loop has exited
+                }
+            }
+        });
+    } else {
+        tokio::spawn(async move {
+            tokio::time::sleep(dur).await;
+            let _ = tx.send(crate::interpreter::Event::FireClosure {
+                agent_name,
+                closure_id,
+            });
+        });
+    }
+
+    Ok(Value::None)
 }
 
 // ---------------------------------------------------------------------------
@@ -496,6 +549,26 @@ fn agent_namespace() -> Namespace {
                 _ => return Err(miette::miette!("Agent.stop expects an agent argument")),
             };
             interp.stop_agent(&agent_name).await?;
+            Ok(Value::None)
+        }),
+        // Agent.send(target, message) — posts `message` to the target
+        // agent's `on message` handler via the event loop. Returns
+        // immediately; the handler runs later in the target's context.
+        "send" => |interp, args| Box::pin(async move {
+            let target = match args.first().map(|a| &a.value) {
+                Some(Value::AgentRef(name)) => name.clone(),
+                _ => return Err(miette::miette!("Agent.send: first arg must be an agent")),
+            };
+            let data = args.iter().skip(1)
+                .find(|a| a.name.is_none())
+                .map(|a| a.value.clone())
+                .unwrap_or(Value::None);
+            let event_name = find_arg(&args, "event").map(|v| v.as_string()).unwrap_or_else(|| "message".to_string());
+            let _ = interp.event_tx.send(crate::interpreter::Event::Dispatch {
+                agent_name: target,
+                event: event_name,
+                data,
+            });
             Ok(Value::None)
         }),
     })

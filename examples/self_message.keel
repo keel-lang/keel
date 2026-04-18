@@ -1,0 +1,16 @@
+# Tests `on message` dispatch via `Agent.send`.
+# The agent posts a message to itself on start; the handler prints it.
+
+agent Echo {
+  @role "Echoes messages"
+
+  on message(msg: Message) {
+    Io.notify("Got: {msg.body}")
+  }
+
+  @on_start {
+    Agent.send(Echo, {from: "self", body: "hello world"})
+  }
+}
+
+run(Echo)

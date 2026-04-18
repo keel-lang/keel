@@ -56,6 +56,7 @@ fn examples_all_parse() {
         "minimal", "hello_world", "test_scheduling", "test_ollama",
         "data_pipeline", "daily_digest", "meeting_prep", "code_reviewer",
         "customer_support", "email_agent", "multi_agent_inbox",
+        "self_message",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -96,4 +97,50 @@ fn scheduling_ticks_at_least_once() {
     let (ok, stdout, _stderr) = run_example("test_scheduling");
     assert!(ok);
     assert!(stdout.contains("Tick #1"));
+}
+
+#[test]
+fn on_message_handler_dispatches() {
+    ensure_binary_built();
+    let (ok, stdout, _stderr) = run_example("self_message");
+    assert!(ok, "self_message.keel exited non-zero");
+    assert!(
+        stdout.contains("Got: hello world"),
+        "expected on-message handler to fire, stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn scheduling_recurs_without_oneshot() {
+    // Without KEEL_ONESHOT, Schedule.every must fire repeatedly.
+    // test_scheduling.keel ticks every 3 seconds; a 7-second window
+    // should produce tick #1 (immediate) + tick #2 (after 3s) + tick
+    // #3 (after 6s).
+    ensure_binary_built();
+    let bin = keel_binary();
+    let example = project_root().join("examples").join("test_scheduling.keel");
+    let child = Command::new(&bin)
+        .env("KEEL_LLM", "mock")
+        // no KEEL_ONESHOT — we want recurring behaviour
+        .arg("run")
+        .arg(&example)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn keel run");
+
+    let pid = child.id();
+    // Let it tick for ~7 seconds, then SIGTERM it.
+    std::thread::sleep(std::time::Duration::from_secs(7));
+    let _ = Command::new("kill").arg(pid.to_string()).status();
+
+    let result = child.wait_with_output().expect("wait_with_output");
+    let stdout = String::from_utf8_lossy(&result.stdout).into_owned();
+
+    let tick_count = stdout.matches("Tick #").count();
+    assert!(
+        tick_count >= 2,
+        "expected at least 2 ticks in 7s window, got {tick_count}\nstdout:\n{stdout}"
+    );
 }

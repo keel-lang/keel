@@ -18,6 +18,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use miette::{NamedSource, Result};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
 use crate::ast::*;
 use environment::Environment;
@@ -79,6 +80,26 @@ pub struct AgentInstance {
 // Interpreter state
 // ---------------------------------------------------------------------------
 
+/// Runtime event posted to the interpreter's mailbox from tokio tasks
+/// (schedulers, message dispatchers, …) and consumed by `execute`.
+#[derive(Debug, Clone)]
+pub enum Event {
+    /// Fire a registered closure on behalf of an agent.
+    FireClosure { agent_name: String, closure_id: u64 },
+    /// Deliver a message to an agent's `on <event>` handler.
+    Dispatch { agent_name: String, event: String, data: Value },
+    /// Shut down the event loop.
+    Shutdown,
+}
+
+/// A scheduled closure awaiting firing via an `Event::FireClosure`.
+#[derive(Clone)]
+pub struct ScheduledClosure {
+    pub agent_name: String,
+    pub params: Vec<LambdaParam>,
+    pub body: LambdaBody,
+}
+
 pub struct Interpreter {
     /// Top-level name → value (types, tasks, agent defs, namespaces).
     pub globals: HashMap<String, Value>,
@@ -94,12 +115,26 @@ pub struct Interpreter {
     pub enum_types: HashMap<String, Vec<String>>,
     /// Shared Ollama client for `Ai.*` operations.
     pub llm: Arc<crate::runtime::llm::LlmClient>,
+    /// Sender for runtime events. Spawned tokio tasks (scheduler,
+    /// message dispatcher) clone this to post events to the main loop.
+    pub event_tx: UnboundedSender<Event>,
+    /// Receiver end of the event channel. Owned by the interpreter
+    /// between `new()` and `execute()`, then moved into the event
+    /// loop. `execute()` will panic if called twice.
+    pub event_rx: Option<UnboundedReceiver<Event>>,
+    /// Registered closures keyed by id. Scheduled tasks post the id
+    /// via `Event::FireClosure`; the event loop looks up the closure
+    /// and invokes it in the correct agent context.
+    pub closures: HashMap<u64, ScheduledClosure>,
+    /// Next free closure id.
+    pub next_closure_id: u64,
     /// Source for diagnostics (optional).
     pub source: Option<NamedSource<String>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let (event_tx, event_rx) = unbounded_channel();
         let mut interp = Interpreter {
             globals: HashMap::new(),
             agents: HashMap::new(),
@@ -108,10 +143,75 @@ impl Interpreter {
             namespaces: HashMap::new(),
             enum_types: HashMap::new(),
             llm: Arc::new(crate::runtime::llm::LlmClient::new()),
+            event_tx,
+            event_rx: Some(event_rx),
+            closures: HashMap::new(),
+            next_closure_id: 0,
             source: None,
         };
         crate::runtime::install_prelude(&mut interp);
         interp
+    }
+
+    /// Register a closure for later firing via `Event::FireClosure`.
+    /// Returns the id to embed in scheduled events.
+    pub fn register_closure(
+        &mut self,
+        agent_name: String,
+        params: Vec<LambdaParam>,
+        body: LambdaBody,
+    ) -> u64 {
+        let id = self.next_closure_id;
+        self.next_closure_id += 1;
+        self.closures.insert(id, ScheduledClosure { agent_name, params, body });
+        id
+    }
+
+    /// Fire a registered closure in the named agent's context.
+    /// Called by the event loop when `Event::FireClosure` arrives.
+    pub async fn fire_closure(&mut self, agent_name: &str, closure_id: u64) -> Result<()> {
+        let closure = self.closures.get(&closure_id).cloned();
+        let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
+        let (Some(c), Some(agent_inst)) = (closure, inst) else {
+            return Ok(()); // agent stopped or closure removed
+        };
+        let prev = self.current_agent.take();
+        self.current_agent = Some(agent_inst);
+        let result = self.call_closure(&c.params, &c.body, vec![]).await;
+        self.current_agent = prev;
+        result.map(|_| ())
+    }
+
+    /// Deliver an incoming event to the matching `on <event>` handler
+    /// on the target agent. Silently no-ops if the agent has stopped
+    /// or has no handler for this event — both are valid states.
+    pub async fn dispatch_event(
+        &mut self,
+        agent_name: &str,
+        event_name: &str,
+        data: Value,
+    ) -> Result<()> {
+        let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
+        let Some(agent_inst) = inst else { return Ok(()); };
+        let handler = agent_inst
+            .lock()
+            .unwrap()
+            .def
+            .handlers
+            .iter()
+            .find(|h| h.event == event_name)
+            .cloned();
+        let Some(handler) = handler else { return Ok(()); };
+
+        let prev = self.current_agent.take();
+        self.current_agent = Some(agent_inst);
+        let mut env = Environment::new();
+        if let Some(p) = &handler.param {
+            env.define(p.name.clone(), data);
+        }
+        let result = self.exec_block(&handler.body, &mut env).await;
+        self.current_agent = prev;
+        result.map(|_| ())
     }
 
     /// The model to use for `Ai.*` operations when no explicit
@@ -181,7 +281,7 @@ pub async fn run_with_source(program: Program, source: Option<NamedSource<String
 
 impl Interpreter {
     pub async fn execute(&mut self, program: Program) -> Result<()> {
-        // Two-pass: register all declarations first, then execute statements.
+        // Two-pass: register all declarations, then execute top-level statements.
         for (decl, _span) in &program.declarations {
             self.register_decl(decl)?;
         }
@@ -191,19 +291,40 @@ impl Interpreter {
                 self.exec_stmt(stmt, &mut env).await?;
             }
         }
-        // If any agents are still live (started with run), park until
-        // Ctrl+C. For the MVP we simply return — the installed agent
-        // handlers drive execution via tokio tasks.
+
+        // Event loop: serve scheduled ticks, message dispatch, and
+        // Ctrl+C. Terminates when no agents are live or a shutdown is
+        // requested. `KEEL_ONESHOT=1` exits after the first event is
+        // processed (used by integration tests).
+        let oneshot = std::env::var("KEEL_ONESHOT").is_ok();
+        let mut rx = self
+            .event_rx
+            .take()
+            .expect("Interpreter::execute called twice");
+
         loop {
-            let live = self.live_agents.lock().unwrap().len();
-            if live == 0 {
+            if self.live_agents.lock().unwrap().is_empty() {
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-            // Break after a while so tests and one-shot programs exit.
-            // Real agent lifetime management is a follow-up.
-            if std::env::var("KEEL_ONESHOT").is_ok() {
-                break;
+
+            tokio::select! {
+                biased;
+                _ = tokio::signal::ctrl_c() => break,
+                maybe_ev = rx.recv() => match maybe_ev {
+                    Some(Event::FireClosure { agent_name, closure_id }) => {
+                        self.fire_closure(&agent_name, closure_id).await?;
+                        if oneshot {
+                            break;
+                        }
+                    }
+                    Some(Event::Dispatch { agent_name, event, data }) => {
+                        self.dispatch_event(&agent_name, &event, data).await?;
+                        if oneshot {
+                            break;
+                        }
+                    }
+                    Some(Event::Shutdown) | None => break,
+                },
             }
         }
         Ok(())

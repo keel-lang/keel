@@ -32,8 +32,9 @@
 - [x] Ollama LLM backend wired into `Ai.*`
 - [ ] Real email backends wired into `Email.*` (IMAP fetch, SMTP send)
 - [ ] Real HTTP client wired into `Http.*` (reqwest)
-- [ ] Recurring `Schedule.every` / `Schedule.after` / `Schedule.at` via the agent event loop
-- [ ] Message dispatch to `on <event>` handlers
+- [x] Recurring `Schedule.every` / `Schedule.after` via the agent event loop
+- [ ] `Schedule.at` (absolute-time scheduling — datetime parsing still TBD)
+- [x] Message dispatch to `on <event>` handlers via `Agent.send`
 - [ ] Rich enum variant construction: `Action.reply { to: "..." }`
 - [ ] Triple-quoted strings
 - [ ] `keel fmt` rewrite against the new AST
