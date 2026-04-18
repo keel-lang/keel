@@ -8,6 +8,46 @@ Format: features include a short `.keel` example, bug fixes include what was bro
 
 ## [Unreleased] — v1.0 "Pulse" (in progress)
 
+### Fixed
+
+#### Multi-line method chaining
+A newline before `.` or `?.` no longer ends the statement — chains now read naturally across lines:
+
+```keel
+result = nums
+  .filter(n => n > 2)
+  .map(n => n * 10)
+```
+
+Before: the newline after `nums` terminated the statement, so the next line's `.filter(...)` was an unexpected token.
+
+#### REPL persists bindings across inputs
+The REPL now keeps one live interpreter for the whole session. Variables defined at the prompt carry over between expressions.
+
+```
+keel> nums = [1, 2, 3, 4, 5]
+keel> nums.filter(n => n > 2).map(n => n * 10)
+  [30, 40, 50]
+```
+
+Before: each input was wrapped in a throw-away task, so `nums` vanished as soon as the first prompt finished evaluating.
+
+#### Runtime errors show the offending source line
+Runtime errors now include a miette-rendered snippet of the source, underlining the statement that failed:
+
+```
+× Runtime error: Undefined variable: 'foo'
+ ╭─[err.keel:5:5]
+ 4 │     nums = [1, 2, 3]
+ 5 │     result = nums.map(n => n + foo)
+   ·     ─────────────┬─────────────
+   ·                  ╰── Undefined variable: 'foo'
+ 6 │     notify user "result: {result}"
+ ╰────
+```
+
+Before: runtime errors surfaced as a bare `Runtime error: ...` message with no source context.
+
 ### Added
 
 #### Type Checker

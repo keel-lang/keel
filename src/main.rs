@@ -118,7 +118,7 @@ async fn run_file(path: &PathBuf) -> Result<()> {
     }
 
     // Interpret
-    interpreter::run(program).await?;
+    interpreter::run_with_source(program, Some(named_src.clone())).await?;
 
     Ok(())
 }

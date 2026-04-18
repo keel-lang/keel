@@ -575,12 +575,38 @@ fn format_expr(expr: &Expr) -> String {
             then_body,
             else_body,
         } => {
-            let s = format!("if {} {{ ... }} else {{ ... }}", format_expr(cond));
-            let _ = (then_body, else_body); // simplified
+            let mut s = format!("if {} {{\n", format_expr(cond));
+            format_block(&mut s, then_body, 1);
+            s.push_str("} else {\n");
+            format_block(&mut s, else_body, 1);
+            s.push('}');
             s
         }
-        Expr::WhenExpr { subject, .. } => {
-            format!("when {} {{ ... }}", format_expr(subject))
+        Expr::WhenExpr { subject, arms } => {
+            // Reuse the Stmt::When path by building a temporary stmt string.
+            let mut s = format!("when {} {{\n", format_expr(subject));
+            for arm in arms {
+                indent(&mut s, 1);
+                let pats: Vec<String> = arm.patterns.iter().map(format_pattern).collect();
+                s.push_str(&pats.join(", "));
+                if let Some(guard) = &arm.guard {
+                    s.push_str(&format!(" where {}", format_expr(guard)));
+                }
+                s.push_str(" => ");
+                if arm.body.len() == 1 {
+                    if let Stmt::Expr(e) = &arm.body[0].0 {
+                        s.push_str(&format_expr(e));
+                        s.push('\n');
+                        continue;
+                    }
+                }
+                s.push_str("{\n");
+                format_block(&mut s, &arm.body, 2);
+                indent(&mut s, 1);
+                s.push_str("}\n");
+            }
+            s.push('}');
+            s
         }
         Expr::Lambda { params, body } => {
             if params.len() == 1 {

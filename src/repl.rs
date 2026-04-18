@@ -1,16 +1,12 @@
-use std::collections::HashMap;
-
 use colored::Colorize;
 use miette::NamedSource;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
 use crate::ast::*;
-use crate::interpreter::environment::Environment;
-use crate::interpreter::value::Value;
+use crate::interpreter::{Interpreter, value::Value};
 use crate::lexer;
 use crate::parser;
-use crate::runtime::Runtime;
 
 pub async fn start() -> miette::Result<()> {
     println!("{}", "Keel REPL v0.1".bright_cyan().bold());
@@ -91,38 +87,40 @@ pub async fn start() -> miette::Result<()> {
 // ---------------------------------------------------------------------------
 
 struct ReplState {
-    env: Environment,
-    types: HashMap<String, TypeDef>,
-    tasks: HashMap<String, TaskDecl>,
-    #[allow(dead_code)]
-    runtime: Runtime,
+    interp: Interpreter,
 }
 
 impl ReplState {
     fn new() -> Self {
-        // Suppress LLM provider output in REPL
+        // Mock LLM + quiet agent boilerplate in the REPL.
         std::env::set_var("KEEL_LLM", "mock");
-        let runtime = Runtime::new();
-        std::env::remove_var("KEEL_LLM");
+        std::env::set_var("KEEL_REPL", "1");
         ReplState {
-            env: Environment::new(),
-            types: HashMap::new(),
-            tasks: HashMap::new(),
-            runtime,
+            interp: Interpreter::new(),
         }
     }
 
     fn print_env(&self) {
-        println!("  {}", "Variables:".bright_white().bold());
-        println!("  {}", "(use variable names to inspect values)".dimmed());
+        let names = self.interp.env_var_names();
+        if names.is_empty() {
+            println!("  {}", "No variables defined.".dimmed());
+        } else {
+            println!("  {}", "Variables:".bright_white().bold());
+            for name in names {
+                if let Some(val) = self.interp.env_get(&name) {
+                    println!("  {} = {}", name.bright_cyan(), format_value(&val));
+                }
+            }
+        }
     }
 
     fn print_types(&self) {
-        if self.types.is_empty() {
+        let types = self.interp.types_snapshot();
+        if types.is_empty() {
             println!("  {}", "No types defined.".dimmed());
         } else {
             println!("  {}", "Types:".bright_white().bold());
-            for (name, def) in &self.types {
+            for (name, def) in types {
                 match def {
                     TypeDef::SimpleEnum(variants) => {
                         println!("  {} = {}", name.bright_cyan(), variants.join(" | "));
@@ -142,9 +140,7 @@ impl ReplState {
     }
 
     fn clear(&mut self) {
-        self.env = Environment::new();
-        self.types.clear();
-        self.tasks.clear();
+        self.interp = Interpreter::new();
         println!("  {}", "State cleared.".dimmed());
     }
 }
@@ -156,145 +152,52 @@ impl ReplState {
 async fn eval_repl_input(state: &mut ReplState, input: &str) -> Result<Option<Value>, String> {
     let named = NamedSource::new("repl", input.to_string());
 
-    let tokens = lexer::lex(input, &named).map_err(|e| e.to_string())?;
+    let tokens = lexer::lex(input, &named).map_err(|e| format!("{e:?}"))?;
     if tokens.is_empty() {
         return Ok(None);
     }
 
-    // Try parsing as a top-level declaration first
+    // Make error reports point at the current input.
+    state.interp.set_source(named.clone());
+
+    // Try a top-level program first (type/task/agent/connect).
     if let Ok(program) = parser::parse(tokens.clone(), input.len(), &named) {
         for (decl, _) in &program.declarations {
             match decl {
+                Decl::Run(_) => {
+                    return Err("Cannot `run` agents in the REPL. Use a .keel file.".into());
+                }
+                _ => state.interp.register_decl(decl),
+            }
+            match decl {
                 Decl::Type(td) => {
-                    if let TypeDef::SimpleEnum(variants) = &td.def {
-                        for v in variants {
-                            state.env.define(
-                                v.clone(),
-                                Value::EnumVariant(td.name.clone(), v.clone()),
-                            );
-                        }
-                    }
-                    state.types.insert(td.name.clone(), td.def.clone());
                     println!("  {} type {}", "✓".bright_green(), td.name.bright_cyan());
-                    return Ok(None);
                 }
                 Decl::Task(td) => {
-                    state.tasks.insert(td.name.clone(), td.clone());
-                    state.env.define(
-                        td.name.clone(),
-                        Value::Task(td.name.clone(), td.clone()),
-                    );
                     println!("  {} task {}", "✓".bright_green(), td.name.bright_cyan());
-                    return Ok(None);
                 }
                 Decl::Agent(ad) => {
-                    println!(
-                        "  {} agent {}",
-                        "✓".bright_green(),
-                        ad.name.bright_cyan()
-                    );
-                    return Ok(None);
+                    println!("  {} agent {}", "✓".bright_green(), ad.name.bright_cyan());
                 }
-                Decl::Run(_) => {
-                    return Err(
-                        "Cannot `run` agents in the REPL. Use a .keel file.".into(),
-                    );
+                Decl::Connect(cd) => {
+                    println!("  {} connection {}", "✓".bright_green(), cd.name.bright_cyan());
                 }
-                Decl::Connect(_) => {
-                    println!("  {} connection registered", "✓".bright_green());
-                    return Ok(None);
-                }
+                Decl::Run(_) => {}
             }
         }
         return Ok(None);
     }
 
-    // Not a declaration — try wrapping as a statement inside a dummy task
-    // and executing it. This handles: expressions, assignments, task calls.
-    eval_as_expression(state, input).await
-}
+    // Otherwise, parse as a sequence of statements (assignments, expressions,
+    // calls) and run them directly against the persistent interpreter.
+    let stmts = parser::parse_stmts(tokens, input.len(), &named)
+        .map_err(|e| format!("{e:?}"))?;
 
-/// Try to evaluate input as an expression or statement by wrapping it in
-/// a temporary task and running it through the interpreter.
-async fn eval_as_expression(
-    state: &mut ReplState,
-    input: &str,
-) -> Result<Option<Value>, String> {
-    // Wrap the input so its return value gets displayed.
-    // show user always works — for none it prints "none", for values it formats them.
-    let wrapper = format!(
-        "task __repl__() {{ {} }}\nagent __A {{ role \"repl\" \n every 1.day {{ show user __repl__() }} }}\nrun __A",
-        input
-    );
-
-    let named = NamedSource::new("repl", wrapper.clone());
-    let tokens = lexer::lex(&wrapper, &named).map_err(|e| {
-        // If the wrapper fails to lex, give a cleaner error
-        format!("Syntax error: {}", e)
-    })?;
-
-    let program = parser::parse(tokens, wrapper.len(), &named).map_err(|e| {
-        format!("Syntax error: {}", e)
-    })?;
-
-    // Register any tasks/types the state already knows about into a fresh program
-    let mut full_decls: Vec<Spanned<Decl>> = Vec::new();
-
-    // Add existing type definitions
-    for (name, def) in &state.types {
-        full_decls.push((
-            Decl::Type(TypeDecl {
-                name: name.clone(),
-                def: def.clone(),
-            }),
-            0..0,
-        ));
-    }
-
-    // Add existing task definitions
-    for (name, td) in &state.tasks {
-        if name != "__repl__" {
-            full_decls.push((Decl::Task(td.clone()), 0..0));
-        }
-    }
-
-    // Add the wrapper declarations
-    full_decls.extend(program.declarations);
-
-    let full_program = Program {
-        declarations: full_decls,
-    };
-
-    // Run with mock LLM and oneshot mode
-    let prev_mock = std::env::var("KEEL_LLM").ok();
-    let prev_repl = std::env::var("KEEL_REPL").ok();
-    std::env::set_var("KEEL_LLM", "mock");
-    std::env::set_var("KEEL_REPL", "1");
-
-    let result = crate::interpreter::run(full_program).await;
-
-    // Restore env
-    match prev_mock {
-        Some(val) => std::env::set_var("KEEL_LLM", val),
-        None => std::env::remove_var("KEEL_LLM"),
-    }
-    match prev_repl {
-        Some(val) => std::env::set_var("KEEL_REPL", val),
-        None => std::env::remove_var("KEEL_REPL"),
-    }
-
-    match result {
-        Ok(()) => Ok(None),
-        Err(e) => {
-            let msg = e.to_string();
-            // Filter out expected "agent not found" noise
-            if msg.contains("Runtime error") {
-                Err(msg)
-            } else {
-                Ok(None)
-            }
-        }
-    }
+    state
+        .interp
+        .eval_repl_stmts(&stmts)
+        .await
+        .map_err(|e| format!("{e:?}"))
 }
 
 // ---------------------------------------------------------------------------

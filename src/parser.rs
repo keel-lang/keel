@@ -34,6 +34,35 @@ pub fn parse(
     }
 }
 
+/// Parse a sequence of statements (REPL mode — no top-level declarations expected).
+pub fn parse_stmts(
+    tokens: Vec<(Token, Span)>,
+    source_len: usize,
+    named_src: &NamedSource<String>,
+) -> miette::Result<Vec<Spanned<Stmt>>> {
+    let eoi = source_len..source_len + 1;
+    let stream = Stream::from_iter(eoi, tokens.into_iter());
+
+    let parser = newlines()
+        .ignore_then(stmt_parser().separated_by(sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(end());
+
+    match parser.parse(stream) {
+        Ok(stmts) => Ok(stmts),
+        Err(errors) => {
+            let err = &errors[0];
+            let span = err.span();
+            Err(miette::miette!(
+                labels = vec![miette::LabeledSpan::at(span, err.to_string())],
+                "Parse error: {}",
+                err
+            )
+            .with_source_code(named_src.clone()))
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -87,6 +116,36 @@ fn field_name() -> P<String> {
 
 fn string_lit() -> P<String> {
     select! { Token::StringLit(s) => s }.boxed()
+}
+
+/// Decode escape sequences (`\n`, `\t`, `\\`, `\"`, etc.) in a raw string
+/// literal — the lexer stores content verbatim, so any callsite that stores a
+/// string directly in the AST (role, model, `using`, criteria keys, match
+/// patterns) must decode first, otherwise the formatter's re-escape pass will
+/// double them up and break idempotence.
+fn unescape_plain(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.peek() {
+            Some('n') => { chars.next(); out.push('\n'); }
+            Some('t') => { chars.next(); out.push('\t'); }
+            Some('r') => { chars.next(); out.push('\r'); }
+            Some('\\') => { chars.next(); out.push('\\'); }
+            Some('"') => { chars.next(); out.push('"'); }
+            Some(_) | None => out.push('\\'),
+        }
+    }
+    out
+}
+
+/// Parses a string literal and decodes escape sequences (no interpolation).
+fn plain_string() -> P<String> {
+    string_lit().map(|s| unescape_plain(&s)).boxed()
 }
 
 fn integer_lit() -> P<i64> {
@@ -244,7 +303,7 @@ fn expr_parser() -> P<Expr> {
                 .map(ClassifyTarget::Inline))
             .boxed();
 
-        let criteria_entry = string_lit()
+        let criteria_entry = plain_string()
             .then_ignore(just(Token::FatArrow))
             .then(ident())
             .boxed();
@@ -667,7 +726,7 @@ fn stmt_parser() -> P<Spanned<Stmt>> {
                     Some(b) => Pattern::Variant { name, bindings: b },
                     None => Pattern::Ident(name),
                 }))
-            .or(string_lit().map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
+            .or(plain_string().map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
             .or(integer_lit().map(|n| Pattern::Literal(Expr::Integer(n))))
             .boxed();
 
@@ -970,8 +1029,8 @@ fn agent_decl() -> P<Decl> {
 }
 
 fn agent_item() -> P<AgentItem> {
-    let role = just(Token::Role).ignore_then(string_lit()).map(AgentItem::Role).boxed();
-    let model = just(Token::Model).ignore_then(string_lit()).map(AgentItem::Model).boxed();
+    let role = just(Token::Role).ignore_then(plain_string()).map(AgentItem::Role).boxed();
+    let model = just(Token::Model).ignore_then(plain_string()).map(AgentItem::Model).boxed();
 
     let tools = just(Token::Tools)
         .ignore_then(just(Token::LBracket))

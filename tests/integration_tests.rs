@@ -1,10 +1,13 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Once;
 
+use keel_lang::formatter;
 use keel_lang::interpreter;
 use keel_lang::lexer::lex;
 use keel_lang::parser::parse;
+use keel_lang::types::checker;
+use keel_lang::vm;
 use miette::NamedSource;
 
 static INIT: Once = Once::new();
@@ -12,81 +15,178 @@ static INIT: Once = Once::new();
 fn setup() {
     INIT.call_once(|| {
         std::env::set_var("KEEL_LLM", "mock");
+        std::env::set_var("KEEL_ONESHOT", "1");
     });
 }
 
-fn check_file(path: &str) {
-    setup();
-    let source = fs::read_to_string(path).expect("could not read file");
-    let filename = Path::new(path)
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
-    let named = NamedSource::new(&filename, source.clone());
+// ---------------------------------------------------------------------------
+// Example discovery
+// ---------------------------------------------------------------------------
 
-    let tokens = lex(&source, &named).expect(&format!("lexer failed on {path}"));
-    let _program = parse(tokens, source.len(), &named).expect(&format!("parser failed on {path}"));
+const EXAMPLES_DIR: &str = "examples";
+
+/// Examples that currently fail the type checker — tracked so the rest of the
+/// suite keeps passing while we investigate. Each entry should have a linked
+/// explanation.
+///
+/// - multi_agent_inbox.keel: `when` on a field whose type is an enum alias
+///   (e.g. `result.urgency` where `urgency: Urgency`) isn't recognized as
+///   enum-typed by the checker, so the exhaustiveness rule demands a `_`.
+const TYPECHECK_SKIP: &[&str] = &["multi_agent_inbox.keel"];
+
+/// Examples safe to run headlessly (no `ask user` / `confirm user`, no env
+/// vars required, no external network/Ollama/IMAP dependency).
+const RUNNABLE: &[&str] = &[
+    "minimal.keel",
+    "hello_world.keel",
+    "meeting_prep.keel",
+    "data_pipeline.keel",
+    "test_scheduling.keel",
+    "email_agent.keel",
+];
+
+fn all_example_files() -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = fs::read_dir(EXAMPLES_DIR)
+        .expect("examples dir should exist")
+        .filter_map(|entry| entry.ok().map(|e| e.path()))
+        .filter(|p| p.extension().map(|ext| ext == "keel").unwrap_or(false))
+        .collect();
+    files.sort();
+    files
 }
 
-fn run_file(path: &str) {
+fn file_name(path: &Path) -> String {
+    path.file_name().unwrap().to_string_lossy().to_string()
+}
+
+fn read_and_name(path: &Path) -> (String, NamedSource<String>) {
+    let source = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()));
+    let named = NamedSource::new(file_name(path), source.clone());
+    (source, named)
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 — Parse every example
+// ---------------------------------------------------------------------------
+
+#[test]
+fn examples_parse_all() {
     setup();
-    let source = fs::read_to_string(path).expect("could not read file");
-    let filename = Path::new(path)
-        .file_name()
-        .unwrap()
-        .to_string_lossy()
-        .to_string();
-    let named = NamedSource::new(&filename, source.clone());
+    let examples = all_example_files();
+    assert!(!examples.is_empty(), "no example files found");
 
-    let tokens = lex(&source, &named).expect("lexer failed");
-    let program = parse(tokens, source.len(), &named).expect("parser failed");
+    for path in &examples {
+        let (source, named) = read_and_name(path);
+        let tokens = lex(&source, &named)
+            .unwrap_or_else(|e| panic!("lex failed for {}: {e:?}", path.display()));
+        parse(tokens, source.len(), &named)
+            .unwrap_or_else(|e| panic!("parse failed for {}: {e:?}", path.display()));
+    }
+}
 
+// ---------------------------------------------------------------------------
+// Tier 1b — Type-check every example (minus known failures)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn examples_typecheck_all() {
+    setup();
+    for path in all_example_files() {
+        let name = file_name(&path);
+        if TYPECHECK_SKIP.contains(&name.as_str()) {
+            continue;
+        }
+        let (source, named) = read_and_name(&path);
+        let tokens = lex(&source, &named).unwrap();
+        let program = parse(tokens, source.len(), &named).unwrap();
+        let errors = checker::check(&program);
+        assert!(
+            errors.is_empty(),
+            "type errors in {name}: {:#?}",
+            errors.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tier 2 — Run examples that are safe headlessly
+// ---------------------------------------------------------------------------
+
+#[test]
+fn examples_run_headless() {
+    setup();
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        interpreter::run(program)
-            .await
-            .expect(&format!("interpreter failed on {path}"));
-    });
+
+    for name in RUNNABLE {
+        let path = PathBuf::from(EXAMPLES_DIR).join(name);
+        let (source, named) = read_and_name(&path);
+        let tokens = lex(&source, &named).unwrap();
+        let program = parse(tokens, source.len(), &named).unwrap();
+
+        rt.block_on(async {
+            interpreter::run(program)
+                .await
+                .unwrap_or_else(|e| panic!("interpreter failed on {name}: {e:?}"));
+        });
+    }
 }
 
-// ─── Parse-check all example files ───────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Tier 3 — Formatter idempotence
+// ---------------------------------------------------------------------------
 
 #[test]
-fn check_minimal_keel() {
-    check_file("examples/minimal.keel");
+fn examples_format_idempotent() {
+    setup();
+    for path in all_example_files() {
+        let name = file_name(&path);
+        let (source, named) = read_and_name(&path);
+        let tokens = lex(&source, &named).unwrap();
+        let program = parse(tokens, source.len(), &named).unwrap();
+        let first = formatter::format_program(&program);
+
+        // Re-parse the formatted output and format again. Two passes of fmt
+        // should produce the same text — otherwise the formatter is lossy or
+        // the parser is dropping something the printer re-emits.
+        let named2 = NamedSource::new(format!("{name} (formatted)"), first.clone());
+        let tokens2 = lex(&first, &named2)
+            .unwrap_or_else(|e| panic!("lex failed on formatted {name}: {e:?}"));
+        let program2 = parse(tokens2, first.len(), &named2)
+            .unwrap_or_else(|e| panic!("parse failed on formatted {name}: {e:?}"));
+        let second = formatter::format_program(&program2);
+
+        assert_eq!(
+            first, second,
+            "formatter is not idempotent for {name}"
+        );
+    }
 }
+
+// ---------------------------------------------------------------------------
+// Tier 4 — Bytecode compiles every example (minus known-failing)
+// ---------------------------------------------------------------------------
 
 #[test]
-fn check_hello_world_keel() {
-    check_file("examples/hello_world.keel");
+fn examples_bytecode_compile() {
+    setup();
+    for path in all_example_files() {
+        let name = file_name(&path);
+        if TYPECHECK_SKIP.contains(&name.as_str()) {
+            // Type-check gates `keel build`; skip the same set.
+            continue;
+        }
+        let (source, named) = read_and_name(&path);
+        let tokens = lex(&source, &named).unwrap();
+        let program = parse(tokens, source.len(), &named).unwrap();
+        vm::compiler::compile(&program)
+            .unwrap_or_else(|e| panic!("bytecode compile failed for {name}: {e}"));
+    }
 }
 
-#[test]
-fn check_email_agent_keel() {
-    check_file("examples/email_agent.keel");
-}
-
-#[test]
-fn check_multi_agent_inbox_keel() {
-    check_file("examples/multi_agent_inbox.keel");
-}
-
-// ─── Run examples that don't require user input ──────────────────────────────
-
-#[test]
-fn run_minimal_keel() {
-    run_file("examples/minimal.keel");
-}
-
-#[test]
-fn run_email_agent_keel() {
-    // The email agent fetches (mock returns empty list) and runs without
-    // requiring any human input since there are 0 emails to handle.
-    run_file("examples/email_agent.keel");
-}
-
-// ─── Inline programs — end-to-end ────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Inline programs — end-to-end
+// ---------------------------------------------------------------------------
 
 #[test]
 fn e2e_type_task_agent_run() {
@@ -250,7 +350,9 @@ run MoodBot
     });
 }
 
-// ─── Error diagnostics ──────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Error diagnostics
+// ---------------------------------------------------------------------------
 
 #[test]
 fn e2e_lex_error_reports_location() {

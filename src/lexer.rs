@@ -572,5 +572,7 @@ fn continues_from_prev_line(token: &Token) -> bool {
             | Token::Pipe
             | Token::NullCoalesce
             | Token::Bar
+            | Token::Dot
+            | Token::NullDot
     )
 }

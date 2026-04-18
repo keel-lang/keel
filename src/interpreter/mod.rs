@@ -6,9 +6,11 @@ use std::future::Future;
 use std::pin::Pin;
 
 use colored::Colorize;
+use miette::NamedSource;
 use serde_json;
 
 use crate::ast::*;
+use crate::lexer::Span;
 use crate::runtime::Runtime;
 use environment::Environment;
 use value::Value;
@@ -20,7 +22,7 @@ use value::Value;
 #[derive(Debug, thiserror::Error)]
 pub enum InterpreterError {
     #[error("{0}")]
-    Runtime(String),
+    Runtime(String, Option<Span>),
     #[error("Return value")]
     Return(Value),
 }
@@ -28,14 +30,14 @@ pub enum InterpreterError {
 type IResult = Result<Value, InterpreterError>;
 
 fn err(msg: impl Into<String>) -> InterpreterError {
-    InterpreterError::Runtime(msg.into())
+    InterpreterError::Runtime(msg.into(), None)
 }
 
 // ---------------------------------------------------------------------------
 // Interpreter state
 // ---------------------------------------------------------------------------
 
-struct Interpreter {
+pub struct Interpreter {
     env: Environment,
     agents: HashMap<String, AgentDecl>,
     tasks: HashMap<String, TaskDecl>,
@@ -46,10 +48,12 @@ struct Interpreter {
     current_agent: Option<String>,
     /// Resolved email connection (if any connect email via imap)
     email_conn: Option<crate::runtime::email::EmailConnection>,
+    /// Source for error reporting (set per-input in REPL/script runs)
+    named_src: Option<NamedSource<String>>,
 }
 
 impl Interpreter {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Interpreter {
             env: Environment::new(),
             agents: HashMap::new(),
@@ -60,7 +64,125 @@ impl Interpreter {
             runtime: Runtime::new(),
             current_agent: None,
             email_conn: None,
+            named_src: None,
         }
+    }
+
+    /// Register every declaration from a program without executing `run` statements.
+    pub fn register_program(&mut self, program: &Program) {
+        for (decl, _span) in &program.declarations {
+            self.register_decl(decl);
+        }
+    }
+
+    /// Register a single declaration (type/task/agent/connect). `run` is ignored here.
+    pub fn register_decl(&mut self, decl: &Decl) {
+        match decl {
+            Decl::Type(td) => {
+                if let TypeDef::SimpleEnum(variants) = &td.def {
+                    for v in variants {
+                        self.env.define(
+                            v.clone(),
+                            Value::EnumVariant(td.name.clone(), v.clone()),
+                        );
+                    }
+                }
+                self.types.insert(td.name.clone(), td.def.clone());
+            }
+            Decl::Connect(cd) => {
+                self.connections.insert(cd.name.clone(), cd.clone());
+            }
+            Decl::Task(td) => {
+                self.tasks.insert(td.name.clone(), td.clone());
+                self.env
+                    .define(td.name.clone(), Value::Task(td.name.clone(), td.clone()));
+            }
+            Decl::Agent(ad) => {
+                self.agents.insert(ad.name.clone(), ad.clone());
+                for item in &ad.items {
+                    if let AgentItem::Task(td) = item {
+                        self.tasks.insert(td.name.clone(), td.clone());
+                        self.env
+                            .define(td.name.clone(), Value::Task(td.name.clone(), td.clone()));
+                    }
+                }
+            }
+            Decl::Run(_) => {}
+        }
+    }
+
+    /// Set the source used for error reports.
+    pub fn set_source(&mut self, named_src: NamedSource<String>) {
+        self.named_src = Some(named_src);
+    }
+
+    /// Names of variables defined in the top-level scope.
+    pub fn env_var_names(&self) -> Vec<String> {
+        self.env.top_scope_names()
+    }
+
+    /// Look up a value by name (searches all scopes).
+    pub fn env_get(&self, name: &str) -> Option<Value> {
+        self.env.get(name).cloned()
+    }
+
+    /// Snapshot of registered types (for REPL introspection).
+    pub fn types_snapshot(&self) -> Vec<(String, TypeDef)> {
+        self.types
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
+    }
+
+    /// Evaluate REPL statements at the top level (no new scope).
+    /// Returns the value of the last expression statement, if any.
+    pub async fn eval_repl_stmts(
+        &mut self,
+        stmts: &[Spanned<Stmt>],
+    ) -> miette::Result<Option<Value>> {
+        let mut last_expr_val: Option<Value> = None;
+        for (stmt, span) in stmts {
+            match eval_stmt(self, stmt).await {
+                Ok(val) => {
+                    last_expr_val = match stmt {
+                        Stmt::Expr(_) => Some(val),
+                        _ => None,
+                    };
+                }
+                Err(InterpreterError::Return(val)) => {
+                    last_expr_val = Some(val);
+                }
+                Err(InterpreterError::Runtime(msg, err_span)) => {
+                    return Err(self.runtime_report(msg, err_span.or_else(|| Some(span.clone()))));
+                }
+            }
+        }
+        Ok(last_expr_val)
+    }
+
+    fn runtime_report(&self, msg: String, span: Option<Span>) -> miette::Report {
+        build_runtime_report(msg, span, self.named_src.clone())
+    }
+}
+
+impl Default for Interpreter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn build_runtime_report(
+    msg: String,
+    span: Option<Span>,
+    named_src: Option<NamedSource<String>>,
+) -> miette::Report {
+    match (span, named_src) {
+        (Some(span), Some(src)) => miette::miette!(
+            labels = vec![miette::LabeledSpan::at(span, msg.clone())],
+            "Runtime error: {msg}"
+        )
+        .with_source_code(src),
+        _ => miette::miette!("Runtime error: {msg}"),
     }
 }
 
@@ -71,7 +193,15 @@ impl Interpreter {
 // ---------------------------------------------------------------------------
 
 pub async fn run(program: Program) -> miette::Result<()> {
+    run_with_source(program, None).await
+}
+
+pub async fn run_with_source(
+    program: Program,
+    named_src: Option<NamedSource<String>>,
+) -> miette::Result<()> {
     let mut interp = Interpreter::new();
+    interp.named_src = named_src;
 
     // First pass: register all declarations
     for (decl, _span) in &program.declarations {
@@ -158,9 +288,16 @@ pub async fn run(program: Program) -> miette::Result<()> {
     // Second pass: execute run statements
     for (decl, _span) in &program.declarations {
         if let Decl::Run(rs) = decl {
-            run_agent(&mut interp, &rs.agent)
-                .await
-                .map_err(|e| miette::miette!("Runtime error: {e}"))?;
+            if let Err(e) = run_agent(&mut interp, &rs.agent).await {
+                return Err(match e {
+                    InterpreterError::Runtime(msg, span) => {
+                        build_runtime_report(msg, span, interp.named_src.clone())
+                    }
+                    InterpreterError::Return(_) => {
+                        miette::miette!("Runtime error: unexpected return")
+                    }
+                });
+            }
         }
     }
 
@@ -309,7 +446,7 @@ fn run_agent<'a>(
                 if let Err(e) = eval_block(interp, &every.body).await {
                     match e {
                         InterpreterError::Return(_) => {}
-                        InterpreterError::Runtime(msg) => {
+                        InterpreterError::Runtime(msg, _span) => {
                             eprintln!("  {} {}", "✗".bright_red(), msg);
                         }
                     }
@@ -334,16 +471,20 @@ fn eval_block<'a>(
         interp.env.push_scope();
         let mut last = Value::None;
 
-        for (stmt, _span) in block {
+        for (stmt, span) in block {
             match eval_stmt(interp, stmt).await {
                 Ok(val) => last = val,
                 Err(InterpreterError::Return(val)) => {
                     interp.env.pop_scope();
                     return Err(InterpreterError::Return(val));
                 }
-                Err(e) => {
+                Err(InterpreterError::Runtime(msg, err_span)) => {
                     interp.env.pop_scope();
-                    return Err(e);
+                    // Attach this stmt's span if the error didn't already carry one.
+                    return Err(InterpreterError::Runtime(
+                        msg,
+                        err_span.or_else(|| Some(span.clone())),
+                    ));
                 }
             }
         }
@@ -522,7 +663,7 @@ fn eval_stmt<'a>(
                 for attempt in 1..=max_attempts {
                     match eval_block(interp, body).await {
                         Ok(val) => return Ok(val),
-                        Err(InterpreterError::Runtime(msg)) => {
+                        Err(InterpreterError::Runtime(msg, _span)) => {
                             last_err = msg.clone();
                             if attempt < max_attempts {
                                 let delay = if *backoff {
@@ -574,7 +715,7 @@ fn eval_stmt<'a>(
 
             Stmt::TryCatch { body, catches } => match eval_block(interp, body).await {
                 Ok(val) => Ok(val),
-                Err(InterpreterError::Runtime(msg)) => {
+                Err(InterpreterError::Runtime(msg, span)) => {
                     for clause in catches {
                         interp.env.push_scope();
                         let mut error_map = HashMap::new();
@@ -586,7 +727,7 @@ fn eval_stmt<'a>(
                         interp.env.pop_scope();
                         return result;
                     }
-                    Err(InterpreterError::Runtime(msg))
+                    Err(InterpreterError::Runtime(msg, span))
                 }
                 Err(e) => Err(e),
             },
