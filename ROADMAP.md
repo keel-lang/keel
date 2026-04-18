@@ -28,7 +28,7 @@
 - [x] Interpreter: namespace dispatch, agent lifecycle with `@on_start`, `self.` state, pattern matching, closures
 - [x] Prelude wiring: `Ai`, `Io`, `Schedule`, `Email`, `Http`, `Memory`, `Async`, `Control`, `Env`, `Log`, `Agent`
 - [x] Examples: 11 `.keel` programs parse and execute
-- [ ] Type checker: exhaustiveness, nullable safety, argument/return types
+- [x] Type checker: undefined identifiers, exhaustive `when`, `self.` outside agents, `if`/`for` condition types, arg-count checks, basic enum inference (nullable safety + full return-type matching deferred)
 - [x] Ollama LLM backend wired into `Ai.*`
 - [ ] Real email backends wired into `Email.*` (IMAP fetch, SMTP send)
 - [ ] Real HTTP client wired into `Http.*` (reqwest)

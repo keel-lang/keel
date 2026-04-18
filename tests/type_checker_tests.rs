@@ -1,446 +1,268 @@
-#![cfg(any())] // v0.1: type checker tests disabled until the checker migration lands.
 use keel_lang::lexer::lex;
 use keel_lang::parser::parse;
 use keel_lang::types::checker::check;
 use miette::NamedSource;
 
 fn type_errors(source: &str) -> Vec<String> {
-    let named = NamedSource::new("test.keel", source.to_string());
-    let tokens = lex(source, &named).expect("lexer failed");
-    let program = parse(tokens, source.len(), &named).expect("parser failed");
-    check(&program)
-        .into_iter()
-        .map(|e| e.message)
-        .collect()
+    let named = NamedSource::new("t.keel", source.to_string());
+    let tokens = lex(source, &named).expect("lex failed");
+    let program = parse(tokens, source.len(), &named).expect("parse failed");
+    check(&program).into_iter().map(|e| e.message).collect()
 }
 
 fn type_ok(source: &str) {
-    let errors = type_errors(source);
-    assert!(
-        errors.is_empty(),
-        "Expected no type errors, got: {:?}",
-        errors
-    );
+    let errs = type_errors(source);
+    assert!(errs.is_empty(), "unexpected type errors: {errs:?}");
 }
 
 fn expect_error(source: &str, substring: &str) {
-    let errors = type_errors(source);
+    let errs = type_errors(source);
     assert!(
-        errors.iter().any(|e| e.contains(substring)),
-        "Expected error containing '{}', got: {:?}",
-        substring,
-        errors
+        errs.iter().any(|e| e.contains(substring)),
+        "expected error containing {substring:?}, got: {errs:?}"
     );
 }
 
-// ─── Valid programs ──────────────────────────────────────────────────────────
+// ─── Valid programs ─────────────────────────────────────────────────────────
 
 #[test]
-fn valid_minimal() {
-    type_ok(
-        r#"
-agent A {
-  role "test"
+fn valid_minimal_agent() {
+    type_ok(r#"
+agent Greeter {
+  @role "hi"
 }
-run A
-"#,
-    );
+
+run(Greeter)
+"#);
 }
 
 #[test]
 fn valid_task_with_return_type() {
-    type_ok(
-        r#"
+    type_ok(r#"
 task greet(name: str) -> str {
-  "Hello!"
+  "hello"
 }
-agent A { role "a" }
-run A
-"#,
-    );
+"#);
 }
 
 #[test]
 fn valid_enum_and_when() {
-    type_ok(
-        r#"
-type Color = red | green | blue
+    type_ok(r#"
+type Urgency = low | medium | high | critical
 
-agent A {
-  role "a"
-  every 1.day {
-    c = red
-    when c {
-      red => notify user "red"
-      green => notify user "green"
-      blue => notify user "blue"
-    }
+task triage(u: Urgency) {
+  when u {
+    low, medium => { return }
+    high, critical => { return }
   }
 }
-run A
-"#,
-    );
+"#);
 }
 
 #[test]
-fn valid_classify_with_fallback() {
-    type_ok(
-        r#"
-type Mood = happy | sad
-
-task analyze(text: str) -> Mood {
-  classify text as Mood fallback happy
-}
-
-agent A { role "a" }
-run A
-"#,
-    );
-}
-
-#[test]
-fn valid_state_mutation() {
-    type_ok(
-        r#"
+fn valid_self_inside_agent() {
+    type_ok(r#"
 agent Counter {
-  role "counter"
-  state {
-    count: int = 0
-  }
-  task inc() {
+  @role "count"
+  state { count: int = 0 }
+
+  task increment() {
     self.count = self.count + 1
   }
 }
-run Counter
-"#,
-    );
+"#);
 }
 
 #[test]
-fn valid_for_loop() {
-    type_ok(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    items = [1, 2, 3]
-    for item in items {
-      notify user "item"
-    }
+fn valid_agent_task_calls_sibling() {
+    type_ok(r#"
+agent Bot {
+  @role "x"
+
+  task step() {
+    other()
+  }
+
+  task other() {
+    Io.notify("hi")
   }
 }
-run A
-"#,
-    );
+"#);
 }
 
-#[test]
-fn valid_null_coalesce() {
-    type_ok(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    x = none ?? "default"
-    notify user x
-  }
-}
-run A
-"#,
-    );
-}
-
-// ─── Type errors: non-exhaustive when ────────────────────────────────────────
-
-#[test]
-fn error_non_exhaustive_when() {
-    expect_error(
-        r#"
-type Status = active | paused | stopped
-
-agent A {
-  role "a"
-  every 1.day {
-    s = active
-    when s {
-      active => notify user "on"
-      paused => notify user "paused"
-    }
-  }
-}
-run A
-"#,
-        "Non-exhaustive",
-    );
-}
-
-#[test]
-fn valid_when_with_wildcard() {
-    type_ok(
-        r#"
-type Status = active | paused | stopped
-
-agent A {
-  role "a"
-  every 1.day {
-    s = active
-    when s {
-      active => notify user "on"
-      _ => notify user "other"
-    }
-  }
-}
-run A
-"#,
-    );
-}
-
-// ─── Type errors: if condition ───────────────────────────────────────────────
-
-#[test]
-fn error_if_condition_not_bool() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    if "hello" {
-      notify user "bad"
-    }
-  }
-}
-run A
-"#,
-        "if condition must be bool",
-    );
-}
-
-// ─── Type errors: for loop ───────────────────────────────────────────────────
-
-#[test]
-fn error_for_over_non_list() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    for x in 42 {
-      notify user "bad"
-    }
-  }
-}
-run A
-"#,
-        "for loop requires a list",
-    );
-}
-
-// ─── Type errors: undefined variable ─────────────────────────────────────────
+// ─── Errors: undefined / scope ──────────────────────────────────────────────
 
 #[test]
 fn error_undefined_variable() {
     expect_error(
         r#"
-agent A {
-  role "a"
-  every 1.day {
-    notify user unknown_var
-  }
+task t() {
+  x = unknown_thing
 }
-run A
 "#,
-        "Undefined variable",
+        "undefined",
     );
 }
-
-// ─── Type errors: self outside agent ─────────────────────────────────────────
 
 #[test]
 fn error_self_outside_agent() {
     expect_error(
         r#"
-task bad() {
+task t() {
   self.count = 1
 }
-agent A { role "a" }
-run A
 "#,
-        "self can only be used inside an agent",
+        "outside an agent",
     );
 }
-
-// ─── Type errors: wrong argument type ────────────────────────────────────────
 
 #[test]
-fn error_wrong_argument_type() {
+fn error_self_unknown_state_field() {
     expect_error(
         r#"
-task greet(name: str) -> str {
-  "Hello!"
-}
+agent Counter {
+  @role "x"
+  state { count: int = 0 }
 
-agent A {
-  role "a"
-  every 1.day {
-    greet(42)
+  task bad() {
+    self.nope = 1
   }
 }
-run A
 "#,
-        "expected str, got int",
+        "no state field",
     );
 }
 
-// ─── Type errors: too many arguments ─────────────────────────────────────────
+// ─── Errors: exhaustiveness ─────────────────────────────────────────────────
+
+#[test]
+fn error_non_exhaustive_when() {
+    expect_error(
+        r#"
+type Urgency = low | medium | high | critical
+
+task t(u: Urgency) {
+  when u {
+    low => { return }
+    medium => { return }
+  }
+}
+"#,
+        "non-exhaustive",
+    );
+}
+
+#[test]
+fn valid_when_with_wildcard() {
+    type_ok(r#"
+type Urgency = low | medium | high | critical
+
+task t(u: Urgency) {
+  when u {
+    low => { return }
+    _ => { return }
+  }
+}
+"#);
+}
+
+#[test]
+fn error_when_on_non_enum_without_wildcard() {
+    expect_error(
+        r#"
+task t(code: int) {
+  when code {
+    200 => { return }
+    404 => { return }
+  }
+}
+"#,
+        "requires a `_`",
+    );
+}
+
+// ─── Errors: control flow ───────────────────────────────────────────────────
+
+#[test]
+fn error_if_condition_not_bool() {
+    expect_error(
+        r#"
+task t() {
+  if "hello" {
+    x = 1
+  }
+}
+"#,
+        "expected bool",
+    );
+}
+
+#[test]
+fn error_for_over_non_list() {
+    expect_error(
+        r#"
+task t() {
+  for x in 42 {
+    y = x
+  }
+}
+"#,
+        "expects a list",
+    );
+}
+
+// ─── Errors: arity ──────────────────────────────────────────────────────────
 
 #[test]
 fn error_too_many_args() {
     expect_error(
         r#"
 task greet(name: str) -> str {
-  "Hello!"
+  "hi"
 }
 
-agent A {
-  role "a"
-  every 1.day {
-    greet("a", "b", "c")
-  }
+task call_it() {
+  x = greet("a", "b", "c")
 }
-run A
 "#,
-        "expects 1 arguments, got 3",
+        "argument",
     );
 }
 
-// ─── Type errors: arithmetic ─────────────────────────────────────────────────
+// ─── Enum inference via Ai.classify ─────────────────────────────────────────
 
 #[test]
-fn error_add_incompatible_types() {
+fn valid_classify_inferred_enum() {
+    // `Ai.classify(..., as: Mood, fallback: Mood.neutral)` should bind
+    // the result as Mood so `when` on it is exhaustive.
+    type_ok(r#"
+type Mood = happy | neutral | sad
+
+task t(text: str) {
+  mood = Ai.classify(text, as: Mood, fallback: Mood.neutral)
+  when mood {
+    happy => { return }
+    neutral => { return }
+    sad => { return }
+  }
+}
+"#);
+}
+
+#[test]
+fn error_classify_result_missing_variant() {
     expect_error(
         r#"
-agent A {
-  role "a"
-  every 1.day {
-    x = "hello" + 42
+type Mood = happy | neutral | sad
+
+task t(text: str) {
+  mood = Ai.classify(text, as: Mood, fallback: Mood.neutral)
+  when mood {
+    happy => { return }
+    sad => { return }
   }
 }
-run A
 "#,
-        "Cannot add",
-    );
-}
-
-// ─── Type errors: negation ───────────────────────────────────────────────────
-
-#[test]
-fn error_negate_string() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    x = -"hello"
-  }
-}
-run A
-"#,
-        "Cannot negate",
-    );
-}
-
-// ─── Type errors: list element mismatch ──────────────────────────────────────
-
-#[test]
-fn error_mixed_list_types() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    items = [1, "two", 3]
-  }
-}
-run A
-"#,
-        "List element type mismatch",
-    );
-}
-
-// ─── Type errors: state field ────────────────────────────────────────────────
-
-#[test]
-fn error_assign_wrong_type_to_state() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  state {
-    count: int = 0
-  }
-  task bad() {
-    self.count = "not a number"
-  }
-}
-run A
-"#,
-        "Cannot assign str to state field 'count' of type int",
-    );
-}
-
-#[test]
-fn error_unknown_state_field() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  state {
-    count: int = 0
-  }
-  task bad() {
-    self.unknown = 1
-  }
-}
-run A
-"#,
-        "Unknown state field",
-    );
-}
-
-// ─── Classify returns nullable without fallback ──────────────────────────────
-
-#[test]
-fn valid_classify_nullable() {
-    type_ok(
-        r#"
-type Mood = happy | sad
-
-task maybe(text: str) -> Mood {
-  classify text as Mood fallback happy
-}
-
-agent A { role "a" }
-run A
-"#,
-    );
-}
-
-// ─── After requires duration ─────────────────────────────────────────────────
-
-#[test]
-fn error_after_non_duration() {
-    expect_error(
-        r#"
-agent A {
-  role "a"
-  every 1.day {
-    after "not a duration" {
-      notify user "bad"
-    }
-  }
-}
-run A
-"#,
-        "after requires a duration",
+        "non-exhaustive",
     );
 }
