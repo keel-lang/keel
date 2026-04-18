@@ -45,9 +45,9 @@
 - `keel build` bytecode compiler. The tree-walking interpreter is fast enough for alpha workloads (~8ms cold start), and a real VM has to re-solve async dispatch, closure capture across event-loop boundaries, and runtime-pluggable namespaces — costly without matching user payoff. Revisit when there's a concrete motivator (LLVM/WASM backend, embeddable runtime).
 
 ### Release
-- [x] Release workflow builds macOS (arm + x86) + Linux x86 tarballs, computes SHA-256s, auto-regenerates `homebrew/keel.rb`, and embeds checksums in release notes
-- [x] `install.sh` (`curl -sSf ... | sh`) fetches the latest tag
-- [x] Homebrew install via `brew install --formula https://keel-lang.dev/keel.rb` (served by the Pages build alongside `install.sh`)
+- [x] Release workflow builds macOS (arm + x86) + Linux x86 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo (needs `HOMEBREW_TAP_TOKEN` secret on this repo with `contents: write` on the tap)
+- [x] `install.sh` fetches the latest tag; served by Pages at `https://keel-lang.dev/install.sh`
+- [x] Homebrew install via `brew install keel-lang/tap/keel`
 - [ ] First v0.1.0 tag cut + release validated end-to-end
 
 ---

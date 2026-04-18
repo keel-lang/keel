@@ -73,14 +73,14 @@ The core language ships **27 keywords** and the actor model. Everything else is 
 
 ## Install
 
-Three options, from easiest to most manual:
+Three options:
 
 ```bash
-# 1. One-liner installer (macOS / Linux, any arch)
-curl -sSf https://keel-lang.dev/install.sh | sh
+# 1. Homebrew (macOS / Linux)
+brew install keel-lang/tap/keel
 
-# 2. Homebrew (macOS / Linux)
-brew install --formula https://keel-lang.dev/keel.rb
+# 2. One-liner installer (macOS / Linux, any arch)
+curl -sSf https://keel-lang.dev/install.sh | sh
 
 # 3. From source
 git clone https://github.com/keel-lang/keel.git
@@ -88,7 +88,7 @@ cd keel && cargo build --release
 ./target/release/keel --version
 ```
 
-The installer and Homebrew formula point at the latest GitHub release. If no release exists yet for your tag, they fall back to build-from-source instructions.
+The tap and the installer both pull the latest GitHub release. Before the first release tag ships they'll fail — use the source path until then.
 
 ---
 
