@@ -18,6 +18,7 @@
 | [`meeting_prep.keel`](meeting_prep.keel) | Meeting context + briefing notes |
 | [`multi_agent_inbox.keel`](multi_agent_inbox.keel) | Multi-agent collaboration (design preview — `Agent.delegate` / `@team` not yet implemented in v0.1) |
 | [`self_message.keel`](self_message.keel) | Smallest `Agent.send` + `on message(...)` round-trip |
+| [`http_demo.keel`](http_demo.keel) | `Http.get` against a public endpoint |
 
 ## Common conventions
 

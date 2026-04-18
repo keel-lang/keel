@@ -56,7 +56,7 @@ fn examples_all_parse() {
         "minimal", "hello_world", "test_scheduling", "test_ollama",
         "data_pipeline", "daily_digest", "meeting_prep", "code_reviewer",
         "customer_support", "email_agent", "multi_agent_inbox",
-        "self_message",
+        "self_message", "http_demo",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -97,6 +97,19 @@ fn scheduling_ticks_at_least_once() {
     let (ok, stdout, _stderr) = run_example("test_scheduling");
     assert!(ok);
     assert!(stdout.contains("Tick #1"));
+}
+
+#[test]
+fn email_fetch_without_config_is_empty_list() {
+    // No IMAP_HOST set → Email.fetch returns [] (with a stderr warning).
+    // daily_digest.keel relies on this graceful degradation.
+    ensure_binary_built();
+    let (ok, stdout, _stderr) = run_example("daily_digest");
+    assert!(ok, "daily_digest exited non-zero");
+    assert!(
+        stdout.contains("No unread emails"),
+        "expected graceful empty-inbox branch, stdout:\n{stdout}"
+    );
 }
 
 #[test]

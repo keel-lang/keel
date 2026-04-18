@@ -6,34 +6,33 @@ External connections live in stdlib namespaces. `Email` handles IMAP/SMTP. `Http
 
 ## `Email`
 
-Default implementation uses `imap` (fetch) + `lettre` (send).
+Default implementation uses `imap` (fetch) + `lettre` (send). v0.1 reads credentials from environment variables:
 
-### Configure a connection
-
-```keel
-mailbox = Email.imap(
-  host: Env.require("IMAP_HOST"),
-  user: Env.require("EMAIL_USER"),
-  pass: Env.require("EMAIL_PASS")
-)
+```bash
+export IMAP_HOST=imap.gmail.com
+export SMTP_HOST=smtp.gmail.com          # optional — defaults to IMAP host with `imap.` → `smtp.`
+export EMAIL_USER=you@example.com
+export EMAIL_PASS=app-password
 ```
+
+If those aren't set, `Email.fetch` returns `[]` and `Email.send` is a no-op (with a stderr warning), so programs keep running.
 
 ### Fetch messages
 
 ```keel
-emails = Email.fetch(unread: true)                     # default mailbox
-emails = Email.fetch(from: mailbox, unread: true)      # specific
-recent = Email.fetch(from: mailbox, since: 7.days.ago)
+emails = Email.fetch(unread: true)   # up to 20 most recent unread from INBOX
 ```
 
-`Email.fetch` returns `list[EmailInfo]`.
+Each returned map has `from`, `subject`, `body`, `unread` keys.
 
 ### Send messages
 
 ```keel
 Email.send(reply, to: email.from)
-Email.send(report, to: Env.require("DIGEST_TO"), subject: "Weekly digest")
+Email.send(reply, to: address, subject: "Re: hello")
 ```
+
+Positional body can be a `str` or a `map` with `body` (and optional `subject`). `to:` can be an address string or a map with `from`.
 
 ### Archive
 
@@ -41,7 +40,7 @@ Email.send(report, to: Env.require("DIGEST_TO"), subject: "Weekly digest")
 Email.archive(email)
 ```
 
-Archiving is a connection-level operation — what "archive" means is defined by the transport (IMAP folder move, API call, etc.).
+v0.1: no-op placeholder. Future release will implement IMAP folder move.
 
 ## `Http`
 

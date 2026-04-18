@@ -30,8 +30,8 @@
 - [x] Examples: 11 `.keel` programs parse and execute
 - [x] Type checker: undefined identifiers, exhaustive `when`, `self.` outside agents, `if`/`for` condition types, arg-count checks, basic enum inference (nullable safety + full return-type matching deferred)
 - [x] Ollama LLM backend wired into `Ai.*`
-- [ ] Real email backends wired into `Email.*` (IMAP fetch, SMTP send)
-- [ ] Real HTTP client wired into `Http.*` (reqwest)
+- [x] Real email backends wired into `Email.*` (IMAP fetch, SMTP send)
+- [x] Real HTTP client wired into `Http.*` (reqwest)
 - [x] Recurring `Schedule.every` / `Schedule.after` via the agent event loop
 - [ ] `Schedule.at` (absolute-time scheduling — datetime parsing still TBD)
 - [x] Message dispatch to `on <event>` handlers via `Agent.send`

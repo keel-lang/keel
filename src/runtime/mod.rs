@@ -454,15 +454,79 @@ fn json_to_value(v: &serde_json::Value) -> Value {
 }
 
 // ---------------------------------------------------------------------------
-// Email (stub)
+// Email — real IMAP fetch + SMTP send via env vars
 // ---------------------------------------------------------------------------
+//
+// Configuration: IMAP_HOST, SMTP_HOST (optional — defaults to IMAP_HOST
+// with `imap.` → `smtp.`), EMAIL_USER, EMAIL_PASS.
+// If env vars aren't set, Email.fetch returns [] and Email.send is a
+// no-op with a one-line stderr warning — programs keep running.
 
 fn email_namespace() -> Namespace {
     ns!("Email", {
-        "fetch" => |_i, _args| Box::pin(async move { Ok(Value::List(vec![])) }),
-        "send" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "archive" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
+        "fetch" => |_i, args| Box::pin(async move {
+            let Some(conn) = email_conn_from_env() else {
+                eprintln!("  ⚠ Email.fetch: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — returning empty list");
+                return Ok(Value::List(vec![]));
+            };
+            // `unread: true` is the v0.1 default (and only) filter.
+            let _unread_only = matches!(find_arg(&args, "unread"), Some(Value::Bool(false))) == false;
+            match tokio::task::spawn_blocking(move || email::fetch_emails(&conn)).await {
+                Ok(Ok(emails)) => Ok(Value::List(emails)),
+                Ok(Err(msg)) => Err(miette::miette!("{msg}")),
+                Err(e) => Err(miette::miette!("email fetch task join error: {e}")),
+            }
+        }),
+        "send" => |_i, args| Box::pin(async move {
+            let Some(conn) = email_conn_from_env() else {
+                eprintln!("  ⚠ Email.send: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — skipping");
+                return Ok(Value::None);
+            };
+            // Positional 0 is the message body (str or Map with .body).
+            let (body, inferred_subject) = match positional(&args, 0) {
+                Some(Value::Map(m)) => (
+                    m.get("body").map(|v| v.as_string()).unwrap_or_default(),
+                    m.get("subject").map(|v| v.as_string()),
+                ),
+                Some(v) => (v.as_string(), None),
+                None => return Err(miette::miette!("Email.send: missing message body")),
+            };
+            let to = match find_arg(&args, "to") {
+                Some(Value::Map(m)) => m.get("from").map(|v| v.as_string()).unwrap_or_default(),
+                Some(v) => v.as_string(),
+                None => return Err(miette::miette!("Email.send: missing `to:` argument")),
+            };
+            let subject = find_arg(&args, "subject")
+                .map(|v| v.as_string())
+                .or(inferred_subject)
+                .unwrap_or_else(|| "(no subject)".to_string());
+            match tokio::task::spawn_blocking(move || email::send_email(&conn, &to, &subject, &body)).await {
+                Ok(Ok(())) => Ok(Value::None),
+                Ok(Err(msg)) => Err(miette::miette!("{msg}")),
+                Err(e) => Err(miette::miette!("email send task join error: {e}")),
+            }
+        }),
+        // v0.1: IMAP move-to-archive not implemented. No-op; users who
+        // need true archiving can fall back to `Email.send(... to: archive_addr)`
+        // or wait for this to land in a follow-up.
+        "archive" => |_i, _args| Box::pin(async move {
+            Ok(Value::None)
+        }),
     })
+}
+
+/// Build an `EmailConnection` from environment variables. Returns
+/// `None` if required variables are missing (fetch/send then degrade
+/// gracefully).
+fn email_conn_from_env() -> Option<email::EmailConnection> {
+    let imap_host = std::env::var("IMAP_HOST").ok().filter(|s| !s.is_empty())?;
+    let user = std::env::var("EMAIL_USER").ok().filter(|s| !s.is_empty())?;
+    let pass = std::env::var("EMAIL_PASS").ok().filter(|s| !s.is_empty())?;
+    let smtp_host = std::env::var("SMTP_HOST")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| imap_host.replace("imap.", "smtp."));
+    Some(email::EmailConnection { imap_host, smtp_host, user, pass })
 }
 
 // ---------------------------------------------------------------------------
@@ -605,13 +669,137 @@ fn async_namespace() -> Namespace {
 }
 
 // ---------------------------------------------------------------------------
-// Http (stub)
+// Http — reqwest-backed GET / POST / request
 // ---------------------------------------------------------------------------
 
 fn http_namespace() -> Namespace {
     ns!("Http", {
-        "get" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "post" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "request" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
+        "get" => |_i, args| Box::pin(async move {
+            let url = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Http.get: missing URL"))?;
+            let headers = map_from_arg(find_arg(&args, "headers"));
+            let response = http_send("GET", &url, headers, None).await?;
+            Ok(response)
+        }),
+        "post" => |_i, args| Box::pin(async move {
+            let url = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Http.post: missing URL"))?;
+            let headers = map_from_arg(find_arg(&args, "headers"));
+            let body = find_arg(&args, "json")
+                .or_else(|| find_arg(&args, "body"))
+                .cloned();
+            let response = http_send("POST", &url, headers, body).await?;
+            Ok(response)
+        }),
+        "request" => |_i, args| Box::pin(async move {
+            // Accepts a single map argument with keys `method`, `url`,
+            // `headers`, `body`, `json`.
+            let cfg = match positional(&args, 0) {
+                Some(Value::Map(m)) => m.clone(),
+                _ => {
+                    // Also accept direct named args.
+                    let mut m = HashMap::new();
+                    for a in &args {
+                        if let Some(n) = &a.name {
+                            m.insert(n.clone(), a.value.clone());
+                        }
+                    }
+                    m
+                }
+            };
+            let method = cfg.get("method").map(|v| v.as_string()).unwrap_or_else(|| "GET".into());
+            let url = cfg.get("url").map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Http.request: missing `url`"))?;
+            let headers = cfg.get("headers").cloned().and_then(|v| match v {
+                Value::Map(m) => Some(m),
+                _ => None,
+            }).unwrap_or_default();
+            let body = cfg.get("json").or_else(|| cfg.get("body")).cloned();
+            http_send(&method, &url, headers, body).await
+        }),
     })
+}
+
+fn map_from_arg(arg: Option<&Value>) -> HashMap<String, Value> {
+    match arg {
+        Some(Value::Map(m)) => m.clone(),
+        _ => HashMap::new(),
+    }
+}
+
+async fn http_send(
+    method: &str,
+    url: &str,
+    headers: HashMap<String, Value>,
+    body: Option<Value>,
+) -> miette::Result<Value> {
+    let client = reqwest::Client::new();
+    let method_upper = method.to_uppercase();
+    let reqwest_method = match method_upper.as_str() {
+        "GET" => reqwest::Method::GET,
+        "POST" => reqwest::Method::POST,
+        "PUT" => reqwest::Method::PUT,
+        "DELETE" => reqwest::Method::DELETE,
+        "PATCH" => reqwest::Method::PATCH,
+        other => return Err(miette::miette!("Http: unsupported method `{other}`")),
+    };
+
+    let mut req = client.request(reqwest_method, url);
+    for (k, v) in &headers {
+        req = req.header(k, v.as_string());
+    }
+    if let Some(b) = body {
+        match b {
+            Value::Map(_) | Value::List(_) => {
+                // Serialise via serde_json round-trip.
+                if let Ok(json) = serde_json::to_value(value_to_json(&b)) {
+                    req = req.json(&json);
+                }
+            }
+            Value::String(s) => { req = req.body(s); }
+            _ => { req = req.body(b.as_string()); }
+        }
+    }
+
+    let response = req.send().await.map_err(|e| miette::miette!("Http {method_upper} {url}: {e}"))?;
+    let status = response.status().as_u16() as i64;
+    let response_headers = response
+        .headers()
+        .iter()
+        .map(|(k, v)| (k.as_str().to_string(), Value::String(v.to_str().unwrap_or("").to_string())))
+        .collect::<HashMap<_, _>>();
+    let body_text = response.text().await.unwrap_or_default();
+
+    let mut result = HashMap::new();
+    result.insert("status".to_string(), Value::Integer(status));
+    result.insert("body".to_string(), Value::String(body_text));
+    result.insert("headers".to_string(), Value::Map(response_headers));
+    result.insert("is_ok".to_string(), Value::Bool((200..300).contains(&status)));
+    Ok(Value::Map(result))
+}
+
+/// Convert a Keel `Value` tree into a `serde_json::Value` suitable for
+/// sending as an HTTP JSON body.
+fn value_to_json(v: &Value) -> serde_json::Value {
+    match v {
+        Value::None => serde_json::Value::Null,
+        Value::Bool(b) => serde_json::Value::Bool(*b),
+        Value::Integer(n) => serde_json::Value::Number((*n).into()),
+        Value::Float(f) => serde_json::Number::from_f64(*f)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::Null),
+        Value::String(s) => serde_json::Value::String(s.clone()),
+        Value::EnumVariant(_, v) => serde_json::Value::String(v.clone()),
+        Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
+        Value::Map(m) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in m {
+                obj.insert(k.clone(), value_to_json(v));
+            }
+            serde_json::Value::Object(obj)
+        }
+        _ => serde_json::Value::Null,
+    }
 }

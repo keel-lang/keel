@@ -1,0 +1,16 @@
+# Smoke-tests Http.get against a local echo. For offline use, set
+# KEEL_HTTP_URL to a reachable endpoint or rely on the default which
+# targets a well-known public JSON echo (best-effort).
+
+agent Probe {
+  @role "HTTP probe"
+
+  @on_start {
+    url = Env.get("KEEL_HTTP_URL") ?? "https://httpbin.org/get"
+    response = Http.get(url)
+    status = response?.status ?? 0
+    Io.notify("GET {url} → status {status}")
+  }
+}
+
+run(Probe)
