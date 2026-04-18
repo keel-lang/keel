@@ -37,8 +37,8 @@
 - [x] Message dispatch to `on <event>` handlers via `Agent.send`
 - [x] Rich enum variant construction: `Action.reply { to: "..." }`
 - [x] Triple-quoted strings
-- [ ] `keel fmt` rewrite against the new AST
-- [ ] `keel repl` on the new interpreter
+- [x] `keel fmt` rewrite against the new AST (idempotent round-trip)
+- [x] `keel repl` on the new interpreter
 - [ ] `keel lsp` with diagnostics, completion, hover
 - [ ] `keel build` bytecode compiler against the new AST
 

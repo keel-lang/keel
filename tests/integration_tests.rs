@@ -123,6 +123,31 @@ fn rich_enum_variants_construct_and_destructure() {
 }
 
 #[test]
+fn repl_evaluates_let_and_expression() {
+    ensure_binary_built();
+    let bin = keel_binary();
+    let mut child = Command::new(&bin)
+        .arg("repl")
+        .env("KEEL_LLM", "mock")
+        .env("KEEL_REPL", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn keel repl");
+
+    use std::io::Write;
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"x = 1 + 2\nx * 10\n").unwrap();
+    drop(stdin); // EOF
+
+    let out = child.wait_with_output().expect("wait repl");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+
+    assert!(stdout.contains("30"), "expected REPL to compute 30, got:\n{stdout}");
+}
+
+#[test]
 fn on_message_handler_dispatches() {
     ensure_binary_built();
     let (ok, stdout, _stderr) = run_example("self_message");
