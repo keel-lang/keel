@@ -39,7 +39,7 @@
 - [x] Triple-quoted strings
 - [x] `keel fmt` rewrite against the new AST (idempotent round-trip)
 - [x] `keel repl` on the new interpreter
-- [ ] `keel lsp` with diagnostics, completion, hover
+- [x] `keel lsp` — diagnostics (lex + parse + type-check). Hover and completion are stubs pending a follow-up.
 
 **Deferred post-v0.1:**
 - `keel build` bytecode compiler. The tree-walking interpreter is fast enough for alpha workloads (~8ms cold start), and a real VM has to re-solve async dispatch, closure capture across event-loop boundaries, and runtime-pluggable namespaces — costly without matching user payoff. Revisit when there's a concrete motivator (LLVM/WASM backend, embeddable runtime).
