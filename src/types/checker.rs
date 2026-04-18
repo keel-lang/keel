@@ -811,11 +811,14 @@ impl Checker {
                 Ty::Duration
             }
 
-            Expr::EnumVariant(name, variant) => {
+            Expr::EnumVariant { ty: name, variant, fields } => {
                 if let Some(variants) = self.enum_variants.get(name) {
                     if !variants.contains(variant) {
                         self.err(format!("enum `{name}` has no variant `{variant}`"));
                     }
+                }
+                for (_, v) in fields {
+                    self.infer_expr(v, scope);
                 }
                 Ty::Enum(name.clone())
             }

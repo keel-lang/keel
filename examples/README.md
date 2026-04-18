@@ -19,6 +19,8 @@
 | [`multi_agent_inbox.keel`](multi_agent_inbox.keel) | Multi-agent collaboration (design preview — `Agent.delegate` / `@team` not yet implemented in v0.1) |
 | [`self_message.keel`](self_message.keel) | Smallest `Agent.send` + `on message(...)` round-trip |
 | [`http_demo.keel`](http_demo.keel) | `Http.get` against a public endpoint |
+| [`at_demo.keel`](at_demo.keel) | `Schedule.at` with an ISO 8601 datetime |
+| [`rich_enum.keel`](rich_enum.keel) | Rich enum variants: construction + destructuring |
 
 ## Common conventions
 

@@ -31,6 +31,7 @@ tower-lsp = "0.20"
 lettre = { version = "0.11", features = ["tokio1-native-tls"] }
 imap = "2"
 native-tls = "0.2"
+chrono = "0.4"
 
 
 [profile.release]

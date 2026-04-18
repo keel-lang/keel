@@ -33,10 +33,10 @@
 - [x] Real email backends wired into `Email.*` (IMAP fetch, SMTP send)
 - [x] Real HTTP client wired into `Http.*` (reqwest)
 - [x] Recurring `Schedule.every` / `Schedule.after` via the agent event loop
-- [ ] `Schedule.at` (absolute-time scheduling — datetime parsing still TBD)
+- [x] `Schedule.at` (absolute-time scheduling via ISO 8601 / RFC 3339 parse)
 - [x] Message dispatch to `on <event>` handlers via `Agent.send`
-- [ ] Rich enum variant construction: `Action.reply { to: "..." }`
-- [ ] Triple-quoted strings
+- [x] Rich enum variant construction: `Action.reply { to: "..." }`
+- [x] Triple-quoted strings
 - [ ] `keel fmt` rewrite against the new AST
 - [ ] `keel repl` on the new interpreter
 - [ ] `keel lsp` with diagnostics, completion, hover

@@ -293,10 +293,14 @@ impl Interpreter {
         }
 
         // Event loop: serve scheduled ticks, message dispatch, and
-        // Ctrl+C. Terminates when no agents are live or a shutdown is
-        // requested. `KEEL_ONESHOT=1` exits after the first event is
-        // processed (used by integration tests).
+        // Ctrl+C. Terminates when no agents are live, when a shutdown
+        // event is posted, or on Ctrl+C.
+        //
+        // `KEEL_ONESHOT=1` (integration tests) exits after a short
+        // idle window with no events — this lets `@on_start`-only
+        // agents finish cleanly without blocking on `rx.recv()`.
         let oneshot = std::env::var("KEEL_ONESHOT").is_ok();
+        let idle_budget = std::time::Duration::from_millis(250);
         let mut rx = self
             .event_rx
             .take()
@@ -307,24 +311,30 @@ impl Interpreter {
                 break;
             }
 
-            tokio::select! {
-                biased;
-                _ = tokio::signal::ctrl_c() => break,
-                maybe_ev = rx.recv() => match maybe_ev {
-                    Some(Event::FireClosure { agent_name, closure_id }) => {
-                        self.fire_closure(&agent_name, closure_id).await?;
-                        if oneshot {
-                            break;
-                        }
-                    }
-                    Some(Event::Dispatch { agent_name, event, data }) => {
-                        self.dispatch_event(&agent_name, &event, data).await?;
-                        if oneshot {
-                            break;
-                        }
-                    }
-                    Some(Event::Shutdown) | None => break,
-                },
+            let ev = if oneshot {
+                match tokio::time::timeout(idle_budget, rx.recv()).await {
+                    Ok(Some(ev)) => ev,
+                    _ => break, // idle timeout or channel closed
+                }
+            } else {
+                tokio::select! {
+                    biased;
+                    _ = tokio::signal::ctrl_c() => break,
+                    maybe_ev = rx.recv() => match maybe_ev {
+                        Some(ev) => ev,
+                        None => break,
+                    },
+                }
+            };
+
+            match ev {
+                Event::FireClosure { agent_name, closure_id } => {
+                    self.fire_closure(&agent_name, closure_id).await?;
+                }
+                Event::Dispatch { agent_name, event, data } => {
+                    self.dispatch_event(&agent_name, &event, data).await?;
+                }
+                Event::Shutdown => break,
             }
         }
         Ok(())
@@ -512,7 +522,7 @@ impl Interpreter {
             Pattern::Wildcard => Some(vec![]),
             Pattern::Ident(name) => {
                 // Matches an enum variant by name (e.g. `low`, `high`).
-                if let Value::EnumVariant(_, variant) = value {
+                if let Value::EnumVariant(_, variant, _) = value {
                     if variant == name {
                         return Some(vec![]);
                     }
@@ -545,12 +555,21 @@ impl Interpreter {
                 }
             }
             Pattern::Variant { name, bindings } => {
-                if let Value::EnumVariant(_ty, variant) = value {
+                if let Value::EnumVariant(_ty, variant, fields) = value {
                     if variant == name {
-                        // v0.1: rich enum variant values aren't yet stored
-                        // with their fields on the Value side. Return
-                        // empty bindings; full destructure lands later.
-                        return Some(bindings.iter().map(|b| (b.clone(), Value::None)).collect());
+                        // Bind each named destructure from the variant's
+                        // rich fields (if any). Wildcards (`_`) and
+                        // missing fields bind to `none`.
+                        let mut out = Vec::with_capacity(bindings.len());
+                        for b in bindings {
+                            if b == "_" { continue; }
+                            let v = fields
+                                .as_ref()
+                                .and_then(|m| m.get(b).cloned())
+                                .unwrap_or(Value::None);
+                            out.push((b.clone(), v));
+                        }
+                        return Some(out);
                     }
                 }
                 None
@@ -624,13 +643,13 @@ impl Interpreter {
                             && self.globals.get(name).map_or(true, |v| matches!(v, Value::Namespace(_)))
                             && is_pascal_case(name)
                         {
-                            return Ok(Value::EnumVariant(name.clone(), field.clone()));
+                            return Ok(Value::EnumVariant(name.clone(), field.clone(), None));
                         }
                     }
                     let obj_v = self.eval_expr(obj, env).await?;
                     match &obj_v {
                         Value::Namespace(ns_name) => {
-                            Ok(Value::EnumVariant(ns_name.clone(), field.clone()))
+                            Ok(Value::EnumVariant(ns_name.clone(), field.clone(), None))
                         }
                         Value::Map(m) => {
                             if let Some(v) = m.get(field) {
@@ -815,7 +834,17 @@ impl Interpreter {
                     Ok(Value::Duration(Value::duration_seconds(n, *unit)))
                 }
 
-                Expr::EnumVariant(ty, variant) => Ok(Value::EnumVariant(ty.clone(), variant.clone())),
+                Expr::EnumVariant { ty, variant, fields } => {
+                    if fields.is_empty() {
+                        Ok(Value::EnumVariant(ty.clone(), variant.clone(), None))
+                    } else {
+                        let mut evaluated = HashMap::new();
+                        for (k, v) in fields {
+                            evaluated.insert(k.clone(), self.eval_expr(v, env).await?);
+                        }
+                        Ok(Value::EnumVariant(ty.clone(), variant.clone(), Some(evaluated)))
+                    }
+                }
             }
         })
     }
@@ -969,7 +998,7 @@ impl Interpreter {
             (Value::Integer(n), "to_str") => Ok(Value::String(n.to_string())),
             (Value::Float(f), "to_str") => Ok(Value::String(f.to_string())),
             (Value::Bool(b), "to_str") => Ok(Value::String(b.to_string())),
-            (Value::EnumVariant(_, v), "to_str") => Ok(Value::String(v.clone())),
+            (Value::EnumVariant(_, v, _), "to_str") => Ok(Value::String(v.clone())),
             _ => Err(runtime_error(format!(
                 "Method `{method}` not available on {}",
                 obj.type_name()

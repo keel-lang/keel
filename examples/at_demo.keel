@@ -1,0 +1,16 @@
+# Schedule.at — fires once at an absolute time.
+# This example targets "1 second ago" so it fires immediately for
+# the smoke test. Real programs pass future timestamps like
+# "2026-04-20T09:00:00Z".
+
+agent AtDemo {
+  @role "Demonstrates Schedule.at"
+
+  @on_start {
+    Schedule.at("2020-01-01T00:00:00Z", () => {
+      Io.notify("fired (target was in the past)")
+    })
+  }
+}
+
+run(AtDemo)

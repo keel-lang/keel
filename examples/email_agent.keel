@@ -43,7 +43,11 @@ task compose(email: {body: str, from: str}, guidance: str? = none) -> str {
 # --- The agent: orchestration only ---
 
 agent EmailAssistant {
-  @role "You are a professional email assistant. You triage incoming mail, reply to routine messages, and escalate anything important."
+  @role """
+    You are a professional email assistant.
+    You triage incoming mail, reply to routine messages,
+    and escalate anything important.
+  """
   @tools [Email]
   @memory persistent
 

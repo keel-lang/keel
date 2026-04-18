@@ -1020,6 +1020,7 @@ dependencies = [
 name = "keel-lang"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "chumsky",
  "clap",
  "colored",

@@ -395,9 +395,13 @@ pub enum Expr {
     },
 
     // ── Enum variant ─────────────────────────────────────────────────
-    /// `Type.variant` — distinct from FieldAccess so type checker and
-    /// runtime can resolve the variant.
-    EnumVariant(String, String),
+    /// `Urgency.high` (simple) or `Action.reply { to: "...", tone: "..." }`
+    /// (rich). `fields` is empty for simple variants.
+    EnumVariant {
+        ty: String,
+        variant: String,
+        fields: Vec<(String, Expr)>,
+    },
 }
 
 // ---------------------------------------------------------------------------

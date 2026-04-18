@@ -224,6 +224,32 @@ fn lex_empty_string() {
     assert_eq!(toks, vec![Token::StringLit("".into())]);
 }
 
+#[test]
+fn lex_triple_quoted_single_line() {
+    let toks = tokens(r#""""hello world""""#);
+    assert_eq!(toks, vec![Token::StringLit("hello world".into())]);
+}
+
+#[test]
+fn lex_triple_quoted_multi_line() {
+    let src = "\"\"\"first line\nsecond line\n  third\"\"\"";
+    let toks = tokens(src);
+    assert_eq!(
+        toks,
+        vec![Token::StringLit("first line\nsecond line\n  third".into())]
+    );
+}
+
+#[test]
+fn lex_triple_quoted_allows_interior_single_quote() {
+    let src = "\"\"\"he said \"ok\" and left\"\"\"";
+    let toks = tokens(src);
+    assert_eq!(
+        toks,
+        vec![Token::StringLit("he said \"ok\" and left".into())]
+    );
+}
+
 // ─── Operators ───────────────────────────────────────────────────────────────
 
 #[test]

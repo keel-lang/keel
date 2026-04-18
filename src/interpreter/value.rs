@@ -17,8 +17,10 @@ pub enum Value {
     /// Map / struct literal — keys are always strings
     Map(HashMap<String, Value>),
 
-    /// An enum variant: (type_name, variant_name)
-    EnumVariant(String, String),
+    /// An enum variant: (type_name, variant_name, optional rich fields).
+    /// Simple variants (`Urgency.high`) use `None`; rich variants
+    /// (`Action.reply { to: "x" }`) carry their constructed fields.
+    EnumVariant(String, String, Option<HashMap<String, Value>>),
 
     /// Duration in seconds
     Duration(f64),
@@ -50,7 +52,7 @@ impl Value {
             Value::None => "none",
             Value::List(_) => "list",
             Value::Map(_) => "map",
-            Value::EnumVariant(_, _) => "enum",
+            Value::EnumVariant(_, _, _) => "enum",
             Value::Duration(_) => "duration",
             Value::Task(_, _) => "task",
             Value::AgentRef(_) => "agent",
@@ -120,7 +122,20 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
-            Value::EnumVariant(ty, variant) => write!(f, "{ty}.{variant}"),
+            Value::EnumVariant(ty, variant, fields) => {
+                write!(f, "{ty}.{variant}")?;
+                if let Some(fields) = fields {
+                    if !fields.is_empty() {
+                        write!(f, " {{")?;
+                        for (i, (k, v)) in fields.iter().enumerate() {
+                            if i > 0 { write!(f, ", ")?; }
+                            write!(f, "{k}: {v}")?;
+                        }
+                        write!(f, "}}")?;
+                    }
+                }
+                Ok(())
+            }
             Value::Duration(secs) => {
                 if *secs >= 86400.0 {
                     write!(f, "{} days", secs / 86400.0)
@@ -152,7 +167,7 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::None, Value::None) => true,
-            (Value::EnumVariant(t1, v1), Value::EnumVariant(t2, v2)) => t1 == t2 && v1 == v2,
+            (Value::EnumVariant(t1, v1, _), Value::EnumVariant(t2, v2, _)) => t1 == t2 && v1 == v2,
             _ => false,
         }
     }

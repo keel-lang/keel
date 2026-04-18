@@ -138,7 +138,7 @@ fn format_display_value(val: &Value) -> String {
         Value::Float(n) => format!("{n}").bright_yellow().to_string(),
         Value::Bool(b) => format!("{b}").bright_magenta().to_string(),
         Value::None => "none".dimmed().to_string(),
-        Value::EnumVariant(ty, var) => format!("{ty}.{var}").bright_cyan().to_string(),
+        Value::EnumVariant(ty, var, _) => format!("{ty}.{var}").bright_cyan().to_string(),
         Value::List(items) => {
             let inner: Vec<String> = items.iter().map(|i| format_display_value(i)).collect();
             format!("[{}]", inner.join(", "))

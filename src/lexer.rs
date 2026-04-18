@@ -99,6 +99,11 @@ pub enum Token {
     Integer(String),
 
     // ── String literal ───────────────────────────────────────────────
+    // Triple-quoted form comes first because its opening `"""` would
+    // otherwise be read as empty-string + start-of-string by the
+    // single-quote regex. Logos picks the longest match, so the
+    // three-quote opener wins.
+    #[token("\"\"\"", lex_triple_string)]
     #[regex(r#""([^"\\]|\\.)*""#, lex_string)]
     StringLit(String),
 
@@ -189,6 +194,23 @@ fn lex_string(lex: &mut logos::Lexer<Token>) -> Option<String> {
     let slice = lex.slice();
     let inner = &slice[1..slice.len() - 1];
     Some(inner.to_string())
+}
+
+/// Consume a triple-quoted string starting from the opening `"""`.
+/// Scans the remainder until the next `"""`, returns the interior as
+/// the token payload, and advances the lexer past the closing delimiter.
+/// Multi-line content is preserved verbatim; interior `"` characters
+/// are allowed as long as they aren't three in a row.
+fn lex_triple_string(lex: &mut logos::Lexer<Token>) -> Option<String> {
+    let rest = lex.remainder();
+    match rest.find("\"\"\"") {
+        Some(end) => {
+            let content = rest[..end].to_string();
+            lex.bump(end + 3);
+            Some(content)
+        }
+        None => None, // unterminated triple-quoted string
+    }
 }
 
 impl fmt::Display for Token {

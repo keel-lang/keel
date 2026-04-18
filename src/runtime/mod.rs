@@ -151,9 +151,14 @@ fn schedule_namespace() -> Namespace {
         "after" => |interp, args| Box::pin(async move {
             schedule_fire(interp, args, /* recurring */ false).await
         }),
-        "at" => |_i, _args| Box::pin(async move {
-            // datetime parsing not in v0.1
-            Ok(Value::None)
+        // `Schedule.at(datetime_str, () => { ... })` fires the closure
+        // once at the given absolute time. Accepts:
+        //   - RFC 3339 / ISO 8601: `"2026-04-20T10:00:00Z"` or
+        //     `"2026-04-20T10:00:00+02:00"`
+        //   - Naive local datetime: `"2026-04-20T10:00:00"` (treated as UTC)
+        // If the target is already in the past, fires immediately.
+        "at" => |interp, args| Box::pin(async move {
+            schedule_at(interp, args).await
         }),
         "sleep" => |_i, args| Box::pin(async move {
             if let Some(Value::Duration(secs)) = positional(&args, 0) {
@@ -162,6 +167,61 @@ fn schedule_namespace() -> Namespace {
             Ok(Value::None)
         }),
     })
+}
+
+async fn schedule_at(
+    interp: &mut Interpreter,
+    args: Vec<CallArgValue>,
+) -> miette::Result<Value> {
+    let when_str = positional(&args, 0)
+        .map(|v| v.as_string())
+        .ok_or_else(|| miette::miette!("Schedule.at: missing datetime argument"))?;
+
+    let target = parse_datetime(&when_str)
+        .ok_or_else(|| miette::miette!("Schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime"))?;
+    let now = chrono::Utc::now();
+    let delay_secs = (target - now).num_seconds().max(0) as f64;
+
+    let (params, body) = args.iter().find_map(|a| match &a.value {
+        Value::Closure(p, b) => Some((p.clone(), b.clone())),
+        _ => None,
+    }).ok_or_else(|| miette::miette!("Schedule.at: missing closure argument"))?;
+
+    let agent_name = interp
+        .current_agent
+        .as_ref()
+        .ok_or_else(|| miette::miette!("Schedule.at must be called from within an agent"))?
+        .lock()
+        .unwrap()
+        .def
+        .name
+        .clone();
+
+    let closure_id = interp.register_closure(agent_name.clone(), params, body);
+    let tx = interp.event_tx.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
+        let _ = tx.send(crate::interpreter::Event::FireClosure { agent_name, closure_id });
+    });
+    Ok(Value::None)
+}
+
+/// Parse an ISO 8601 / RFC 3339 datetime string into UTC. Falls back
+/// to naive datetime (treated as UTC) when no timezone is given.
+fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
+            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc));
+        }
+        if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, fmt) {
+            let ndt = nd.and_hms_opt(0, 0, 0)?;
+            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc));
+        }
+    }
+    None
 }
 
 async fn schedule_fire(
@@ -246,7 +306,7 @@ fn ai_namespace() -> Namespace {
 
             let llm = interp.llm.clone();
             match llm.classify(&input, &variants, &criteria, &model).await {
-                Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant)),
+                Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant, None)),
                 Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
                 Err(msg) => Err(miette::miette!("{msg}")),
             }
@@ -417,7 +477,7 @@ fn extract_criteria(args: &[CallArgValue]) -> Vec<(String, String)> {
             .iter()
             .map(|(k, v)| {
                 let variant_name = match v {
-                    Value::EnumVariant(_, variant) => variant.clone(),
+                    Value::EnumVariant(_, variant, _) => variant.clone(),
                     other => other.as_string(),
                 };
                 (k.clone(), variant_name)
@@ -791,7 +851,7 @@ fn value_to_json(v: &Value) -> serde_json::Value {
             .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
         Value::String(s) => serde_json::Value::String(s.clone()),
-        Value::EnumVariant(_, v) => serde_json::Value::String(v.clone()),
+        Value::EnumVariant(_, v, _) => serde_json::Value::String(v.clone()),
         Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
         Value::Map(m) => {
             let mut obj = serde_json::Map::new();

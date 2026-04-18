@@ -249,6 +249,37 @@ task t(text: str) {
 "#);
 }
 
+// ─── Rich enum variants ─────────────────────────────────────────────────────
+
+#[test]
+fn valid_rich_enum_variant() {
+    type_ok(r#"
+type Action =
+  | reply { to: str, tone: str }
+  | archive
+
+task make() -> Action {
+  Action.reply { to: "x", tone: "friendly" }
+}
+"#);
+}
+
+#[test]
+fn error_rich_variant_unknown() {
+    expect_error(
+        r#"
+type Action =
+  | reply { to: str }
+  | archive
+
+task make() -> Action {
+  Action.nope { to: "x" }
+}
+"#,
+        "no variant",
+    );
+}
+
 #[test]
 fn error_classify_result_missing_variant() {
     expect_error(

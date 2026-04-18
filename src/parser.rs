@@ -352,8 +352,34 @@ fn expr_parser() -> P<Expr> {
                 }
             });
 
+        // ── Rich enum variant construction ───────────────────────
+        // `Action.reply { to: "x", tone: "friendly" }` — unambiguous
+        // thanks to the braced field list. Must be tried before
+        // ident_expr / struct_lit in `primary` so the `IDENT . IDENT {`
+        // shape is recognised as a whole. If the pattern doesn't fully
+        // match, chumsky backtracks and the shorter forms take over.
+        let rich_enum_variant = ident()
+            .then_ignore(just(Token::Dot))
+            .then(field_name())
+            .then_ignore(just(Token::LBrace))
+            .then_ignore(newlines())
+            .then(
+                map_key()
+                    .then_ignore(just(Token::Colon))
+                    .then_ignore(newlines())
+                    .then(expr.clone())
+                    .separated_by(field_sep())
+                    .at_least(1)
+                    .allow_trailing(),
+            )
+            .then_ignore(newlines())
+            .then_ignore(just(Token::RBrace))
+            .map(|((ty, variant), fields)| Expr::EnumVariant { ty, variant, fields })
+            .boxed();
+
         // ── Primary ──────────────────────────────────────────────
         let primary = choice((
+            rich_enum_variant,
             self_access,
             set_lit,
             float_lit,

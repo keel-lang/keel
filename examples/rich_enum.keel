@@ -1,0 +1,30 @@
+# Rich enum variant construction and destructuring.
+
+type Action =
+  | reply { to: str, tone: str }
+  | forward { to: str }
+  | archive
+
+task describe(a: Action) -> str {
+  when a {
+    reply { to, tone } => "reply to {to} ({tone})"
+    forward { to } => "forward to {to}"
+    archive => "archive"
+  }
+}
+
+agent Demo {
+  @role "Rich enum demo"
+
+  @on_start {
+    a = Action.reply { to: "alice@example.com", tone: "friendly" }
+    b = Action.forward { to: "ops@example.com" }
+    c = Action.archive
+
+    Io.notify(describe(a))
+    Io.notify(describe(b))
+    Io.notify(describe(c))
+  }
+}
+
+run(Demo)

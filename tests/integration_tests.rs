@@ -56,7 +56,7 @@ fn examples_all_parse() {
         "minimal", "hello_world", "test_scheduling", "test_ollama",
         "data_pipeline", "daily_digest", "meeting_prep", "code_reviewer",
         "customer_support", "email_agent", "multi_agent_inbox",
-        "self_message", "http_demo",
+        "self_message", "http_demo", "at_demo", "rich_enum",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -110,6 +110,16 @@ fn email_fetch_without_config_is_empty_list() {
         stdout.contains("No unread emails"),
         "expected graceful empty-inbox branch, stdout:\n{stdout}"
     );
+}
+
+#[test]
+fn rich_enum_variants_construct_and_destructure() {
+    ensure_binary_built();
+    let (ok, stdout, _stderr) = run_example("rich_enum");
+    assert!(ok);
+    assert!(stdout.contains("reply to alice@example.com (friendly)"));
+    assert!(stdout.contains("forward to ops@example.com"));
+    assert!(stdout.contains("archive"));
 }
 
 #[test]
