@@ -1,0 +1,76 @@
+# Code Review Agent
+# Analyzes code changes and provides structured feedback.
+
+type Severity = info | warning | error
+
+type ReviewResult {
+  severity: Severity
+  message: str
+}
+
+task review_code(diff: str) -> str {
+  Ai.draft("code review feedback for this diff:\n{diff}",
+    tone: "constructive",
+    guidance: "focus on bugs, security issues, and readability"
+  ) ?? "(review failed)"
+}
+
+task assess_risk(diff: str) -> Severity {
+  Ai.classify(diff,
+    as: Severity,
+    considering: {
+      "changes authentication or authorization": Severity.error,
+      "modifies database schema":                 Severity.warning,
+      "formatting or comment changes only":       Severity.info
+    },
+    fallback: Severity.warning
+  )
+}
+
+agent CodeReviewer {
+  @role "You are a thorough but kind code reviewer"
+  @model "claude-sonnet"
+
+  state {
+    reviews_done: int = 0
+  }
+
+  task process(pr: {title: str, diff: str, author: str}) {
+    risk = assess_risk(pr.diff)
+    feedback = review_code(pr.diff)
+
+    Io.show({
+      title:    pr.title,
+      author:   pr.author,
+      risk:     risk,
+      feedback: feedback
+    })
+
+    when risk {
+      error => {
+        Io.notify("HIGH RISK: {pr.title} needs careful review")
+        if Io.confirm("Approve this PR?") {
+          Io.notify("PR approved")
+        }
+      }
+      warning => {
+        Io.notify("Review feedback posted for: {pr.title}")
+      }
+      info => {
+        Io.notify("Auto-approved: {pr.title} (low risk)")
+      }
+    }
+
+    self.reviews_done = self.reviews_done + 1
+  }
+
+  @on_start {
+    Schedule.every(5.minutes, () => {
+      Io.notify("Checking for PRs to review...")
+      # In production, fetch from a GitHub connector via Http.*
+      Io.notify("Reviews completed: {self.reviews_done}")
+    })
+  }
+}
+
+run(CodeReviewer)

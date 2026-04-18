@@ -1,0 +1,38 @@
+{
+  "name": "keel-lang",
+  "displayName": "Keel Language",
+  "description": "Syntax highlighting and language support for Keel — AI agents as first-class citizens",
+  "version": "0.1.0",
+  "publisher": "keel-lang",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "keel",
+        "aliases": ["Keel", "keel"],
+        "extensions": [".keel"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "keel",
+        "scopeName": "source.keel",
+        "path": "./syntaxes/keel.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "Keel",
+      "properties": {
+        "keel.lsp.path": {
+          "type": "string",
+          "default": "keel",
+          "description": "Path to the keel binary (for LSP server)"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,60 @@
+# Meeting Prep Agent
+# Gathers context before meetings and generates briefing notes.
+
+type MeetingType = standup | review | planning | one_on_one
+
+task classify_meeting(title: str) -> MeetingType {
+  Ai.classify(title, as: MeetingType, fallback: MeetingType.review)
+}
+
+task prep_notes(meeting: {title: str, attendees: list[str]}) -> str {
+  Ai.draft("meeting preparation notes for {meeting.title}",
+    tone: "concise and actionable",
+    guidance: "include agenda suggestions and key topics for {meeting.attendees.count} attendees"
+  ) ?? "(could not generate notes)"
+}
+
+agent MeetingPrep {
+  @role "You prepare briefing notes before meetings"
+  @model "claude-sonnet"
+
+  state {
+    meetings_prepped: int = 0
+  }
+
+  task prepare(meeting: {title: str, attendees: list[str], time: str}) {
+    meeting_type = classify_meeting(meeting.title)
+    notes = prep_notes(meeting)
+
+    Io.notify("Meeting: {meeting.title} at {meeting.time}")
+    Io.notify("Type: {meeting_type}")
+    Io.notify("Attendees: {meeting.attendees.count}")
+
+    Io.show({
+      title: meeting.title,
+      type: meeting_type,
+      time: meeting.time,
+      prep: notes
+    })
+
+    self.meetings_prepped = self.meetings_prepped + 1
+  }
+
+  @on_start {
+    Schedule.every(30.minutes, () => {
+      # In production, fetch from a calendar connector via Http.*
+      meetings = [
+        {title: "Sprint Planning", attendees: ["alice", "bob", "charlie"], time: "10:00 AM"},
+        {title: "1:1 with Manager", attendees: ["you", "manager"], time: "2:00 PM"}
+      ]
+
+      for meeting in meetings {
+        prepare(meeting)
+      }
+
+      Io.notify("Prepped {self.meetings_prepped} meetings total")
+    })
+  }
+}
+
+run(MeetingPrep)

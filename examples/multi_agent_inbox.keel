@@ -1,0 +1,120 @@
+# ============================================================
+# Keel — Multi-Agent Email System (design preview)
+# ============================================================
+# Shows how multiple agents collaborate:
+#   - Classifier:        triages emails (fast model)
+#   - Responder:         drafts and sends replies (capable model)
+#   - FollowupScheduler: manages follow-ups and reminders
+#   - InboxManager:      coordinates the team
+#
+# NOTE: Multi-agent collaboration (@team, cross-agent calls,
+# Agent.broadcast) is NOT yet implemented in v0.1 — this file
+# exists as a design preview only.
+# ============================================================
+
+type Urgency  = low | medium | high | critical
+type Category = question | request | info | complaint | spam
+
+type TriageResult {
+  urgency: Urgency
+  category: Category
+}
+
+# -- Agent 1: Classifier (fast, cheap model) --
+agent Classifier {
+  @role "You classify emails by urgency and category"
+  @model "claude-haiku"
+
+  task triage(email: {body: str}) -> TriageResult {
+    urgency  = Ai.classify(email.body, as: Urgency,  fallback: Urgency.medium)
+    category = Ai.classify(email.body, as: Category, fallback: Category.question)
+    {urgency: urgency, category: category}
+  }
+}
+
+# -- Agent 2: Responder (capable model for quality) --
+agent Responder {
+  @role "You draft professional, helpful email replies"
+  @model "claude-sonnet"
+  @memory persistent
+
+  task reply_to(email: {body: str, from: str}, guidance: str? = none) -> str {
+    history = Memory.recall("interactions with {email.from}", limit: 5)
+
+    Ai.draft("response to {email.body}",
+      tone: "professional",
+      context: history,
+      guidance: guidance,
+      max_length: 200
+    ) ?? "(draft failed)"
+  }
+}
+
+# -- Agent 3: FollowupScheduler --
+agent FollowupScheduler {
+  @role "You manage follow-ups and reminders"
+  @model "claude-haiku"
+
+  task plan(email: {subject: str}, urgency: Urgency) {
+    when urgency {
+      critical => Schedule.after(2.hours, () => { Io.notify("Follow up on: {email.subject}") })
+      high     => Schedule.after(24.hours, () => { Io.notify("Check status: {email.subject}") })
+      medium   => Schedule.after(3.days, () => { Io.notify("Pending reply: {email.subject}") })
+      low      => { }
+    }
+  }
+}
+
+# -- Orchestrator --
+agent InboxManager {
+  @role "You coordinate the email handling team"
+  @model "claude-sonnet"
+  @tools [Email]
+  @team [Classifier, Responder, FollowupScheduler]
+
+  task handle(email: {body: str, from: str, subject: str}) {
+    result: TriageResult = Classifier.triage(email) ?? {
+      urgency: Urgency.medium,
+      category: Category.question
+    }
+
+    when result.urgency {
+      low => {
+        when result.category {
+          spam, info => Email.archive(email)
+          _ => {
+            reply = Responder.reply_to(email) ?? "(could not draft)"
+            if Io.confirm(reply) { Email.send(reply, to: email.from) }
+          }
+        }
+      }
+
+      medium => {
+        reply = Responder.reply_to(email) ?? "(could not draft)"
+        if Io.confirm(reply) { Email.send(reply, to: email.from) }
+        FollowupScheduler.plan(email, result.urgency)
+      }
+
+      high, critical => {
+        summary = Ai.summarize(email.body, in: 2, unit: sentences, fallback: "(no summary)")
+        Io.notify("{result.urgency} {result.category} from {email.from}")
+        Io.show(summary)
+
+        guidance = Io.ask("How should I respond?")
+        reply = Responder.reply_to(email, guidance) ?? "(could not draft)"
+        if Io.confirm(reply) { Email.send(reply, to: email.from) }
+        FollowupScheduler.plan(email, result.urgency)
+      }
+    }
+  }
+
+  @on_start {
+    Schedule.every(5.minutes, () => {
+      for email in Email.fetch(unread: true) {
+        handle(email)
+      }
+    })
+  }
+}
+
+run(InboxManager)

@@ -1,0 +1,16 @@
+[book]
+title = "The Keel Language"
+authors = ["Zied Maktouf"]
+description = "Documentation for Keel — a programming language where AI agents are first-class citizens"
+language = "en"
+src = "src"
+
+[build]
+build-dir = "../target/book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/keel-lang/keel"
+site-url = "https://keel-lang.dev/"
+additional-css = ["theme/keel.css"]

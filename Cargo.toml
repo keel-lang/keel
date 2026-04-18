@@ -1,0 +1,38 @@
+[package]
+name = "keel-lang"
+version = "0.1.0"
+edition = "2021"
+description = "Keel — a programming language where AI agents are first-class citizens"
+license = "MIT"
+repository = "https://github.com/keel-lang/keel"
+homepage = "https://github.com/keel-lang/keel"
+readme = "README.md"
+keywords = ["language", "ai", "agents", "llm", "interpreter"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["target/", "docs/", ".claude/"]
+
+[[bin]]
+name = "keel"
+path = "src/main.rs"
+
+[dependencies]
+logos = "0.14"
+chumsky = "0.9"
+clap = { version = "4", features = ["derive"] }
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+colored = "2"
+rustyline = "15"
+tower-lsp = "0.20"
+lettre = { version = "0.11", features = ["tokio1-native-tls"] }
+imap = "2"
+native-tls = "0.2"
+
+
+[profile.release]
+opt-level = 3
+lto = true

@@ -1,0 +1,20 @@
+# Test real scheduling — polls every 3 seconds.
+# Press Ctrl+C to stop.
+
+agent Ticker {
+  @role "Demonstrates real scheduling"
+  @model "claude-haiku"
+
+  state {
+    tick: int = 0
+  }
+
+  @on_start {
+    Schedule.every(3.seconds, () => {
+      self.tick = self.tick + 1
+      Io.notify("Tick #{self.tick}")
+    })
+  }
+}
+
+run(Ticker)

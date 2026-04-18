@@ -1,0 +1,38 @@
+# Daily Digest Agent
+# Fetches content, summarizes it, and sends a morning briefing.
+
+task shorten(text: str) -> str {
+  Ai.summarize(text, in: 2, unit: sentences, fallback: "(no summary available)")
+}
+
+agent DailyDigest {
+  @role "You compile a daily digest of important updates"
+  @model "claude-sonnet"
+  @tools [Email]
+
+  state {
+    days_run: int = 0
+  }
+
+  @on_start {
+    Schedule.every(1.day, () => {
+      self.days_run = self.days_run + 1
+      Io.notify("--- Daily Digest #{self.days_run} ---")
+
+      emails = Email.fetch(unread: true)
+      if emails.count > 0 {
+        Io.notify("{emails.count} unread emails:")
+        for email in emails {
+          brief = shorten(email.body)
+          Io.notify("  - {email.from}: {brief}")
+        }
+      } else {
+        Io.notify("No unread emails")
+      }
+
+      Io.notify("--- End of Digest ---")
+    })
+  }
+}
+
+run(DailyDigest)

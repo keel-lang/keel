@@ -1,0 +1,85 @@
+# Customer Support Bot
+# Classifies tickets, drafts responses, escalates critical issues.
+
+type Priority = low | medium | high | critical
+type Category = billing | technical | account | general
+
+task categorize(ticket: {body: str}) -> Category {
+  Ai.classify(ticket.body, as: Category, fallback: Category.general)
+}
+
+task prioritize(ticket: {body: str}) -> Priority {
+  Ai.classify(ticket.body,
+    as: Priority,
+    considering: {
+      "account locked or hacked":      Priority.critical,
+      "payment failed or overcharged": Priority.high,
+      "feature request":               Priority.low
+    },
+    fallback: Priority.medium
+  )
+}
+
+task respond(ticket: {body: str, from: str}, category: Category) -> str {
+  Ai.draft("support response to {ticket.body}",
+    tone: "empathetic and professional",
+    guidance: "address the {category} issue directly"
+  ) ?? "(could not draft response)"
+}
+
+agent SupportBot {
+  @role "You handle customer support tickets with empathy and precision"
+  @model "claude-sonnet"
+  @tools [Email]
+
+  state {
+    resolved: int = 0
+    escalated: int = 0
+  }
+
+  task handle(ticket: {body: str, from: str, subject: str}) {
+    category = categorize(ticket)
+    priority = prioritize(ticket)
+
+    Io.notify("{priority} {category}: {ticket.subject}")
+
+    when priority {
+      low, medium => {
+        reply = respond(ticket, category)
+        if Io.confirm("Reply to {ticket.from}:\n\n{reply}") {
+          Email.send(reply, to: ticket.from)
+        }
+        self.resolved = self.resolved + 1
+      }
+      high => {
+        reply = respond(ticket, category)
+        Io.show({from: ticket.from, category: category, priority: priority})
+        guidance = Io.ask("Any additions to the draft?")
+        final = Ai.draft("revised response to {ticket.body}",
+          tone: "professional",
+          guidance: guidance
+        ) ?? reply
+        if Io.confirm(final) {
+          Email.send(final, to: ticket.from)
+        }
+        self.resolved = self.resolved + 1
+      }
+      critical => {
+        Io.notify("ESCALATING: {ticket.subject} from {ticket.from}")
+        self.escalated = self.escalated + 1
+      }
+    }
+
+    Io.notify("Stats: {self.resolved} resolved, {self.escalated} escalated")
+  }
+
+  @on_start {
+    Schedule.every(2.minutes, () => {
+      for ticket in Email.fetch(unread: true) {
+        handle(ticket)
+      }
+    })
+  }
+}
+
+run(SupportBot)
