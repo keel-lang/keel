@@ -1,0 +1,285 @@
+# ─────────────────────────────────────────────────────────────────────
+# Inbox Assistant — the reference v0.1 example.
+#
+# A realistic multi-agent program that exercises every wired language
+# feature and stdlib namespace in Keel v0.1. Use this file to kick the
+# tires after any language or runtime change.
+#
+# Configure by copying `.env.example` → `.env` and sourcing it before
+# `keel run inbox_assistant.keel`. See README.md in this folder.
+# ─────────────────────────────────────────────────────────────────────
+
+
+# ─── Types ──────────────────────────────────────────────────────────
+
+# Simple enum — exercises Ai.classify inference and exhaustive `when`.
+type Urgency = low | medium | high | critical
+
+# Simple enum for the reply tone (used with Ai.decide).
+type Tone = friendly | professional | terse | apologetic
+
+# Rich enum — per-variant data, exercises destructuring in `when`.
+type Action =
+  | reply { to: str, tone: Tone }
+  | escalate { reason: str, to: str }
+  | silent_archive
+
+# Type alias — structural transparency.
+type EmailId = str
+
+# Struct literal shape used as a parameter type.
+task preview(email: {subject: str, body: str}) -> str {
+  "{email.subject}: {email.body}"
+}
+
+# Struct returned by Ai.prompt … as T — used to narrow dynamic output.
+type Sentiment {
+  label: str
+  score: int
+}
+
+
+# ─── Top-level reusable tasks ───────────────────────────────────────
+
+# Classify urgency via the LLM. Exercises Ai.classify with `as:` +
+# `fallback:` (so the return is `Urgency`, not `Urgency?`).
+task classify_urgency(body: str) -> Urgency {
+  Ai.classify(body,
+    as: Urgency,
+    fallback: Urgency.medium
+  )
+}
+
+# Pick the reply tone based on the urgency. Exercises Ai.decide.
+# `Ai.decide` returns a `{choice, reason, confidence}` map in v0.1;
+# we just read `.choice`.
+task pick_tone(urgency: Urgency) -> Tone {
+  decision = Ai.decide("urgency is {urgency}",
+    options: ["friendly", "professional", "terse", "apologetic"]
+  )
+  # `decision` is `map?`; fall back to professional if the call failed.
+  choice = decision?.choice ?? "professional"
+  when choice {
+    "friendly" => Tone.friendly
+    "terse" => Tone.terse
+    "apologetic" => Tone.apologetic
+    _ => Tone.professional
+  }
+}
+
+# Triple-quoted prompt template with interpolation.
+task reply_prompt(subject: str, body: str, tone: Tone) -> str {
+  """
+  You are drafting a short email reply.
+
+  Original subject: {subject}
+  Original body:    {body}
+  Requested tone:   {tone}
+
+  Write only the reply body, no headers.
+  """
+}
+
+# Decide what to do with a triaged email. This is in-program logic,
+# not the LLM — we use rich enum construction to return a structured
+# action.
+task decide_action(urgency: Urgency, sender: str) -> Action {
+  when urgency {
+    low => Action.silent_archive
+    medium => Action.reply { to: sender, tone: Tone.friendly }
+    high => Action.reply { to: sender, tone: Tone.professional }
+    critical => Action.escalate {
+      reason: "critical email from {sender}",
+      to: Env.get("ESCALATE_TO") ?? "ops@example.com"
+    }
+  }
+}
+
+
+# ─── Archiver — sibling agent, handles Agent.send messages ──────────
+
+agent Archiver {
+  @role "Email archivist. You record which emails were archived."
+  @model "default"
+
+  state {
+    archived: int = 0
+    last_subject: str? = none
+  }
+
+  # on-message handler — fires when another agent posts via
+  # `Agent.send(Archiver, data)`.
+  on message(email: {subject: str, from: str}) {
+    self.archived = self.archived + 1
+    self.last_subject = email.subject
+    Log.info("archived #{self.archived}: {email.subject} (from {email.from})")
+  }
+}
+
+
+# ─── Main agent ─────────────────────────────────────────────────────
+
+agent InboxAssistant {
+  @role "Professional inbox triage assistant. You read emails, classify urgency, draft short replies, and escalate critical issues."
+  @model "default"
+
+  state {
+    processed: int = 0
+    urgent: int = 0
+    last_digest_at: str? = none
+  }
+
+  # Handle a single email: classify, extract, act.
+  task handle(email: {subject: str, from: str, body: str}) {
+    urgency = classify_urgency(email.body)
+
+    Log.debug("triaged `{email.subject}` as {urgency}")
+
+    # Extract structured fields for the record.
+    facts = Ai.extract(
+      from: email.body,
+      schema: {sender_intent: "str", asked_for: "str"}
+    )
+    if facts != none {
+      Io.show(facts)
+    }
+
+    # Decide what to do.
+    action = decide_action(urgency, email.from)
+
+    when action {
+      silent_archive => {
+        Agent.send(Archiver, {subject: email.subject, from: email.from})
+      }
+
+      reply { to, tone } => {
+        self.urgent = self.urgent + 1
+        prompt = reply_prompt(email.subject, email.body, tone)
+        draft = Ai.draft(prompt, tone: "{tone}", max_length: 400)
+          ?? "Thanks for your note on '{email.subject}' — I'll follow up shortly."
+
+        Io.show({to: to, tone: tone, draft: draft})
+        if Io.confirm("Send this reply to {to}?") {
+          Email.send(draft, to: to, subject: "Re: {email.subject}")
+          Io.notify("Sent reply to {to}")
+        } else {
+          Log.warn("User skipped reply to {to}")
+        }
+      }
+
+      escalate { reason, to } => {
+        self.urgent = self.urgent + 1
+        Io.notify("ESCALATING: {reason}")
+        Email.send(
+          "Escalation: {email.subject}\n\nReason: {reason}\n\nOriginal from: {email.from}",
+          to: to,
+          subject: "[URGENT] {email.subject}"
+        )
+      }
+    }
+
+    self.processed = self.processed + 1
+  }
+
+  # Poll: fetch new mail, triage each.
+  task poll_inbox() {
+    emails = Email.fetch(unread: true)
+    if emails.is_empty {
+      Log.debug("no new mail")
+      return
+    }
+
+    Io.notify("Triaging {emails.count} new emails")
+    for email in emails {
+      handle(email)
+    }
+  }
+
+  # Daily digest: summarize, translate, and post via HTTP.
+  task send_daily_digest() {
+    text = "Today I processed {self.processed} emails; {self.urgent} needed attention."
+
+    # Optional translation via Ai.translate.
+    target_lang = Env.get("DIGEST_LANG") ?? "english"
+    body = text
+    if target_lang != "english" {
+      body = Ai.translate(text, to: target_lang) ?? text
+    }
+
+    # Summarize to a single sentence.
+    summary = Ai.summarize(body,
+      in: 1,
+      unit: "sentence",
+      fallback: text
+    )
+
+    # Structured sentiment via Ai.prompt … as T. `\{` / `\}` escape the
+    # interpolation braces so the literal JSON example reaches the LLM.
+    scored = Ai.prompt(
+      system: "Rate the workload. Respond as JSON \{label: string, score: integer 1-10\}.",
+      user: summary
+    ) as Sentiment
+
+    mood = scored?.label ?? "neutral"
+    digits = scored?.score ?? 5
+    Io.notify("Daily digest ({mood}, {digits}/10): {summary}")
+
+    # Optional webhook post. Only runs if DIGEST_WEBHOOK is set.
+    webhook = Env.get("DIGEST_WEBHOOK")
+    if webhook != none {
+      token = Env.get("DIGEST_TOKEN") ?? ""
+      url = webhook ?? ""
+      auth = "Bearer {token}"
+      payload = {summary: summary, mood: mood, score: digits, processed: self.processed, urgent: self.urgent}
+      headers = {Authorization: auth, Content_Type: "application/json"}
+      response = Http.post(url, json: payload, headers: headers)
+      if response?.is_ok ?? false {
+        Log.info("digest posted to webhook")
+      } else {
+        Log.warn("digest post failed")
+      }
+    }
+
+    # Reset counters.
+    self.processed = 0
+    self.urgent = 0
+    self.last_digest_at = "reset"
+  }
+
+  # Boot: kick off polling + schedule the daily digest.
+  @on_start {
+    Log.info("InboxAssistant booting")
+
+    # Fire once up-front, then every 5 minutes while the program runs.
+    Schedule.every(5.minutes, () => {
+      poll_inbox()
+    })
+
+    # Delayed notice to prove Schedule.after works.
+    Schedule.after(3.seconds, () => {
+      Io.notify("Assistant ready — watching inbox every 5 minutes")
+    })
+
+    # Absolute-time digest. Reads DIGEST_AT (ISO 8601) from env; if
+    # unset, defers by 1 hour so the schedule registers successfully
+    # without needing a valid future timestamp.
+    digest_when = Env.get("DIGEST_AT") ?? "2026-12-31T23:59:59Z"
+    Schedule.at(digest_when, () => {
+      send_daily_digest()
+    })
+
+    # Fan-out collections — exercises list/map/set literals.
+    priorities = [Urgency.low, Urgency.medium, Urgency.high]
+    counts = {total: 0, archived: 0}
+    known_senders = set["alice@example.com", "ops@example.com"]
+    Log.debug("boot state: {priorities.count} priorities staged")
+    Io.show(counts)
+    Io.show(known_senders)
+  }
+}
+
+
+# ─── Wire the program ────────────────────────────────────────────────
+
+run(Archiver)
+run(InboxAssistant)
