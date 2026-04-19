@@ -88,18 +88,33 @@ jobs:
     #
     # Auth: a short-lived installation token minted from the
     # `keel-release-bot` GitHub App (installed on this repo and the tap).
-    # Secrets live on keel-lang/keel as `TAP_APP_ID` + `TAP_APP_PRIVATE_KEY`.
+    # Credentials on keel-lang/keel:
+    #   - Actions variable `TAP_APP_CLIENT_ID` (non-secret identifier)
+    #   - Actions secret   `TAP_APP_PRIVATE_KEY` (PEM contents)
     needs: release
     runs-on: ubuntu-latest
     steps:
       - name: Mint tap token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         id: app-token
         with:
-          app-id: ${{ secrets.TAP_APP_ID }}
+          client-id: ${{ vars.TAP_APP_CLIENT_ID }}
           private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
           owner: keel-lang
           repositories: homebrew-tap
+
+      # Resolve the App's bot user id so commits below can use the
+      # canonical `<slug>[bot]` identity that GitHub recognises and
+      # auto-marks as Verified.
+      - name: Resolve bot user id
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          slug='${{ steps.app-token.outputs.app-slug }}'
+          user_id=$(gh api "/users/${slug}[bot]" --jq .id)
+          echo "slug=$slug"        >> "$GITHUB_OUTPUT"
+          echo "user_id=$user_id"  >> "$GITHUB_OUTPUT"
 
       - name: Checkout tap
         uses: actions/checkout@v6
@@ -167,9 +182,11 @@ jobs:
       - name: Commit + push to tap
         env:
           VERSION: ${{ github.ref_name }}
+          BOT_SLUG: ${{ steps.bot.outputs.slug }}
+          BOT_USER_ID: ${{ steps.bot.outputs.user_id }}
         run: |
-          git config user.name  "keel-release-bot"
-          git config user.email "release@keel-lang.dev"
+          git config user.name  "${BOT_SLUG}[bot]"
+          git config user.email "${BOT_USER_ID}+${BOT_SLUG}[bot]@users.noreply.github.com"
           git add Formula/keel.rb
           git commit -m "Update keel to $VERSION" || echo "no changes"
           git push
