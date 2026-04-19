@@ -12,6 +12,30 @@ Nothing yet.
 
 ---
 
+## [0.1.2] — 2026-04-19
+
+Internal hardening. No user-facing language or stdlib changes.
+
+### Build
+
+- **Rust edition 2024** — bumped from 2021. Minimum supported rustc is now 1.85. Contributors building from source need a recent toolchain.
+- **Runtime config decoupled from the environment block.** Previously, `--trace` / `--log-level <lvl>` / `Log.set_level("...")` mutated `KEEL_TRACE` and `KEEL_LOG_LEVEL` at runtime. Edition 2024 made `std::env::set_var` unsafe, and the underlying pattern was always a data race against concurrent env reads on POSIX. The env vars remain the startup input (seeded once into process-global atomics); runtime mutation now goes through typed setters instead, so no `unsafe` is required.
+- Dependency patch bumps via `cargo update` (tokio 1.52.0 → 1.52.1 and transitive).
+
+### Release infrastructure
+
+- **Homebrew tap push now uses a GitHub App installation token** (`keel-release-bot`) instead of a long-lived Personal Access Token. Token is minted per-run with a 1-hour lifetime, scoped to `contents:write` on `keel-lang/homebrew-tap` only, and not tied to any user account.
+
+---
+
+## [0.1.1] — 2026-04-19
+
+### Release
+
+- **Dropped prebuilt macOS Intel binaries.** Release tarballs now cover only macOS Apple Silicon (`aarch64-apple-darwin`) and Linux x86_64 (`x86_64-unknown-linux-gnu`). Intel Mac users can still build from source via `cargo build --release`.
+
+---
+
 ## [0.1.0] — Alpha
 
 First public release. The language, standard library, and tooling are all new.
