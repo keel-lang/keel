@@ -103,6 +103,14 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
   - [ ] Go-to-definition / rename
 - [ ] `keel build` — bytecode compiler + VM
 
+#### Dependencies
+- [x] Rust edition 2024 (min rustc 1.85)
+- [x] Patch/minor `cargo update` is applied continuously; no version-pin drift tolerated.
+- [ ] **Major bumps deferred to v0.2** (each is its own mini-project, kept out of alpha so regressions are bisectable):
+  - `chumsky 0.9 → 1.0` — API rewrite; the parser in `src/parser.rs` would need reworking. Low payoff during alpha.
+  - `imap 2 → 3` — also resolves the `imap-proto` future-incompat warning `cargo` emits today.
+  - `colored 2 → 3`, `lettre 0.11 → 0.12` (and similar) — ergonomic bumps, batched with the two above.
+
 **Deferred post-v0.1 with rationale:**
 - `keel build` bytecode compiler. The tree-walking interpreter is fast enough for alpha workloads (~8ms cold start), and a real VM has to re-solve async dispatch, closure capture across event-loop boundaries, and runtime-pluggable namespaces — costly without matching user payoff. Revisit when there's a concrete motivator (LLVM/WASM backend, embeddable runtime).
 - Pluggable LLM provider registry. v0.1 ships with Ollama only; adding a second provider is the forcing function that justifies the registry plumbing.

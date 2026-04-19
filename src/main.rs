@@ -3,7 +3,7 @@ use miette::{IntoDiagnostic, NamedSource, Result};
 use std::fs;
 use std::path::PathBuf;
 
-use keel_lang::{formatter, interpreter, lexer, lsp, parser, repl, types, vm};
+use keel_lang::{formatter, interpreter, lexer, lsp, parser, repl, runtime, types, vm};
 
 #[derive(Parser)]
 #[command(name = "keel", version, about = "Keel — AI agents as first-class citizens")]
@@ -60,24 +60,23 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // `--trace` surfaces as KEEL_TRACE=1 so stdlib modules that need
-    // to decide whether to print internal detail can just check the
-    // env, matching the pattern used by KEEL_LLM / KEEL_REPL / KEEL_ONESHOT.
+    // `--trace` flips the runtime's trace flag. Stdlib modules that
+    // need to decide whether to print internal detail check it via
+    // `runtime::trace_enabled()`. `KEEL_TRACE=1` in the env seeds the
+    // same flag on first read.
     if cli.trace {
-        std::env::set_var("KEEL_TRACE", "1");
+        runtime::set_trace(true);
     }
 
-    // `--log-level <lvl>` → KEEL_LOG_LEVEL for the runtime's Log
-    // namespace. Validate up-front so a typo fails fast instead of
-    // silently falling back to the default threshold.
+    // `--log-level <lvl>` sets the Log namespace's threshold. Validate
+    // up-front so a typo fails fast instead of silently falling back
+    // to the default.
     if let Some(level) = &cli.log_level {
-        let normalised = level.to_ascii_lowercase();
-        if !matches!(normalised.as_str(), "debug" | "info" | "warn" | "warning" | "error") {
+        if !runtime::set_log_threshold(level) {
             return Err(miette::miette!(
                 "--log-level: `{level}` is not a valid level (expected debug|info|warn|error)"
             ));
         }
-        std::env::set_var("KEEL_LOG_LEVEL", normalised);
     }
 
     // Top-level SIGINT watcher: exits the process regardless of what

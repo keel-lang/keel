@@ -71,7 +71,7 @@ impl std::fmt::Display for LlmError {
 /// behind this; real warnings (unrecognised classifier output, call
 /// failures) print unconditionally.
 fn trace() -> bool {
-    std::env::var("KEEL_TRACE").as_deref() == Ok("1")
+    super::trace_enabled()
 }
 
 impl LlmClient {

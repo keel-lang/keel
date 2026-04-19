@@ -12,6 +12,8 @@ pub mod llm;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use crate::interpreter::{
     CallArgValue, Interpreter, Namespace,
@@ -644,11 +646,12 @@ fn memory_namespace() -> Namespace {
 // ---------------------------------------------------------------------------
 //
 // Level control:
-//   - Env var `KEEL_LOG_LEVEL=debug|info|warn|error` (default `info`).
-//   - CLI flag `--log-level <lvl>` in main.rs sets the env var.
-//   - Program API `Log.set_level("debug")` / `Log.level()` mutates /
-//     reads the env var at runtime so a Keel program can reconfigure
-//     based on its own config (e.g., `Log.set_level(Env.get("APP_LOG") ?? "info")`).
+//   - Env var `KEEL_LOG_LEVEL=debug|info|warn|error` (default `info`) —
+//     read once, at first access, to seed the atomic threshold below.
+//   - CLI flag `--log-level <lvl>` in main.rs calls `set_log_threshold`.
+//   - Program API `Log.set_level("debug")` / `Log.level()` mutates and
+//     reads the same atomic, so a Keel program can reconfigure at
+//     runtime (e.g., `Log.set_level(Env.get("APP_LOG") ?? "info")`).
 //
 // Levels are ranked: debug=0 < info=1 < warn=2 < error=3. A call at
 // rank N prints when N >= the current threshold.
@@ -665,11 +668,60 @@ fn level_rank(name: &str) -> Option<u8> {
     }
 }
 
-fn current_log_threshold() -> u8 {
-    std::env::var("KEEL_LOG_LEVEL")
-        .ok()
-        .and_then(|s| level_rank(&s))
-        .unwrap_or_else(|| level_rank(DEFAULT_LOG_LEVEL).unwrap())
+fn rank_name(rank: u8) -> &'static str {
+    match rank {
+        0 => "debug",
+        1 => "info",
+        2 => "warn",
+        _ => "error",
+    }
+}
+
+static LOG_THRESHOLD: OnceLock<AtomicU8> = OnceLock::new();
+
+fn log_threshold_cell() -> &'static AtomicU8 {
+    LOG_THRESHOLD.get_or_init(|| {
+        let seed = std::env::var("KEEL_LOG_LEVEL")
+            .ok()
+            .and_then(|s| level_rank(&s))
+            .unwrap_or_else(|| level_rank(DEFAULT_LOG_LEVEL).unwrap());
+        AtomicU8::new(seed)
+    })
+}
+
+pub fn current_log_threshold() -> u8 {
+    log_threshold_cell().load(Ordering::Relaxed)
+}
+
+/// Sets the active log threshold. Returns `false` if `name` is not a
+/// recognised level (the threshold is left unchanged).
+pub fn set_log_threshold(name: &str) -> bool {
+    match level_rank(name) {
+        Some(rank) => {
+            log_threshold_cell().store(rank, Ordering::Relaxed);
+            true
+        }
+        None => false,
+    }
+}
+
+// Trace flag (`--trace` / `KEEL_TRACE=1`). Seeded once from the env at
+// first read; CLI flag flips it via `set_trace`.
+static TRACE: OnceLock<AtomicBool> = OnceLock::new();
+
+fn trace_cell() -> &'static AtomicBool {
+    TRACE.get_or_init(|| {
+        let seed = std::env::var("KEEL_TRACE").as_deref() == Ok("1");
+        AtomicBool::new(seed)
+    })
+}
+
+pub fn trace_enabled() -> bool {
+    trace_cell().load(Ordering::Relaxed)
+}
+
+pub fn set_trace(on: bool) {
+    trace_cell().store(on, Ordering::Relaxed);
 }
 
 fn log_if_enabled(level: &str, msg: &str) {
@@ -707,21 +759,16 @@ fn log_namespace() -> Namespace {
             let level = positional(&args, 0)
                 .map(|v| v.as_string())
                 .ok_or_else(|| miette::miette!("Log.set_level: missing level argument"))?;
-            if level_rank(&level).is_none() {
+            if !set_log_threshold(&level) {
                 return Err(miette::miette!(
                     "Log.set_level: `{level}` is not a valid level (expected debug|info|warn|error)"
                 ));
             }
-            std::env::set_var("KEEL_LOG_LEVEL", level.to_ascii_lowercase());
             Ok(Value::None)
         }),
         // `Log.level()` — returns the active threshold as a string.
         "level" => |_i, _args| Box::pin(async move {
-            let name = std::env::var("KEEL_LOG_LEVEL")
-                .ok()
-                .filter(|s| level_rank(s).is_some())
-                .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_string());
-            Ok(Value::String(name.to_ascii_lowercase()))
+            Ok(Value::String(rank_name(current_log_threshold()).to_string()))
         }),
     })
 }
