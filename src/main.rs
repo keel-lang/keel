@@ -8,6 +8,17 @@ use keel_lang::{formatter, interpreter, lexer, lsp, parser, repl, types, vm};
 #[derive(Parser)]
 #[command(name = "keel", version, about = "Keel — AI agents as first-class citizens")]
 struct Cli {
+    /// Print internal runtime detail: LLM call metadata, input previews,
+    /// per-call results, provider banner. Off by default.
+    #[arg(long, global = true)]
+    trace: bool,
+
+    /// Log threshold for the program's `Log.*` calls: debug, info, warn,
+    /// or error. Default: info. Can also be set via `KEEL_LOG_LEVEL` or
+    /// at runtime via `Log.set_level("...")`.
+    #[arg(long, global = true, value_name = "LEVEL")]
+    log_level: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -48,6 +59,45 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // `--trace` surfaces as KEEL_TRACE=1 so stdlib modules that need
+    // to decide whether to print internal detail can just check the
+    // env, matching the pattern used by KEEL_LLM / KEEL_REPL / KEEL_ONESHOT.
+    if cli.trace {
+        std::env::set_var("KEEL_TRACE", "1");
+    }
+
+    // `--log-level <lvl>` → KEEL_LOG_LEVEL for the runtime's Log
+    // namespace. Validate up-front so a typo fails fast instead of
+    // silently falling back to the default threshold.
+    if let Some(level) = &cli.log_level {
+        let normalised = level.to_ascii_lowercase();
+        if !matches!(normalised.as_str(), "debug" | "info" | "warn" | "warning" | "error") {
+            return Err(miette::miette!(
+                "--log-level: `{level}` is not a valid level (expected debug|info|warn|error)"
+            ));
+        }
+        std::env::set_var("KEEL_LOG_LEVEL", normalised);
+    }
+
+    // Top-level SIGINT watcher: exits the process regardless of what
+    // the interpreter is blocked on (stdin read in `Io.ask` /
+    // `Io.confirm`, IMAP fetch, HTTP request, in-flight LLM call).
+    // The event loop in `Interpreter::execute` has its own Ctrl-C
+    // branch for graceful shutdown when the program is idle; this
+    // watcher is the hard-exit fallback so a user pressing Ctrl-C
+    // never has to press Enter first.
+    //
+    // 130 is the standard SIGINT exit code. Repl uses rustyline's
+    // own Ctrl-C handling, so suppress the watcher there.
+    if !matches!(cli.command, Commands::Repl) {
+        tokio::spawn(async {
+            if tokio::signal::ctrl_c().await.is_ok() {
+                eprintln!();
+                std::process::exit(130);
+            }
+        });
+    }
 
     match cli.command {
         Commands::Run { file } => run_file(&file).await,

@@ -54,7 +54,7 @@ First public release. The language, standard library, and tooling are all new.
 - **`Email`** — real IMAP fetch + SMTP send via env vars `IMAP_HOST`, `SMTP_HOST`, `EMAIL_USER`, `EMAIL_PASS`. Gracefully degrades to empty list / no-op when credentials aren't set. `Email.archive` is a no-op placeholder in v0.1 (IMAP folder-move not yet implemented).
 - **`Schedule`** — `every`, `after`, `at` (RFC 3339 / ISO 8601), `sleep`. The `at:` calendar-alignment argument on `Schedule.every` is parsed but not enforced; `Schedule.cron` is not registered. Tracked in [ROADMAP](ROADMAP.md).
 - **`Env`** — `Env.get(name)` returns `str?`, `Env.require(name)` errors if unset. Fully wired.
-- **`Log`** — `info`, `warn`, `error`, `debug` print to stderr. Fully wired.
+- **`Log`** — `info`, `warn`, `error`, `debug` print to stderr. Level gated: threshold comes from `KEEL_LOG_LEVEL` / `--log-level <level>` / `Log.set_level("...")`; default is `info` so `Log.debug` is silent until raised. `Log.level()` returns the active threshold as a string.
 - **`Agent`** — `Agent.run(A)` / `Agent.stop(A)` / `Agent.send(target, data, event:)` wired. `Agent.delegate` and `Agent.broadcast` are referenced in the docs but not yet registered in the runtime.
 - **`Memory`** — `remember`, `recall`, `forget` are no-op stubs in v0.1. No vector-store backend yet.
 - **`Control`** — `retry`, `with_timeout`, `with_deadline` are no-op stubs in v0.1.
@@ -63,7 +63,7 @@ First public release. The language, standard library, and tooling are all new.
 
 ### Tooling
 
-- `keel run <file>` — execute.
+- `keel run <file>` — execute. Global flags: `--trace` (`KEEL_TRACE=1` — surface LLM call metadata, input previews, per-call results, provider banner) and `--log-level <debug|info|warn|error>` (`KEEL_LOG_LEVEL=<level>` — threshold for the program's `Log.*` calls, default `info`). `Ctrl+C` exits immediately regardless of what the runtime is blocked on, with exit code `130`.
 - `keel check <file>` — static analysis: undefined identifiers, `self` outside an agent, non-exhaustive `when` on simple enums, missing `_` on non-enum `when`, `if` condition / `for` iterator types, task argument arity, basic `Ai.classify` enum inference, rich-variant field checks. **Not yet enforced:** full nullable safety at call sites, return-type matching against declared `-> T`, generic parameter inference.
 - `keel repl` — interactive; persists bindings and declarations across prompts; brace-balance-aware multi-line input; `~/.keel_history`.
 - `keel fmt <file>` — idempotent AST pretty-printer. Two-space indent, multi-line lambda block bodies, automatic string-key quoting for map keys with spaces.

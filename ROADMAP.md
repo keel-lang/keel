@@ -36,6 +36,13 @@ Legend: **[x]** complete · **[~]** partial (works, but with caveats below) · *
   - [ ] Full return-type matching against declared `-> T`
   - [ ] Struct/map subtyping checks
   - [ ] Generic type parameter inference (`list[T]`, `map[K, V]`)
+- [~] **Parser corners.** Known limits surfaced by the inbox_assistant example:
+  - [ ] `if`-as-expression on the RHS of a binding (`x = if cond { a } else { b }`)
+  - [ ] Type annotations on `let` bindings (`x: T = ...`)
+  - [ ] Nested `"..."` inside `{interp}` without escaping
+  - [ ] String interpolation evaluates only bare idents and `a.b.c` chains — function calls (`{f()}`) and expressions are not routed through the real parser yet
+  - [ ] `!` postfix unwrap operator (documented, not implemented)
+  - [ ] `list + list` / `list.push` concatenation
 
 #### Agent model
 - [x] Agent declaration + `run(Agent)` / `Agent.run` / `Agent.stop`
@@ -73,7 +80,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 | `Email` | [~] | `fetch` (IMAP), `send` (SMTP) via env vars | `archive` is a no-op placeholder (no IMAP folder move) |
 | `Http` | [x] | `get`, `post`, `request` (via reqwest) | — |
 | `Env` | [x] | `get`, `require` | — |
-| `Log` | [x] | `info`, `warn`, `error`, `debug` | — |
+| `Log` | [x] | `info`, `warn`, `error`, `debug`, `set_level`, `level`. Threshold controlled via `KEEL_LOG_LEVEL`, `--log-level`, or `Log.set_level("...")` at runtime (default `info`). | — |
 | `Agent` | [~] | `run`, `stop`, `send` | `delegate`, `broadcast` missing |
 | `Memory` | [ ] | — | `remember` / `recall` / `forget` all no-op stubs (no vector store, no embeddings) |
 | `Control` | [ ] | — | `retry` / `with_timeout` / `with_deadline` all no-op stubs |

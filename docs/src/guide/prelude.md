@@ -31,7 +31,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Control` | ⏳ | `retry`, `with_timeout`, `with_deadline` (stubbed) |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
 | `Time` | ⏳ | Time utilities: `now`, `parse`, `format` (use the `now` keyword for now) |
-| `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug` |
+| `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
 | `Agent` | 🟡 | `run`, `stop`, `send` · `delegate`, `broadcast` ⏳ |
 
 `run` and `stop` are re-exported at the top level so programs can end with `run(MyAgent)` without the namespace prefix.

@@ -46,7 +46,7 @@ editors/vscode/     # VS Code extension (TextMate grammar + LSP config)
 - Update `CHANGELOG.md` with every feature (include .keel example) and bug fix (explain what broke).
 - Update `ROADMAP.md` when a feature ships, gets stubbed, or shifts scope.
 - Tag partial / unimplemented features in `docs/src/` with `<span class="badge badge-soon">Coming soon</span>` plus a `> Status:` callout.
-- Env vars: `KEEL_OLLAMA_MODEL` (default model), `KEEL_MODEL_<ALIAS>` (per-alias model tags), `KEEL_LLM=mock` (test mode), `KEEL_REPL=1` (REPL mode), `KEEL_ONESHOT=1` (exit after first idle window).
+- Env vars: `KEEL_OLLAMA_MODEL` (default model), `KEEL_MODEL_<ALIAS>` (per-alias model tags), `OLLAMA_HOST` (default `http://localhost:11434`), `KEEL_LLM=mock` (test mode), `KEEL_REPL=1` (REPL mode), `KEEL_ONESHOT=1` (exit after first idle window), `KEEL_TRACE=1` (verbose LLM call narration; `--trace` sets this), `KEEL_LOG_LEVEL=debug|info|warn|error` (threshold for `Log.*`; `--log-level` sets this).
 
 ## CLI
 

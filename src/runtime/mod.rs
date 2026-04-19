@@ -123,11 +123,19 @@ fn io_namespace() -> Namespace {
         }),
         "ask" => |_i, args| Box::pin(async move {
             let prompt = positional(&args, 0).map(|v| v.as_string()).unwrap_or_default();
-            Ok(Value::String(human::ask(&prompt)))
+            // Off-thread the blocking stdin read so the tokio runtime
+            // can keep polling other tasks (signal watcher, scheduler).
+            let answer = tokio::task::spawn_blocking(move || human::ask(&prompt))
+                .await
+                .map_err(|e| miette::miette!("Io.ask task join error: {e}"))?;
+            Ok(Value::String(answer))
         }),
         "confirm" => |_i, args| Box::pin(async move {
             let prompt = positional(&args, 0).map(|v| v.as_string()).unwrap_or_default();
-            Ok(Value::Bool(human::confirm(&prompt)))
+            let answer = tokio::task::spawn_blocking(move || human::confirm(&prompt))
+                .await
+                .map_err(|e| miette::miette!("Io.confirm task join error: {e}"))?;
+            Ok(Value::Bool(answer))
         }),
     })
 }
@@ -634,28 +642,86 @@ fn memory_namespace() -> Namespace {
 // ---------------------------------------------------------------------------
 // Log
 // ---------------------------------------------------------------------------
+//
+// Level control:
+//   - Env var `KEEL_LOG_LEVEL=debug|info|warn|error` (default `info`).
+//   - CLI flag `--log-level <lvl>` in main.rs sets the env var.
+//   - Program API `Log.set_level("debug")` / `Log.level()` mutates /
+//     reads the env var at runtime so a Keel program can reconfigure
+//     based on its own config (e.g., `Log.set_level(Env.get("APP_LOG") ?? "info")`).
+//
+// Levels are ranked: debug=0 < info=1 < warn=2 < error=3. A call at
+// rank N prints when N >= the current threshold.
+
+const DEFAULT_LOG_LEVEL: &str = "info";
+
+fn level_rank(name: &str) -> Option<u8> {
+    match name.to_ascii_lowercase().as_str() {
+        "debug" => Some(0),
+        "info" => Some(1),
+        "warn" | "warning" => Some(2),
+        "error" => Some(3),
+        _ => None,
+    }
+}
+
+fn current_log_threshold() -> u8 {
+    std::env::var("KEEL_LOG_LEVEL")
+        .ok()
+        .and_then(|s| level_rank(&s))
+        .unwrap_or_else(|| level_rank(DEFAULT_LOG_LEVEL).unwrap())
+}
+
+fn log_if_enabled(level: &str, msg: &str) {
+    let call_rank = level_rank(level).unwrap_or(1);
+    if call_rank >= current_log_threshold() {
+        eprintln!("[{level}] {msg}");
+    }
+}
 
 fn log_namespace() -> Namespace {
     ns!("Log", {
         "info" => |_i, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.as_string()).unwrap_or_default();
-            eprintln!("[info] {msg}");
+            log_if_enabled("info", &msg);
             Ok(Value::None)
         }),
         "warn" => |_i, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.as_string()).unwrap_or_default();
-            eprintln!("[warn] {msg}");
+            log_if_enabled("warn", &msg);
             Ok(Value::None)
         }),
         "error" => |_i, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.as_string()).unwrap_or_default();
-            eprintln!("[error] {msg}");
+            log_if_enabled("error", &msg);
             Ok(Value::None)
         }),
         "debug" => |_i, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.as_string()).unwrap_or_default();
-            eprintln!("[debug] {msg}");
+            log_if_enabled("debug", &msg);
             Ok(Value::None)
+        }),
+        // `Log.set_level("debug")` — raises or lowers the threshold at
+        // runtime. Unknown values raise; use `Log.level()` to read.
+        "set_level" => |_i, args| Box::pin(async move {
+            let level = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Log.set_level: missing level argument"))?;
+            if level_rank(&level).is_none() {
+                return Err(miette::miette!(
+                    "Log.set_level: `{level}` is not a valid level (expected debug|info|warn|error)"
+                ));
+            }
+            std::env::set_var("KEEL_LOG_LEVEL", level.to_ascii_lowercase());
+            Ok(Value::None)
+        }),
+        // `Log.level()` — returns the active threshold as a string.
+        "level" => |_i, _args| Box::pin(async move {
+            let name = std::env::var("KEEL_LOG_LEVEL")
+                .ok()
+                .filter(|s| level_rank(s).is_some())
+                .unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_string());
+            Ok(Value::String(name.to_ascii_lowercase()))
         }),
     })
 }

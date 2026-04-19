@@ -66,6 +66,14 @@ impl std::fmt::Display for LlmError {
     }
 }
 
+/// Whether `--trace` / `KEEL_TRACE=1` is on. Every per-call LLM
+/// narration (what we're doing, input preview, the result) is gated
+/// behind this; real warnings (unrecognised classifier output, call
+/// failures) print unconditionally.
+fn trace() -> bool {
+    std::env::var("KEEL_TRACE").as_deref() == Ok("1")
+}
+
 impl LlmClient {
     pub fn new() -> Self {
         if std::env::var("KEEL_LLM").as_deref() == Ok("mock") {
@@ -78,17 +86,19 @@ impl LlmClient {
             std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
         let ollama_default = std::env::var("KEEL_OLLAMA_MODEL").unwrap_or_default();
 
-        println!(
-            "  {} LLM provider: {} ({})",
-            "⚡".dimmed(),
-            "Ollama".bright_cyan(),
-            ollama_host.dimmed()
-        );
-        for (keel_name, ollama_name) in &model_map {
-            println!("     {} → {}", keel_name.dimmed(), ollama_name.bright_cyan());
-        }
-        if !ollama_default.is_empty() {
-            println!("     {} → {}", "*".dimmed(), ollama_default.bright_cyan());
+        if trace() {
+            println!(
+                "  {} LLM provider: {} ({})",
+                "→".dimmed(),
+                "Ollama".bright_cyan(),
+                ollama_host.dimmed()
+            );
+            for (keel_name, ollama_name) in &model_map {
+                println!("     {} → {}", keel_name.dimmed(), ollama_name.bright_cyan());
+            }
+            if !ollama_default.is_empty() {
+                println!("     {} → {}", "*".dimmed(), ollama_default.bright_cyan());
+            }
         }
 
         LlmClient {
@@ -210,14 +220,15 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<String>, String> {
         let variants_str = variants.join(", ");
-        let preview = truncate(input, 80);
-        println!(
-            "  {} Classifying as [{}] using {}",
-            "🤖".dimmed(),
-            variants_str.bright_cyan(),
-            self.describe_model(model).dimmed()
-        );
-        println!("     input: {}", preview.dimmed());
+        if trace() {
+            println!(
+                "  {} Classifying as [{}] using {}",
+                "→".dimmed(),
+                variants_str.bright_cyan(),
+                self.describe_model(model).dimmed()
+            );
+            println!("     input: {}", truncate(input, 80).dimmed());
+        }
 
         let mut system = format!(
             "You are a classifier. Classify the following input into exactly one of these \
@@ -236,7 +247,9 @@ impl LlmClient {
                 for variant in variants {
                     let lv = variant.to_lowercase();
                     if cleaned == lv || cleaned.contains(&lv) {
-                        println!("  {} Result: {}", "✓".bright_green(), variant.bright_white().bold());
+                        if trace() {
+                            println!("  {} Result: {}", "✓".bright_green(), variant.bright_white().bold());
+                        }
                         return Ok(Some(variant.clone()));
                     }
                 }
@@ -262,14 +275,15 @@ impl LlmClient {
             Some((n, unit)) => format!("in {n} {unit}"),
             None => "briefly".to_string(),
         };
-        let preview = truncate(input, 80);
-        println!(
-            "  {} Summarizing {} using {}",
-            "🤖".dimmed(),
-            length_instruction.dimmed(),
-            self.describe_model(model).dimmed()
-        );
-        println!("     input: {}", preview.dimmed());
+        if trace() {
+            println!(
+                "  {} Summarizing {} using {}",
+                "→".dimmed(),
+                length_instruction.dimmed(),
+                self.describe_model(model).dimmed()
+            );
+            println!("     input: {}", truncate(input, 80).dimmed());
+        }
 
         let system = format!(
             "You are a summarizer. Summarize the following text {length_instruction}. \
@@ -277,7 +291,9 @@ impl LlmClient {
         );
         match self.call(role, &system, input, model).await {
             Ok(response) => {
-                println!("  {} Summary ready", "✓".bright_green());
+                if trace() {
+                    println!("  {} Summary ready", "✓".bright_green());
+                }
                 Ok(Some(response.trim().to_string()))
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
@@ -298,14 +314,15 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<String>, String> {
         let tone_s = tone.unwrap_or("neutral");
-        let preview = truncate(description, 80);
-        println!(
-            "  {} Drafting ({}) using {}",
-            "🤖".dimmed(),
-            tone_s.dimmed(),
-            self.describe_model(model).dimmed()
-        );
-        println!("     prompt: {}", preview.dimmed());
+        if trace() {
+            println!(
+                "  {} Drafting ({}) using {}",
+                "→".dimmed(),
+                tone_s.dimmed(),
+                self.describe_model(model).dimmed()
+            );
+            println!("     prompt: {}", truncate(description, 80).dimmed());
+        }
 
         let mut system = format!("You are a text drafter. Draft the following with a {tone_s} tone.");
         if let Some(g) = guidance {
@@ -317,7 +334,9 @@ impl LlmClient {
 
         match self.call(role, &system, description, model).await {
             Ok(response) => {
-                println!("  {} Draft ready", "✓".bright_green());
+                if trace() {
+                    println!("  {} Draft ready", "✓".bright_green());
+                }
                 Ok(Some(response.trim().to_string()))
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
@@ -336,14 +355,15 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<String>, String> {
         let fields_desc: Vec<String> = schema.iter().map(|(n, t)| format!("{n}: {t}")).collect();
-        let preview = truncate(input, 80);
-        println!(
-            "  {} Extracting {{{}}} using {}",
-            "🤖".dimmed(),
-            fields_desc.join(", ").bright_cyan(),
-            self.describe_model(model).dimmed()
-        );
-        println!("     from: {}", preview.dimmed());
+        if trace() {
+            println!(
+                "  {} Extracting {{{}}} using {}",
+                "→".dimmed(),
+                fields_desc.join(", ").bright_cyan(),
+                self.describe_model(model).dimmed()
+            );
+            println!("     from: {}", truncate(input, 80).dimmed());
+        }
 
         let system = format!(
             "You are a structured data extractor. Extract these fields from the input:\n  {}\n\n\
@@ -352,7 +372,9 @@ impl LlmClient {
         );
         match self.call(role, &system, input, model).await {
             Ok(response) => {
-                println!("  {} Extracted", "✓".bright_green());
+                if trace() {
+                    println!("  {} Extracted", "✓".bright_green());
+                }
                 Ok(Some(response.trim().to_string()))
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
@@ -370,15 +392,16 @@ impl LlmClient {
         target_langs: &[String],
         model: &str,
     ) -> Result<Option<HashMap<String, String>>, String> {
-        let preview = truncate(input, 80);
         let langs = target_langs.join(", ");
-        println!(
-            "  {} Translating to [{}] using {}",
-            "🤖".dimmed(),
-            langs.bright_cyan(),
-            self.describe_model(model).dimmed()
-        );
-        println!("     input: {}", preview.dimmed());
+        if trace() {
+            println!(
+                "  {} Translating to [{}] using {}",
+                "→".dimmed(),
+                langs.bright_cyan(),
+                self.describe_model(model).dimmed()
+            );
+            println!("     input: {}", truncate(input, 80).dimmed());
+        }
 
         let system = if target_langs.len() == 1 {
             format!(
@@ -394,7 +417,9 @@ impl LlmClient {
         match self.call(role, &system, input, model).await {
             Ok(response) => {
                 let trimmed = response.trim().to_string();
-                println!("  {} Translated", "✓".bright_green());
+                if trace() {
+                    println!("  {} Translated", "✓".bright_green());
+                }
                 if target_langs.len() == 1 {
                     let mut map = HashMap::new();
                     map.insert(target_langs[0].clone(), trimmed);
@@ -422,13 +447,14 @@ impl LlmClient {
         options: &[String],
         model: &str,
     ) -> Result<Option<(String, String)>, String> {
-        let preview = truncate(input, 80);
-        println!(
-            "  {} Deciding using {}",
-            "🤖".dimmed(),
-            self.describe_model(model).dimmed()
-        );
-        println!("     input: {}", preview.dimmed());
+        if trace() {
+            println!(
+                "  {} Deciding using {}",
+                "→".dimmed(),
+                self.describe_model(model).dimmed()
+            );
+            println!("     input: {}", truncate(input, 80).dimmed());
+        }
 
         let system = format!(
             "You are a decision maker. Choose the best option and explain briefly.\n\n\
@@ -453,7 +479,9 @@ impl LlmClient {
                 if choice.is_empty() {
                     choice = trimmed.to_string();
                 }
-                println!("  {} Decision: {}", "✓".bright_green(), choice.bright_white().bold());
+                if trace() {
+                    println!("  {} Decision: {}", "✓".bright_green(), choice.bright_white().bold());
+                }
                 Ok(Some((choice, reason)))
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
@@ -471,14 +499,18 @@ impl LlmClient {
         user: &str,
         model: &str,
     ) -> Result<Option<String>, String> {
-        println!(
-            "  {} Prompt using {}",
-            "🤖".dimmed(),
-            self.describe_model(model).dimmed()
-        );
+        if trace() {
+            println!(
+                "  {} Prompt using {}",
+                "→".dimmed(),
+                self.describe_model(model).dimmed()
+            );
+        }
         match self.call(role, system, user, model).await {
             Ok(response) => {
-                println!("  {} Response ready", "✓".bright_green());
+                if trace() {
+                    println!("  {} Response ready", "✓".bright_green());
+                }
                 Ok(Some(response.trim().to_string()))
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
