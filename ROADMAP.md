@@ -122,7 +122,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 - [ ] Register `Search` / `Db` / `Time` as stub namespaces so calls raise a clear "planned for v0.2" error instead of a generic "unknown method"
 
 ### Release
-- [x] Release workflow builds macOS (Apple Silicon) + Linux x86_64 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo (needs `HOMEBREW_TAP_TOKEN` secret on this repo with `contents: write` on the tap). Intel Macs build from source — prebuilt Intel binaries are not shipped.
+- [x] Release workflow builds macOS (Apple Silicon) + Linux x86_64 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo. Auth uses a short-lived installation token minted from the `keel-release-bot` GitHub App (installed on both repos; secrets `TAP_APP_ID` + `TAP_APP_PRIVATE_KEY` on this repo). Intel Macs build from source — prebuilt Intel binaries are not shipped.
 - [x] `install.sh` fetches the latest tag; served by Pages at `https://keel-lang.dev/install.sh`
 - [x] Homebrew install via `brew install keel-lang/tap/keel`
 - [x] First v0.1.0 tag cut

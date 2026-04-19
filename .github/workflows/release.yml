@@ -85,14 +85,27 @@ jobs:
   tap:
     # Update keel-lang/homebrew-tap so `brew install keel-lang/tap/keel`
     # sees the new version immediately after the GitHub release is live.
+    #
+    # Auth: a short-lived installation token minted from the
+    # `keel-release-bot` GitHub App (installed on this repo and the tap).
+    # Secrets live on keel-lang/keel as `TAP_APP_ID` + `TAP_APP_PRIVATE_KEY`.
     needs: release
     runs-on: ubuntu-latest
     steps:
+      - name: Mint tap token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.TAP_APP_ID }}
+          private-key: ${{ secrets.TAP_APP_PRIVATE_KEY }}
+          owner: keel-lang
+          repositories: homebrew-tap
+
       - name: Checkout tap
         uses: actions/checkout@v6
         with:
           repository: keel-lang/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - uses: actions/download-artifact@v8
         with:
