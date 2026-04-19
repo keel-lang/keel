@@ -114,10 +114,15 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 - [ ] Register `Search` / `Db` / `Time` as stub namespaces so calls raise a clear "planned for v0.2" error instead of a generic "unknown method"
 
 ### Release
-- [x] Release workflow builds macOS (arm + x86) + Linux x86 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo (needs `HOMEBREW_TAP_TOKEN` secret on this repo with `contents: write` on the tap)
+- [x] Release workflow builds macOS (Apple Silicon) + Linux x86_64 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo (needs `HOMEBREW_TAP_TOKEN` secret on this repo with `contents: write` on the tap). Intel Macs build from source — prebuilt Intel binaries are not shipped.
 - [x] `install.sh` fetches the latest tag; served by Pages at `https://keel-lang.dev/install.sh`
 - [x] Homebrew install via `brew install keel-lang/tap/keel`
-- [ ] First v0.1.0 tag cut + release validated end-to-end
+- [x] First v0.1.0 tag cut
+- [ ] v0.1.0 release validated end-to-end (tarballs downloadable, `brew install keel-lang/tap/keel` works, `install.sh` one-liner works on both targets)
+- [ ] **Manual-trigger release workflows** — two `workflow_dispatch` jobs in `.github/workflows/`:
+  - `release-patch.yml` — reads the latest `v*` tag, increments the third digit (`v0.1.N` → `v0.1.N+1`), creates and pushes the tag, which fires the existing release pipeline.
+  - `release-minor.yml` — increments the second digit and resets the third (`v0.1.N` → `v0.2.0`), same downstream effect.
+  - Neither writes to `main`; both only push a tag. Run from the Actions UI so the "when" stays a deliberate human decision.
 
 ---
 

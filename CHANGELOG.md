@@ -72,7 +72,7 @@ First public release. The language, standard library, and tooling are all new.
 
 ### Distribution
 
-- **GitHub release workflow** builds three targets on tag push: `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu`. Computes SHA-256 per tarball and embeds them in the release notes.
+- **GitHub release workflow** builds two targets on tag push: `aarch64-apple-darwin` and `x86_64-unknown-linux-gnu`. Computes SHA-256 per tarball and embeds them in the release notes. Intel Macs are not shipped as prebuilt binaries — users on that platform build from source (`cargo build --release`).
 - **`install.sh`** served at `https://keel-lang.dev/install.sh` — one-liner that fetches the latest release for your OS + arch.
 - **Homebrew tap** (`keel-lang/homebrew-tap`): the release workflow writes `Formula/keel.rb` with the new version + URLs + SHAs on every tag. `brew install keel-lang/tap/keel`.
 - **GitHub Pages** deploys the mdBook documentation to `keel-lang.dev` on every push to `main`, with `install.sh` and `uninstall.sh` copied into the root.

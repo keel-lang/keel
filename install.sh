@@ -22,7 +22,18 @@ case "$ARCH" in
 esac
 
 case "$OS" in
-  darwin) TARGET="${ARCH}-apple-darwin" ;;
+  darwin)
+    if [ "$ARCH" != "aarch64" ]; then
+      echo "Prebuilt macOS binaries are Apple Silicon only."
+      echo "Intel Macs can build from source:"
+      echo ""
+      echo "  git clone https://github.com/$REPO.git"
+      echo "  cd keel && cargo build --release"
+      echo "  cp target/release/keel /usr/local/bin/"
+      exit 1
+    fi
+    TARGET="${ARCH}-apple-darwin"
+    ;;
   linux)  TARGET="${ARCH}-unknown-linux-gnu" ;;
   *)      echo "Unsupported OS: $OS"; exit 1 ;;
 esac
