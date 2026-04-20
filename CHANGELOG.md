@@ -72,6 +72,26 @@ score = Ai.prompt(
 )
 ```
 
+#### `Ai.extract(x, as: T)` — schema derived from declared struct type
+
+`as: T` was previously parsed but fell through to an empty schema. A
+`struct_types` registry is now populated during program evaluation, and
+`Ai.extract(x, as: T)` derives the field schema from it.
+
+```keel
+type Invoice { vendor: str, amount: float, date: str }
+
+agent Extractor {
+    @on_start {
+        result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
+    }
+}
+```
+
+The outgoing system prompt now contains `vendor`, `amount`, and `date` as
+extraction targets. Using `as: UnknownType` raises a runtime error with an
+actionable message.
+
 ---
 
 ## [0.1.2] — 2026-04-19

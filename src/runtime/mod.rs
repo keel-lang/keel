@@ -374,10 +374,21 @@ fn ai_namespace() -> Namespace {
                     .ok_or_else(|| miette::miette!("Ai.extract: missing input"))?
                     .as_string(),
             };
-            // Schema is either `schema: { field: "type" }` (map) or unspecified.
+            // Schema from `schema: { field: "type" }` map, or derived from `as: T` struct type.
             let schema: Vec<(String, String)> = match find_arg(&args, "schema") {
                 Some(Value::Map(m)) => m.iter().map(|(k, v)| (k.clone(), v.as_string())).collect(),
-                _ => Vec::new(),
+                _ => match find_arg(&args, "as") {
+                    Some(Value::Namespace(type_name)) => {
+                        let type_name = type_name.clone();
+                        interp.struct_types.get(&type_name).cloned().ok_or_else(|| {
+                            miette::miette!(
+                                "Ai.extract: `as: {type_name}` is not a known struct type. \
+                                 Declare it with `type {type_name} {{ field: type }}`"
+                            )
+                        })?
+                    }
+                    _ => Vec::new(),
+                },
             };
             let model = resolve_model(interp, &args);
             let role = interp.current_role();

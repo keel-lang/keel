@@ -113,6 +113,8 @@ pub struct Interpreter {
     pub namespaces: HashMap<String, Namespace>,
     /// Simple-enum type name → variant names. Populated from `type X = a | b` declarations.
     pub enum_types: HashMap<String, Vec<String>>,
+    /// Struct type name → field (name, type_string) pairs. Populated from `type T { f: ty }`.
+    pub struct_types: HashMap<String, Vec<(String, String)>>,
     /// Shared Ollama client for `Ai.*` operations.
     pub llm: Arc<crate::runtime::llm::LlmClient>,
     /// Sender for runtime events. Spawned tokio tasks (scheduler,
@@ -142,6 +144,7 @@ impl Interpreter {
             current_agent: None,
             namespaces: HashMap::new(),
             enum_types: HashMap::new(),
+            struct_types: HashMap::new(),
             llm: Arc::new(crate::runtime::llm::LlmClient::new()),
             event_tx,
             event_rx: Some(event_rx),
@@ -386,8 +389,17 @@ impl Interpreter {
                 // defined identifier. For simple enums, also cache
                 // the variant list for Ai.classify.
                 self.globals.insert(t.name.clone(), Value::Namespace(t.name.clone()));
-                if let TypeDef::SimpleEnum(variants) = &t.def {
-                    self.enum_types.insert(t.name.clone(), variants.clone());
+                match &t.def {
+                    TypeDef::SimpleEnum(variants) => {
+                        self.enum_types.insert(t.name.clone(), variants.clone());
+                    }
+                    TypeDef::Struct(fields) => {
+                        let schema = fields.iter()
+                            .map(|f| (f.name.clone(), type_expr_to_string(&f.ty)))
+                            .collect();
+                        self.struct_types.insert(t.name.clone(), schema);
+                    }
+                    _ => {}
                 }
                 Ok(())
             }
@@ -422,6 +434,33 @@ impl Interpreter {
             }
             Decl::Stmt(_) => Ok(()), // executed in pass 2
         }
+    }
+}
+
+fn type_expr_to_string(te: &TypeExpr) -> String {
+    match te {
+        TypeExpr::Named(n) => n.clone(),
+        TypeExpr::Nullable(inner) => format!("{}?", type_expr_to_string(inner)),
+        TypeExpr::List(inner) => format!("[{}]", type_expr_to_string(inner)),
+        TypeExpr::Map(k, v) => format!("map[{}, {}]", type_expr_to_string(k), type_expr_to_string(v)),
+        TypeExpr::Set(inner) => format!("set[{}]", type_expr_to_string(inner)),
+        TypeExpr::Tuple(items) => {
+            let parts: Vec<_> = items.iter().map(type_expr_to_string).collect();
+            format!("({})", parts.join(", "))
+        }
+        TypeExpr::Func(params, ret) => {
+            let ps: Vec<_> = params.iter().map(type_expr_to_string).collect();
+            format!("({}) -> {}", ps.join(", "), type_expr_to_string(ret))
+        }
+        TypeExpr::Generic(name, args) => {
+            let as_: Vec<_> = args.iter().map(type_expr_to_string).collect();
+            format!("{}[{}]", name, as_.join(", "))
+        }
+        TypeExpr::Struct(fields) => {
+            let fs: Vec<_> = fields.iter().map(|f| format!("{}: {}", f.name, type_expr_to_string(&f.ty))).collect();
+            format!("{{{}}}", fs.join(", "))
+        }
+        TypeExpr::Dynamic => "dynamic".to_string(),
     }
 }
 

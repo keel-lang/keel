@@ -32,18 +32,22 @@ urgency = Ai.classify(email.body,
 ## `Ai.extract` — pull structured data from text
 
 ```keel
+# Inline schema map
 info = Ai.extract(
   from: email,
   schema: { sender: str, subject: str, action_items: list[str] }
 )
-# info: { sender: str, subject: str, action_items: list[str] }?
 
-dates = Ai.extract(from: contract, schema: { start: str, end: str })
+# Declared struct type (preferred — reusable, documentable)
+type Invoice { vendor: str, amount: float, date: str }
+result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
 ```
 
-**Returns:** a struct matching `schema:`, nullable.
+**Returns:** a struct matching `schema:` or the fields of `as: T`, nullable.
 
-> **Status:** v0.1 accepts the map form `schema: { field: "str" }` (string type names). Full type-literal schemas (`list[str]`, nested struct types) are <span class="badge badge-soon">Coming soon</span>.
+Both forms are fully wired as of v0.1.3:
+- `schema: { field: "type" }` — inline map of field names to type strings.
+- `as: T` — derives the schema from a declared `type T { ... }` struct; raises a runtime error if `T` is not a known struct type.
 
 ## `Ai.summarize` — condense content
 

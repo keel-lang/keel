@@ -288,3 +288,28 @@ run(Prompter)
         "JSON format directive missing from trace\nstdout:\n{stdout}"
     );
 }
+
+#[test]
+fn extract_as_struct_type_derives_schema() {
+    ensure_binary_built();
+    let src = r#"
+type Invoice {
+    vendor: str
+    amount: float
+    date: str
+}
+
+agent Extractor {
+    @on_start {
+        result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
+    }
+}
+
+run(Extractor)
+"#;
+    let (ok, stdout, _stderr) = run_inline(src, true);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}");
+    assert!(stdout.contains("vendor"), "vendor field missing from trace\nstdout:\n{stdout}");
+    assert!(stdout.contains("amount"), "amount field missing from trace\nstdout:\n{stdout}");
+    assert!(stdout.contains("date"), "date field missing from trace\nstdout:\n{stdout}");
+}
