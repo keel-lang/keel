@@ -1033,6 +1033,7 @@ dependencies = [
  "rustyline",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tower-lsp",
