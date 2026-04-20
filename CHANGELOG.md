@@ -6,9 +6,9 @@ All notable changes to Keel.
 
 ---
 
-## [Unreleased]
+## [0.1.3] — 2026-04-19
 
-### v0.1.3 — Declarations reach the model
+### Declarations reach the model
 
 #### `@rules` injected into every LLM system prompt
 
@@ -91,6 +91,12 @@ agent Extractor {
 The outgoing system prompt now contains `vendor`, `amount`, and `date` as
 extraction targets. Using `as: UnknownType` raises a runtime error with an
 actionable message.
+
+---
+
+## [Unreleased]
+
+Nothing yet.
 
 ---
 
