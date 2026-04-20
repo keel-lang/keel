@@ -44,6 +44,20 @@ You are a text drafter. Draft the following with a friendly tone.
 
 Enable `KEEL_TRACE=1` to see the full system prompt for every call.
 
+#### `Ai.summarize` — `format:` and `max:` wired
+
+`format:` and `max:` were previously parsed but ignored. They now emit
+directives in the system prompt:
+
+```keel
+summary = Ai.summarize(article, format: bullets, max: 5, unit: sentences)
+```
+
+- `format: bullets` → "Format your response as a bulleted list."
+- `format: prose` → "Format your response as flowing prose."
+- `max: N` with `unit: sentences` → "Use at most N sentences."
+- `max: N` without a unit → "Use at most N items."
+
 ---
 
 ## [0.1.2] — 2026-04-19

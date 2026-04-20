@@ -328,15 +328,18 @@ fn ai_namespace() -> Namespace {
             let input = positional(&args, 0)
                 .ok_or_else(|| miette::miette!("Ai.summarize: missing input"))?
                 .as_string();
-            let length = match (find_arg(&args, "in"), find_arg(&args, "unit")) {
-                (Some(Value::Integer(n)), Some(unit)) => Some((*n, unit.as_string())),
+            let unit_val = find_arg(&args, "unit").map(|v| v.as_string());
+            let length = match (find_arg(&args, "in"), &unit_val) {
+                (Some(Value::Integer(n)), Some(u)) => Some((*n, u.clone())),
                 _ => None,
             };
+            let format = find_arg(&args, "format").map(|v| v.as_string());
+            let max = find_arg(&args, "max").and_then(|v| v.as_int());
             let model = resolve_model(interp, &args);
             let role = interp.current_role();
             let rules = interp.current_rules();
             let llm = interp.llm.clone();
-            match llm.summarize(role.as_deref(), &rules, &input, length, &model).await {
+            match llm.summarize(role.as_deref(), &rules, &input, length, format, max, unit_val, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
                 Err(msg) => Err(miette::miette!("{msg}")),

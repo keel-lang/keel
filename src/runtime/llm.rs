@@ -296,9 +296,12 @@ impl LlmClient {
         rules: &[String],
         input: &str,
         length: Option<(i64, String)>,
+        format: Option<String>,
+        max: Option<i64>,
+        unit: Option<String>,
         model: &str,
     ) -> Result<Option<String>, String> {
-        let length_instruction = match length {
+        let length_instruction = match &length {
             Some((n, unit)) => format!("in {n} {unit}"),
             None => "briefly".to_string(),
         };
@@ -312,10 +315,25 @@ impl LlmClient {
             println!("     input: {}", truncate(input, 80).dimmed());
         }
 
-        let system = format!(
+        let mut system = format!(
             "You are a summarizer. Summarize the following text {length_instruction}. \
              Respond with ONLY the summary, nothing else."
         );
+        match &format {
+            Some(f) if f == "bullets" => {
+                system.push_str(" Format your response as a bulleted list.");
+            }
+            Some(f) if f == "prose" => {
+                system.push_str(" Format your response as flowing prose.");
+            }
+            _ => {}
+        }
+        if let Some(n) = max {
+            let unit_str = unit.as_deref()
+                .or_else(|| length.as_ref().map(|(_, u)| u.as_str()))
+                .unwrap_or("items");
+            system.push_str(&format!(" Use at most {n} {unit_str}."));
+        }
         match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 if trace() {

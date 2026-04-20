@@ -243,3 +243,27 @@ run(Advisor)
         "Rules: header missing in trace\nstdout:\n{stdout}"
     );
 }
+
+#[test]
+fn summarize_format_and_max_appear_in_trace() {
+    ensure_binary_built();
+    let src = r#"
+agent Summarizer {
+    @on_start {
+        result = Ai.summarize("Long article text here", format: bullets, max: 3, unit: sentences)
+    }
+}
+
+run(Summarizer)
+"#;
+    let (ok, stdout, _stderr) = run_inline(src, true);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}");
+    assert!(
+        stdout.contains("bulleted list"),
+        "format directive missing\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("at most 3 sentences"),
+        "max directive missing\nstdout:\n{stdout}"
+    );
+}

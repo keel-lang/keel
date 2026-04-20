@@ -49,14 +49,18 @@ dates = Ai.extract(from: contract, schema: { start: str, end: str })
 
 ```keel
 brief = Ai.summarize(article, in: 3, unit: sentences)
-bullets = Ai.summarize(report, format: bullets)    # `format:` Coming soon
+bullets = Ai.summarize(report, format: bullets)
 tldr = Ai.summarize(thread, in: 1, unit: line)
+capped = Ai.summarize(article, format: bullets, max: 5, unit: sentences)
 safe = Ai.summarize(article, in: 3, unit: sentences, fallback: "No summary")
 ```
 
 **Returns:** `str?` without `fallback:`, `str` with.
 
-> **Status:** `in:` / `unit:` are wired; the `format:` argument <span class="badge badge-soon">Coming soon</span> is parsed but not yet forwarded to the LLM.
+All four arguments (`in:`, `unit:`, `format:`, `max:`) are fully wired as of v0.1.3:
+- `format: bullets` → appends "Format your response as a bulleted list." to the system prompt.
+- `format: prose` → appends "Format your response as flowing prose."
+- `max: N` → appends "Use at most N {unit}." (falls back to "items" if no unit is given).
 
 ## `Ai.draft` — generate text
 
