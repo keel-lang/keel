@@ -451,11 +451,12 @@ fn ai_namespace() -> Namespace {
         "prompt" => |interp, args| Box::pin(async move {
             let system = find_arg(&args, "system").map(|v| v.as_string()).unwrap_or_default();
             let user = find_arg(&args, "user").map(|v| v.as_string()).unwrap_or_default();
+            let response_format = find_arg(&args, "response_format").map(|v| v.as_string());
             let model = resolve_model(interp, &args);
             let role = interp.current_role();
             let rules = interp.current_rules();
             let llm = interp.llm.clone();
-            match llm.prompt(role.as_deref(), &rules, &system, &user, &model).await {
+            match llm.prompt(role.as_deref(), &rules, &system, &user, response_format, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
                 Err(msg) => Err(miette::miette!("{msg}")),

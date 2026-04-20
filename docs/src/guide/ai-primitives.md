@@ -121,7 +121,7 @@ score = Ai.prompt(
 
 `Ai.prompt(...)` **must be followed by `as T`**. Use `as dynamic` if the response shape is truly unknown — this is a deliberate, visible opt-out.
 
-> **Status:** `system:` and `user:` are wired; `response_format: json` <span class="badge badge-soon">Coming soon</span> is parsed but not enforced — the LLM is free to respond in any format.
+> **Status:** fully wired as of v0.1.3. `response_format: json` injects "Respond with valid JSON only. No prose, no markdown fences." into the system prompt and validates the reply — a non-JSON reply is a runtime error.
 
 ## Per-call model override
 

@@ -267,3 +267,24 @@ run(Summarizer)
         "max directive missing\nstdout:\n{stdout}"
     );
 }
+
+#[test]
+fn prompt_response_format_json_directive_in_trace() {
+    ensure_binary_built();
+    let src = r#"
+agent Prompter {
+    @on_start {
+        result = Ai.prompt(system: "Rate on 1-10.", user: "Hello", response_format: json)
+    }
+}
+
+run(Prompter)
+"#;
+    let (ok, stdout, _stderr) = run_inline(src, true);
+    // mock returns None (not an error), so the program succeeds
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}");
+    assert!(
+        stdout.contains("valid JSON only"),
+        "JSON format directive missing from trace\nstdout:\n{stdout}"
+    );
+}

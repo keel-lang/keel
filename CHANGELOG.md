@@ -58,6 +58,20 @@ summary = Ai.summarize(article, format: bullets, max: 5, unit: sentences)
 - `max: N` with `unit: sentences` → "Use at most N sentences."
 - `max: N` without a unit → "Use at most N items."
 
+#### `Ai.prompt` — `response_format: json` wired
+
+`response_format: json` was previously ignored. It now:
+1. Appends "Respond with valid JSON only. No prose, no markdown fences." to the system prompt.
+2. Validates the LLM reply — if the reply cannot be parsed as JSON, a runtime error is raised.
+
+```keel
+score = Ai.prompt(
+    system: "Rate sentiment on a 1-10 scale.",
+    user: "Text: {review}",
+    response_format: json
+)
+```
+
 ---
 
 ## [0.1.2] — 2026-04-19

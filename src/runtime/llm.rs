@@ -547,6 +547,7 @@ impl LlmClient {
         rules: &[String],
         system: &str,
         user: &str,
+        response_format: Option<String>,
         model: &str,
     ) -> Result<Option<String>, String> {
         if trace() {
@@ -556,12 +557,24 @@ impl LlmClient {
                 self.describe_model(model).dimmed()
             );
         }
-        match self.call(role, rules, system, user, model).await {
+        let mut full_sys = system.to_string();
+        if response_format.as_deref() == Some("json") {
+            full_sys.push_str("\n\nRespond with valid JSON only. No prose, no markdown fences.");
+        }
+        match self.call(role, rules, &full_sys, user, model).await {
             Ok(response) => {
+                let trimmed = response.trim().to_string();
+                if response_format.as_deref() == Some("json") {
+                    if serde_json::from_str::<serde_json::Value>(&trimmed).is_err() {
+                        return Err(format!(
+                            "Ai.prompt: response_format: json was set but LLM returned non-JSON: {trimmed}"
+                        ));
+                    }
+                }
                 if trace() {
                     println!("  {} Response ready", "✓".bright_green());
                 }
-                Ok(Some(response.trim().to_string()))
+                Ok(Some(trimmed))
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
             Err(LlmError::CallFailed(msg)) => {
