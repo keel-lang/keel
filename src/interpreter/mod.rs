@@ -231,6 +231,32 @@ impl Interpreter {
         self.agent_string_attr("role")
     }
 
+    /// The current agent's `@rules [...]` list, if any. Every string
+    /// item in the list is injected as a bullet under "Rules:" in the
+    /// system prompt of every `Ai.*` call. Returns an empty vec when
+    /// called outside an agent or when `@rules` is absent.
+    pub fn current_rules(&self) -> Vec<String> {
+        let Some(agent) = self.current_agent.as_ref() else { return vec![] };
+        let def = agent.lock().unwrap().def.clone();
+        for attr in &def.attributes {
+            if attr.name == "rules" {
+                if let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body {
+                    return items.iter().filter_map(|e| match e {
+                        Expr::StringLit(parts) => {
+                            let s: String = parts.iter().filter_map(|p| match p {
+                                StringPart::Literal(s) => Some(s.clone()),
+                                _ => None,
+                            }).collect();
+                            if s.is_empty() { None } else { Some(s) }
+                        }
+                        _ => None,
+                    }).collect();
+                }
+            }
+        }
+        vec![]
+    }
+
     fn agent_string_attr(&self, name: &str) -> Option<String> {
         let agent = self.current_agent.as_ref()?;
         let def = agent.lock().unwrap().def.clone();

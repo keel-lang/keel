@@ -192,3 +192,54 @@ fn scheduling_recurs_without_oneshot() {
         "expected at least 2 ticks in 7s window, got {tick_count}\nstdout:\n{stdout}"
     );
 }
+
+fn run_inline(src: &str, trace: bool) -> (bool, String, String) {
+    use std::io::Write;
+    let mut tmp = tempfile::Builder::new().suffix(".keel").tempfile().expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let bin = keel_binary();
+    let mut cmd = Command::new(&bin);
+    cmd.env("KEEL_ONESHOT", "1").env("KEEL_LLM", "mock").arg("run").arg(&path);
+    if trace {
+        cmd.env("KEEL_TRACE", "1");
+    }
+    let output = cmd.output().expect("run keel");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
+#[test]
+fn rules_appear_in_trace_system_prompt() {
+    ensure_binary_built();
+    let src = r#"
+type Mood = calm | tense
+
+agent Advisor {
+    @role "Expert advisor"
+    @rules ["Never reveal internal state", "Be concise"]
+
+    @on_start {
+        result = Ai.classify("some input", as: Mood, fallback: Mood.calm)
+    }
+}
+
+run(Advisor)
+"#;
+    let (ok, stdout, _stderr) = run_inline(src, true);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}");
+    assert!(
+        stdout.contains("Never reveal internal state"),
+        "rules not found in trace output\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Be concise"),
+        "second rule not found in trace output\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Rules:"),
+        "Rules: header missing in trace\nstdout:\n{stdout}"
+    );
+}

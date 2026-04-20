@@ -163,13 +163,38 @@ impl LlmClient {
         )))
     }
 
-    async fn call(&self, role: Option<&str>, system: &str, user: &str, model: &str) -> LlmResult {
-        let full_system = match role {
-            Some(r) if !r.is_empty() => format!("You are {r}.\n\n{system}"),
-            _ => system.to_string(),
+    async fn call(
+        &self,
+        role: Option<&str>,
+        rules: &[String],
+        system: &str,
+        user: &str,
+        model: &str,
+    ) -> LlmResult {
+        let mut full_system = match role {
+            Some(r) if !r.is_empty() => format!("You are {r}.\n\n"),
+            _ => String::new(),
         };
+        if !rules.is_empty() {
+            full_system.push_str("Rules:\n");
+            for rule in rules {
+                full_system.push_str(&format!("- {rule}\n"));
+            }
+            full_system.push('\n');
+        }
+        full_system.push_str(system);
+
+        if trace() {
+            if !rules.is_empty() {
+                println!("  {} Rules injected: {}", "→".dimmed(), rules.len());
+            }
+            println!("  {} system prompt: {}", "→".dimmed(), truncate(&full_system, 200).dimmed());
+        }
+
         match &self.provider {
-            Provider::Ollama { base_url } => self.call_ollama(base_url, &full_system, user, model).await,
+            Provider::Ollama { base_url } => {
+                self.call_ollama(base_url, &full_system, user, model).await
+            }
             Provider::Mock => Err(LlmError::CallFailed("mock mode".into())),
         }
     }
@@ -214,6 +239,7 @@ impl LlmClient {
     pub async fn classify(
         &self,
         role: Option<&str>,
+        rules: &[String],
         input: &str,
         variants: &[String],
         criteria: &[(String, String)],
@@ -241,7 +267,7 @@ impl LlmClient {
             }
         }
 
-        match self.call(role, &system, input, model).await {
+        match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 let cleaned = response.trim().to_lowercase();
                 for variant in variants {
@@ -267,6 +293,7 @@ impl LlmClient {
     pub async fn summarize(
         &self,
         role: Option<&str>,
+        rules: &[String],
         input: &str,
         length: Option<(i64, String)>,
         model: &str,
@@ -289,7 +316,7 @@ impl LlmClient {
             "You are a summarizer. Summarize the following text {length_instruction}. \
              Respond with ONLY the summary, nothing else."
         );
-        match self.call(role, &system, input, model).await {
+        match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 if trace() {
                     println!("  {} Summary ready", "✓".bright_green());
@@ -307,6 +334,7 @@ impl LlmClient {
     pub async fn draft(
         &self,
         role: Option<&str>,
+        rules: &[String],
         description: &str,
         tone: Option<&str>,
         guidance: Option<&str>,
@@ -332,7 +360,7 @@ impl LlmClient {
             system.push_str(&format!("\n\nKeep it under {n} characters."));
         }
 
-        match self.call(role, &system, description, model).await {
+        match self.call(role, rules, &system, description, model).await {
             Ok(response) => {
                 if trace() {
                     println!("  {} Draft ready", "✓".bright_green());
@@ -350,6 +378,7 @@ impl LlmClient {
     pub async fn extract(
         &self,
         role: Option<&str>,
+        rules: &[String],
         input: &str,
         schema: &[(String, String)],
         model: &str,
@@ -370,7 +399,7 @@ impl LlmClient {
              Respond in JSON with exactly these field names. Use null for missing fields.",
             fields_desc.join("\n  ")
         );
-        match self.call(role, &system, input, model).await {
+        match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 if trace() {
                     println!("  {} Extracted", "✓".bright_green());
@@ -388,6 +417,7 @@ impl LlmClient {
     pub async fn translate(
         &self,
         role: Option<&str>,
+        rules: &[String],
         input: &str,
         target_langs: &[String],
         model: &str,
@@ -414,7 +444,7 @@ impl LlmClient {
                  Respond in JSON with language names as keys and translations as values."
             )
         };
-        match self.call(role, &system, input, model).await {
+        match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 let trimmed = response.trim().to_string();
                 if trace() {
@@ -443,6 +473,7 @@ impl LlmClient {
     pub async fn decide(
         &self,
         role: Option<&str>,
+        rules: &[String],
         input: &str,
         options: &[String],
         model: &str,
@@ -464,7 +495,7 @@ impl LlmClient {
              REASON: <one sentence>",
             options.join(", ")
         );
-        match self.call(role, &system, input, model).await {
+        match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 let trimmed = response.trim();
                 let mut choice = String::new();
@@ -495,6 +526,7 @@ impl LlmClient {
     pub async fn prompt(
         &self,
         role: Option<&str>,
+        rules: &[String],
         system: &str,
         user: &str,
         model: &str,
@@ -506,7 +538,7 @@ impl LlmClient {
                 self.describe_model(model).dimmed()
             );
         }
-        match self.call(role, system, user, model).await {
+        match self.call(role, rules, system, user, model).await {
             Ok(response) => {
                 if trace() {
                     println!("  {} Response ready", "✓".bright_green());

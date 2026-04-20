@@ -73,7 +73,7 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> Of the stdlib attributes below, only `@on_start` is wired in v0.1. The rest (`@on_stop`, `@tools`, `@memory`, `@rules`, `@limits`, `@team`, `@provider`) are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+> Of the stdlib attributes, `@on_start` and `@rules` are wired. `@on_stop`, `@tools`, `@memory`, `@limits`, `@team`, and `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
 
 ### `@tools` — capability list <span class="badge badge-soon">Coming soon</span>
 
@@ -101,7 +101,7 @@ Swap the backend by installing a different `VectorStore` implementation.
 
 > **Status:** `@memory` is parsed but ignored in v0.1, and `Memory.remember/recall/forget` are no-op stubs. A real vector-store backend is tracked in [ROADMAP](../../ROADMAP.md).
 
-### `@rules` — natural-language guardrails <span class="badge badge-soon">Coming soon</span>
+### `@rules` — natural-language guardrails
 
 ```keel
 @rules [
@@ -110,9 +110,9 @@ Swap the backend by installing a different `VectorStore` implementation.
 ]
 ```
 
-Rules are injected into every LLM prompt this agent makes. They are **LLM-interpreted** — compliance is best-effort. For deterministic constraints, use `@limits`.
+Rules are injected into every LLM prompt this agent makes as a bullet list under a `Rules:` heading, placed between the role preamble and the operation-specific instructions. They are **LLM-interpreted** — compliance is best-effort. For deterministic constraints, use `@limits`.
 
-> **Status:** parsed in v0.1, not forwarded to the LLM yet.
+> **Status:** fully wired as of v0.1.3. Every `Ai.*` call inside an agent with `@rules` forwards the rules to the system prompt.
 
 ### `@limits` — deterministic constraints <span class="badge badge-soon">Coming soon</span>
 

@@ -65,7 +65,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 | `@on_stop { ... }` | stdlib | [ ] | Parsed, never executed |
 | `@tools [...]` | stdlib | [ ] | Parsed, no capability gating yet |
 | `@memory persistent\|session\|none` | stdlib | [ ] | Parsed, no effect (Memory namespace is itself a stub — see below) |
-| `@rules [...]` | stdlib | [ ] | Parsed, never forwarded to the LLM |
+| `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `Ai.*` call inside the agent |
 | `@limits { ... }` | stdlib | [ ] | Parsed as struct literal, no enforcement (no cost/token/timeout caps) |
 | `@team [...]` | stdlib | [ ] | Parsed, no team routing |
 | `@provider MyProvider` | stdlib | [ ] | Parsed, no per-agent LLM-provider swap |

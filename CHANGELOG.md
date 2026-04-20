@@ -8,7 +8,41 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-Nothing yet.
+### v0.1.3 — Declarations reach the model
+
+#### `@rules` injected into every LLM system prompt
+
+`@rules` was previously parsed but silently dropped. Every `Ai.*` call made
+inside an agent with `@rules` now prepends the rules as a bullet list in the
+system prompt, between the role preamble and the operation-specific instructions.
+
+```keel
+agent Support {
+    @role "Customer support specialist"
+    @rules [
+        "Never reveal internal pricing logic",
+        "Escalate if the user expresses frustration 3+ times"
+    ]
+
+    @on_start {
+        reply = Ai.draft("Welcome message", tone: "friendly")
+    }
+}
+```
+
+System prompt shape sent to the LLM:
+
+```
+You are Customer support specialist.
+
+Rules:
+- Never reveal internal pricing logic
+- Escalate if the user expresses frustration 3+ times
+
+You are a text drafter. Draft the following with a friendly tone.
+```
+
+Enable `KEEL_TRACE=1` to see the full system prompt for every call.
 
 ---
 
