@@ -74,7 +74,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 
 | Namespace | Status | Implemented ops | Gaps |
 |---|---|---|---|
-| `Ai` | [~] | `classify`, `summarize`, `draft`, `extract`, `translate`, `decide`, `prompt` | `embed` returns `[]`; `Ai.install(provider)` not registered; `classify(considering:)` accepted but not sent to LLM; `decide` returns a plain `{choice, reason, confidence: 1.0}` map instead of a `Decision[T]` type |
+| `Ai` | [~] | `classify` (with `considering:`), `summarize` (with `format:` and `max:` params), `draft`, `extract` (with `as: T` struct derivation), `translate`, `decide`, `prompt` (with `response_format:`) | `embed` returns `[]`; `Ai.install(provider)` not registered; `decide` returns a plain `{choice, reason, confidence: 1.0}` map instead of a `Decision[T]` type (all wired as of v0.1.3) |
 | `Io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
 | `Schedule` | [x] | `every`, `after`, `at` (RFC 3339 / ISO 8601), `sleep` | — |
 | `Email` | [~] | `fetch` (IMAP), `send` (SMTP) via env vars | `archive` is a no-op placeholder (no IMAP folder move) |

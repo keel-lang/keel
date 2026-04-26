@@ -73,7 +73,7 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> Of the stdlib attributes, `@on_start` and `@rules` are wired. `@on_stop`, `@tools`, `@memory`, `@limits`, `@team`, and `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+> In v0.1.3, `@on_start` and `@rules` are fully wired. `@on_stop`, `@tools`, `@memory`, `@limits`, `@team`, and `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
 
 ### `@tools` — capability list <span class="badge badge-soon">Coming soon</span>
 
