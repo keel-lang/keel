@@ -97,7 +97,7 @@ rows = Db.query(db,
 Db.exec(db, "UPDATE status SET seen = true WHERE id = ?", params: [ticket.id])
 ```
 
-> **Status:** the `Db` namespace is documented for v0.1 but not registered in the runtime. Calls will raise an "unknown method" error until the SQL backend lands. Tracked in [ROADMAP](../../ROADMAP.md).
+> **Status:** the `Db` namespace is registered as of v0.1.4 and raises a clear `"Db is planned for v0.2"` error instead of the generic "unknown method" crash. The SQL backend is tracked in [ROADMAP](../../ROADMAP.md).
 
 ## Swapping the backend <span class="badge badge-soon">Coming soon</span>
 

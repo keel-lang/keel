@@ -6,6 +6,93 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.4] — 2026-04-27
+
+### Parser hardening — every expression-level feature now works
+
+#### `if`-as-expression
+
+`if` can now appear on any right-hand side, not just as a standalone statement.
+
+```keel
+label = if score > 0.8 { "high" } else if score > 0.5 { "medium" } else { "low" }
+```
+
+#### `let` type annotations validated
+
+Declaring a type on a `let` binding now produces a type error when the
+inferred type of the value doesn't match. The check is skipped for
+user-defined named types that the checker can't fully resolve yet.
+
+```keel
+x: int = "hello"   # type error: `x` expected int, got str
+y: str = "hello"   # ok
+```
+
+#### `!` postfix unwrap — retroactive
+
+`expr!` (null-assert; throws `NullError` if the value is `none`) was already
+fully implemented across the parser, interpreter, and type checker. The ROADMAP
+marker was stale — no code change, just updated docs.
+
+#### `list + list` and `list.push(item)`
+
+Lists support concatenation with `+` and a functional `push` that returns a
+new list.
+
+```keel
+base  = ["a", "b"]
+extra = ["c", "d"]
+all   = base + extra               # ["a", "b", "c", "d"]
+more  = all.push("e")              # ["a", "b", "c", "d", "e"]
+```
+
+`push` does not mutate in place — reassign the result: `items = items.push(x)`.
+
+#### Full string interpolation
+
+String interpolation slots (`{...}`) now run through the real expression
+parser. Function calls, binary expressions, and method chains all work.
+
+```keel
+summary = "Items: {cart.count()}, total: {price * qty}"
+```
+
+#### `@on_stop` lifecycle hook
+
+Agents with `@on_stop { ... }` now have their block executed before the agent
+is removed from the runtime.
+
+```keel
+agent Logger {
+    @on_stop { Log.info("Logger shutting down") }
+}
+# Agent.stop(Logger) → prints "Logger shutting down"
+```
+
+#### `Agent.delegate(target, task, args)`
+
+Posts a named task event to another agent's mailbox. The receiving agent
+handles it via its `on <task>` handler.
+
+```keel
+Agent.delegate(Processor, "handle", payload)
+# Processor's `on handle` fires with payload
+```
+
+#### `Search`, `Db`, `Time` stub namespaces
+
+Calling any method on these namespaces now raises a clear
+`"... is planned for v0.2 and is not available in v0.1."` error instead of the
+generic `"Unknown namespace"` panic.
+
+```keel
+Search.web("keel language")
+# Error: Search is planned for v0.2 and is not available in v0.1.
+```
+
+---
+
 ## [0.1.3] — 2026-04-26
 
 ### Declarations reach the model

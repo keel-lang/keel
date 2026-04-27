@@ -321,7 +321,7 @@ pub fn lex(
 //   3. Collapses consecutive newlines into one
 //   4. Strips leading/trailing newlines
 
-fn normalize_newlines(tokens: Vec<Spanned<Token>>) -> Vec<Spanned<Token>> {
+pub(crate) fn normalize_newlines(tokens: Vec<Spanned<Token>>) -> Vec<Spanned<Token>> {
     if tokens.is_empty() {
         return tokens;
     }

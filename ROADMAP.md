@@ -37,12 +37,12 @@ Legend: **[x]** complete · **[~]** partial (works, but with caveats below) · *
   - [ ] Struct/map subtyping checks
   - [ ] Generic type parameter inference (`list[T]`, `map[K, V]`)
 - [~] **Parser corners.** Known limits surfaced by the inbox_assistant example:
-  - [ ] `if`-as-expression on the RHS of a binding (`x = if cond { a } else { b }`)
-  - [ ] Type annotations on `let` bindings (`x: T = ...`)
+  - [x] `if`-as-expression on the RHS of a binding (`x = if cond { a } else { b }`)
+  - [x] Type annotations on `let` bindings (`x: T = ...`) — checker validates declared vs inferred type
   - [ ] Nested `"..."` inside `{interp}` without escaping
-  - [ ] String interpolation evaluates only bare idents and `a.b.c` chains — function calls (`{f()}`) and expressions are not routed through the real parser yet
-  - [ ] `!` postfix unwrap operator (documented, not implemented)
-  - [ ] `list + list` / `list.push` concatenation
+  - [x] String interpolation now routes through the real expression parser (function calls, binary ops, etc.)
+  - [x] `!` postfix unwrap operator
+  - [x] `list + list` / `list.push` concatenation
 
 #### Agent model
 - [x] Agent declaration + `run(Agent)` / `Agent.run` / `Agent.stop`
@@ -50,7 +50,7 @@ Legend: **[x]** complete · **[~]** partial (works, but with caveats below) · *
 - [x] Per-agent serial mailbox; `on <event>` handlers dispatched via the mpsc event loop
 - [x] `Agent.send(target, data, event:)` — posts an event to another agent's mailbox
 - [x] `self.` state read/write from handlers and tasks
-- [ ] `Agent.delegate(target, task, args)` — referenced in docs, not registered in the runtime
+- [x] `Agent.delegate(target, task, args)` — posts a named task event to another agent's mailbox
 - [ ] `Agent.broadcast(team, data)` — referenced in docs, not registered; no `@team` handling either
 
 #### Attributes
@@ -62,7 +62,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 | `@model "ollama:..."` | core | [x] | Read by `Ai.*` to pick the Ollama model |
 | `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt; the LLM gets the agent identity on every call |
 | `@on_start { ... }` | stdlib | [x] | Block runs once when the agent starts |
-| `@on_stop { ... }` | stdlib | [ ] | Parsed, never executed |
+| `@on_stop { ... }` | stdlib | [x] | Block runs once when the agent stops |
 | `@tools [...]` | stdlib | [ ] | Parsed, no capability gating yet |
 | `@memory persistent\|session\|none` | stdlib | [ ] | Parsed, no effect (Memory namespace is itself a stub — see below) |
 | `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `Ai.*` call inside the agent |
@@ -81,13 +81,13 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 | `Http` | [x] | `get`, `post`, `request` (via reqwest) | — |
 | `Env` | [x] | `get`, `require` | — |
 | `Log` | [x] | `info`, `warn`, `error`, `debug`, `set_level`, `level`. Threshold controlled via `KEEL_LOG_LEVEL`, `--log-level`, or `Log.set_level("...")` at runtime (default `info`). | — |
-| `Agent` | [~] | `run`, `stop`, `send` | `delegate`, `broadcast` missing |
+| `Agent` | [~] | `run`, `stop`, `send`, `delegate` | `broadcast` missing |
 | `Memory` | [ ] | — | `remember` / `recall` / `forget` all no-op stubs (no vector store, no embeddings) |
 | `Control` | [ ] | — | `retry` / `with_timeout` / `with_deadline` all no-op stubs |
 | `Async` | [~] | `sleep` | `spawn` / `join_all` / `select` all no-op stubs — structured concurrency not yet real |
-| `Search` | [ ] | — | Documented in `docs/src/guide/prelude.md`; **not registered in the runtime** (calling `Search.web(...)` errors) |
-| `Db` | [ ] | — | Documented; **not registered** — no SQL client |
-| `Time` | [ ] | — | Documented; **not registered** — use `now` keyword instead |
+| `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
+| `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
+| `Time` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error (use `now` keyword) |
 
 #### LLM providers
 - [x] Ollama backend wired into every `Ai.*` call
@@ -119,7 +119,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 **Docs ↔ implementation reconciliation (short-term cleanup):**
 - [x] Tag every unimplemented or partial stdlib page in `docs/src/guide/*.md` with a `Coming soon` badge and a `> Status:` callout that links back to this roadmap
 - [x] Mark `Search` / `Db` / `Time` as `⏳` in the `docs/src/guide/prelude.md` namespace table with an explicit v0.1-scope callout
-- [ ] Register `Search` / `Db` / `Time` as stub namespaces so calls raise a clear "planned for v0.2" error instead of a generic "unknown method"
+- [x] Register `Search` / `Db` / `Time` as stub namespaces so calls raise a clear "planned for v0.2" error instead of a generic "unknown method"
 
 ### Release
 - [x] Release workflow builds macOS (Apple Silicon) + Linux x86_64 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo. Auth uses a short-lived installation token minted from the `keel-release-bot` GitHub App (installed on both repos; secrets `TAP_APP_ID` + `TAP_APP_PRIVATE_KEY` on this repo). Intel Macs build from source — prebuilt Intel binaries are not shipped.

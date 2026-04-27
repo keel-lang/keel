@@ -1,6 +1,6 @@
 # Example: Multi-Agent Email System
 
-> **Alpha (v0.1).** Breaking changes expected. Multi-agent support (`Agent.delegate`, `Agent.broadcast`, `@team`) is **not yet implemented** — it's slated for a future release. The program below is a design preview.
+> **Alpha (v0.1).** Breaking changes expected. `Agent.delegate` is wired as of v0.1.4. `Agent.broadcast` and `@team` routing are <span class="badge badge-soon">Coming soon</span>. The program below is a design preview.
 
 A preview showing how multiple agents collaborate via `Agent.delegate` and the `@team` attribute.
 

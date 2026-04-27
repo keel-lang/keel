@@ -3,7 +3,7 @@ use chumsky::Stream;
 use miette::NamedSource;
 
 use crate::ast::*;
-use crate::lexer::{Span, Token};
+use crate::lexer::{normalize_newlines, Span, Spanned, Token};
 
 type P<T> = BoxedParser<'static, Token, T, Simple<Token>>;
 
@@ -377,8 +377,33 @@ fn expr_parser() -> P<Expr> {
             .map(|((ty, variant), fields)| Expr::EnumVariant { ty, variant, fields })
             .boxed();
 
+        // ── If-expression (usable on any RHS) ────────────────────
+        // Recursive so that `else if` chains work: the else-branch is either
+        // another if-expression (wrapped as a single spanned Stmt::Expr) or a { block }.
+        let if_expr = recursive(|if_expr: Recursive<Token, Expr, Simple<Token>>| {
+            just(Token::If)
+                .ignore_then(expr.clone())
+                .then(inner_block.clone())
+                .then(
+                    just(Token::Else)
+                        .ignore_then(
+                            if_expr
+                                .map_with_span(|e, span| vec![(Stmt::Expr(e), span)])
+                                .or(inner_block.clone()),
+                        )
+                        .or_not(),
+                )
+                .map(|((cond, then_body), else_body)| Expr::IfExpr {
+                    cond: Box::new(cond),
+                    then_body,
+                    else_body: else_body.unwrap_or_default(),
+                })
+        })
+        .boxed();
+
         // ── Primary ──────────────────────────────────────────────
         let primary = choice((
+            if_expr,
             rich_enum_variant,
             self_access,
             set_lit,
@@ -1113,20 +1138,28 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
 }
 
 fn parse_interp_expr(text: &str) -> Expr {
+    use logos::Logos;
     let text = text.trim();
     if text.is_empty() {
         return Expr::StringLit(vec![StringPart::Literal(String::new())]);
     }
-    if text.contains('.') {
-        let parts: Vec<&str> = text.split('.').collect();
-        if parts[0] == "self" && parts.len() == 2 {
-            return Expr::SelfAccess(parts[1].to_string());
-        }
-        let mut result = Expr::Ident(parts[0].to_string());
-        for field in &parts[1..] {
-            result = Expr::FieldAccess(Box::new(result), field.to_string());
-        }
-        return result;
+
+    // Lex the interpolation content directly via logos, bypassing the
+    // NamedSource wrapper used by the public `lex()` entry point.
+    let raw: Vec<Spanned<Token>> = Token::lexer(text)
+        .spanned()
+        .filter_map(|(r, span)| r.ok().map(|t| (t, span)))
+        .collect();
+
+    if raw.is_empty() {
+        return Expr::Ident(text.to_string());
     }
-    Expr::Ident(text.to_string())
+
+    let tokens = normalize_newlines(raw);
+    let eoi = text.len()..text.len() + 1;
+    let stream = Stream::from_iter(eoi, tokens.into_iter());
+
+    // On parse failure, fall back to treating the whole slot as an identifier
+    // so a bad expression never silently produces a corrupt AST node.
+    expr_parser().parse(stream).unwrap_or_else(|_| Expr::Ident(text.to_string()))
 }

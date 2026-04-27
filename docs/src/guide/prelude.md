@@ -23,20 +23,20 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Io` | ✅ | Human interaction: `ask`, `confirm`, `notify`, `show` |
 | `Http` | ✅ | HTTP client: `get`, `post`, `request` |
 | `Email` | 🟡 | IMAP/SMTP: `fetch`, `send` · `archive` ⏳ |
-| `Search` | ⏳ | Web search providers: `web(query)` |
-| `Db` | ⏳ | SQL: `connect`, `query`, `exec` |
+| `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
+| `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
 | `Memory` | ⏳ | Persistent semantic memory: `remember`, `recall`, `forget` (stubbed — no vector store yet) |
 | `Schedule` | ✅ | Time-based scheduling: `every`, `after`, `at`, `sleep` · `cron` ⏳ |
 | `Async` | 🟡 | `sleep` shipping · `spawn`, `join_all`, `select` ⏳ |
 | `Control` | ⏳ | `retry`, `with_timeout`, `with_deadline` (stubbed) |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
-| `Time` | ⏳ | Time utilities: `now`, `parse`, `format` (use the `now` keyword for now) |
+| `Time` | 🟡 | Time utilities: `now`, `parse`, `format` — registered; raises "planned for v0.2" error (use the `now` keyword for now) |
 | `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
-| `Agent` | 🟡 | `run`, `stop`, `send` · `delegate`, `broadcast` ⏳ |
+| `Agent` | 🟡 | `run`, `stop`, `send`, `delegate` · `broadcast` ⏳ |
 
 `run` and `stop` are re-exported at the top level so programs can end with `run(MyAgent)` without the namespace prefix.
 
-> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired — calls will either return `none` (stubs) or raise an "unknown method" error (missing namespaces). Track the full status in [ROADMAP.md](../../ROADMAP.md).
+> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired — calls will either return `none` (stubs) or raise an "unknown method" error (missing namespaces). 🟡 means partial: something works, but not everything. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces
 

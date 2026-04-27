@@ -513,10 +513,23 @@ impl Fmt {
             }
             Expr::Cast { expr, ty } => format!("{} as {}", self.expr_str(expr), self.type_expr_str(ty)),
             Expr::IfExpr { cond, then_body, else_body } => {
+                let then_str = self.block_inline(then_body);
+                // When else_body is a single if-expression, emit `else if …`
+                // so that re-parsing produces the same AST (idempotent).
+                if else_body.len() == 1 {
+                    if let (Stmt::Expr(inner @ Expr::IfExpr { .. }), _) = &else_body[0] {
+                        return format!(
+                            "if {} {{ {} }} else {}",
+                            self.expr_str(cond),
+                            then_str,
+                            self.expr_str(inner),
+                        );
+                    }
+                }
                 format!(
                     "if {} {{ {} }} else {{ {} }}",
                     self.expr_str(cond),
-                    self.block_inline(then_body),
+                    then_str,
                     self.block_inline(else_body),
                 )
             }

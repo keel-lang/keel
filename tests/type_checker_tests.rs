@@ -181,6 +181,29 @@ task t(code: int) {
     );
 }
 
+// ─── v0.1.4: let type annotations ──────────────────────────────────────────
+
+#[test]
+fn valid_let_annotation_matching_type() {
+    type_ok(r#"
+task t() {
+  x: str = "hello"
+}
+"#);
+}
+
+#[test]
+fn error_let_annotation_type_mismatch() {
+    expect_error(
+        r#"
+task t() {
+  x: int = "hello"
+}
+"#,
+        "expected int",
+    );
+}
+
 // ─── Errors: control flow ───────────────────────────────────────────────────
 
 #[test]

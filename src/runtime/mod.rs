@@ -48,6 +48,9 @@ pub fn install_prelude(interp: &mut Interpreter) {
     interp.register_namespace(control_namespace());
     interp.register_namespace(async_namespace());
     interp.register_namespace(http_namespace());
+    interp.register_namespace(search_namespace());
+    interp.register_namespace(db_namespace());
+    interp.register_namespace(time_namespace());
 
     // Top-level: run / stop are convenience re-exports of Agent.run / Agent.stop.
     interp.register_top_fn(
@@ -837,6 +840,27 @@ fn agent_namespace() -> Namespace {
             });
             Ok(Value::None)
         }),
+        // Agent.delegate(target, task, args) — posts a named task event to
+        // target's mailbox. Unlike Agent.send, the task name is a positional
+        // arg rather than a named `event:` parameter.
+        "delegate" => |interp, args| Box::pin(async move {
+            let target = match args.first().map(|a| &a.value) {
+                Some(Value::AgentRef(name)) => name.clone(),
+                _ => return Err(miette::miette!("Agent.delegate: first arg must be an agent")),
+            };
+            let task_name = args.get(1)
+                .map(|a| a.value.as_string())
+                .unwrap_or_else(|| "message".to_string());
+            let data = args.get(2)
+                .map(|a| a.value.clone())
+                .unwrap_or(Value::None);
+            let _ = interp.event_tx.send(crate::interpreter::Event::Dispatch {
+                agent_name: target,
+                event: task_name,
+                data,
+            });
+            Ok(Value::None)
+        }),
     })
 }
 
@@ -980,6 +1004,46 @@ async fn http_send(
     result.insert("headers".to_string(), Value::Map(response_headers));
     result.insert("is_ok".to_string(), Value::Bool((200..300).contains(&status)));
     Ok(Value::Map(result))
+}
+
+// ---------------------------------------------------------------------------
+// Search / Db / Time — v0.2 stubs
+// ---------------------------------------------------------------------------
+
+fn search_namespace() -> Namespace {
+    ns!("Search", {
+        "web" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Search is planned for v0.2 and is not available in v0.1."))
+        }),
+        "news" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Search is planned for v0.2 and is not available in v0.1."))
+        }),
+    })
+}
+
+fn db_namespace() -> Namespace {
+    ns!("Db", {
+        "query" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Db is planned for v0.2 and is not available in v0.1."))
+        }),
+        "execute" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Db is planned for v0.2 and is not available in v0.1."))
+        }),
+    })
+}
+
+fn time_namespace() -> Namespace {
+    ns!("Time", {
+        "now" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Time is planned for v0.2; use the `now` keyword instead."))
+        }),
+        "parse" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Time is planned for v0.2 and is not available in v0.1."))
+        }),
+        "format" => |_i, _args| Box::pin(async move {
+            Err(miette::miette!("Time is planned for v0.2 and is not available in v0.1."))
+        }),
+    })
 }
 
 /// Convert a Keel `Value` tree into a `serde_json::Value` suitable for

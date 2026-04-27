@@ -421,7 +421,16 @@ impl Checker {
             Stmt::Let { name, ty, value } => {
                 let inferred = self.infer_expr(value, scope);
                 let bound = match ty {
-                    Some(t) => self.resolve_type(t),
+                    Some(t) => {
+                        let declared = self.resolve_type(t);
+                        // Only check when declared type is concrete — Unknown
+                        // means the checker couldn't resolve it (e.g. a named
+                        // user-defined type), so a mismatch would be a false positive.
+                        if !matches!(declared, Ty::Unknown | Ty::Dynamic) {
+                            self.expect(&inferred, &declared, &format!("`{name}`"));
+                        }
+                        declared
+                    }
                     None => inferred,
                 };
                 scope.define(name.clone(), bound);

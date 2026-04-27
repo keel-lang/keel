@@ -1,0 +1,76 @@
+# Dependency Audit Aggregator
+#
+# Merges package manifests from multiple services, identifies high-risk
+# dependencies, and generates a prioritised upgrade report.
+#
+# Demonstrates list concatenation (list + list), appending (list.push),
+# lambda filtering, and string interpolation with method calls and
+# arithmetic expressions.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/list_building.keel
+
+type Risk = low | medium | high
+
+task advisory(name: str, version: str) -> str {
+  Ai.summarize(
+    "Security advisory for {name} v{version}",
+    format: prose,
+    max: 1,
+    unit: sentences
+  ) ?? "No advisory available."
+}
+
+agent DependencyAuditor {
+  @role "Security engineer — surfaces vulnerable dependencies before they reach production"
+  @rules [
+    "Never approve a high-risk package without a documented upgrade path",
+    "Always list high-risk findings before medium-risk ones"
+  ]
+
+  @on_start {
+    # Packages collected from two separate service manifests
+    api_packages = [
+      {name: "openssl",   version: "1.0.2",   risk: Risk.high},
+      {name: "express",   version: "4.17.1",  risk: Risk.medium},
+      {name: "lodash",    version: "4.17.21", risk: Risk.low}
+    ]
+    worker_packages = [
+      {name: "serialize-javascript", version: "3.0.0", risk: Risk.high},
+      {name: "ws",                   version: "7.4.5", risk: Risk.medium}
+    ]
+
+    # Merge both manifests into one list (list + list)
+    all_packages = api_packages + worker_packages
+
+    # A late-discovered package appended after the initial scan (list.push)
+    all_packages = all_packages.push({name: "minimist", version: "1.2.5", risk: Risk.high})
+
+    # String interpolation with a method call inside {…}
+    Io.show("Auditing {all_packages.count()} packages across 2 services\n")
+
+    # Filter by risk level using lambdas
+    high_risk   = all_packages.filter(p => p.risk == Risk.high)
+    medium_risk = all_packages.filter(p => p.risk == Risk.medium)
+
+    # String interpolation with an arithmetic expression inside {…}
+    pct = high_risk.count() * 100 / all_packages.count()
+    Io.show("{high_risk.count()} high-risk packages ({pct}% of total) — upgrade immediately")
+
+    Io.show("\nHigh-risk:")
+    for pkg in high_risk {
+      note = advisory(pkg.name, pkg.version)
+      Io.show("  ! {pkg.name} {pkg.version} — {note}")
+    }
+
+    Io.show("\nMedium-risk:")
+    for pkg in medium_risk {
+      Io.show("  ~ {pkg.name} {pkg.version}")
+    }
+
+    # Interpolation combining two method calls in one expression
+    Io.show("\nTotal to upgrade: {high_risk.count() + medium_risk.count()} of {all_packages.count()}")
+  }
+}
+
+run(DependencyAuditor)

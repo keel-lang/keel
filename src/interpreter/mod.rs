@@ -1072,6 +1072,13 @@ impl Interpreter {
                 }
                 Ok(Value::List(out))
             }
+            (Value::List(items), "push") => {
+                let mut result = items.clone();
+                if let Some(arg) = args.first() {
+                    result.push(arg.value.clone());
+                }
+                Ok(Value::List(result))
+            }
             (Value::Integer(n), "to_str") => Ok(Value::String(n.to_string())),
             (Value::Float(f), "to_str") => Ok(Value::String(f.to_string())),
             (Value::Bool(b), "to_str") => Ok(Value::String(b.to_string())),
@@ -1126,6 +1133,24 @@ impl Interpreter {
     }
 
     pub async fn stop_agent(&mut self, agent_name: &str) -> Result<()> {
+        // Run @on_stop block before removing from live_agents.
+        // Clone the def out before awaiting to avoid holding the lock across an await.
+        let def = self.live_agents.lock().unwrap()
+            .get(agent_name)
+            .map(|inst| inst.lock().unwrap().def.clone());
+        if let Some(def) = def {
+            let on_stop = def.attributes.iter().find(|a| a.name == "on_stop").cloned();
+            if let Some(attr) = on_stop {
+                if let AttributeBody::Block(body) = attr.body {
+                    let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
+                    let prev = self.current_agent.take();
+                    self.current_agent = inst;
+                    let mut env = Environment::new();
+                    self.exec_block(&body, &mut env).await?;
+                    self.current_agent = prev;
+                }
+            }
+        }
         self.live_agents.lock().unwrap().remove(agent_name);
         Ok(())
     }
@@ -1168,12 +1193,21 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Mul, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
         (Div, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
         (Add, Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
+        (Add, Value::List(a), Value::List(b)) => {
+            let mut result = a.clone();
+            result.extend(b.clone());
+            Ok(Value::List(result))
+        }
         (Eq, a, b) => Ok(Value::Bool(a == b)),
         (Neq, a, b) => Ok(Value::Bool(a != b)),
         (Lt, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a < b)),
         (Gt, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a > b)),
         (Lte, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a <= b)),
         (Gte, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a >= b)),
+        (Lt, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
+        (Gt, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
+        (Lte, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
+        (Gte, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
         (And, a, b) => Ok(Value::Bool(a.is_truthy() && b.is_truthy())),
         (Or, a, b) => Ok(Value::Bool(a.is_truthy() || b.is_truthy())),
         _ => Err(runtime_error(format!(

@@ -1,0 +1,178 @@
+# Keel Language Showcase — On-Call Incident Triage
+#
+# A two-agent system that monitors for new production incidents, classifies
+# each one by severity, routes critical issues to a dedicated responder,
+# and generates a shift summary on shutdown.
+#
+# This file is the living showcase of the Keel language surface.
+# It grows with each release to cover newly landed features.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/showcase.keel
+# Trace LLM calls:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 KEEL_TRACE=1 keel run examples/showcase.keel
+
+# ── Types ─────────────────────────────────────────────────────────────────────
+
+type Severity = low | medium | high | critical
+
+type Action =
+  | page    { who: str }
+  | notify  { channel: str }
+  | log
+
+type Incident {
+  id:      str
+  title:   str
+  service: str
+}
+
+# ── Responder: handles escalated critical incidents ───────────────────────────
+
+agent Responder {
+  @role "Senior on-call engineer — handles critical and high production incidents"
+  @rules [
+    "Open every response with a one-line impact statement",
+    "Always include an estimated time-to-resolve"
+  ]
+
+  state {
+    handled: int = 0
+  }
+
+  on escalate(incident: Incident) {
+    self.handled = self.handled + 1
+
+    # if-as-expression: tone becomes more concise after the fifth incident
+    tone = if self.handled > 5 { "concise" } else { "thorough" }
+
+    runbook = Ai.draft(
+      "Incident response runbook for: {incident.title} in the {incident.service} service",
+      tone: tone,
+      guidance: "cover immediate mitigation and rollback steps"
+    ) ?? "(runbook generation failed — check LLM connectivity)"
+
+    Io.show("[Responder #{self.handled}] {incident.id}: {incident.title}")
+    Io.show(runbook)
+  }
+
+  @on_stop {
+    Io.show("Responder offline — handled {self.handled} escalations this shift")
+  }
+}
+
+# ── Shared tasks ──────────────────────────────────────────────────────────────
+
+task classify_severity(incident: Incident) -> Severity {
+  Ai.classify(
+    "{incident.title} in {incident.service}",
+    as: Severity,
+    considering: {
+      "payment, checkout, auth, data loss, outage": Severity.critical,
+      "latency, degraded, elevated error rate":     Severity.high
+    },
+    fallback: Severity.low
+  )
+}
+
+task choose_action(severity: Severity) -> Action {
+  when severity {
+    critical      => Action.page   { who: "primary on-call" }
+    high          => Action.notify { channel: "#incidents" }
+    medium, low   => Action.log
+  }
+}
+
+# ── OnCall: triages and routes incidents ──────────────────────────────────────
+
+agent OnCall {
+  @role "On-call coordinator — triage every alert, never drop a critical one"
+  @rules [
+    "Escalate anything that affects revenue or user data immediately",
+    "Log every decision with the severity and chosen action"
+  ]
+
+  state {
+    escalated: int       = 0
+    logged:    int       = 0
+    seen:      list[str] = []
+  }
+
+  @on_start {
+    Agent.run(Responder)
+
+    # Two batches arriving in the same polling window — list + list (v0.1.4)
+    batch_a = [
+      {id: "INC-101", title: "Checkout 500 errors spiking",   service: "payments"},
+      {id: "INC-102", title: "High latency on search API",    service: "search"}
+    ]
+    batch_b = [
+      {id: "INC-103", title: "Expired SSL cert on staging",   service: "infra"}
+    ]
+    incidents = batch_a + batch_b
+
+    # Late-arriving alert appended after the initial fetch — list.push (v0.1.4)
+    incidents = incidents.push(
+      {id: "INC-104", title: "Auth token validation failing", service: "auth"}
+    )
+
+    # let type annotation makes the bound explicit — (v0.1.4)
+    total: int = incidents.count()
+
+    Io.show("OnCall shift starting — {total} incidents in queue")
+
+    for incident in incidents {
+      severity = classify_severity(incident)
+      action   = choose_action(severity)
+
+      # if-as-expression: inline severity badge without a temp variable (v0.1.4)
+      badge = if severity == Severity.critical {
+        "[CRIT]"
+      } else if severity == Severity.high {
+        "[HIGH]"
+      } else {
+        "[    ]"
+      }
+
+      # string interpolation with binary expression (v0.1.4)
+      Io.show("{badge} {incident.id} — {incident.title} ({self.escalated + self.logged + 1} of {total})")
+
+      when action {
+        page { who } => {
+          Agent.delegate(Responder, "escalate", incident)
+          self.escalated = self.escalated + 1
+          self.seen = self.seen.push(incident.id)
+          Io.show("  paged {who}")
+        }
+        notify { channel } => {
+          self.logged = self.logged + 1
+          self.seen = self.seen.push(incident.id)
+          Io.show("  notified {channel}")
+        }
+        log => {
+          self.logged = self.logged + 1
+          Io.show("  logged")
+        }
+      }
+    }
+
+    summary = Ai.summarize(
+      "{self.escalated} escalated, {self.logged} logged out of {total} incidents",
+      format: prose,
+      max: 1,
+      unit: sentences
+    ) ?? "shift complete"
+
+    Io.show("Shift summary: {summary}")
+
+    # Stop self last — fires @on_stop before removal; Responder stays live
+    # so any queued delegate events are delivered before the process exits.
+    Agent.stop(OnCall)
+  }
+
+  @on_stop {
+    Io.show("OnCall shift complete. Escalated: {self.escalated}. Logged: {self.logged}.")
+  }
+}
+
+run(OnCall)

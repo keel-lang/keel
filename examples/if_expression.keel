@@ -1,0 +1,70 @@
+# SLA Policy Engine
+#
+# Computes the response target, owner, and priority badge for each
+# production incident — using if-as-expression for all branching so
+# there are no intermediate variables cluttering the logic.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/if_expression.keel
+
+type Severity = low | medium | high | critical
+
+task sla_minutes(severity: Severity) -> int {
+  when severity {
+    critical => 15
+    high     => 60
+    medium   => 240
+    low      => 1440
+  }
+}
+
+agent SLAPlanner {
+  @role "SLA compliance monitor — every incident must have a target and a named owner"
+  @rules [
+    "Never route a critical incident to a ticket queue without a named engineer",
+    "Page immediately if the estimated impact is revenue-affecting"
+  ]
+
+  @on_start {
+    incidents = [
+      {id: "INC-001", title: "Payment gateway timeout",    severity: Severity.critical},
+      {id: "INC-002", title: "Auth tokens expiring early", severity: Severity.high},
+      {id: "INC-003", title: "Slow dashboard queries",     severity: Severity.medium},
+      {id: "INC-004", title: "Broken CSV export button",   severity: Severity.low}
+    ]
+
+    for incident in incidents {
+      minutes = sla_minutes(incident.severity)
+
+      # if-as-expression: pick the on-call owner without a separate if-statement
+      owner = if incident.severity == Severity.critical {
+        "primary on-call (page immediately)"
+      } else if incident.severity == Severity.high {
+        "team lead (Slack)"
+      } else if incident.severity == Severity.medium {
+        "squad inbox"
+      } else {
+        "backlog"
+      }
+
+      # if-as-expression: inline urgency badge
+      badge = if incident.severity == Severity.critical {
+        "🔴 CRIT"
+      } else if incident.severity == Severity.high {
+        "🟠 HIGH"
+      } else if incident.severity == Severity.medium {
+        "🟡 MED "
+      } else {
+        "🟢 LOW "
+      }
+
+      # let type annotation makes the intent of this string explicit
+      line: str = "{badge}  {incident.id}: respond within {minutes} min → {owner}"
+      Io.show(line)
+    }
+
+    Io.show("\nAll incidents assigned.")
+  }
+}
+
+run(SLAPlanner)

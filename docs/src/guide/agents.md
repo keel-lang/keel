@@ -73,7 +73,7 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> In v0.1.3, `@on_start` and `@rules` are fully wired. `@on_stop`, `@tools`, `@memory`, `@limits`, `@team`, and `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+> In v0.1.4, `@on_start`, `@on_stop`, and `@rules` are fully wired. `@tools`, `@memory`, `@limits`, `@team`, and `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
 
 ### `@tools` — capability list <span class="badge badge-soon">Coming soon</span>
 
@@ -133,12 +133,12 @@ Enforced by the runtime with deterministic logic. Violations raise errors; they 
 
 ```keel
 @on_start { Schedule.every(5.minutes, () => { heartbeat() }) }
-@on_stop  { flush_queue() }      # Coming soon
+@on_stop  { flush_queue() }
 ```
 
 Run when the agent starts and stops.
 
-> **Status:** `@on_start` is fully wired. `@on_stop` <span class="badge badge-soon">Coming soon</span> is parsed but never invoked in v0.1 (graceful-shutdown hook not wired).
+> **Status:** Both `@on_start` and `@on_stop` are fully wired as of v0.1.4.
 
 ### Custom attributes
 
