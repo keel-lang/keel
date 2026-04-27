@@ -1,6 +1,7 @@
 # Summary
 
 [Introduction](./introduction.md)
+[What's New](./release-notes.md)
 
 # Getting Started
 
@@ -49,4 +50,4 @@
 
 ---
 
-[Changelog](./changelog.md)
+[Release Notes](./release-notes.md)

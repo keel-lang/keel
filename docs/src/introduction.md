@@ -4,7 +4,9 @@
 
 # The Keel Language
 
-> **Alpha (v0.1).** Keel is in early design. Breaking changes expected between 0.x releases. No production users, no binary release yet — build from source. See [versioning](#versioning-and-breaking-changes).
+> **Latest: [v0.1.4](./release-notes.md)** — `else if` chains, `list + list`, full string interpolation, `@on_stop`, `Agent.delegate`. [See what's new →](./release-notes.md)
+
+> **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
 
 **Keel** is a small, statically-typed language for building AI agents. The actor model is its one concurrency primitive. Everything else — AI calls, scheduling, human-in-the-loop, HTTP, email, memory — lives in a **standard library that is auto-imported** into every program.
@@ -60,12 +62,11 @@ Zero imports. Namespaces like `Ai`, `Io`, `Email`, and `Schedule` are in scope f
 
 ## Try It
 
-Build from source and run your first agent:
+Install and run your first agent:
 
 ```bash
-git clone https://github.com/keel-lang/keel.git
-cd keel && cargo build --release
-./target/release/keel run examples/minimal.keel
+curl https://keel-lang.dev/install.sh | sh
+keel run examples/showcase.keel
 ```
 
 → [Installation](./getting-started/installation.md)

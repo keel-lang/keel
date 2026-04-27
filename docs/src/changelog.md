@@ -1,3 +1,3 @@
 # Changelog
 
-See [CHANGELOG.md](https://github.com/keel-lang/keel/blob/main/CHANGELOG.md) on GitHub.
+See [Release Notes](./release-notes.md) for the full version history.
