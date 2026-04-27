@@ -14,6 +14,7 @@
 - [Variables & Expressions](./guide/expressions.md)
 - [Tasks](./guide/tasks.md)
 - [Agents & Attributes](./guide/agents.md)
+- [Agent Communication & Mailbox](./guide/agent-communication.md)
 - [Control Flow](./guide/control-flow.md)
 - [Collections & Lambdas](./guide/collections.md)
 - [Error Handling](./guide/error-handling.md)

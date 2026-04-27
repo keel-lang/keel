@@ -6,7 +6,7 @@ All notable changes to Keel.
 
 ---
 
-## [0.1.3] — 2026-04-19
+## [0.1.3] — 2026-04-26
 
 ### Declarations reach the model
 
@@ -91,12 +91,6 @@ agent Extractor {
 The outgoing system prompt now contains `vendor`, `amount`, and `date` as
 extraction targets. Using `as: UnknownType` raises a runtime error with an
 actionable message.
-
----
-
-## [Unreleased]
-
-Nothing yet.
 
 ---
 
