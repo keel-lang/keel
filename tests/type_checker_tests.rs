@@ -320,3 +320,163 @@ task t(text: str) {
         "non-exhaustive",
     );
 }
+
+// ─── v0.1.5: nullable safety ────────────────────────────────────────────────
+
+#[test]
+fn error_nullable_passed_as_non_nullable() {
+    expect_error(
+        r#"
+task t() {
+  x: str = Env.get("KEY")
+}
+"#,
+        "use `!` to assert non-null",
+    );
+}
+
+#[test]
+fn valid_nullable_unwrapped_with_assert() {
+    type_ok(r#"
+task t() {
+  x: str = Env.get("KEY")!
+}
+"#);
+}
+
+#[test]
+fn valid_nullable_coalesced() {
+    type_ok(r#"
+task t() {
+  x: str = Env.get("KEY") ?? "default"
+}
+"#);
+}
+
+#[test]
+fn valid_non_nullable_assigned_to_nullable() {
+    type_ok(r#"
+task t() {
+  x: str? = "hello"
+}
+"#);
+}
+
+// ─── v0.1.5: return-type matching ──────────────────────────────────────────
+
+#[test]
+fn error_return_stmt_type_mismatch() {
+    expect_error(
+        r#"
+task t() -> str {
+  return 42
+}
+"#,
+        "return value: expected str",
+    );
+}
+
+#[test]
+fn valid_return_stmt_matches_declared() {
+    type_ok(r#"
+task t() -> str {
+  return "hello"
+}
+"#);
+}
+
+#[test]
+fn valid_task_no_return_type() {
+    type_ok(r#"
+task t() {
+  return 42
+}
+"#);
+}
+
+// ─── v0.1.5: struct field checks ───────────────────────────────────────────
+
+#[test]
+fn error_missing_struct_field() {
+    expect_error(
+        r#"
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice" }
+}
+"#,
+        "missing field `age`",
+    );
+}
+
+#[test]
+fn valid_struct_all_fields_present() {
+    type_ok(r#"
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice", age: 30 }
+}
+"#);
+}
+
+#[test]
+fn valid_struct_extra_fields_allowed() {
+    type_ok(r#"
+type Person { name: str }
+
+task t() {
+  p: Person = { name: "Alice", extra: 42 }
+}
+"#);
+}
+
+// ─── v0.1.5: generic list type inference ───────────────────────────────────
+
+#[test]
+fn valid_list_push_preserves_element_type() {
+    type_ok(r#"
+task t() {
+  items: list[str] = ["a", "b"]
+  more = items.push("c")
+}
+"#);
+}
+
+#[test]
+fn valid_list_concatenation_inferred() {
+    type_ok(r#"
+task t() {
+  a = ["x", "y"]
+  b = ["z"]
+  all = a + b
+  for item in all {
+    Io.notify(item)
+  }
+}
+"#);
+}
+
+#[test]
+fn valid_list_len_is_int() {
+    type_ok(r#"
+task t() {
+  items = ["a", "b", "c"]
+  n: int = items.len()
+}
+"#);
+}
+
+#[test]
+fn valid_list_filter_preserves_type() {
+    type_ok(r#"
+task t() {
+  items = ["a", "bb", "ccc"]
+  short = items.filter(x => true)
+  for s in short {
+    Io.notify(s)
+  }
+}
+"#);
+}

@@ -32,14 +32,14 @@ Legend: **[x]** complete · **[~]** partial (works, but with caveats below) · *
 - [x] Interpreter: namespace dispatch, agent lifecycle with `@on_start`, `self.` state, pattern matching (simple + rich enums), closures, async execution
 - [x] Examples: 11 `.keel` programs parse and execute end-to-end
 - [~] **Type checker.** Implemented: undefined identifiers, exhaustive `when`, `self.` outside agents, `if` / `for` condition types, arg-count checks, basic enum inference, rich-variant field checks.
-  - [ ] Nullable safety enforcement (`T?` not distinguished from `T` at call sites)
-  - [ ] Full return-type matching against declared `-> T`
-  - [ ] Struct/map subtyping checks
-  - [ ] Generic type parameter inference (`list[T]`, `map[K, V]`)
+  - [x] Nullable safety enforcement (`T?` not assignable to `T`; `!` unwraps; `??` coalesces)
+  - [x] Return-type matching for `return expr` against declared `-> T`
+  - [x] Struct/map subtyping checks (missing fields caught; extra fields allowed)
+  - [~] Generic type parameter inference — list/string method return types inferred; `map[K, V]` still opaque
 - [~] **Parser corners.** Known limits surfaced by the inbox_assistant example:
   - [x] `if`-as-expression on the RHS of a binding (`x = if cond { a } else { b }`)
   - [x] Type annotations on `let` bindings (`x: T = ...`) — checker validates declared vs inferred type
-  - [ ] Nested `"..."` inside `{interp}` without escaping
+  - [ ] Nested `"..."` inside `{interp}` without escaping (escaped `\"` already works)
   - [x] String interpolation now routes through the real expression parser (function calls, binary ops, etc.)
   - [x] `!` postfix unwrap operator
   - [x] `list + list` / `list.push` concatenation
@@ -131,6 +131,28 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
   - `release-patch.yml` — reads the latest `v*` tag, increments the third digit (`v0.1.N` → `v0.1.N+1`), creates and pushes the tag, which fires the existing release pipeline.
   - `release-minor.yml` — increments the second digit and resets the third (`v0.1.N` → `v0.2.0`), same downstream effect.
   - Neither writes to `main`; both only push a tag. Run from the Actions UI so the "when" stays a deliberate human decision.
+
+---
+
+## v0.1.5 — Type checker hardening
+
+**Theme:** Close the gap between what the spec declares and what the type checker actually enforces. After this release, every type annotation a user writes is checked — nullables, return types, struct fields, generics.
+
+**Status:** shipped.
+
+### Goals
+
+1. **[x] Nullable safety at call sites** — `T?` is now a distinct, enforced type. Passing a `str?` where a `str` is expected is a type error. The `!` unwrap operator strips the nullable in the checker; `??` coalesces to a non-nullable value. `NullAssert` (`!`) now correctly returns the inner type.
+
+2. **[x] Return-type matching** — `return expr` inside a task declared with `-> T` is now checked against the declared type. Bare `return` with no value skips the check.
+
+3. **[x] Struct / map field checks** — Named struct types (e.g., `type Foo { a: int, b: str }`) now resolve to `Ty::Struct(fields)` in the checker. Passing a struct literal where a named type is expected catches missing fields; extra fields are allowed (structural subtyping).
+
+4. **[x] Generic type parameter inference** — List method return types are now inferred: `.push` / `.filter` return the same `list[T]`; `.len()` returns `int`; `.first()` / `.last()` return `T?`; `.contains()` returns `bool`. `list + list` also infers the element type. String methods (`.len`, `.upper`, `.split`, `.contains`, etc.) are similarly typed.
+
+5. **[ ] Nested string literals inside `{interp}`** — `"outer {"inner"}"` is still a parse error. The fix requires a context-aware string lexer that understands interp nesting depth. Deferred to a follow-on patch; escaped inner strings (`\"`) already work via the backslash escape path.
+
+6. **[x] `NullAssert` type-strips nullable** — Bonus fix: `expr!` now returns the unwrapped inner type instead of preserving `T?`.
 
 ---
 

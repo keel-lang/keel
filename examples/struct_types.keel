@@ -1,0 +1,65 @@
+# Struct Types
+#
+# Named struct types give structure to data and enable field-level
+# type checking. The checker verifies that all required fields are
+# present when you construct a struct literal of a named type.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/struct_types.keel
+
+type Product {
+  name:     str
+  price:    float
+  in_stock: bool
+}
+
+type OrderLine {
+  product:  Product
+  quantity: int
+}
+
+task line_summary(line: OrderLine) -> str {
+  subtotal = line.product.price * line.quantity
+  # Ai.draft returns str? — use ?? to guarantee a str return type.
+  Ai.draft(
+    "One line: {line.product.name} x{line.quantity} at ${line.product.price} each",
+    format: prose
+  ) ?? "{line.product.name} x{line.quantity} = ${subtotal}"
+}
+
+agent Checkout {
+  @role "Processes customer orders and prints receipts"
+
+  state {
+    lines_processed: int = 0
+  }
+
+  @on_start {
+    widget:  Product = { name: "Widget",  price: 9.99,  in_stock: true }
+    gadget:  Product = { name: "Gadget",  price: 24.99, in_stock: true }
+    doohick: Product = { name: "Doohick", price: 4.49,  in_stock: false }
+
+    all_lines: list[OrderLine] = [
+      { product: widget,  quantity: 3 },
+      { product: gadget,  quantity: 1 },
+      { product: doohick, quantity: 2 }
+    ]
+
+    # .filter preserves list[OrderLine]; .len() returns int
+    available = all_lines.filter(l => l.product.in_stock)
+    skipped   = all_lines.filter(l => not l.product.in_stock)
+
+    Io.show("Fulfilling {available.len()} of {all_lines.len()} line(s)")
+    Io.show("Skipping {skipped.len()} out-of-stock item(s)\n")
+
+    for line in available {
+      summary = line_summary(line)
+      Io.show("  {summary}")
+      self.lines_processed = self.lines_processed + 1
+    }
+
+    Io.show("\n{self.lines_processed} line(s) fulfilled.")
+  }
+}
+
+run(Checkout)

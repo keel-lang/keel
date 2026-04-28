@@ -50,4 +50,4 @@
 
 ---
 
-[Release Notes](./release-notes.md)
+[Changelog](./changelog.md)

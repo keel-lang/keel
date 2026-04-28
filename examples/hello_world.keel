@@ -1,15 +1,29 @@
 # ============================================================
 # Keel — Hello World
 # ============================================================
-# The simplest possible agent: greets you and answers questions.
+# The simplest possible agent: introduces itself on start,
+# then stays live to answer incoming messages.
 # ============================================================
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/hello_world.keel
 
 agent Hello {
   @role "You are a friendly assistant who greets people warmly"
 
-  on message(msg: Message) {
-    reply = Ai.draft("response to {msg.body}", tone: "warm")
-    Io.show(reply)
+  @on_start {
+    Io.show("Hello from Keel!")
+    Io.show("I'm a friendly assistant, ready to chat.")
+    greeting = Ai.draft("a warm two-sentence welcome message for a new user",
+      tone: "friendly"
+    ) ?? "Welcome! I'm here to help — just send me a message."
+    Io.show(greeting)
+  }
+
+  on message(msg: {body: str, from: str}) {
+    reply = Ai.draft("response to: {msg.body}", tone: "warm and helpful")
+      ?? "Thanks for your message! I'll get back to you shortly."
+    Io.show("[to {msg.from}] {reply}")
   }
 }
 

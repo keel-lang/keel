@@ -10,7 +10,7 @@ task classify_meeting(title: str) -> MeetingType {
 task prep_notes(meeting: {title: str, attendees: list[str]}) -> str {
   Ai.draft("meeting preparation notes for {meeting.title}",
     tone: "concise and actionable",
-    guidance: "include agenda suggestions and key topics for {meeting.attendees.count} attendees"
+    guidance: "include agenda suggestions and key topics for {meeting.attendees.count()} attendees"
   ) ?? "(could not generate notes)"
 }
 
@@ -27,7 +27,7 @@ agent MeetingPrep {
 
     Io.notify("Meeting: {meeting.title} at {meeting.time}")
     Io.notify("Type: {meeting_type}")
-    Io.notify("Attendees: {meeting.attendees.count}")
+    Io.notify("Attendees: {meeting.attendees.count()}")
 
     Io.show({
       title: meeting.title,

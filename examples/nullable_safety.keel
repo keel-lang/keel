@@ -1,0 +1,60 @@
+# Nullable Safety
+#
+# Demonstrates how T? (nullable) types are distinct from T.
+# The type checker enforces unwrapping before use.
+#
+# Patterns:
+#   x ?? fallback   — use fallback if x is none
+#   x!              — assert x is not none (throws NullError at runtime)
+#   when x { ... }  — pattern-match on a nullable value
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/nullable_safety.keel
+
+type Sentiment = positive | neutral | negative
+
+task sentiment_of(text: str) -> Sentiment {
+  Ai.classify(text, as: Sentiment, fallback: Sentiment.neutral)
+}
+
+task summarize_or_default(text: str) -> str {
+  # Ai.summarize returns str? — must unwrap before assigning to str.
+  # Using ?? provides a safe fallback.
+  Ai.summarize(text, format: prose, max: 1, unit: sentences)
+    ?? "No summary available."
+}
+
+task env_config() -> str {
+  # Env.get returns str? — use ?? to fall back to a default.
+  host: str = Env.get("KEEL_HOST") ?? "localhost"
+  port: str = Env.get("KEEL_PORT") ?? "8080"
+  "{host}:{port}"
+}
+
+agent NullableDemo {
+  @role "Demonstrates nullable type safety"
+
+  @on_start {
+    texts = [
+      "The team shipped a great release today!",
+      "Service is degraded — latency is up 3x.",
+      "Routine maintenance completed successfully."
+    ]
+
+    for text in texts {
+      sentiment = sentiment_of(text)
+      summary   = summarize_or_default(text)
+
+      label = if sentiment == Sentiment.positive { "good news" }
+              else if sentiment == Sentiment.negative { "incident" }
+              else { "routine" }
+
+      Io.show("[{label}] {summary}")
+    }
+
+    endpoint: str = env_config()
+    Io.show("Connecting to {endpoint}")
+  }
+}
+
+run(NullableDemo)

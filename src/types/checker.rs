@@ -105,6 +105,8 @@ struct Checker {
     top_tasks: HashMap<String, TaskSig>,
     agents: HashMap<String, AgentInfo>,
     current_agent: Option<String>,
+    /// Declared return type of the task currently being checked.
+    current_return_ty: Option<Ty>,
     /// Pre-seeded names that must not be reported as undefined
     /// (prelude namespaces, built-in types, symbol identifiers, etc.).
     prelude: HashSet<String>,
@@ -191,6 +193,7 @@ impl Checker {
             top_tasks: HashMap::new(),
             agents: HashMap::new(),
             current_agent: None,
+            current_return_ty: None,
             prelude,
         }
     }
@@ -301,10 +304,11 @@ impl Checker {
                 _ => {
                     if self.enum_variants.contains_key(n) {
                         Ty::Enum(n.clone())
+                    } else if let Some(fields) = self.structs.get(n) {
+                        Ty::Struct(fields.clone())
                     } else if let Some(t) = self.aliases.get(n) {
                         t.clone()
                     } else {
-                        // Struct, unresolved, or user type — best effort.
                         Ty::Unknown
                     }
                 }
@@ -380,11 +384,17 @@ impl Checker {
     }
 
     fn check_task(&mut self, t: &TaskDecl) {
+        let declared_return = t.return_type.as_ref().map(|ty| self.resolve_type(ty));
+        let prev_return_ty = self.current_return_ty.take();
+        self.current_return_ty = declared_return;
+
         let mut scope = self.fresh_scope();
         for p in &t.params {
             scope.define(p.name.clone(), self.resolve_type(&p.ty));
         }
         self.check_block(&t.body, &mut scope);
+
+        self.current_return_ty = prev_return_ty;
     }
 
     fn check_on_handler(&mut self, h: &OnHandler) {
@@ -451,7 +461,12 @@ impl Checker {
             }
             Stmt::Return(opt) => {
                 if let Some(e) = opt {
-                    self.infer_expr(e, scope);
+                    let actual = self.infer_expr(e, scope);
+                    if let Some(expected) = self.current_return_ty.clone() {
+                        if !matches!(expected, Ty::None_ | Ty::Unknown | Ty::Dynamic) {
+                            self.expect(&actual, &expected, "return value");
+                        }
+                    }
                 }
             }
             Stmt::For { binding, iter, filter, body } => {
@@ -653,7 +668,13 @@ impl Checker {
                 Ty::Unknown
             }
 
-            Expr::NullAssert(e) => self.infer_expr(e, scope),
+            Expr::NullAssert(e) => {
+                let ty = self.infer_expr(e, scope);
+                match ty {
+                    Ty::Nullable(inner) => *inner,
+                    other => other,
+                }
+            }
 
             Expr::StructLit(fields) => {
                 let mut inferred: Vec<(String, Ty)> = Vec::with_capacity(fields.len());
@@ -770,8 +791,21 @@ impl Checker {
                         }
                     }
                 }
-                let _ = self.infer_expr(object, scope);
-                Ty::Unknown
+                let obj_ty = self.infer_expr(object, scope);
+                match (obj_ty.strip_nullable(), method.as_str()) {
+                    (Ty::List(elem), "push" | "filter") => Ty::List(elem.clone()),
+                    (Ty::List(_), "len" | "count") => Ty::Int,
+                    (Ty::List(_), "is_empty") => Ty::Bool,
+                    (Ty::List(_), "contains") => Ty::Bool,
+                    (Ty::List(elem), "first" | "last") => Ty::Nullable(elem.clone()),
+                    (Ty::List(_), "map") => Ty::List(Box::new(Ty::Unknown)),
+                    (Ty::Str, "len" | "count" | "length") => Ty::Int,
+                    (Ty::Str, "upper" | "lower" | "trim" | "strip") => Ty::Str,
+                    (Ty::Str, "split") => Ty::List(Box::new(Ty::Str)),
+                    (Ty::Str, "contains" | "starts_with" | "ends_with" | "is_empty") => Ty::Bool,
+                    (Ty::Str, "replace") => Ty::Str,
+                    _ => Ty::Unknown,
+                }
             }
 
             Expr::Cast { expr, ty } => {
@@ -852,12 +886,39 @@ impl Checker {
 
     fn expect(&mut self, actual: &Ty, expected: &Ty, context: &str) {
         if matches!(actual, Ty::Unknown | Ty::Dynamic) { return; }
-        let actual_stripped = actual.strip_nullable();
-        if actual_stripped != expected && !matches!(actual_stripped, Ty::Unknown | Ty::Dynamic) {
+        if matches!(expected, Ty::Unknown | Ty::Dynamic) { return; }
+
+        // Nullable actual where non-nullable expected — caller must unwrap.
+        if matches!(actual, Ty::Nullable(_)) && !matches!(expected, Ty::Nullable(_)) {
+            self.err(format!(
+                "{context}: expected {}, got {} — use `!` to assert non-null or `??` to provide a fallback",
+                describe_ty(expected),
+                describe_ty(actual),
+            ));
+            return;
+        }
+
+        let actual_base = actual.strip_nullable();
+        let expected_base = expected.strip_nullable();
+
+        // Struct structural compatibility: all expected fields must be present.
+        if let (Ty::Struct(actual_fields), Ty::Struct(expected_fields)) = (actual_base, expected_base) {
+            for (exp_name, exp_ty) in expected_fields {
+                match actual_fields.iter().find(|(n, _)| n == exp_name) {
+                    None => self.err(format!("{context}: missing field `{exp_name}`")),
+                    Some((_, act_ty)) => {
+                        self.expect(act_ty, exp_ty, &format!("{context}.{exp_name}"));
+                    }
+                }
+            }
+            return;
+        }
+
+        if actual_base != expected_base && !matches!(actual_base, Ty::Unknown | Ty::Dynamic) {
             self.err(format!(
                 "{context}: expected {}, got {}",
                 describe_ty(expected),
-                describe_ty(actual)
+                describe_ty(actual),
             ));
         }
     }
@@ -903,6 +964,7 @@ fn infer_binary(op: BinOp, l: &Ty, r: &Ty) -> Ty {
                 (Ty::Float, Ty::Float) => Ty::Float,
                 (Ty::Float, Ty::Int) | (Ty::Int, Ty::Float) => Ty::Float,
                 (Ty::Str, Ty::Str) if matches!(op, Add) => Ty::Str,
+                (Ty::List(le), Ty::List(_)) if matches!(op, Add) => Ty::List(le.clone()),
                 _ => Ty::Unknown,
             }
         }

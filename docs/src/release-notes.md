@@ -4,6 +4,61 @@
 
 ---
 
+## v0.1.5 — 2026-04-27
+### Type checker hardening
+
+Four new checks land in the type checker; zero breaking changes to valid programs.
+
+#### Nullable safety
+
+`T?` is now enforced at assignment and return sites. Passing a nullable value where a non-nullable is expected is a compile-time error. Use `!` to assert non-null (throws `NullError` at runtime if `none`) or `??` to provide a fallback.
+
+```keel
+task t() {
+  x: str = Env.get("KEY")          # error: expected str, got str?
+  y: str = Env.get("KEY")!         # ok — throws if none
+  z: str = Env.get("KEY") ?? ""    # ok — falls back to ""
+}
+```
+
+#### Return-type matching
+
+`return expr` is now checked against the task's declared `-> T`.
+
+```keel
+task greet() -> str {
+  return 42     # error: return value: expected str, got int
+}
+```
+
+#### Struct field checks
+
+Struct literals are now checked against named `type` declarations. Missing required fields are reported; extra fields are allowed.
+
+```keel
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice" }           # error: missing field `age`
+  q: Person = { name: "Bob", age: 30 }    # ok
+}
+```
+
+#### List and string method type inference
+
+Method calls on `list[T]` and `str` now return typed results:
+
+| Method | Return type |
+|---|---|
+| `list.push(x)` / `list.filter(fn)` | `list[T]` |
+| `list.len()` | `int` |
+| `list.first()` / `list.last()` | `T?` |
+| `str.upper()` / `str.trim()` / `str.replace()` | `str` |
+| `str.split(sep)` | `list[str]` |
+| `str.len()` | `int` |
+
+---
+
 ## v0.1.4 — 2026-04-27
 ### Parser hardening — every expression-level feature now works
 

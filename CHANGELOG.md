@@ -6,6 +6,84 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.5] — 2026-04-27
+
+### Type checker hardening
+
+#### Nullable safety at call sites
+
+`T?` is now a distinct, enforced type. Passing a nullable value where a
+non-nullable is expected is a type error.
+
+```keel
+task t() {
+  x: str = Env.get("KEY")   # error: expected str, got str?
+  y: str = Env.get("KEY")!  # ok — ! unwraps, throws NullError if none
+  z: str = Env.get("KEY") ?? "default"  # ok — ?? coalesces
+}
+```
+
+`NullAssert` (`!`) now returns the unwrapped inner type in the checker, so
+`x: str = some_nullable!` is accepted without a false positive.
+
+#### Return-type matching
+
+`return expr` inside a task with a declared `-> T` is now verified against
+that type.
+
+```keel
+task greet() -> str {
+  return 42   # error: return value: expected str, got int
+}
+```
+
+Bare `return` (no value) is still accepted inside any task.
+
+#### Struct field checks
+
+Named struct types now resolve to their field list in the checker. A struct
+literal passed where a named type is expected is checked for missing fields.
+Extra fields are allowed (structural subtyping).
+
+```keel
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice" }         # error: missing field `age`
+  q: Person = { name: "Bob", age: 30 }  # ok
+  r: Person = { name: "Eve", age: 25, extra: true }  # ok — extra fields allowed
+}
+```
+
+#### Generic list and string method type inference
+
+List and string method calls now return typed results instead of `unknown`:
+
+| Expression | Inferred type |
+|---|---|
+| `list.push(x)` / `list.filter(fn)` | `list[T]` (same element type) |
+| `list.len()` / `list.count()` | `int` |
+| `list.contains(x)` / `list.is_empty()` | `bool` |
+| `list.first()` / `list.last()` | `T?` |
+| `list.map(fn)` | `list[unknown]` (lambda return deferred) |
+| `listA + listB` | `list[T]` |
+| `str.len()` / `str.count()` | `int` |
+| `str.upper()` / `str.lower()` / `str.trim()` / `str.replace()` | `str` |
+| `str.split(sep)` | `list[str]` |
+| `str.contains(s)` / `str.starts_with(s)` / `str.ends_with(s)` | `bool` |
+
+```keel
+task t() {
+  items = ["a", "b", "c"]
+  n: int   = items.len()           # ok
+  more     = items.push("d")       # list[str]
+  short    = items.filter(x => true)  # list[str]
+  for s in short { Io.notify(s) }  # s: str
+}
+```
+
+---
+
 ## [0.1.4] — 2026-04-27
 
 ### Parser hardening — every expression-level feature now works

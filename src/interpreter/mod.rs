@@ -1029,15 +1029,40 @@ impl Interpreter {
     ) -> Result<Value> {
         // Minimal built-in methods for v0.1. Extend as examples need.
         match (&obj, method) {
-            (Value::String(s), "length") => Ok(Value::Integer(s.chars().count() as i64)),
+            (Value::String(s), "length" | "len" | "count") => Ok(Value::Integer(s.chars().count() as i64)),
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "to_str") => Ok(Value::String(s.clone())),
+            (Value::String(s), "upper") => Ok(Value::String(s.to_uppercase())),
+            (Value::String(s), "lower") => Ok(Value::String(s.to_lowercase())),
+            (Value::String(s), "trim" | "strip") => Ok(Value::String(s.trim().to_string())),
             (Value::String(s), "contains") => {
                 let needle = args.first().map(|a| a.value.as_string()).unwrap_or_default();
                 Ok(Value::Bool(s.contains(&needle)))
             }
-            (Value::List(items), "count") => Ok(Value::Integer(items.len() as i64)),
+            (Value::String(s), "starts_with") => {
+                let prefix = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                Ok(Value::Bool(s.starts_with(prefix.as_str())))
+            }
+            (Value::String(s), "ends_with") => {
+                let suffix = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                Ok(Value::Bool(s.ends_with(suffix.as_str())))
+            }
+            (Value::String(s), "replace") => {
+                let from = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let to = args.get(1).map(|a| a.value.as_string()).unwrap_or_default();
+                Ok(Value::String(s.replace(from.as_str(), &to)))
+            }
+            (Value::String(s), "split") => {
+                let sep = args.first().map(|a| a.value.as_string()).unwrap_or_else(|| " ".to_string());
+                let parts: Vec<Value> = s.split(sep.as_str()).map(|p| Value::String(p.to_string())).collect();
+                Ok(Value::List(parts))
+            }
+            (Value::List(items), "count" | "len") => Ok(Value::Integer(items.len() as i64)),
             (Value::List(items), "is_empty") => Ok(Value::Bool(items.is_empty())),
+            (Value::List(items), "contains") => {
+                let target = args.first().map(|a| a.value.clone()).unwrap_or(Value::None);
+                Ok(Value::Bool(items.iter().any(|v| v == &target)))
+            }
             (Value::List(items), "first") => Ok(items.first().cloned().unwrap_or(Value::None)),
             (Value::List(items), "last") => Ok(items.last().cloned().unwrap_or(Value::None)),
             (Value::List(items), "map") => {
@@ -1192,6 +1217,23 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Sub, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
         (Mul, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
         (Div, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
+        // float op int (and int op float) — promote int to float
+        (Add, Value::Float(a), Value::Integer(b)) => Ok(Value::Float(a + *b as f64)),
+        (Sub, Value::Float(a), Value::Integer(b)) => Ok(Value::Float(a - *b as f64)),
+        (Mul, Value::Float(a), Value::Integer(b)) => Ok(Value::Float(a * *b as f64)),
+        (Div, Value::Float(a), Value::Integer(b)) => Ok(Value::Float(a / *b as f64)),
+        (Add, Value::Integer(a), Value::Float(b)) => Ok(Value::Float(*a as f64 + b)),
+        (Sub, Value::Integer(a), Value::Float(b)) => Ok(Value::Float(*a as f64 - b)),
+        (Mul, Value::Integer(a), Value::Float(b)) => Ok(Value::Float(*a as f64 * b)),
+        (Div, Value::Integer(a), Value::Float(b)) => Ok(Value::Float(*a as f64 / b)),
+        (Lt, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a < *b as f64)),
+        (Gt, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a > *b as f64)),
+        (Lte, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a <= *b as f64)),
+        (Gte, Value::Float(a), Value::Integer(b)) => Ok(Value::Bool(*a >= *b as f64)),
+        (Lt, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) < *b)),
+        (Gt, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) > *b)),
+        (Lte, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) <= *b)),
+        (Gte, Value::Integer(a), Value::Float(b)) => Ok(Value::Bool((*a as f64) >= *b)),
         (Add, Value::String(a), Value::String(b)) => Ok(Value::String(format!("{a}{b}"))),
         (Add, Value::List(a), Value::List(b)) => {
             let mut result = a.clone();
