@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.4](./release-notes.md)** — `else if` chains, `list + list`, full string interpolation, `@on_stop`, `Agent.delegate`. [See what's new →](./release-notes.md)
+> **Latest: [%%VERSION%%](./release-notes.md)** — nullable safety, return-type matching, struct field checks, list method inference. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

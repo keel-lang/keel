@@ -27,6 +27,8 @@ jobs:
 
       - name: Build docs
         run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/v\1/')
+          sed -i "s/%%VERSION%%/$VERSION/g" docs/src/introduction.md
           cd docs && mdbook-mermaid install . && mdbook build
           echo "keel-lang.dev" > ../target/book/CNAME
           cp ../install.sh   ../target/book/install.sh
