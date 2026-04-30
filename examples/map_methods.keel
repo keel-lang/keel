@@ -1,0 +1,31 @@
+# Map Methods
+#
+# `map[K, V]` literals support method calls for the common operations:
+# `keys`, `values`, `get`, `contains`, `count`, and `is_empty`.
+# `get` returns a nullable so the type checker forces you to handle the
+# missing-key case.
+#
+# Demonstrates: map literal, map.keys / values / get / contains / count.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/map_methods.keel
+
+agent Inventory {
+  @on_start {
+    stock: map[str, int] = {apples: 12, pears: 5, plums: 0}
+
+    Io.show("tracking {stock.count()} items")
+    Io.show("keys: {stock.keys()}")
+    Io.show("values: {stock.values()}")
+
+    if stock.contains("pears") {
+      pears = stock.get("pears") ?? 0
+      Io.show("pears in stock: {pears}")
+    }
+
+    missing = stock.get("oranges") ?? 0
+    Io.show("oranges in stock: {missing}")
+  }
+}
+
+run(Inventory)

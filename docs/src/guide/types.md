@@ -65,6 +65,20 @@ info = {name: "Alice", age: 30}   # inferred as {name: str, age: int}
 notify user info.name              # "Alice"
 ```
 
+When a struct literal is assigned to a named struct type, the checker
+verifies every required field is present. Extra fields are allowed
+(structural subtyping):
+
+```keel
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice" }                        # error: missing field `age`
+  q: Person = { name: "Bob", age: 30 }                 # ok
+  r: Person = { name: "Eve", age: 25, extra: true }    # ok — extras allowed
+}
+```
+
 ## Nullable types
 
 Types are **non-nullable by default**. Append `?` to allow `none`:
@@ -78,6 +92,19 @@ subject = email?.subject           # str? — none if email is none
 
 # Null coalescing
 subject = email?.subject ?? "(no subject)"   # str — guaranteed non-none
+```
+
+The checker enforces the `?` boundary at every assignment, return, and
+call site. Passing a nullable where a non-nullable is expected is a
+compile-time error — use `!` to assert non-null (raises `NullError` at
+runtime if the value is `none`) or `??` to coalesce to a default.
+
+```keel
+task t() {
+  x: str = Env.get("KEY")          # error: expected str, got str?
+  y: str = Env.get("KEY")!         # ok — raises NullError if missing
+  z: str = Env.get("KEY") ?? ""    # ok — falls back to ""
+}
 ```
 
 AI operations return nullable types when they can fail:

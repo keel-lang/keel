@@ -85,10 +85,43 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn hover(&self, _params: HoverParams) -> Result<Option<Hover>> {
-        // v0.1: no hover info yet. Returning `None` keeps VS Code happy.
-        Ok(None)
+    async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let offset = position_to_offset(&text, pos);
+        let Some(label) = checker::type_at(&text, offset) else {
+            return Ok(None);
+        };
+        Ok(Some(Hover {
+            contents: HoverContents::Scalar(MarkedString::String(label)),
+            range: None,
+        }))
     }
+}
+
+/// Convert an LSP `Position` (0-based line + UTF-8 column approximation)
+/// into a UTF-8 byte offset into `text`.
+fn position_to_offset(text: &str, pos: Position) -> usize {
+    let mut line: u32 = 0;
+    let mut col: u32 = 0;
+    let mut offset: usize = 0;
+    for ch in text.chars() {
+        if line == pos.line && col == pos.character {
+            return offset;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 0;
+        } else {
+            col += 1;
+        }
+        offset += ch.len_utf8();
+    }
+    offset
 }
 
 impl Backend {

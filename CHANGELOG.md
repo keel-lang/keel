@@ -4,6 +4,110 @@ All notable changes to Keel.
 
 > **Alpha.** Keel is v0.1. Breaking changes are expected between 0.x releases. Do not build production systems on 0.x.
 
+> **Doc-update rule.** Any feature or spec change — added, updated, or removed — must update the docs in the same release. At minimum: `docs/src/release-notes.md` plus every guide page in `docs/src/guide/` (and `docs/src/examples/`, `docs/src/cli/`, `docs/src/config/` where applicable) that the change touches. `SPEC.md` and `ROADMAP.md` are part of this rule. A release is not shipped until `mdbook build` runs clean over the updated pages.
+
+---
+
+## [0.1.6] — 2026-04-28
+
+### Wiring & ergonomics
+
+This release closes long-standing gaps in the standard library and the
+language server. Every primitive that was a stub in 0.1.5 now does what
+its name promises.
+
+#### Nested string literals inside `{interp}`
+
+The lexer used to terminate a string at the first `"` it saw, even one
+hiding inside a `{...}` slot. The lexer now scans the slot body with brace
+depth tracking and recursively handles nested `"..."`, so this works:
+
+```keel
+agent A {
+  @on_start {
+    name = "world"
+    Io.show("hi {"there {name}"}")  # prints: hi there world
+  }
+}
+```
+
+#### `Control.retry` / `with_timeout` / `with_deadline`
+
+The three control-flow combinators now have real implementations.
+
+```keel
+# Re-invoke until success or the budget is spent.
+result = Control.retry(5, () => Ai.prompt(system: "...", user: "..."))
+
+# Abort if the closure runs past the duration.
+fast = Control.with_timeout(2.seconds, () => slow_call())
+
+# Abort once the absolute deadline has passed.
+done = Control.with_deadline("2026-12-31T23:59:00Z", () => long_task())
+```
+
+`with_timeout` and `with_deadline` raise `TimeoutError` / `DeadlineError`
+on expiry; `retry` surfaces the last attempt's error if every attempt
+fails.
+
+#### `Agent.broadcast(team, data)`
+
+Tag agents with `@team [...]` and dispatch a single event to every
+member of a named team:
+
+```keel
+agent Alpha { @team ["frontline"]  on alert(m: str) { ... } }
+agent Beta  { @team ["frontline"]  on alert(m: str) { ... } }
+agent Gamma { @team ["backoffice"] on alert(m: str) { ... } }
+
+agent Coordinator {
+  @on_start {
+    Agent.run(Alpha); Agent.run(Beta); Agent.run(Gamma)
+    Agent.broadcast("frontline", "incident", event: "alert")
+    # Alpha and Beta fire; Gamma does not.
+  }
+}
+```
+
+#### `Email.archive(message)`
+
+`Email.archive` now performs an IMAP folder move (`UID MOVE`, falling back
+to `COPY` + `\Deleted` + `EXPUNGE` for servers without the MOVE
+extension). The destination folder is `Archive` by default and can be
+overridden with the `IMAP_ARCHIVE_FOLDER` env var. `Email.fetch` now
+returns each message's UID under the `uid` key so `archive` can target
+the right message.
+
+#### `map[K, V]` method inference
+
+Map literals support the common operations on both the type checker and
+runtime side:
+
+| Expression | Inferred type |
+|---|---|
+| `map.get(k)` | `V?` |
+| `map.keys()` | `list[K]` |
+| `map.values()` | `list[V]` |
+| `map.len()` / `map.count()` / `map.size()` | `int` |
+| `map.is_empty()` | `bool` |
+| `map.contains(k)` / `map.has(k)` | `bool` |
+
+The checker also accepts a `{k: v, ...}` struct literal in any position
+that expects `map[str, V]`, so the same surface syntax serves both
+struct and map construction.
+
+#### LSP hover
+
+`textDocument/hover` returns the inferred type of the identifier under
+the cursor, looking through `let`-bindings, function parameters, agent
+state fields, and prelude namespaces (`Io`, `Ai`, `Control`, …).
+
+#### Examples
+
+`examples/retry_on_failure.keel`, `examples/broadcast_team.keel`,
+`examples/nested_interp.keel`, and `examples/map_methods.keel` exercise
+the new primitives end-to-end and run under `KEEL_LLM=mock`.
+
 ---
 
 ## [0.1.5] — 2026-04-27

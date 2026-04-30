@@ -100,11 +100,10 @@ pub enum Token {
 
     // ── String literal ───────────────────────────────────────────────
     // Triple-quoted form comes first because its opening `"""` would
-    // otherwise be read as empty-string + start-of-string by the
-    // single-quote regex. Logos picks the longest match, so the
-    // three-quote opener wins.
+    // otherwise be matched as empty-string + start-of-string. Logos
+    // picks the longest match, so the three-quote opener wins.
     #[token("\"\"\"", lex_triple_string)]
-    #[regex(r#""([^"\\]|\\.)*""#, lex_string)]
+    #[token("\"", lex_string)]
     StringLit(String),
 
     // ── Identifier ───────────────────────────────────────────────────
@@ -188,12 +187,79 @@ pub enum Token {
     Comment,
 }
 
-/// Strip surrounding quotes from a string literal; escapes are resolved
-/// later during parsing / interpolation processing.
+/// Scan a single-quoted string body starting just after the opening `"`.
+/// Handles escapes (`\X`) and tracks brace depth inside `{...}`
+/// interpolation slots, which themselves may contain nested string
+/// literals (e.g. `"outer {"inner"}"`). Returns the inner body verbatim
+/// — escape resolution happens later in `parse_interpolation`.
 fn lex_string(lex: &mut logos::Lexer<Token>) -> Option<String> {
-    let slice = lex.slice();
-    let inner = &slice[1..slice.len() - 1];
-    Some(inner.to_string())
+    let rest = lex.remainder();
+    let (content, consumed) = scan_string_body(rest)?;
+    lex.bump(consumed);
+    Some(content)
+}
+
+/// Recursively scan a string body up to the closing `"` (not included
+/// in `content`, but included in `consumed`). Returns `None` if the
+/// string is unterminated.
+fn scan_string_body(rest: &str) -> Option<(String, usize)> {
+    let bytes = rest.as_bytes();
+    let mut i = 0;
+    let mut content = String::new();
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' && i + 1 < bytes.len() {
+            content.push('\\');
+            let next = rest[i + 1..].chars().next()?;
+            content.push(next);
+            i += 1 + next.len_utf8();
+        } else if b == b'"' {
+            return Some((content, i + 1));
+        } else if b == b'{' {
+            content.push('{');
+            i += 1;
+            let mut depth: i32 = 1;
+            while i < bytes.len() && depth > 0 {
+                let bb = bytes[i];
+                if bb == b'\\' && i + 1 < bytes.len() {
+                    content.push('\\');
+                    let next = rest[i + 1..].chars().next()?;
+                    content.push(next);
+                    i += 1 + next.len_utf8();
+                } else if bb == b'{' {
+                    depth += 1;
+                    content.push('{');
+                    i += 1;
+                } else if bb == b'}' {
+                    depth -= 1;
+                    content.push('}');
+                    i += 1;
+                } else if bb == b'"' {
+                    // Recursive scan of a nested string inside the slot.
+                    content.push('"');
+                    i += 1;
+                    let (inner, consumed) = scan_string_body(&rest[i..])?;
+                    content.push_str(&inner);
+                    content.push('"');
+                    i += consumed;
+                } else {
+                    let next = rest[i..].chars().next()?;
+                    content.push(next);
+                    i += next.len_utf8();
+                }
+            }
+            if depth > 0 {
+                return None;
+            }
+        } else {
+            let next = rest[i..].chars().next()?;
+            content.push(next);
+            i += next.len_utf8();
+        }
+    }
+
+    None
 }
 
 /// Consume a triple-quoted string starting from the opening `"""`.

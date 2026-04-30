@@ -804,6 +804,12 @@ impl Checker {
                     (Ty::Str, "split") => Ty::List(Box::new(Ty::Str)),
                     (Ty::Str, "contains" | "starts_with" | "ends_with" | "is_empty") => Ty::Bool,
                     (Ty::Str, "replace") => Ty::Str,
+                    (Ty::Map(_, v), "get") => Ty::Nullable(v.clone()),
+                    (Ty::Map(k, _), "keys") => Ty::List(k.clone()),
+                    (Ty::Map(_, v), "values") => Ty::List(v.clone()),
+                    (Ty::Map(_, _), "len" | "count" | "size") => Ty::Int,
+                    (Ty::Map(_, _), "is_empty") => Ty::Bool,
+                    (Ty::Map(_, _), "contains" | "has") => Ty::Bool,
                     _ => Ty::Unknown,
                 }
             }
@@ -914,6 +920,19 @@ impl Checker {
             return;
         }
 
+        // Map literal coercion: a `{k: v, ...}` struct literal assigned to a
+        // declared `map[K, V]` is treated as a map when keys are strings and
+        // every field value matches V. This matches the surface syntax where
+        // the same `{...}` form serves as both struct and map literal.
+        if let (Ty::Struct(actual_fields), Ty::Map(key_ty, value_ty)) = (actual_base, expected_base) {
+            if matches!(key_ty.as_ref(), Ty::Str | Ty::Unknown | Ty::Dynamic) {
+                for (name, act_ty) in actual_fields {
+                    self.expect(act_ty, value_ty, &format!("{context}[{name}]"));
+                }
+                return;
+            }
+        }
+
         if actual_base != expected_base && !matches!(actual_base, Ty::Unknown | Ty::Dynamic) {
             self.err(format!(
                 "{context}: expected {}, got {}",
@@ -927,6 +946,163 @@ impl Checker {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Hover support — `type_at(text, offset)` returns a one-line type label
+// for the identifier under the cursor. Used by the LSP `hover` handler.
+// ---------------------------------------------------------------------------
+
+/// Resolve the inferred type for the identifier at `offset` (UTF-8 byte
+/// offset into `text`). Returns `None` if the cursor is not on an
+/// identifier or the identifier can't be resolved.
+pub fn type_at(text: &str, offset: usize) -> Option<String> {
+    use crate::lexer::Token;
+    use logos::Logos;
+
+    let mut name: Option<String> = None;
+    for (result, span) in Token::lexer(text).spanned() {
+        if span.start > offset {
+            break;
+        }
+        if span.end < offset {
+            continue;
+        }
+        if let Ok(Token::Ident(n)) = result {
+            name = Some(n);
+            break;
+        }
+    }
+    let name = name?;
+
+    if matches!(
+        name.as_str(),
+        "Ai" | "Io" | "Http" | "Email" | "Search" | "Db" | "Memory"
+            | "Schedule" | "Async" | "Control" | "Env" | "Time" | "Log" | "Agent"
+    ) {
+        return Some(format!("namespace `{name}`"));
+    }
+    if matches!(
+        name.as_str(),
+        "int" | "float" | "str" | "bool" | "none" | "datetime" | "duration"
+            | "list" | "map" | "set" | "dynamic"
+    ) {
+        return Some(format!("type `{name}`"));
+    }
+
+    let named = miette::NamedSource::new("file", text.to_string());
+    let tokens = crate::lexer::lex(text, &named).ok()?;
+    let program = crate::parser::parse(tokens, text.len(), &named).ok()?;
+
+    let mut bindings: HashMap<String, Ty> = HashMap::new();
+    let mut checker = Checker::new();
+    checker.collect(&program);
+    collect_decl_bindings(&program, &mut checker, &mut bindings);
+
+    bindings.get(&name).map(describe_ty)
+}
+
+fn collect_decl_bindings(program: &Program, c: &mut Checker, out: &mut HashMap<String, Ty>) {
+    for (decl, _) in &program.declarations {
+        match decl {
+            Decl::Stmt((stmt, _)) => collect_stmt_bindings(stmt, c, out),
+            Decl::Task(t) => {
+                for p in &t.params {
+                    out.insert(p.name.clone(), c.resolve_type(&p.ty));
+                }
+                for (s, _) in &t.body {
+                    collect_stmt_bindings(s, c, out);
+                }
+            }
+            Decl::Agent(decl) => {
+                for it in &decl.items {
+                    match it {
+                        AgentItem::State(fields) => {
+                            for sf in fields {
+                                out.insert(sf.name.clone(), c.resolve_type(&sf.ty));
+                            }
+                        }
+                        AgentItem::Task(t) => {
+                            for p in &t.params {
+                                out.insert(p.name.clone(), c.resolve_type(&p.ty));
+                            }
+                            for (s, _) in &t.body {
+                                collect_stmt_bindings(s, c, out);
+                            }
+                        }
+                        AgentItem::On(h) => {
+                            if let Some(p) = &h.param {
+                                out.insert(p.name.clone(), c.resolve_type(&p.ty));
+                            }
+                            for (s, _) in &h.body {
+                                collect_stmt_bindings(s, c, out);
+                            }
+                        }
+                        AgentItem::Attribute(attr) => {
+                            if let AttributeBody::Block(block) = &attr.body {
+                                for (s, _) in block {
+                                    collect_stmt_bindings(s, c, out);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String, Ty>) {
+    match stmt {
+        Stmt::Let { name, ty, value } => {
+            let mut scope = Scope::new();
+            let inferred = c.infer_expr(value, &mut scope);
+            let bound = ty.as_ref().map(|t| c.resolve_type(t)).unwrap_or(inferred);
+            out.insert(name.clone(), bound);
+        }
+        Stmt::For { binding, iter, body, .. } => {
+            let mut scope = Scope::new();
+            let iter_ty = c.infer_expr(iter, &mut scope);
+            let elem = match iter_ty.strip_nullable() {
+                Ty::List(inner) => *inner.clone(),
+                _ => Ty::Unknown,
+            };
+            out.insert(binding.clone(), elem);
+            for (s, _) in body {
+                collect_stmt_bindings(s, c, out);
+            }
+        }
+        Stmt::If { then_body, else_body, .. } => {
+            for (s, _) in then_body {
+                collect_stmt_bindings(s, c, out);
+            }
+            if let Some(eb) = else_body {
+                for (s, _) in eb {
+                    collect_stmt_bindings(s, c, out);
+                }
+            }
+        }
+        Stmt::When { arms, .. } => {
+            for arm in arms {
+                for (s, _) in &arm.body {
+                    collect_stmt_bindings(s, c, out);
+                }
+            }
+        }
+        Stmt::TryCatch { body, catches } => {
+            for (s, _) in body {
+                collect_stmt_bindings(s, c, out);
+            }
+            for catch in catches {
+                out.insert(catch.name.clone(), c.resolve_type(&catch.ty));
+                for (s, _) in &catch.body {
+                    collect_stmt_bindings(s, c, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
 
 fn describe_ty(ty: &Ty) -> String {
     match ty {

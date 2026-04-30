@@ -4,6 +4,88 @@
 
 ---
 
+## v0.1.6 — 2026-04-28
+### Wiring & ergonomics
+
+Every primitive that was a stub in 0.1.5 now does what its name promises.
+
+#### Nested string literals inside `{interp}`
+
+The lexer used to terminate a string at the first `"` it saw, even one
+hiding inside a `{...}` slot. The lexer now scans slot bodies with brace
+depth tracking and recursively handles nested `"..."`:
+
+```keel
+name = "world"
+Io.show("hi {"there {name}"}")        # → "hi there world"
+```
+
+#### `Control.retry` / `with_timeout` / `with_deadline`
+
+The three control-flow combinators now have real implementations.
+
+```keel
+# Re-invoke until success or the budget is spent.
+result = Control.retry(5, () => Ai.prompt(system: "...", user: "..."))
+
+# Abort if the closure runs past the duration.
+fast = Control.with_timeout(2.seconds, () => slow_call())
+
+# Abort once the absolute deadline has passed.
+done = Control.with_deadline("2026-12-31T23:59:00Z", () => long_task())
+```
+
+`with_timeout` and `with_deadline` raise `TimeoutError` / `DeadlineError`
+on expiry. `retry` surfaces the last attempt's error if every attempt fails.
+
+#### `Agent.broadcast(team, data)`
+
+Tag agents with `@team [...]` and dispatch a single event to every
+member of a named team:
+
+```keel
+agent Alpha { @team ["frontline"]  on alert(m: str) { ... } }
+agent Beta  { @team ["frontline"]  on alert(m: str) { ... } }
+agent Gamma { @team ["backoffice"] on alert(m: str) { ... } }
+
+Agent.broadcast("frontline", "incident", event: "alert")
+# Alpha and Beta fire; Gamma stays silent.
+```
+
+#### `Email.archive(message)`
+
+`Email.archive` performs an IMAP UID MOVE (with COPY + `\Deleted` +
+EXPUNGE fallback for servers without the MOVE extension). The
+destination folder is `Archive` by default; override with the
+`IMAP_ARCHIVE_FOLDER` env var. `Email.fetch` now returns each message's
+UID under the `uid` key so `archive` can target the right one.
+
+#### `map[K, V]` method inference
+
+Map literals support the common operations on both the type checker and
+runtime side.
+
+| Expression | Inferred type |
+|---|---|
+| `map.get(k)` | `V?` |
+| `map.keys()` | `list[K]` |
+| `map.values()` | `list[V]` |
+| `map.len()` / `map.count()` / `map.size()` | `int` |
+| `map.is_empty()` | `bool` |
+| `map.contains(k)` / `map.has(k)` | `bool` |
+
+The checker also accepts a `{k: v, ...}` struct literal in any position
+that expects `map[str, V]`, so the same surface syntax serves both
+struct and map construction.
+
+#### LSP hover
+
+`textDocument/hover` returns the inferred type of the identifier under
+the cursor — `let`-bindings, function parameters, agent state fields,
+and prelude namespaces (`Io`, `Ai`, `Control`, …) all light up.
+
+---
+
 ## v0.1.5 — 2026-04-27
 ### Type checker hardening
 

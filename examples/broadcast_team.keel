@@ -1,0 +1,43 @@
+# Team Broadcast
+#
+# Tag agents with @team and dispatch one event to every member of a
+# named team in a single call. Agents on other teams stay silent.
+#
+# Demonstrates: @team attribute, Agent.broadcast, on event handlers.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/broadcast_team.keel
+
+agent Alpha {
+  @team ["frontline"]
+  on alert(msg: str) {
+    Io.show("Alpha (frontline) handling: {msg}")
+  }
+}
+
+agent Beta {
+  @team ["frontline"]
+  on alert(msg: str) {
+    Io.show("Beta (frontline) handling: {msg}")
+  }
+}
+
+agent Gamma {
+  @team ["backoffice"]
+  on alert(msg: str) {
+    Io.show("Gamma (backoffice) ignored — wrong team")
+  }
+}
+
+agent Coordinator {
+  @on_start {
+    Agent.run(Alpha)
+    Agent.run(Beta)
+    Agent.run(Gamma)
+
+    Io.show("dispatching incident to frontline...")
+    Agent.broadcast("frontline", "production-down", event: "alert")
+  }
+}
+
+run(Coordinator)

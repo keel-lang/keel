@@ -58,6 +58,15 @@ task handle(email: {body: str, from: str}) -> str {
 }
 ```
 
+`return expr` is checked against the declared `-> T`. A mismatch is a
+compile-time error; bare `return` (no value) is always accepted.
+
+```keel
+task greet() -> str {
+  return 42        # error: return value: expected str, got int
+}
+```
+
 ## Task composition
 
 Tasks can call other tasks:

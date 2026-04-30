@@ -21,6 +21,27 @@ notify user "Status: {self.count}"
 notify user "Key: {env.API_KEY}"
 ```
 
+## Nested string literals
+
+A `{...}` slot accepts any expression — including another string literal
+with its own slots. The lexer tracks brace depth and recurses into
+nested `"..."`, so quotes inside `{}` are not confused with the outer
+string's terminator.
+
+```keel
+name = "world"
+mood = "cheerful"
+
+Io.show("hi {"there {name}"}")
+# → "hi there world"
+
+Io.show("tone: {"speaking in a {mood.to_str()} voice"}")
+# → "tone: speaking in a cheerful voice"
+```
+
+`\"` inside an outer string still produces a literal quote without
+opening a nested string.
+
 ## Escape sequences
 
 | Sequence | Result |

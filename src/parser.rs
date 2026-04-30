@@ -1115,12 +1115,50 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
             let mut depth = 1;
             let mut expr_text = String::new();
             while let Some(c) = chars.next() {
-                if c == '{' { depth += 1; expr_text.push(c); }
-                else if c == '}' {
+                if c == '\\' {
+                    // Preserve escape sequences inside the slot so the
+                    // nested expression lexer can resolve them.
+                    expr_text.push(c);
+                    if let Some(&n) = chars.peek() {
+                        chars.next();
+                        expr_text.push(n);
+                    }
+                } else if c == '"' {
+                    // Skip over a nested string literal inside the slot
+                    // so its `{...}` and `}` characters don't terminate
+                    // this interpolation prematurely.
+                    expr_text.push(c);
+                    let mut inner_depth = 0;
+                    while let Some(nc) = chars.next() {
+                        if nc == '\\' {
+                            expr_text.push(nc);
+                            if let Some(&nn) = chars.peek() {
+                                chars.next();
+                                expr_text.push(nn);
+                            }
+                        } else if nc == '{' {
+                            inner_depth += 1;
+                            expr_text.push(nc);
+                        } else if nc == '}' {
+                            if inner_depth > 0 { inner_depth -= 1; }
+                            expr_text.push(nc);
+                        } else if nc == '"' && inner_depth == 0 {
+                            expr_text.push(nc);
+                            break;
+                        } else {
+                            expr_text.push(nc);
+                        }
+                    }
+                } else if c == '{' {
+                    depth += 1;
+                    expr_text.push(c);
+                } else if c == '}' {
                     depth -= 1;
                     if depth == 0 { break; }
                     expr_text.push(c);
-                } else { expr_text.push(c); }
+                } else {
+                    expr_text.push(c);
+                }
             }
             parts.push(StringPart::Interpolation(Box::new(parse_interp_expr(&expr_text))));
         } else {

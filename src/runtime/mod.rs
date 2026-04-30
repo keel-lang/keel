@@ -608,11 +608,30 @@ fn email_namespace() -> Namespace {
                 Err(e) => Err(miette::miette!("email send task join error: {e}")),
             }
         }),
-        // v0.1: IMAP move-to-archive not implemented. No-op; users who
-        // need true archiving can fall back to `Email.send(... to: archive_addr)`
-        // or wait for this to land in a follow-up.
-        "archive" => |_i, _args| Box::pin(async move {
-            Ok(Value::None)
+        // Email.archive(message) — move a fetched email out of INBOX
+        // into the folder named by IMAP_ARCHIVE_FOLDER (default `Archive`).
+        // The message's UID is read from message.uid (added by Email.fetch).
+        "archive" => |_i, args| Box::pin(async move {
+            let Some(conn) = email_conn_from_env() else {
+                eprintln!("  ⚠ Email.archive: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — skipping");
+                return Ok(Value::None);
+            };
+            let uid = match positional(&args, 0) {
+                Some(Value::Map(m)) => match m.get("uid") {
+                    Some(Value::Integer(u)) if *u > 0 => *u as u32,
+                    _ => return Err(miette::miette!("Email.archive: message has no UID — was it returned by Email.fetch?")),
+                },
+                _ => return Err(miette::miette!("Email.archive: expected an email map argument")),
+            };
+            let folder = std::env::var("IMAP_ARCHIVE_FOLDER")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "Archive".to_string());
+            match tokio::task::spawn_blocking(move || email::archive_email(&conn, uid, &folder)).await {
+                Ok(Ok(())) => Ok(Value::None),
+                Ok(Err(msg)) => Err(miette::miette!("{msg}")),
+                Err(e) => Err(miette::miette!("email archive task join error: {e}")),
+            }
         }),
     })
 }
@@ -861,18 +880,132 @@ fn agent_namespace() -> Namespace {
             });
             Ok(Value::None)
         }),
+        // Agent.broadcast(team, data) — fan-out a `message` event to every
+        // running agent whose `@team [...]` declaration includes the given
+        // team name. Useful for system-wide signals to a labeled group.
+        "broadcast" => |interp, args| Box::pin(async move {
+            let team = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Agent.broadcast: missing team name"))?;
+            let data = positional(&args, 1).cloned().unwrap_or(Value::None);
+            let event_name = find_arg(&args, "event")
+                .map(|v| v.as_string())
+                .unwrap_or_else(|| "message".to_string());
+
+            let recipients = agents_in_team(interp, &team);
+            for agent_name in recipients {
+                let _ = interp.event_tx.send(crate::interpreter::Event::Dispatch {
+                    agent_name,
+                    event: event_name.clone(),
+                    data: data.clone(),
+                });
+            }
+            Ok(Value::None)
+        }),
     })
 }
 
+/// Return the names of every running agent whose `@team [...]` declaration
+/// contains `team`. Strings inside the list are matched literally.
+fn agents_in_team(interp: &crate::interpreter::Interpreter, team: &str) -> Vec<String> {
+    use crate::ast::{AttributeBody, Expr, StringPart};
+
+    let live = interp.live_agents.lock().unwrap();
+    let mut out = Vec::new();
+    for (name, instance) in live.iter() {
+        let def = instance.lock().unwrap().def.clone();
+        let in_team = def.attributes.iter().any(|attr| {
+            if attr.name != "team" { return false }
+            let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body else { return false };
+            items.iter().any(|e| match e {
+                Expr::StringLit(parts) => {
+                    let s: String = parts.iter().filter_map(|p| match p {
+                        StringPart::Literal(s) => Some(s.clone()),
+                        _ => None,
+                    }).collect();
+                    s == team
+                }
+                Expr::Ident(s) => s == team,
+                _ => false,
+            })
+        });
+        if in_team {
+            out.push(name.clone());
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------------
-// Control (retry / with_timeout — MVP stubs)
+// Control — retry / with_timeout / with_deadline
 // ---------------------------------------------------------------------------
 
 fn control_namespace() -> Namespace {
     ns!("Control", {
-        "retry" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "with_timeout" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "with_deadline" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
+        // Control.retry(n, fn) — invoke fn up to n times until it succeeds.
+        // The last error is surfaced if every attempt fails.
+        "retry" => |interp, args| Box::pin(async move {
+            let attempts = match positional(&args, 0) {
+                Some(Value::Integer(n)) if *n > 0 => *n as usize,
+                _ => return Err(miette::miette!("Control.retry: first argument must be a positive integer")),
+            };
+            let (params, body) = args.iter().find_map(|a| match &a.value {
+                Value::Closure(p, b) => Some((p.clone(), b.clone())),
+                _ => None,
+            }).ok_or_else(|| miette::miette!("Control.retry: missing closure argument"))?;
+
+            let mut last_err: Option<miette::Report> = None;
+            for _ in 0..attempts {
+                match interp.call_closure(&params, &body, vec![]).await {
+                    Ok(v) => return Ok(v),
+                    Err(e) => last_err = Some(e),
+                }
+            }
+            Err(last_err.unwrap_or_else(|| miette::miette!("Control.retry: all attempts failed")))
+        }),
+        // Control.with_timeout(duration, fn) — abort fn if it doesn't
+        // complete within `duration`. Raises TimeoutError on expiry.
+        "with_timeout" => |interp, args| Box::pin(async move {
+            let duration = args.iter().find_map(|a| match &a.value {
+                Value::Duration(s) => Some(*s),
+                _ => None,
+            }).ok_or_else(|| miette::miette!("Control.with_timeout: missing duration argument"))?;
+            let (params, body) = args.iter().find_map(|a| match &a.value {
+                Value::Closure(p, b) => Some((p.clone(), b.clone())),
+                _ => None,
+            }).ok_or_else(|| miette::miette!("Control.with_timeout: missing closure argument"))?;
+
+            let dur = std::time::Duration::from_secs_f64(duration);
+            let fut = interp.call_closure(&params, &body, vec![]);
+            match tokio::time::timeout(dur, fut).await {
+                Ok(Ok(v)) => Ok(v),
+                Ok(Err(e)) => Err(e),
+                Err(_) => Err(miette::miette!("TimeoutError: Control.with_timeout exceeded {duration}s")),
+            }
+        }),
+        // Control.with_deadline(datetime_str, fn) — abort fn if the
+        // absolute deadline (RFC 3339 / ISO 8601) passes before fn returns.
+        "with_deadline" => |interp, args| Box::pin(async move {
+            let when_str = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Control.with_deadline: missing datetime argument"))?;
+            let target = parse_datetime(&when_str)
+                .ok_or_else(|| miette::miette!("Control.with_deadline: cannot parse `{when_str}` as an ISO 8601 datetime"))?;
+            let now = chrono::Utc::now();
+            let remaining = (target - now).num_milliseconds().max(0) as u64;
+            let (params, body) = args.iter().find_map(|a| match &a.value {
+                Value::Closure(p, b) => Some((p.clone(), b.clone())),
+                _ => None,
+            }).ok_or_else(|| miette::miette!("Control.with_deadline: missing closure argument"))?;
+
+            let dur = std::time::Duration::from_millis(remaining);
+            let fut = interp.call_closure(&params, &body, vec![]);
+            match tokio::time::timeout(dur, fut).await {
+                Ok(Ok(v)) => Ok(v),
+                Ok(Err(e)) => Err(e),
+                Err(_) => Err(miette::miette!("DeadlineError: Control.with_deadline exceeded `{when_str}`")),
+            }
+        }),
     })
 }
 

@@ -1104,6 +1104,26 @@ impl Interpreter {
                 }
                 Ok(Value::List(result))
             }
+            (Value::Map(m), "keys") => {
+                let mut keys: Vec<&String> = m.keys().collect();
+                keys.sort();
+                Ok(Value::List(keys.into_iter().map(|k| Value::String(k.clone())).collect()))
+            }
+            (Value::Map(m), "values") => {
+                let mut keys: Vec<&String> = m.keys().collect();
+                keys.sort();
+                Ok(Value::List(keys.into_iter().map(|k| m[k].clone()).collect()))
+            }
+            (Value::Map(m), "get") => {
+                let key = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                Ok(m.get(&key).cloned().unwrap_or(Value::None))
+            }
+            (Value::Map(m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
+            (Value::Map(m), "is_empty") => Ok(Value::Bool(m.is_empty())),
+            (Value::Map(m), "contains" | "has") => {
+                let key = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                Ok(Value::Bool(m.contains_key(&key)))
+            }
             (Value::Integer(n), "to_str") => Ok(Value::String(n.to_string())),
             (Value::Float(f), "to_str") => Ok(Value::String(f.to_string())),
             (Value::Bool(b), "to_str") => Ok(Value::String(b.to_string())),

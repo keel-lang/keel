@@ -23,7 +23,8 @@ If those aren't set, `Email.fetch` returns `[]` and `Email.send` is a no-op (wit
 emails = Email.fetch(unread: true)   # up to 20 most recent unread from INBOX
 ```
 
-Each returned map has `from`, `subject`, `body`, `unread` keys.
+Each returned map has `from`, `subject`, `body`, `unread`, and `uid` keys.
+The `uid` is the IMAP UID of the message and is required by `Email.archive`.
 
 ### Send messages
 
@@ -34,13 +35,26 @@ Email.send(reply, to: address, subject: "Re: hello")
 
 Positional body can be a `str` or a `map` with `body` (and optional `subject`). `to:` can be an address string or a map with `from`.
 
-### Archive <span class="badge badge-soon">Coming soon</span>
+### Archive
 
 ```keel
-Email.archive(email)
+for email in Email.fetch(unread: true) {
+  Email.archive(email)
+}
 ```
 
-> **Status:** v0.1 no-op placeholder. IMAP folder-move is tracked in [ROADMAP](../../ROADMAP.md).
+`Email.archive` performs an IMAP UID MOVE on the message, falling back
+to COPY + `\Deleted` + EXPUNGE for servers without the MOVE extension.
+The destination folder defaults to `Archive`; override with the
+`IMAP_ARCHIVE_FOLDER` env var:
+
+```bash
+export IMAP_ARCHIVE_FOLDER="[Gmail]/All Mail"
+```
+
+The argument must be a message map with a positive `uid` field — the
+shape returned by `Email.fetch`. If credentials are not configured the
+call is a silent no-op so programs keep running.
 
 ## `Http`
 

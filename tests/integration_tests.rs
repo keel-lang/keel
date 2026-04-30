@@ -96,6 +96,10 @@ fn examples_all_parse() {
         "if_expression",
         "list_building",
         "agent_delegation",
+        "retry_on_failure",
+        "broadcast_team",
+        "nested_interp",
+        "map_methods",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -644,4 +648,241 @@ run(A)
         stderr.contains("v0.2"),
         "expected 'v0.2' in error message:\n{stderr}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.6 — wiring & ergonomics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn nested_string_in_interpolation_slot() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    @on_start {
+        score = 0.9
+        msg = "label={if score > 0.8 { "high" } else { "low" }}"
+        Io.show(msg)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("label=high"), "expected 'label=high' in:\n{stdout}");
+}
+
+#[test]
+fn nested_string_double_layer() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    @on_start {
+        x = "world"
+        msg = "hi {"there {x}"}"
+        Io.show(msg)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("hi there world"), "expected nested interp resolution:\n{stdout}");
+}
+
+#[test]
+fn control_retry_succeeds_on_third_attempt() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    state { count: int = 0 }
+    @on_start {
+        result = Control.retry(5, () => {
+            self.count = self.count + 1
+            if self.count < 3 {
+                x = none
+                y = x!
+                return "won't reach"
+            }
+            return "ok"
+        })
+        Io.show("attempts={self.count}")
+        Io.show("result={result}")
+    }
+}
+run(A)
+"#;
+    // The closure raises NullError on the first 2 attempts (via `!` on none)
+    // and returns "ok" on the 3rd. Control.retry must catch the runtime
+    // errors and re-invoke the closure until success.
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("attempts=3"), "expected 3 attempts:\n{stdout}");
+    assert!(stdout.contains("result=ok"), "expected ok result:\n{stdout}");
+}
+
+#[test]
+fn control_with_timeout_returns_value_on_fast_path() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    @on_start {
+        result = Control.with_timeout(5.seconds, () => {
+            return "fast"
+        })
+        Io.show("result={result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("result=fast"), "expected fast result:\n{stdout}");
+}
+
+#[test]
+fn control_with_timeout_aborts_long_call() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    @on_start {
+        Control.with_timeout(1.seconds, () => {
+            Async.sleep(5.seconds)
+            return "done"
+        })
+        Io.show("did-not-time-out")
+    }
+}
+run(A)
+"#;
+    // try/catch is not yet wired in the interpreter, so a tripped timeout
+    // surfaces as a non-zero exit. Validate the error is the right one.
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected non-zero exit on timeout\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stderr.contains("TimeoutError"), "expected TimeoutError diagnostic:\n{stderr}");
+    assert!(!stdout.contains("did-not-time-out"), "long call must not complete:\n{stdout}");
+}
+
+#[test]
+fn agent_broadcast_dispatches_to_team_members() {
+    ensure_binary_built();
+    let src = r#"
+agent Alpha {
+    @team ["frontline"]
+    on alert(msg: str) {
+        Io.show("Alpha got {msg}")
+    }
+}
+
+agent Beta {
+    @team ["frontline"]
+    on alert(msg: str) {
+        Io.show("Beta got {msg}")
+    }
+}
+
+agent Gamma {
+    @team ["backoffice"]
+    on alert(msg: str) {
+        Io.show("Gamma got {msg}")
+    }
+}
+
+agent Coordinator {
+    @on_start {
+        Agent.run(Alpha)
+        Agent.run(Beta)
+        Agent.run(Gamma)
+        Agent.broadcast("frontline", "incident", event: "alert")
+    }
+}
+
+run(Coordinator)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("Alpha got incident"), "Alpha should fire:\n{stdout}");
+    assert!(stdout.contains("Beta got incident"), "Beta should fire:\n{stdout}");
+    assert!(!stdout.contains("Gamma got"), "Gamma must not fire (different team):\n{stdout}");
+}
+
+#[test]
+fn email_archive_without_config_is_graceful() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    @on_start {
+        msg = {uid: 42, body: "hi", subject: "x", from: "y"}
+        Email.archive(msg)
+        Io.show("archived")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("archived"), "expected archive call to no-op silently:\n{stdout}");
+}
+
+#[test]
+fn map_get_method_inferred_as_nullable_value() {
+    // map.get returns T?, so assigning to a non-nullable should fail check.
+    ensure_binary_built();
+    let bin = keel_binary();
+    let src = r#"
+task t() {
+    m: map[str, int] = {a: 1}
+    n: int = m.get("a")
+}
+"#;
+    let mut tmp = tempfile::Builder::new().suffix(".keel").tempfile().expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write");
+    let path = tmp.path().to_owned();
+    let output = Command::new(&bin).arg("check").arg(&path).output().expect("run keel check");
+    assert!(!output.status.success(), "expected check to fail on map.get assignment");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("int?") || combined.contains("nullable"),
+        "expected nullable-mismatch diagnostic:\n{combined}"
+    );
+}
+
+#[test]
+fn map_keys_method_inferred_as_list_of_keys() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+    @on_start {
+        m: map[str, int] = {a: 1, b: 2}
+        ks: list[str] = m.keys()
+        Io.show("keys-count={ks.count()}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("keys-count=2"), "expected 2 keys:\n{stdout}");
+}
+
+#[test]
+fn lsp_hover_reports_let_binding_type() {
+    use keel_lang::types::checker;
+    let src = "agent A {\n    @on_start {\n        items = [1, 2, 3]\n    }\n}\n";
+    // Cursor on `items` (line 2, column 8 → byte offset of `items` in source).
+    let offset = src.find("items").unwrap() + 1;
+    let label = checker::type_at(src, offset).expect("hover should resolve `items`");
+    assert!(label.contains("list"), "expected list type, got: {label}");
+    assert!(label.contains("int"), "expected int element type, got: {label}");
+}
+
+#[test]
+fn lsp_hover_reports_namespace() {
+    use keel_lang::types::checker;
+    let src = "agent A { @on_start { Io.show(\"x\") } }\n";
+    let offset = src.find("Io").unwrap() + 1;
+    let label = checker::type_at(src, offset).expect("hover on Io");
+    assert!(label.contains("namespace"), "expected namespace label, got: {label}");
 }
