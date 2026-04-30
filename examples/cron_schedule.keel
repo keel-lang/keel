@@ -1,0 +1,22 @@
+agent CronScheduler {
+    state run_count: int = 0
+
+    @on_start {
+        Schedule.cron("0 9 * * 1-5", () => {
+            self.run_count = self.run_count + 1
+            Io.show("Morning digest triggered")
+        })
+
+        Schedule.cron("*/5 * * * *", () => {
+            Io.show("Periodic task running")
+        })
+
+        Schedule.cron("0 0 * * *", () => {
+            Io.show("Daily reset")
+        })
+
+        Io.show("Cron tasks scheduled")
+    }
+}
+
+run(CronScheduler)

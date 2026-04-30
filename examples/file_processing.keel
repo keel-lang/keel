@@ -1,0 +1,20 @@
+agent FileProcessor {
+    @on_start {
+        File.write("test.txt", "Hello from Keel!")
+        Io.show("wrote file")
+
+        if File.exists("test.txt") {
+            Io.show("File created successfully")
+        }
+
+        x = File.read("test.txt")
+        Io.show(x)
+
+        File.write("data/output.txt", "Processed data")
+
+        y = File.list("data")
+        Io.show(y)
+    }
+}
+
+run(FileProcessor)

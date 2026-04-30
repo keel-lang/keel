@@ -46,6 +46,11 @@ impl LanguageServer for Backend {
                     TextDocumentSyncKind::FULL,
                 )),
                 hover_provider: Some(HoverProviderCapability::Simple(true)),
+                completion_provider: Some(CompletionOptions {
+                    resolve_provider: Some(false),
+                    trigger_characters: Some(vec![".".to_string()]),
+                    ..CompletionOptions::default()
+                }),
                 ..ServerCapabilities::default()
             },
         })
@@ -100,6 +105,108 @@ impl LanguageServer for Backend {
             contents: HoverContents::Scalar(MarkedString::String(label)),
             range: None,
         }))
+    }
+
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+
+        let offset = position_to_offset(&text, pos);
+        let mut completions = Vec::new();
+
+        // Get prelude namespace suggestions
+        let namespaces = vec![
+            "Ai", "Io", "Schedule", "Email", "Http", "Env", "Log", "Agent",
+            "Control", "Async", "Memory", "Search", "Db", "Time", "File", "Json"
+        ];
+
+        for ns in namespaces {
+            completions.push(CompletionItem {
+                label: ns.to_string(),
+                kind: Some(CompletionItemKind::MODULE),
+                ..CompletionItem::default()
+            });
+        }
+
+        // Get prelude methods suggestions
+        let methods = vec![
+            // Ai
+            ("classify", "Ai method"),
+            ("summarize", "Ai method"),
+            ("draft", "Ai method"),
+            ("extract", "Ai method"),
+            ("translate", "Ai method"),
+            ("decide", "Ai method"),
+            ("prompt", "Ai method"),
+            // Io
+            ("notify", "Io method"),
+            ("show", "Io method"),
+            ("ask", "Io method"),
+            ("confirm", "Io method"),
+            // Schedule
+            ("every", "Schedule method"),
+            ("after", "Schedule method"),
+            ("at", "Schedule method"),
+            ("cron", "Schedule method"),
+            ("sleep", "Schedule method"),
+            // File
+            ("read", "File method"),
+            ("write", "File method"),
+            ("exists", "File method"),
+            ("list", "File method"),
+            // Json
+            ("parse", "Json method"),
+            ("stringify", "Json method"),
+            // Async
+            ("spawn", "Async method"),
+            ("join_all", "Async method"),
+            ("select", "Async method"),
+            // Control
+            ("retry", "Control method"),
+            ("with_timeout", "Control method"),
+            ("with_deadline", "Control method"),
+            // Agent
+            ("run", "Agent method"),
+            ("stop", "Agent method"),
+            ("send", "Agent method"),
+            ("delegate", "Agent method"),
+            ("broadcast", "Agent method"),
+        ];
+
+        for (method, kind) in methods {
+            completions.push(CompletionItem {
+                label: method.to_string(),
+                kind: Some(CompletionItemKind::FUNCTION),
+                detail: Some(kind.to_string()),
+                ..CompletionItem::default()
+            });
+        }
+
+        // Get reserved keywords
+        let keywords = vec![
+            "agent", "task", "interface", "type", "extern", "use", "from",
+            "state", "on", "self", "if", "else", "when", "where", "for", "in",
+            "try", "catch", "return", "as", "and", "or", "not",
+            "true", "false", "none", "now", "set"
+        ];
+
+        for kw in keywords {
+            completions.push(CompletionItem {
+                label: kw.to_string(),
+                kind: Some(CompletionItemKind::KEYWORD),
+                ..CompletionItem::default()
+            });
+        }
+
+        if completions.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(CompletionResponse::Array(completions)))
+        }
     }
 }
 

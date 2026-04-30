@@ -1,0 +1,12 @@
+agent RestrictedAgent {
+    @tools [Io, Schedule]
+
+    @on_start {
+        Io.show("Io namespace is allowed")
+        Io.show("Schedule namespace is allowed")
+
+        Http.get("https://example.com")
+    }
+}
+
+run(RestrictedAgent)

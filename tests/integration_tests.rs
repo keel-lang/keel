@@ -886,3 +886,60 @@ fn lsp_hover_reports_namespace() {
     let label = checker::type_at(src, offset).expect("hover on Io");
     assert!(label.contains("namespace"), "expected namespace label, got: {label}");
 }
+
+// ---------------------------------------------------------------------------
+// v0.1.7 — Structured Concurrency & Agent Constraints
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v0_1_7_schedule_cron_accepts_expression() {
+    let src = r#"
+agent CronTest {
+    @on_start {
+        Schedule.cron("0 9 * * 1-5", () => {
+            Io.show("morning")
+        })
+        Io.show("cron-parsed")
+    }
+}
+run(CronTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("cron-parsed"), "Schedule.cron should accept cron expressions:\n{stdout}");
+}
+
+#[test]
+fn v0_1_7_async_spawn_returns_handle() {
+    let src = r#"
+agent AsyncTest {
+    @on_start {
+        h = Async.spawn(() => {
+            Io.show("spawned")
+        })
+        Io.show("spawn-ok")
+    }
+}
+run(AsyncTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("spawn-ok"), "Async.spawn should work:\n{stdout}");
+}
+
+#[test]
+fn v0_1_7_tools_capability_gating_parses() {
+    let src = r#"
+agent RestrictedAgent {
+    @tools [Io, Schedule]
+
+    @on_start {
+        Io.show("allowed")
+    }
+}
+run(RestrictedAgent)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("allowed"), "@tools attribute should parse:\n{stdout}");
+}

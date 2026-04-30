@@ -8,6 +8,127 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.7] — 2026-04-30
+
+### Structured Concurrency & Agent Constraints
+
+This release adds file I/O, JSON processing, async task spawning, cron scheduling, and agent capability restrictions.
+
+#### File namespace
+
+Read, write, and list files on disk:
+
+```keel
+File.write("data.txt", "Hello Keel")
+content = File.read("data.txt")
+
+if File.exists("data.txt") {
+  Io.show(content)
+}
+
+entries = File.list("data/")
+```
+
+`File.read` raises `FileError` if the file doesn't exist; `File.write` creates intermediate directories automatically.
+
+#### Json namespace
+
+Parse JSON strings and serialize Keel values:
+
+```keel
+data = Json.parse("{\"name\": \"Alice\", \"age\": 30}")
+name = data["name"]
+
+user = { name: "Bob", age: 25 }
+json_str = Json.stringify(user)
+```
+
+#### Schedule.cron
+
+Schedule recurring tasks using 5-field cron expressions:
+
+```keel
+Schedule.cron("0 9 * * 1-5", () => {
+  Io.show("Morning digest")
+})
+
+Schedule.cron("*/5 * * * *", () => {
+  Io.show("Every 5 minutes")
+})
+```
+
+Supports standard cron syntax: minute, hour, day, month, weekday.
+
+#### Async.spawn / join_all / select
+
+Spawn independent Tokio tasks and await their completion:
+
+```keel
+task1 = Async.spawn(() => {
+  result1 = Http.get("https://api1.example.com")
+  Io.show(result1)
+})
+
+task2 = Async.spawn(() => {
+  result2 = Http.get("https://api2.example.com")
+  Io.show(result2)
+})
+
+handles = [task1, task2]
+results = Async.join_all(handles)
+Io.show("All tasks done")
+```
+
+`Async.select` returns the first handle to complete (race condition).
+
+#### @tools capability gating
+
+Restrict namespace access within an agent:
+
+```keel
+agent RestrictedAgent {
+  @tools [Io, File]
+
+  @on_start {
+    Io.show("Allowed")
+    File.write("x.txt", "Allowed")
+    # Http.get would raise CapabilityError
+  }
+}
+```
+
+If no `@tools` attribute is specified, all namespaces are accessible.
+
+#### @limits enforcement infrastructure
+
+Extract and enforce per-agent resource limits:
+
+```keel
+agent LimitedAgent {
+  @limits { timeout: 30s, max_tokens: 1000, max_cost: 5.0 }
+
+  @on_start {
+    response = Ai.prompt("...")
+  }
+}
+```
+
+The `timeout` limit wraps calls via `Control.with_timeout`. The `max_tokens` and `max_cost` are passed to Ollama where supported.
+
+#### LSP completion
+
+`textDocument/completion` now suggests prelude namespaces, method names, and keywords. Triggered on "." or manual invocation.
+
+#### New example programs
+
+- `file_processing.keel` — File read/write/exists/list
+- `json_processing.keel` — JSON parse/stringify
+- `cron_schedule.keel` — Cron expression scheduling
+- `parallel_execution.keel` — Async task spawning and joining
+- `capability_gating.keel` — @tools attribute enforcement
+
+---
+
 ## [0.1.6] — 2026-04-28
 
 ### Wiring & ergonomics

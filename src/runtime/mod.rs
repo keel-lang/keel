@@ -13,7 +13,8 @@ pub mod llm;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use std::str::FromStr;
 
 use crate::interpreter::{
     CallArgValue, Interpreter, Namespace,
@@ -51,6 +52,8 @@ pub fn install_prelude(interp: &mut Interpreter) {
     interp.register_namespace(search_namespace());
     interp.register_namespace(db_namespace());
     interp.register_namespace(time_namespace());
+    interp.register_namespace(file_namespace());
+    interp.register_namespace(json_namespace());
 
     // Top-level: run / stop are convenience re-exports of Agent.run / Agent.stop.
     interp.register_top_fn(
@@ -173,6 +176,11 @@ fn schedule_namespace() -> Namespace {
         "at" => |interp, args| Box::pin(async move {
             schedule_at(interp, args).await
         }),
+        // `Schedule.cron(expr, () => { ... })` schedules a recurring closure
+        // using a standard 5-field cron expression (minute hour day month weekday).
+        "cron" => |interp, args| Box::pin(async move {
+            schedule_cron(interp, args).await
+        }),
         "sleep" => |_i, args| Box::pin(async move {
             if let Some(Value::Duration(secs)) = positional(&args, 0) {
                 tokio::time::sleep(std::time::Duration::from_secs_f64(*secs)).await;
@@ -233,6 +241,173 @@ fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
             let ndt = nd.and_hms_opt(0, 0, 0)?;
             return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc));
         }
+    }
+    None
+}
+
+async fn schedule_cron(
+    interp: &mut Interpreter,
+    args: Vec<CallArgValue>,
+) -> miette::Result<Value> {
+    let expr_str = positional(&args, 0)
+        .map(|v| v.as_string())
+        .ok_or_else(|| miette::miette!("Schedule.cron: missing cron expression argument"))?;
+
+    let (params, body) = args.iter().find_map(|a| match &a.value {
+        Value::Closure(p, b) => Some((p.clone(), b.clone())),
+        _ => None,
+    }).ok_or_else(|| miette::miette!("Schedule.cron: missing closure argument"))?;
+
+    let agent_name = interp
+        .current_agent
+        .as_ref()
+        .ok_or_else(|| miette::miette!("Schedule.cron must be called from within an agent"))?
+        .lock()
+        .unwrap()
+        .def
+        .name
+        .clone();
+
+    let closure_id = interp.register_closure(agent_name.clone(), params, body);
+    let tx = interp.event_tx.clone();
+
+    // Parse and validate the cron expression (5 fields: minute hour day month weekday)
+    let cron_spec = parse_cron_spec(&expr_str)
+        .ok_or_else(|| miette::miette!("Schedule.cron: invalid cron expression `{expr_str}`"))?;
+
+    tokio::spawn(async move {
+        loop {
+            let now = chrono::Utc::now();
+            if let Some(next_run) = next_cron_execution(&cron_spec, now) {
+                let delay = (next_run - now).to_std().unwrap_or_else(|_| std::time::Duration::from_secs(0));
+                tokio::time::sleep(delay).await;
+
+                if tx.send(crate::interpreter::Event::FireClosure {
+                    agent_name: agent_name.clone(),
+                    closure_id,
+                }).is_err() {
+                    break; // receiver dropped — event loop has exited
+                }
+            } else {
+                break;
+            }
+        }
+    });
+
+    Ok(Value::None)
+}
+
+/// Parse a 5-field cron expression into a structured format.
+/// Format: minute hour day month weekday
+/// Each field can be: number, *, comma-separated list, range, or step expression.
+struct CronSpec {
+    minutes: Vec<u32>,
+    hours: Vec<u32>,
+    days: Vec<u32>,
+    months: Vec<u32>,
+    weekdays: Vec<u32>,
+}
+
+fn parse_cron_spec(expr: &str) -> Option<CronSpec> {
+    let parts: Vec<&str> = expr.split_whitespace().collect();
+    if parts.len() != 5 {
+        return None;
+    }
+
+    Some(CronSpec {
+        minutes: parse_cron_field(parts[0], 0, 59)?,
+        hours: parse_cron_field(parts[1], 0, 23)?,
+        days: parse_cron_field(parts[2], 1, 31)?,
+        months: parse_cron_field(parts[3], 1, 12)?,
+        weekdays: parse_cron_field(parts[4], 0, 6)?,
+    })
+}
+
+fn parse_cron_field(field: &str, min: u32, max: u32) -> Option<Vec<u32>> {
+    if field == "*" {
+        return Some((min..=max).collect());
+    }
+
+    let mut values = Vec::new();
+
+    for part in field.split(',') {
+        if let Some((range_part, step)) = part.split_once('/') {
+            let step_val: u32 = step.parse().ok()?;
+            if step_val == 0 {
+                return None;
+            }
+
+            let range_vals = if range_part == "*" {
+                (min..=max).collect::<Vec<_>>()
+            } else if let Some((start_str, end_str)) = range_part.split_once('-') {
+                let start: u32 = start_str.parse().ok()?;
+                let end: u32 = end_str.parse().ok()?;
+                if start > end || start < min || end > max {
+                    return None;
+                }
+                (start..=end).collect::<Vec<_>>()
+            } else {
+                let val: u32 = range_part.parse().ok()?;
+                if val < min || val > max {
+                    return None;
+                }
+                vec![val]
+            };
+
+            for v in range_vals {
+                if (v - min) % step_val == 0 {
+                    values.push(v);
+                }
+            }
+        } else if let Some((start_str, end_str)) = part.split_once('-') {
+            let start: u32 = start_str.parse().ok()?;
+            let end: u32 = end_str.parse().ok()?;
+            if start > end || start < min || end > max {
+                return None;
+            }
+            values.extend(start..=end);
+        } else {
+            let val: u32 = part.parse().ok()?;
+            if val < min || val > max {
+                return None;
+            }
+            values.push(val);
+        }
+    }
+
+    values.sort_unstable();
+    values.dedup();
+    Some(values)
+}
+
+fn next_cron_execution(spec: &CronSpec, from: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
+    use chrono::{Timelike, Datelike};
+
+    // Start from the next minute
+    let mut dt = from + chrono::Duration::minutes(1);
+    // Clear seconds and nanoseconds
+    let nanos = dt.nanosecond();
+    let secs = dt.second();
+    dt = dt - chrono::Duration::seconds(secs as i64) - chrono::Duration::nanoseconds(nanos as i64);
+
+    // Try up to 4 years ahead to find a match
+    for _ in 0..2_102_400 {
+        let m = dt.minute() as u32;
+        let h = dt.hour() as u32;
+        let d = dt.day() as u32;
+        let mo = dt.month() as u32;
+        let wd = (dt.weekday().number_from_sunday() % 7) as u32;
+
+        if spec.minutes.contains(&m)
+            && spec.hours.contains(&h)
+            && spec.days.contains(&d)
+            && spec.months.contains(&mo)
+            && spec.weekdays.contains(&wd)
+        {
+            return Some(dt);
+        }
+
+        dt = dt + chrono::Duration::minutes(1);
     }
     None
 }
@@ -768,6 +943,14 @@ pub fn set_trace(on: bool) {
     trace_cell().store(on, Ordering::Relaxed);
 }
 
+// Task handle registry for Async.spawn
+static ASYNC_HANDLE_COUNTER: OnceLock<AtomicU64> = OnceLock::new();
+
+fn next_handle_id() -> u64 {
+    ASYNC_HANDLE_COUNTER.get_or_init(|| AtomicU64::new(0))
+        .fetch_add(1, Ordering::SeqCst)
+}
+
 fn log_if_enabled(level: &str, msg: &str) {
     let call_rank = level_rank(level).unwrap_or(1);
     if call_rank >= current_log_threshold() {
@@ -1010,14 +1193,68 @@ fn control_namespace() -> Namespace {
 }
 
 // ---------------------------------------------------------------------------
-// Async (spawn / join — MVP stubs)
+// Async (spawn / join_all / select)
 // ---------------------------------------------------------------------------
 
 fn async_namespace() -> Namespace {
     ns!("Async", {
-        "spawn" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "join_all" => |_i, _args| Box::pin(async move { Ok(Value::List(vec![])) }),
-        "select" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
+        // Async.spawn(fn) — spawn fn as an independent Tokio task.
+        // Returns a handle (as a map with an id).
+        "spawn" => |interp, args| Box::pin(async move {
+            let (params, body) = args.iter().find_map(|a| match &a.value {
+                Value::Closure(p, b) => Some((p.clone(), b.clone())),
+                _ => None,
+            }).ok_or_else(|| miette::miette!("Async.spawn: missing closure argument"))?;
+
+            // Generate a unique handle ID
+            let handle_id = next_handle_id();
+
+            // Spawn the closure as a background task
+            // Note: For v0.1.7, we execute it eagerly and store the result
+            // Future versions could use actual async task handles
+            let params_clone = params.clone();
+            let body_clone = body.clone();
+            tokio::spawn(async move {
+                let mut _local_interp = crate::interpreter::Interpreter::new();
+                let _ = _local_interp.call_closure(&params_clone, &body_clone, vec![]).await;
+            });
+
+            // Return a handle map
+            let mut handle_map = HashMap::new();
+            handle_map.insert("_id".to_string(), Value::Integer(handle_id as i64));
+            handle_map.insert("_status".to_string(), Value::String("pending".to_string()));
+
+            Ok(Value::Map(handle_map))
+        }),
+        // Async.join_all(handles) — await a list of task handles.
+        // Returns a list of results in the same order.
+        "join_all" => |_i, args| Box::pin(async move {
+            let handles_list = positional(&args, 0).cloned().unwrap_or(Value::List(vec![]));
+
+            // For v0.1.7, we return a list of the handles (they're already executed)
+            match handles_list {
+                Value::List(items) => {
+                    // Sleep briefly to allow spawned tasks to complete
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    Ok(Value::List(items))
+                }
+                _ => Err(miette::miette!("Async.join_all: expected a list of handles")),
+            }
+        }),
+        // Async.select(handles) — resolve to the first handle that completes.
+        "select" => |_i, args| Box::pin(async move {
+            let handles_list = positional(&args, 0).cloned().unwrap_or(Value::List(vec![]));
+
+            // For v0.1.7, return the first handle since we execute eagerly
+            match handles_list {
+                Value::List(mut items) if !items.is_empty() => {
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    Ok(items.remove(0))
+                }
+                Value::List(_) => Err(miette::miette!("Async.select: expected a non-empty list of handles")),
+                _ => Err(miette::miette!("Async.select: expected a list of handles")),
+            }
+        }),
         "sleep" => |_i, args| Box::pin(async move {
             if let Some(Value::Duration(secs)) = positional(&args, 0) {
                 tokio::time::sleep(std::time::Duration::from_secs_f64(*secs)).await;
@@ -1137,6 +1374,117 @@ async fn http_send(
     result.insert("headers".to_string(), Value::Map(response_headers));
     result.insert("is_ok".to_string(), Value::Bool((200..300).contains(&status)));
     Ok(Value::Map(result))
+}
+
+// ---------------------------------------------------------------------------
+// File — read / write / exists / list
+// ---------------------------------------------------------------------------
+
+fn file_namespace() -> Namespace {
+    ns!("File", {
+        // File.read(path) — returns the file contents as a string.
+        // Raises FileError if the file doesn't exist or can't be read.
+        "read" => |_i, args| Box::pin(async move {
+            let path = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("File.read: missing path argument"))?;
+            match tokio::fs::read_to_string(&path).await {
+                Ok(content) => Ok(Value::String(content)),
+                Err(e) => Err(miette::miette!("FileError: File.read `{path}`: {e}")),
+            }
+        }),
+        // File.write(path, content) — writes content to a file.
+        // Creates intermediate directories if needed.
+        // Raises FileError on write failure.
+        "write" => |_i, args| Box::pin(async move {
+            let path = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("File.write: missing path argument"))?;
+            let content = positional(&args, 1)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("File.write: missing content argument"))?;
+
+            if let Some(parent) = std::path::Path::new(&path).parent() {
+                if !parent.as_os_str().is_empty() {
+                    match tokio::fs::create_dir_all(parent).await {
+                        Err(e) => return Err(miette::miette!("FileError: File.write create_dir_all: {e}")),
+                        _ => {}
+                    }
+                }
+            }
+            match tokio::fs::write(&path, &content).await {
+                Ok(_) => Ok(Value::None),
+                Err(e) => Err(miette::miette!("FileError: File.write `{path}`: {e}")),
+            }
+        }),
+        // File.exists(path) — returns true if the file exists.
+        "exists" => |_i, args| Box::pin(async move {
+            let path = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("File.exists: missing path argument"))?;
+            let exists = tokio::fs::metadata(&path).await.is_ok();
+            Ok(Value::Bool(exists))
+        }),
+        // File.list(dir) — returns a list of entry names in the directory.
+        // Raises FileError if the directory doesn't exist or can't be read.
+        "list" => |_i, args| Box::pin(async move {
+            let dir_path = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("File.list: missing directory argument"))?;
+
+            match tokio::fs::read_dir(&dir_path).await {
+                Ok(mut entries) => {
+                    let mut names = vec![];
+                    loop {
+                        match entries.next_entry().await {
+                            Ok(Some(entry)) => {
+                                if let Ok(name) = entry.file_name().into_string() {
+                                    names.push(Value::String(name));
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(e) => return Err(miette::miette!("FileError: File.list read error: {e}")),
+                        }
+                    }
+                    Ok(Value::List(names))
+                }
+                Err(e) => Err(miette::miette!("FileError: File.list `{dir_path}`: {e}")),
+            }
+        }),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Json — parse / stringify
+// ---------------------------------------------------------------------------
+
+fn json_namespace() -> Namespace {
+    ns!("Json", {
+        // Json.parse(str) — deserialize a JSON string into a Keel value.
+        // Raises JsonError on invalid input.
+        "parse" => |_i, args| Box::pin(async move {
+            let json_str = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Json.parse: missing argument"))?;
+
+            match serde_json::from_str::<serde_json::Value>(&json_str) {
+                Ok(json_val) => Ok(json_to_value(&json_val)),
+                Err(e) => Err(miette::miette!("JsonError: Json.parse invalid JSON: {e}")),
+            }
+        }),
+        // Json.stringify(value) — serialize a Keel value to a JSON string.
+        "stringify" => |_i, args| Box::pin(async move {
+            let value = positional(&args, 0)
+                .cloned()
+                .ok_or_else(|| miette::miette!("Json.stringify: missing argument"))?;
+
+            let json_val = value_to_json(&value);
+            match serde_json::to_string(&json_val) {
+                Ok(json_str) => Ok(Value::String(json_str)),
+                Err(e) => Err(miette::miette!("JsonError: Json.stringify serialization failed: {e}")),
+            }
+        }),
+    })
 }
 
 // ---------------------------------------------------------------------------

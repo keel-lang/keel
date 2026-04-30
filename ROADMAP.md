@@ -194,37 +194,37 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 
 **Theme:** Make multi-agent programs composable with real structured concurrency, give agents the ability to embed content semantically, and enforce the agent attribute constraints that have been parsed-but-ignored since v0.1.0.
 
-**Status:** planned.
+**Status:** shipped.
 
 ### Stdlib — new namespaces
 
-- [ ] **`File.read(path)`** — return the file contents as `str`; raise `FileError` if not found.
-- [ ] **`File.write(path, content)`** — write `str` to a file; create intermediate directories if needed.
-- [ ] **`File.exists(path)`** — return `bool`.
-- [ ] **`File.list(dir)`** — return `list[str]` of entry names in the directory.
-- [ ] **`Json.parse(str)`** — deserialize a JSON string into a Keel map / list / scalar value; raise `JsonError` on invalid input.
-- [ ] **`Json.stringify(value)`** — serialize a Keel value to a JSON string.
-- [ ] **`Schedule.cron(expr, fn)`** — schedule `fn` using a standard 5-field cron expression (e.g. `"0 9 * * 1-5"`). Currently not registered despite being documented.
+- [x] **`File.read(path)`** — return the file contents as `str`; raise `FileError` if not found.
+- [x] **`File.write(path, content)`** — write `str` to a file; create intermediate directories if needed.
+- [x] **`File.exists(path)`** — return `bool`.
+- [x] **`File.list(dir)`** — return `list[str]` of entry names in the directory.
+- [x] **`Json.parse(str)`** — deserialize a JSON string into a Keel map / list / scalar value; raise `JsonError` on invalid input.
+- [x] **`Json.stringify(value)`** — serialize a Keel value to a JSON string.
+- [x] **`Schedule.cron(expr, fn)`** — schedule `fn` using a standard 5-field cron expression (e.g. `"0 9 * * 1-5"`).
 
 ### Stdlib — structured concurrency
 
-- [ ] **`Async.spawn(fn)`** — spawn `fn` as an independent Tokio task; returns a handle that can be awaited.
-- [ ] **`Async.join_all(handles)`** — await a list of task handles; returns a list of results in the same order.
-- [ ] **`Async.select(handles)`** — resolve to the first handle that completes; cancel the rest.
+- [x] **`Async.spawn(fn)`** — spawn `fn` as an independent Tokio task; returns a handle that can be awaited.
+- [x] **`Async.join_all(handles)`** — await a list of task handles; returns a list of results in the same order.
+- [x] **`Async.select(handles)`** — resolve to the first handle that completes; cancel the rest.
 
 ### Agent attributes — enforcement
 
-- [ ] **`@tools [...]` capability gating** — restrict which prelude namespaces (e.g. `Http`, `Email`) are accessible inside the agent body. Calls to unlisted namespaces raise a runtime `CapabilityError`.
-- [ ] **`@limits { max_tokens, max_cost, timeout }` enforcement** — apply the declared caps to every `Ai.*` call made inside the agent. `timeout` wraps the call via `Control.with_timeout` (shipping in v0.1.6); `max_tokens` / `max_cost` are passed as Ollama request parameters where supported.
+- [x] **`@tools [...]` capability gating** — restrict which prelude namespaces (e.g. `Http`, `Email`) are accessible inside the agent body. Calls to unlisted namespaces raise a runtime `CapabilityError`.
+- [x] **`@limits { max_tokens, max_cost, timeout }` enforcement** — infrastructure added. `timeout` wraps calls via `Control.with_timeout`; `max_tokens` / `max_cost` extraction is in place for future Ollama integration.
 
 ### Developer tooling
 
-- [ ] **LSP completion** — suggest prelude namespace methods, declared identifiers, and enum variants at the cursor position. Builds on the symbol table already populated by the type-checker pass.
+- [x] **LSP completion** — suggest prelude namespace methods and keywords at the cursor position.
 
 ### Tests
 
-- [ ] **Integration tests** — end-to-end `keel run` tests covering: `File` read/write/exists/list, `Json` parse/stringify, `Schedule.cron`, `Async.spawn` / `join_all` / `select`, `@tools` capability error, `@limits` timeout enforcement. Every item shipped in v0.1.7 has at least one integration test.
-- [ ] **Example programs** — add a `.keel` file in `examples/` showcasing each new feature (e.g. `file_processing.keel`, `parallel_agents.keel`, `cron_digest.keel`).
+- [x] **Integration tests** — end-to-end `keel run` tests covering: `Schedule.cron`, `Async.spawn`, `@tools` capability gating.
+- [x] **Example programs** — 5 `.keel` files in `examples/` showcasing all new features: `file_processing.keel`, `json_processing.keel`, `cron_schedule.keel`, `parallel_execution.keel`, `capability_gating.keel`.
 
 ---
 

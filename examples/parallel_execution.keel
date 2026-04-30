@@ -1,0 +1,41 @@
+agent ParallelProcessor {
+    @on_start {
+        let task1 = Async.spawn(() => {
+            Io.show("Task 1 starting")
+            Schedule.sleep(0.1s)
+            Io.show("Task 1 completed")
+        })
+
+        let task2 = Async.spawn(() => {
+            Io.show("Task 2 starting")
+            Schedule.sleep(0.05s)
+            Io.show("Task 2 completed")
+        })
+
+        let task3 = Async.spawn(() => {
+            Io.show("Task 3 starting")
+            Schedule.sleep(0.15s)
+            Io.show("Task 3 completed")
+        })
+
+        let handles = [task1, task2, task3]
+        let results = Async.join_all(handles)
+        Io.show("All tasks completed")
+
+        let fast_task = Async.spawn(() => {
+            Schedule.sleep(0.01s)
+            Io.show("Fast task finished")
+        })
+
+        let slow_task = Async.spawn(() => {
+            Schedule.sleep(0.1s)
+            Io.show("Slow task finished")
+        })
+
+        let race_handles = [fast_task, slow_task]
+        let winner = Async.select(race_handles)
+        Io.show("First task completed")
+    }
+}
+
+run(ParallelProcessor)

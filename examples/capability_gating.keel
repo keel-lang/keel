@@ -1,0 +1,11 @@
+agent RestrictedAgent {
+    @tools [Io, File]
+
+    @on_start {
+        Io.show("This is allowed - using Io namespace")
+        File.write("allowed.txt", "File operations are allowed")
+        Io.show("Capability gating test completed")
+    }
+}
+
+run(RestrictedAgent)

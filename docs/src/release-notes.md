@@ -4,6 +4,121 @@
 
 ---
 
+## v0.1.7 — 2026-04-30
+### Structured Concurrency & Agent Constraints
+
+File I/O, JSON processing, async task spawning, cron scheduling, and agent capability enforcement.
+
+#### File namespace
+
+Read, write, and list files on disk. The runtime creates intermediate directories automatically for writes.
+
+```keel
+File.write("data.txt", "Hello Keel")
+content = File.read("data.txt")
+
+if File.exists("data.txt") {
+  Io.show(content)
+}
+
+entries = File.list("data/")
+```
+
+Methods: `read(path)`, `write(path, content)`, `exists(path)`, `list(dir)`.
+
+#### Json namespace
+
+Serialize and deserialize JSON. `parse` deserializes a JSON string into Keel values (maps, lists, scalars). `stringify` turns Keel values back into JSON.
+
+```keel
+data = Json.parse("{\"name\": \"Alice\", \"age\": 30}")
+name = data["name"]
+
+user = { name: "Bob", age: 25 }
+json_str = Json.stringify(user)
+```
+
+#### Schedule.cron
+
+Schedule tasks using 5-field cron expressions. Supports standard cron syntax for minute, hour, day, month, and weekday.
+
+```keel
+Schedule.cron("0 9 * * 1-5", () => {
+  Io.show("Morning digest")
+})
+
+Schedule.cron("*/5 * * * *", () => {
+  Io.show("Every 5 minutes")
+})
+```
+
+#### Async namespace — structured concurrency
+
+Spawn independent Tokio tasks and await completion. `spawn` returns a task handle; `join_all` awaits a list of handles; `select` races handles to the first completion.
+
+```keel
+task1 = Async.spawn(() => {
+  result = Http.get("https://api1.example.com")
+  Io.show(result)
+})
+
+task2 = Async.spawn(() => {
+  result = Http.get("https://api2.example.com")
+  Io.show(result)
+})
+
+results = Async.join_all([task1, task2])
+Io.show("All done")
+```
+
+#### @tools capability gating
+
+Restrict which prelude namespaces are accessible inside an agent. Calls to unlisted namespaces raise `CapabilityError` at runtime.
+
+```keel
+agent RestrictedAgent {
+  @tools [Io, File]
+
+  @on_start {
+    Io.show("Allowed")
+    File.write("x.txt", "Allowed")
+    # Http.get would raise CapabilityError
+  }
+}
+```
+
+If no `@tools` attribute is specified, all namespaces are allowed.
+
+#### @limits agent attributes
+
+Extract and enforce resource limits (timeout, max_tokens, max_cost) on a per-agent basis. The infrastructure for extracting limits is in place; timeout wraps calls via `Control.with_timeout`.
+
+```keel
+agent LimitedAgent {
+  @limits { timeout: 30s, max_tokens: 1000, max_cost: 5.0 }
+
+  @on_start {
+    response = Ai.prompt("...")
+  }
+}
+```
+
+#### LSP completion
+
+`textDocument/completion` now suggests prelude namespace names, method names, and keywords. Triggered on `.` or manual invocation.
+
+#### New example programs
+
+Five example programs demonstrate the new v0.1.7 features:
+
+- `file_processing.keel` — File read, write, exists, list
+- `json_processing.keel` — JSON parse and stringify
+- `cron_schedule.keel` — Cron expression scheduling
+- `parallel_execution.keel` — Async task spawning and joining
+- `capability_gating.keel` — @tools capability restrictions
+
+---
+
 ## v0.1.6 — 2026-04-28
 ### Wiring & ergonomics
 

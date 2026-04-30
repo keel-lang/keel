@@ -1009,6 +1009,16 @@ impl Interpreter {
         method: &str,
         args: Vec<CallArgValue>,
     ) -> Result<Value> {
+        // Check @tools capability gating if we're in an agent context
+        if let Some(agent_mutex) = &self.current_agent {
+            let agent = agent_mutex.lock().unwrap();
+            if !self.is_namespace_allowed(&agent.def, ns_name) {
+                return Err(runtime_error(format!(
+                    "CapabilityError: namespace `{ns_name}` is not allowed by the @tools attribute"
+                )));
+            }
+        }
+
         let f = {
             let ns = self.namespaces.get(ns_name).ok_or_else(|| {
                 runtime_error(format!("Unknown namespace: `{ns_name}`"))
@@ -1018,6 +1028,78 @@ impl Interpreter {
             })?
         };
         f(self, args).await
+    }
+
+    /// Check if a namespace is allowed for the given agent.
+    /// If the agent has no @tools attribute, all namespaces are allowed.
+    /// If @tools is specified, only those namespaces are allowed.
+    fn is_namespace_allowed(&self, agent: &AgentDef, ns_name: &str) -> bool {
+        for attr in &agent.attributes {
+            if attr.name == "tools" {
+                if let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body {
+                    let allowed_namespaces: Vec<String> = items.iter().filter_map(|e| {
+                        if let Expr::Ident(name) = e {
+                            Some(name.clone())
+                        } else {
+                            None
+                        }
+                    }).collect();
+                    return allowed_namespaces.contains(&ns_name.to_string());
+                }
+            }
+        }
+        // No @tools attribute means all namespaces are allowed
+        true
+    }
+
+    /// Extract @limits from an agent's attributes.
+    /// Returns a map with timeout (seconds as f64), max_tokens (i64), max_cost (f64).
+    pub fn get_agent_limits(&self, agent: &AgentDef) -> Option<(Option<f64>, Option<i64>, Option<f64>)> {
+        for attr in &agent.attributes {
+            if attr.name == "limits" {
+                if let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body {
+                    let mut timeout = None;
+                    let mut max_tokens = None;
+                    let mut max_cost = None;
+
+                    for (key, expr) in fields {
+                        match key.as_str() {
+                            "timeout" => {
+                                if let Expr::Duration { value, unit } = expr {
+                                    if let Expr::Integer(n) = value.as_ref() {
+                                        let secs = match unit {
+                                            DurationUnit::Seconds => *n as f64,
+                                            DurationUnit::Minutes => (*n * 60) as f64,
+                                            DurationUnit::Hours => (*n * 3600) as f64,
+                                            _ => *n as f64,
+                                        };
+                                        timeout = Some(secs);
+                                    }
+                                }
+                            }
+                            "max_tokens" => {
+                                if let Expr::Integer(n) = expr {
+                                    max_tokens = Some(*n);
+                                }
+                            }
+                            "max_cost" => {
+                                if let Expr::Float(f) = expr {
+                                    max_cost = Some(*f);
+                                } else if let Expr::Integer(n) = expr {
+                                    max_cost = Some(*n as f64);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+
+                    if timeout.is_some() || max_tokens.is_some() || max_cost.is_some() {
+                        return Some((timeout, max_tokens, max_cost));
+                    }
+                }
+            }
+        }
+        None
     }
 
     async fn call_method_on_value(

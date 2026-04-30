@@ -23,16 +23,18 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Io` | ✅ | Human interaction: `ask`, `confirm`, `notify`, `show` |
 | `Http` | ✅ | HTTP client: `get`, `post`, `request` |
 | `Email` | 🟡 | IMAP/SMTP: `fetch`, `send`, `archive` |
+| `File` | ✅ | Filesystem: `read`, `write`, `exists`, `list` |
+| `Json` | ✅ | JSON: `parse`, `stringify` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
 | `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
 | `Memory` | ⏳ | Persistent semantic memory: `remember`, `recall`, `forget` (stubbed — no vector store yet) |
-| `Schedule` | ✅ | Time-based scheduling: `every`, `after`, `at`, `sleep` · `cron` ⏳ |
-| `Async` | 🟡 | `sleep` shipping · `spawn`, `join_all`, `select` ⏳ |
+| `Schedule` | ✅ | Time-based scheduling: `every`, `after`, `at`, `cron`, `sleep` |
+| `Async` | ✅ | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | ✅ | `retry`, `with_timeout`, `with_deadline` |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
 | `Time` | 🟡 | Time utilities: `now`, `parse`, `format` — registered; raises "planned for v0.2" error (use the `now` keyword for now) |
 | `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
-| `Agent` | 🟡 | `run`, `stop`, `send`, `delegate`, `broadcast` |
+| `Agent` | ✅ | `run`, `stop`, `send`, `delegate`, `broadcast` |
 
 `run` and `stop` are re-exported at the top level so programs can end with `run(MyAgent)` without the namespace prefix.
 
