@@ -167,7 +167,7 @@ agent Counter {
 
 - Handlers for one agent run **sequentially** — no data races on `state`.
 - Different agents run concurrently but share no state.
-- Cross-agent messaging uses `Agent.send(Target, data)` (wired in v0.1). `Agent.delegate` and `Agent.broadcast` <span class="badge badge-soon">Coming soon</span>.
+- Cross-agent messaging: `Agent.send(Target, data)` (v0.1), `Agent.delegate(Target, task, args)` (v0.1.4), `Agent.broadcast(team, data, event:)` (v0.1.6). See [Agent Communication](./agent-communication.md).
 
 ## Lifecycle
 

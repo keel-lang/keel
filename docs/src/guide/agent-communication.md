@@ -59,6 +59,24 @@ sequenceDiagram
     B->>B: on greeting runs
 ```
 
+## Agent.delegate vs Agent.send
+
+`Agent.delegate(target, task, args)` posts a **named task event** to another agent:
+
+```keel
+Agent.delegate(Processor, "handle", payload)
+# Processor's `on handle` fires with payload
+```
+
+`Agent.send(target, data, event: "...")` posts a **data event** with explicit routing:
+
+```keel
+Agent.send(Processor, payload, event: "process")
+# Processor's `on process` fires with payload
+```
+
+Both are non-blocking. Choose `delegate` when the receiver's task name is the event name; use `send` when you want more explicit control over the `event:` label.
+
 ## Agent.send vs Ai.*
 
 These are two completely separate communication paths.
@@ -113,6 +131,41 @@ sequenceDiagram
     W->>M: send(event: "result", data: summary)
     note over M: on result — prints summary, stops
 ```
+
+## Broadcasting to a team
+
+`Agent.broadcast(team, data, event: "...")` fans out a single event to
+every live agent whose `@team [...]` attribute contains the target team
+name. Agents on other teams stay silent.
+
+```keel
+agent Alpha {
+    @team ["frontline"]
+    on alert(msg: str) { Io.show("Alpha got {msg}") }
+}
+
+agent Beta {
+    @team ["frontline"]
+    on alert(msg: str) { Io.show("Beta got {msg}") }
+}
+
+agent Gamma {
+    @team ["backoffice"]
+    on alert(msg: str) { Io.show("Gamma got {msg}") }
+}
+
+agent Coordinator {
+    @on_start {
+        Agent.run(Alpha); Agent.run(Beta); Agent.run(Gamma)
+        Agent.broadcast("frontline", "production-down", event: "alert")
+        # Alpha and Beta fire; Gamma does not.
+    }
+}
+```
+
+`@team` accepts a list, so an agent can belong to multiple teams. The
+broadcast is non-blocking — every recipient handles the event on its
+own mailbox in its own time.
 
 ## Key Properties
 

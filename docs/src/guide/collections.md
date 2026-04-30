@@ -10,6 +10,20 @@ names = ["alice", "bob", "charlie"]
 empty = []
 ```
 
+### List concatenation and adding elements
+
+Concatenate lists with `+` or add a single element with `push`:
+
+```keel
+base = ["a", "b"]
+extra = ["c", "d"]
+all = base + extra              # ["a", "b", "c", "d"]
+
+more = all.push("e")            # ["a", "b", "c", "d", "e"]
+```
+
+`push` returns a new list — it does not mutate in place. Reassign if needed: `items = items.push(x)`.
+
 ## Collection methods
 
 All methods accept lambdas (`x => expr`) or task references.
@@ -93,6 +107,40 @@ info.age                               # 30
 # Nested
 team = {lead: {name: "Bob", role: "eng"}}
 team.lead.name                         # "Bob"
+```
+
+## Maps
+
+A typed `map[K, V]` literal is built with the same `{k: v, ...}` form.
+The same syntax serves both struct construction and `map[str, V]`
+construction; the checker resolves which based on the declared type.
+
+```keel
+stock: map[str, int] = {apples: 12, pears: 5, plums: 0}
+```
+
+### Map methods
+
+| Method | Returns |
+|---|---|
+| `map.get(k)` | `V?` — `none` if the key is absent |
+| `map.keys()` | `list[K]` |
+| `map.values()` | `list[V]` |
+| `map.len()` / `map.count()` / `map.size()` | `int` |
+| `map.is_empty()` | `bool` |
+| `map.contains(k)` / `map.has(k)` | `bool` |
+
+```keel
+stock: map[str, int] = {apples: 12, pears: 5}
+
+stock.count()              # 2
+stock.contains("apples")   # true
+stock.keys()               # ["apples", "pears"]
+stock.values()             # [12, 5]
+
+# get returns V? — coalesce or assert before using as V.
+pears = stock.get("pears") ?? 0      # 5
+missing = stock.get("oranges") ?? 0  # 0
 ```
 
 ## String methods
