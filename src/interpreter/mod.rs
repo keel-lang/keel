@@ -15,10 +15,11 @@ pub mod value;
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use miette::{NamedSource, Result};
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::ast::*;
 use environment::Environment;
@@ -82,12 +83,22 @@ pub struct AgentInstance {
 
 /// Runtime event posted to the interpreter's mailbox from tokio tasks
 /// (schedulers, message dispatchers, …) and consumed by `execute`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Event {
     /// Fire a registered closure on behalf of an agent.
     FireClosure { agent_name: String, closure_id: u64 },
     /// Deliver a message to an agent's `on <event>` handler.
-    Dispatch { agent_name: String, event: String, data: Value },
+    Dispatch {
+        agent_name: String,
+        event: String,
+        data: Value,
+    },
+    /// Fire a closure with arguments and return the result through a oneshot channel (JSON-encoded).
+    FireClosureWithArgs {
+        closure_id: u64,
+        request_json: String,
+        response_tx: tokio::sync::oneshot::Sender<String>,
+    },
     /// Shut down the event loop.
     Shutdown,
 }
@@ -130,6 +141,9 @@ pub struct Interpreter {
     pub closures: HashMap<u64, ScheduledClosure>,
     /// Next free closure id.
     pub next_closure_id: u64,
+    /// Number of active Http.serve listeners. The event loop keeps running
+    /// while this is > 0, even if no agents are live.
+    pub active_http_servers: Arc<AtomicU64>,
     /// Source for diagnostics (optional).
     pub source: Option<NamedSource<String>>,
 }
@@ -150,6 +164,7 @@ impl Interpreter {
             event_rx: Some(event_rx),
             closures: HashMap::new(),
             next_closure_id: 0,
+            active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
         };
         crate::runtime::install_prelude(&mut interp);
@@ -166,7 +181,14 @@ impl Interpreter {
     ) -> u64 {
         let id = self.next_closure_id;
         self.next_closure_id += 1;
-        self.closures.insert(id, ScheduledClosure { agent_name, params, body });
+        self.closures.insert(
+            id,
+            ScheduledClosure {
+                agent_name,
+                params,
+                body,
+            },
+        );
         id
     }
 
@@ -195,7 +217,9 @@ impl Interpreter {
         data: Value,
     ) -> Result<()> {
         let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
-        let Some(agent_inst) = inst else { return Ok(()); };
+        let Some(agent_inst) = inst else {
+            return Ok(());
+        };
         let handler = agent_inst
             .lock()
             .unwrap()
@@ -204,7 +228,9 @@ impl Interpreter {
             .iter()
             .find(|h| h.event == event_name)
             .cloned();
-        let Some(handler) = handler else { return Ok(()); };
+        let Some(handler) = handler else {
+            return Ok(());
+        };
 
         let prev = self.current_agent.take();
         self.current_agent = Some(agent_inst);
@@ -222,7 +248,8 @@ impl Interpreter {
     /// `@model` attribute, then to `"default"` (which triggers the
     /// `KEEL_OLLAMA_MODEL` catch-all in the Ollama client).
     pub fn current_model(&self) -> String {
-        self.agent_string_attr("model").unwrap_or_else(|| "default".to_string())
+        self.agent_string_attr("model")
+            .unwrap_or_else(|| "default".to_string())
     }
 
     /// The current agent's `@role "..."` string, if any. Used by the
@@ -239,22 +266,30 @@ impl Interpreter {
     /// system prompt of every `Ai.*` call. Returns an empty vec when
     /// called outside an agent or when `@rules` is absent.
     pub fn current_rules(&self) -> Vec<String> {
-        let Some(agent) = self.current_agent.as_ref() else { return vec![] };
+        let Some(agent) = self.current_agent.as_ref() else {
+            return vec![];
+        };
         let def = agent.lock().unwrap().def.clone();
         for attr in &def.attributes {
-            if attr.name == "rules" {
-                if let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body {
-                    return items.iter().filter_map(|e| match e {
+            if attr.name == "rules"
+                && let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body
+            {
+                return items
+                    .iter()
+                    .filter_map(|e| match e {
                         Expr::StringLit(parts) => {
-                            let s: String = parts.iter().filter_map(|p| match p {
-                                StringPart::Literal(s) => Some(s.clone()),
-                                _ => None,
-                            }).collect();
+                            let s: String = parts
+                                .iter()
+                                .filter_map(|p| match p {
+                                    StringPart::Literal(s) => Some(s.clone()),
+                                    _ => None,
+                                })
+                                .collect();
                             if s.is_empty() { None } else { Some(s) }
                         }
                         _ => None,
-                    }).collect();
-                }
+                    })
+                    .collect();
             }
         }
         vec![]
@@ -264,15 +299,18 @@ impl Interpreter {
         let agent = self.current_agent.as_ref()?;
         let def = agent.lock().unwrap().def.clone();
         for attr in &def.attributes {
-            if attr.name == name {
-                if let AttributeBody::Expr(Expr::StringLit(parts)) = &attr.body {
-                    let s: String = parts.iter().filter_map(|p| match p {
+            if attr.name == name
+                && let AttributeBody::Expr(Expr::StringLit(parts)) = &attr.body
+            {
+                let s: String = parts
+                    .iter()
+                    .filter_map(|p| match p {
                         StringPart::Literal(s) => Some(s.clone()),
                         _ => None,
-                    }).collect();
-                    if !s.is_empty() {
-                        return Some(s);
-                    }
+                    })
+                    .collect();
+                if !s.is_empty() {
+                    return Some(s);
                 }
             }
         }
@@ -348,7 +386,9 @@ impl Interpreter {
             .expect("Interpreter::execute called twice");
 
         loop {
-            if self.live_agents.lock().unwrap().is_empty() {
+            let no_agents = self.live_agents.lock().unwrap().is_empty();
+            let no_servers = self.active_http_servers.load(Ordering::Relaxed) == 0;
+            if no_agents && no_servers {
                 break;
             }
 
@@ -369,11 +409,54 @@ impl Interpreter {
             };
 
             match ev {
-                Event::FireClosure { agent_name, closure_id } => {
+                Event::FireClosure {
+                    agent_name,
+                    closure_id,
+                } => {
                     self.fire_closure(&agent_name, closure_id).await?;
                 }
-                Event::Dispatch { agent_name, event, data } => {
+                Event::Dispatch {
+                    agent_name,
+                    event,
+                    data,
+                } => {
                     self.dispatch_event(&agent_name, &event, data).await?;
+                }
+                Event::FireClosureWithArgs {
+                    closure_id,
+                    request_json,
+                    response_tx,
+                } => {
+                    let closure = self.closures.get(&closure_id).cloned();
+                    if let Some(c) = closure {
+                        // Deserialize request JSON to Value
+                        let request_val =
+                            match serde_json::from_str::<serde_json::Value>(&request_json) {
+                                Ok(jval) => crate::runtime::json_to_value(&jval),
+                                Err(_) => Value::String(request_json.clone()),
+                            };
+                        let result = self
+                            .call_closure(
+                                &c.params,
+                                &c.body,
+                                vec![CallArgValue {
+                                    name: None,
+                                    value: request_val,
+                                }],
+                            )
+                            .await;
+                        // Serialize result back to JSON string
+                        let resp_val = result.unwrap_or(Value::None);
+                        let json_val = crate::runtime::value_to_json(&resp_val);
+                        let resp_json = match serde_json::to_string(&json_val) {
+                            Ok(s) => s,
+                            Err(_) => r#"{"status":500,"body":"serialization failed"}"#.into(),
+                        };
+                        let _ = response_tx.send(resp_json);
+                    } else {
+                        let _ =
+                            response_tx.send(r#"{"status":500,"body":"handler not found"}"#.into());
+                    }
                 }
                 Event::Shutdown => break,
             }
@@ -388,13 +471,15 @@ impl Interpreter {
                 // `Mood.neutral` resolves and `as: Mood` finds a
                 // defined identifier. For simple enums, also cache
                 // the variant list for Ai.classify.
-                self.globals.insert(t.name.clone(), Value::Namespace(t.name.clone()));
+                self.globals
+                    .insert(t.name.clone(), Value::Namespace(t.name.clone()));
                 match &t.def {
                     TypeDef::SimpleEnum(variants) => {
                         self.enum_types.insert(t.name.clone(), variants.clone());
                     }
                     TypeDef::Struct(fields) => {
-                        let schema = fields.iter()
+                        let schema = fields
+                            .iter()
                             .map(|f| (f.name.clone(), type_expr_to_string(&f.ty)))
                             .collect();
                         self.struct_types.insert(t.name.clone(), schema);
@@ -405,30 +490,49 @@ impl Interpreter {
             }
             Decl::Interface(_) | Decl::Extern(_) | Decl::Use(_) => Ok(()),
             Decl::Task(t) => {
-                self.globals.insert(t.name.clone(), Value::Task(t.name.clone(), t.clone()));
+                self.globals
+                    .insert(t.name.clone(), Value::Task(t.name.clone(), t.clone()));
                 Ok(())
             }
             Decl::Agent(a) => {
                 let def = AgentDef {
                     name: a.name.clone(),
-                    attributes: a.items.iter().filter_map(|it| match it {
-                        AgentItem::Attribute(attr) => Some(attr.clone()),
-                        _ => None,
-                    }).collect(),
-                    state_fields: a.items.iter().filter_map(|it| match it {
-                        AgentItem::State(fields) => Some(fields.clone()),
-                        _ => None,
-                    }).flatten().collect(),
-                    tasks: a.items.iter().filter_map(|it| match it {
-                        AgentItem::Task(t) => Some(t.clone()),
-                        _ => None,
-                    }).collect(),
-                    handlers: a.items.iter().filter_map(|it| match it {
-                        AgentItem::On(h) => Some(h.clone()),
-                        _ => None,
-                    }).collect(),
+                    attributes: a
+                        .items
+                        .iter()
+                        .filter_map(|it| match it {
+                            AgentItem::Attribute(attr) => Some(attr.clone()),
+                            _ => None,
+                        })
+                        .collect(),
+                    state_fields: a
+                        .items
+                        .iter()
+                        .filter_map(|it| match it {
+                            AgentItem::State(fields) => Some(fields.clone()),
+                            _ => None,
+                        })
+                        .flatten()
+                        .collect(),
+                    tasks: a
+                        .items
+                        .iter()
+                        .filter_map(|it| match it {
+                            AgentItem::Task(t) => Some(t.clone()),
+                            _ => None,
+                        })
+                        .collect(),
+                    handlers: a
+                        .items
+                        .iter()
+                        .filter_map(|it| match it {
+                            AgentItem::On(h) => Some(h.clone()),
+                            _ => None,
+                        })
+                        .collect(),
                 };
-                self.globals.insert(a.name.clone(), Value::AgentRef(a.name.clone()));
+                self.globals
+                    .insert(a.name.clone(), Value::AgentRef(a.name.clone()));
                 self.agents.insert(a.name.clone(), def);
                 Ok(())
             }
@@ -442,7 +546,11 @@ fn type_expr_to_string(te: &TypeExpr) -> String {
         TypeExpr::Named(n) => n.clone(),
         TypeExpr::Nullable(inner) => format!("{}?", type_expr_to_string(inner)),
         TypeExpr::List(inner) => format!("[{}]", type_expr_to_string(inner)),
-        TypeExpr::Map(k, v) => format!("map[{}, {}]", type_expr_to_string(k), type_expr_to_string(v)),
+        TypeExpr::Map(k, v) => format!(
+            "map[{}, {}]",
+            type_expr_to_string(k),
+            type_expr_to_string(v)
+        ),
         TypeExpr::Set(inner) => format!("set[{}]", type_expr_to_string(inner)),
         TypeExpr::Tuple(items) => {
             let parts: Vec<_> = items.iter().map(type_expr_to_string).collect();
@@ -457,7 +565,10 @@ fn type_expr_to_string(te: &TypeExpr) -> String {
             format!("{}[{}]", name, as_.join(", "))
         }
         TypeExpr::Struct(fields) => {
-            let fs: Vec<_> = fields.iter().map(|f| format!("{}: {}", f.name, type_expr_to_string(&f.ty))).collect();
+            let fs: Vec<_> = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, type_expr_to_string(&f.ty)))
+                .collect();
             format!("{{{}}}", fs.join(", "))
         }
         TypeExpr::Dynamic => "dynamic".to_string(),
@@ -503,14 +614,21 @@ impl Interpreter {
                     };
                     Ok(StmtOutcome::Return(v))
                 }
-                Stmt::For { binding, iter, filter, body } => {
+                Stmt::For {
+                    binding,
+                    iter,
+                    filter,
+                    body,
+                } => {
                     let iter_v = self.eval_expr(iter, env).await?;
                     let items = match iter_v {
                         Value::List(items) => items,
-                        other => return Err(runtime_error(format!(
-                            "`for` expects a list, got {}",
-                            other.type_name()
-                        ))),
+                        other => {
+                            return Err(runtime_error(format!(
+                                "`for` expects a list, got {}",
+                                other.type_name()
+                            )));
+                        }
                     };
                     for item in items {
                         env.push_scope();
@@ -522,18 +640,19 @@ impl Interpreter {
                                 continue;
                             }
                         }
-                        match self.exec_block(body, env).await? {
-                            StmtOutcome::Return(v) => {
-                                env.pop_scope();
-                                return Ok(StmtOutcome::Return(v));
-                            }
-                            _ => {}
+                        if let StmtOutcome::Return(v) = self.exec_block(body, env).await? {
+                            env.pop_scope();
+                            return Ok(StmtOutcome::Return(v));
                         }
                         env.pop_scope();
                     }
                     Ok(StmtOutcome::Normal)
                 }
-                Stmt::If { cond, then_body, else_body } => {
+                Stmt::If {
+                    cond,
+                    then_body,
+                    else_body,
+                } => {
                     let c = self.eval_expr(cond, env).await?;
                     if c.is_truthy() {
                         self.exec_block(then_body, env).await
@@ -551,11 +670,11 @@ impl Interpreter {
                             for (k, v) in bindings {
                                 env.define(k, v);
                             }
-                            if let Some(guard) = &arm.guard {
-                                if !self.eval_expr(guard, env).await?.is_truthy() {
-                                    env.pop_scope();
-                                    continue;
-                                }
+                            if let Some(guard) = &arm.guard
+                                && !self.eval_expr(guard, env).await?.is_truthy()
+                            {
+                                env.pop_scope();
+                                continue;
                             }
                             let out = self.exec_block(&arm.body, env).await?;
                             env.pop_scope();
@@ -599,10 +718,10 @@ impl Interpreter {
             Pattern::Wildcard => Some(vec![]),
             Pattern::Ident(name) => {
                 // Matches an enum variant by name (e.g. `low`, `high`).
-                if let Value::EnumVariant(_, variant, _) = value {
-                    if variant == name {
-                        return Some(vec![]);
-                    }
+                if let Value::EnumVariant(_, variant, _) = value
+                    && variant == name
+                {
+                    return Some(vec![]);
                 }
                 None
             }
@@ -625,29 +744,27 @@ impl Interpreter {
                     Expr::Bool(b) => Value::Bool(*b),
                     _ => return None,
                 };
-                if &lit == value {
-                    Some(vec![])
-                } else {
-                    None
-                }
+                if &lit == value { Some(vec![]) } else { None }
             }
             Pattern::Variant { name, bindings } => {
-                if let Value::EnumVariant(_ty, variant, fields) = value {
-                    if variant == name {
-                        // Bind each named destructure from the variant's
-                        // rich fields (if any). Wildcards (`_`) and
-                        // missing fields bind to `none`.
-                        let mut out = Vec::with_capacity(bindings.len());
-                        for b in bindings {
-                            if b == "_" { continue; }
-                            let v = fields
-                                .as_ref()
-                                .and_then(|m| m.get(b).cloned())
-                                .unwrap_or(Value::None);
-                            out.push((b.clone(), v));
+                if let Value::EnumVariant(_ty, variant, fields) = value
+                    && variant == name
+                {
+                    // Bind each named destructure from the variant's
+                    // rich fields (if any). Wildcards (`_`) and
+                    // missing fields bind to `none`.
+                    let mut out = Vec::with_capacity(bindings.len());
+                    for b in bindings {
+                        if b == "_" {
+                            continue;
                         }
-                        return Some(out);
+                        let v = fields
+                            .as_ref()
+                            .and_then(|m| m.get(b).cloned())
+                            .unwrap_or(Value::None);
+                        out.push((b.clone(), v));
                     }
+                    return Some(out);
                 }
                 None
             }
@@ -706,7 +823,20 @@ impl Interpreter {
                             runtime_error(format!("Agent has no state field `{field}`"))
                         })
                     } else {
-                        Err(runtime_error(format!("`self.{field}` used outside an agent")))
+                        // Common cause: invoking `self.{field}` from a
+                        // closure that runs outside any agent context —
+                        // e.g. an `Http.serve(...)` handler. Those run
+                        // on the event loop with no `current_agent`,
+                        // so `self.` cannot resolve. Route through
+                        // `Agent.send(MyAgent, data, event: "...")` to
+                        // hand off to a running agent instead.
+                        Err(runtime_error(format!(
+                            "`self.{field}` used outside an agent context — \
+                             Http.serve handlers and other top-level closures \
+                             cannot access agent state. Use \
+                             `Agent.send(MyAgent, data, event: \"http_request\")` \
+                             to route into a running agent."
+                        )))
                     }
                 }
 
@@ -715,13 +845,15 @@ impl Interpreter {
                     // a bare identifier naming a registered type, produce
                     // an EnumVariant directly (don't evaluate `obj`, which
                     // might not be bound as a Value).
-                    if let Expr::Ident(name) = obj.as_ref() {
-                        if self.agents.get(name).is_none()
-                            && self.globals.get(name).map_or(true, |v| matches!(v, Value::Namespace(_)))
-                            && is_pascal_case(name)
-                        {
-                            return Ok(Value::EnumVariant(name.clone(), field.clone(), None));
-                        }
+                    if let Expr::Ident(name) = obj.as_ref()
+                        && !self.agents.contains_key(name)
+                        && self
+                            .globals
+                            .get(name)
+                            .is_none_or(|v| matches!(v, Value::Namespace(_)))
+                        && is_pascal_case(name)
+                    {
+                        return Ok(Value::EnumVariant(name.clone(), field.clone(), None));
                     }
                     let obj_v = self.eval_expr(obj, env).await?;
                     match &obj_v {
@@ -733,17 +865,22 @@ impl Interpreter {
                                 return Ok(v.clone());
                             }
                             // Fall through to property-style method call.
-                            let out = self.call_method_on_value(obj_v.clone(), field, vec![], env).await;
+                            let out = self
+                                .call_method_on_value(obj_v.clone(), field, vec![], env)
+                                .await;
                             out.map_err(|_| runtime_error(format!("Map has no field `{field}`")))
                         }
                         _ => {
                             // Zero-arg method fallback for properties
                             // like `.count`, `.length`, `.is_empty`.
-                            self.call_method_on_value(obj_v.clone(), field, vec![], env).await
-                                .map_err(|_| runtime_error(format!(
-                                    "Cannot access `.{field}` on {}",
-                                    obj_v.type_name()
-                                )))
+                            self.call_method_on_value(obj_v.clone(), field, vec![], env)
+                                .await
+                                .map_err(|_| {
+                                    runtime_error(format!(
+                                        "Cannot access `.{field}` on {}",
+                                        obj_v.type_name()
+                                    ))
+                                })
                         }
                     }
                 }
@@ -813,7 +950,8 @@ impl Interpreter {
                             Value::Integer(n) => Ok(Value::Integer(-n)),
                             Value::Float(f) => Ok(Value::Float(-f)),
                             other => Err(runtime_error(format!(
-                                "Cannot negate {}", other.type_name()
+                                "Cannot negate {}",
+                                other.type_name()
                             ))),
                         },
                         UnOp::Not => Ok(Value::Bool(!v.is_truthy())),
@@ -832,7 +970,10 @@ impl Interpreter {
                 Expr::Pipeline(left, right) => {
                     // `x |> f` ≡ `f(x)` (single positional argument)
                     let l = self.eval_expr(left, env).await?;
-                    let args = vec![CallArgValue { name: None, value: l }];
+                    let args = vec![CallArgValue {
+                        name: None,
+                        value: l,
+                    }];
                     self.call_value(right, args, env).await
                 }
 
@@ -841,20 +982,27 @@ impl Interpreter {
                     self.call_value(callee, arg_values, env).await
                 }
 
-                Expr::MethodCall { object, method, args } => {
+                Expr::MethodCall {
+                    object,
+                    method,
+                    args,
+                } => {
                     let arg_values = self.eval_args(args, env).await?;
                     // If object is a namespace, dispatch to its method.
                     let obj_val = self.eval_expr(object, env).await?;
                     if let Value::Namespace(ns) = &obj_val {
                         let ns_name = ns.clone();
-                        return self.call_namespace_method(&ns_name, method, arg_values).await;
+                        return self
+                            .call_namespace_method(&ns_name, method, arg_values)
+                            .await;
                     }
                     // AgentRef.task(...) — cross-agent task call
                     if let Value::AgentRef(name) = &obj_val {
                         return self.call_agent_task(name, method, arg_values).await;
                     }
                     // Otherwise: method on a value (e.g., list.map).
-                    self.call_method_on_value(obj_val, method, arg_values, env).await
+                    self.call_method_on_value(obj_val, method, arg_values, env)
+                        .await
                 }
 
                 Expr::Cast { expr: inner, ty: _ } => {
@@ -863,7 +1011,11 @@ impl Interpreter {
                     self.eval_expr(inner, env).await
                 }
 
-                Expr::IfExpr { cond, then_body, else_body } => {
+                Expr::IfExpr {
+                    cond,
+                    then_body,
+                    else_body,
+                } => {
                     let c = self.eval_expr(cond, env).await?;
                     if c.is_truthy() {
                         match self.exec_block(then_body, env).await? {
@@ -886,11 +1038,11 @@ impl Interpreter {
                             for (k, v) in bindings {
                                 env.define(k, v);
                             }
-                            if let Some(g) = &arm.guard {
-                                if !self.eval_expr(g, env).await?.is_truthy() {
-                                    env.pop_scope();
-                                    continue;
-                                }
+                            if let Some(g) = &arm.guard
+                                && !self.eval_expr(g, env).await?.is_truthy()
+                            {
+                                env.pop_scope();
+                                continue;
                             }
                             let result = match self.exec_block(&arm.body, env).await? {
                                 StmtOutcome::Value(v) | StmtOutcome::Return(v) => v,
@@ -907,11 +1059,17 @@ impl Interpreter {
 
                 Expr::Duration { value, unit } => {
                     let v = self.eval_expr(value, env).await?;
-                    let n = v.as_int().ok_or_else(|| runtime_error("duration value must be int"))?;
+                    let n = v
+                        .as_int()
+                        .ok_or_else(|| runtime_error("duration value must be int"))?;
                     Ok(Value::Duration(Value::duration_seconds(n, *unit)))
                 }
 
-                Expr::EnumVariant { ty, variant, fields } => {
+                Expr::EnumVariant {
+                    ty,
+                    variant,
+                    fields,
+                } => {
                     if fields.is_empty() {
                         Ok(Value::EnumVariant(ty.clone(), variant.clone(), None))
                     } else {
@@ -919,7 +1077,11 @@ impl Interpreter {
                         for (k, v) in fields {
                             evaluated.insert(k.clone(), self.eval_expr(v, env).await?);
                         }
-                        Ok(Value::EnumVariant(ty.clone(), variant.clone(), Some(evaluated)))
+                        Ok(Value::EnumVariant(
+                            ty.clone(),
+                            variant.clone(),
+                            Some(evaluated),
+                        ))
                     }
                 }
             }
@@ -943,11 +1105,18 @@ impl Interpreter {
         Err(runtime_error(format!("Undefined: `{name}`")))
     }
 
-    async fn eval_args(&mut self, args: &[CallArg], env: &mut Environment) -> Result<Vec<CallArgValue>> {
+    async fn eval_args(
+        &mut self,
+        args: &[CallArg],
+        env: &mut Environment,
+    ) -> Result<Vec<CallArgValue>> {
         let mut out = Vec::with_capacity(args.len());
         for a in args {
             let v = self.eval_expr(&a.value, env).await?;
-            out.push(CallArgValue { name: a.name.clone(), value: v });
+            out.push(CallArgValue {
+                name: a.name.clone(),
+                value: v,
+            });
         }
         Ok(out)
     }
@@ -990,7 +1159,12 @@ impl Interpreter {
         }
     }
 
-    async fn call_task(&mut self, _name: &str, decl: &TaskDecl, args: Vec<CallArgValue>) -> Result<Value> {
+    async fn call_task(
+        &mut self,
+        _name: &str,
+        decl: &TaskDecl,
+        args: Vec<CallArgValue>,
+    ) -> Result<Value> {
         let mut env = Environment::new();
         // Bind params by position (named args not wired for user tasks yet).
         for (i, p) in decl.params.iter().enumerate() {
@@ -1020,9 +1194,10 @@ impl Interpreter {
         }
 
         let f = {
-            let ns = self.namespaces.get(ns_name).ok_or_else(|| {
-                runtime_error(format!("Unknown namespace: `{ns_name}`"))
-            })?;
+            let ns = self
+                .namespaces
+                .get(ns_name)
+                .ok_or_else(|| runtime_error(format!("Unknown namespace: `{ns_name}`")))?;
             ns.methods.get(method).cloned().ok_or_else(|| {
                 runtime_error(format!("Namespace `{ns_name}` has no method `{method}`"))
             })?
@@ -1035,17 +1210,20 @@ impl Interpreter {
     /// If @tools is specified, only those namespaces are allowed.
     fn is_namespace_allowed(&self, agent: &AgentDef, ns_name: &str) -> bool {
         for attr in &agent.attributes {
-            if attr.name == "tools" {
-                if let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body {
-                    let allowed_namespaces: Vec<String> = items.iter().filter_map(|e| {
+            if attr.name == "tools"
+                && let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body
+            {
+                let allowed_namespaces: Vec<String> = items
+                    .iter()
+                    .filter_map(|e| {
                         if let Expr::Ident(name) = e {
                             Some(name.clone())
                         } else {
                             None
                         }
-                    }).collect();
-                    return allowed_namespaces.contains(&ns_name.to_string());
-                }
+                    })
+                    .collect();
+                return allowed_namespaces.contains(&ns_name.to_string());
             }
         }
         // No @tools attribute means all namespaces are allowed
@@ -1054,48 +1232,51 @@ impl Interpreter {
 
     /// Extract @limits from an agent's attributes.
     /// Returns a map with timeout (seconds as f64), max_tokens (i64), max_cost (f64).
-    pub fn get_agent_limits(&self, agent: &AgentDef) -> Option<(Option<f64>, Option<i64>, Option<f64>)> {
+    pub fn get_agent_limits(
+        &self,
+        agent: &AgentDef,
+    ) -> Option<(Option<f64>, Option<i64>, Option<f64>)> {
         for attr in &agent.attributes {
-            if attr.name == "limits" {
-                if let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body {
-                    let mut timeout = None;
-                    let mut max_tokens = None;
-                    let mut max_cost = None;
+            if attr.name == "limits"
+                && let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body
+            {
+                let mut timeout = None;
+                let mut max_tokens = None;
+                let mut max_cost = None;
 
-                    for (key, expr) in fields {
-                        match key.as_str() {
-                            "timeout" => {
-                                if let Expr::Duration { value, unit } = expr {
-                                    if let Expr::Integer(n) = value.as_ref() {
-                                        let secs = match unit {
-                                            DurationUnit::Seconds => *n as f64,
-                                            DurationUnit::Minutes => (*n * 60) as f64,
-                                            DurationUnit::Hours => (*n * 3600) as f64,
-                                            _ => *n as f64,
-                                        };
-                                        timeout = Some(secs);
-                                    }
-                                }
+                for (key, expr) in fields {
+                    match key.as_str() {
+                        "timeout" => {
+                            if let Expr::Duration { value, unit } = expr
+                                && let Expr::Integer(n) = value.as_ref()
+                            {
+                                let secs = match unit {
+                                    DurationUnit::Seconds => *n as f64,
+                                    DurationUnit::Minutes => (*n * 60) as f64,
+                                    DurationUnit::Hours => (*n * 3600) as f64,
+                                    _ => *n as f64,
+                                };
+                                timeout = Some(secs);
                             }
-                            "max_tokens" => {
-                                if let Expr::Integer(n) = expr {
-                                    max_tokens = Some(*n);
-                                }
-                            }
-                            "max_cost" => {
-                                if let Expr::Float(f) = expr {
-                                    max_cost = Some(*f);
-                                } else if let Expr::Integer(n) = expr {
-                                    max_cost = Some(*n as f64);
-                                }
-                            }
-                            _ => {}
                         }
+                        "max_tokens" => {
+                            if let Expr::Integer(n) = expr {
+                                max_tokens = Some(*n);
+                            }
+                        }
+                        "max_cost" => {
+                            if let Expr::Float(f) = expr {
+                                max_cost = Some(*f);
+                            } else if let Expr::Integer(n) = expr {
+                                max_cost = Some(*n as f64);
+                            }
+                        }
+                        _ => {}
                     }
+                }
 
-                    if timeout.is_some() || max_tokens.is_some() || max_cost.is_some() {
-                        return Some((timeout, max_tokens, max_cost));
-                    }
+                if timeout.is_some() || max_tokens.is_some() || max_cost.is_some() {
+                    return Some((timeout, max_tokens, max_cost));
                 }
             }
         }
@@ -1111,32 +1292,52 @@ impl Interpreter {
     ) -> Result<Value> {
         // Minimal built-in methods for v0.1. Extend as examples need.
         match (&obj, method) {
-            (Value::String(s), "length" | "len" | "count") => Ok(Value::Integer(s.chars().count() as i64)),
+            (Value::String(s), "length" | "len" | "count") => {
+                Ok(Value::Integer(s.chars().count() as i64))
+            }
             (Value::String(s), "is_empty") => Ok(Value::Bool(s.is_empty())),
             (Value::String(s), "to_str") => Ok(Value::String(s.clone())),
             (Value::String(s), "upper") => Ok(Value::String(s.to_uppercase())),
             (Value::String(s), "lower") => Ok(Value::String(s.to_lowercase())),
             (Value::String(s), "trim" | "strip") => Ok(Value::String(s.trim().to_string())),
             (Value::String(s), "contains") => {
-                let needle = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let needle = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
                 Ok(Value::Bool(s.contains(&needle)))
             }
             (Value::String(s), "starts_with") => {
-                let prefix = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let prefix = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
                 Ok(Value::Bool(s.starts_with(prefix.as_str())))
             }
             (Value::String(s), "ends_with") => {
-                let suffix = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let suffix = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
                 Ok(Value::Bool(s.ends_with(suffix.as_str())))
             }
             (Value::String(s), "replace") => {
-                let from = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let from = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
                 let to = args.get(1).map(|a| a.value.as_string()).unwrap_or_default();
                 Ok(Value::String(s.replace(from.as_str(), &to)))
             }
             (Value::String(s), "split") => {
-                let sep = args.first().map(|a| a.value.as_string()).unwrap_or_else(|| " ".to_string());
-                let parts: Vec<Value> = s.split(sep.as_str()).map(|p| Value::String(p.to_string())).collect();
+                let sep = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_else(|| " ".to_string());
+                let parts: Vec<Value> = s
+                    .split(sep.as_str())
+                    .map(|p| Value::String(p.to_string()))
+                    .collect();
                 Ok(Value::List(parts))
             }
             (Value::List(items), "count" | "len") => Ok(Value::Integer(items.len() as i64)),
@@ -1148,31 +1349,51 @@ impl Interpreter {
             (Value::List(items), "first") => Ok(items.first().cloned().unwrap_or(Value::None)),
             (Value::List(items), "last") => Ok(items.last().cloned().unwrap_or(Value::None)),
             (Value::List(items), "map") => {
-                let closure = args.first().map(|a| a.value.clone()).ok_or_else(|| {
-                    runtime_error("map expects a function argument")
-                })?;
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("map expects a function argument"))?;
                 let (params, body) = match closure {
                     Value::Closure(p, b) => (p, b),
                     _ => return Err(runtime_error("map argument must be a function")),
                 };
                 let mut out = Vec::with_capacity(items.len());
                 for item in items.clone() {
-                    let res = self.call_closure(&params, &body, vec![CallArgValue { name: None, value: item }]).await?;
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: item,
+                            }],
+                        )
+                        .await?;
                     out.push(res);
                 }
                 Ok(Value::List(out))
             }
             (Value::List(items), "filter") => {
-                let closure = args.first().map(|a| a.value.clone()).ok_or_else(|| {
-                    runtime_error("filter expects a function argument")
-                })?;
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("filter expects a function argument"))?;
                 let (params, body) = match closure {
                     Value::Closure(p, b) => (p, b),
                     _ => return Err(runtime_error("filter argument must be a function")),
                 };
                 let mut out = Vec::new();
                 for item in items.clone() {
-                    let res = self.call_closure(&params, &body, vec![CallArgValue { name: None, value: item.clone() }]).await?;
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: item.clone(),
+                            }],
+                        )
+                        .await?;
                     if res.is_truthy() {
                         out.push(item);
                     }
@@ -1189,21 +1410,31 @@ impl Interpreter {
             (Value::Map(m), "keys") => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort();
-                Ok(Value::List(keys.into_iter().map(|k| Value::String(k.clone())).collect()))
+                Ok(Value::List(
+                    keys.into_iter().map(|k| Value::String(k.clone())).collect(),
+                ))
             }
             (Value::Map(m), "values") => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort();
-                Ok(Value::List(keys.into_iter().map(|k| m[k].clone()).collect()))
+                Ok(Value::List(
+                    keys.into_iter().map(|k| m[k].clone()).collect(),
+                ))
             }
             (Value::Map(m), "get") => {
-                let key = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let key = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
                 Ok(m.get(&key).cloned().unwrap_or(Value::None))
             }
             (Value::Map(m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
             (Value::Map(m), "is_empty") => Ok(Value::Bool(m.is_empty())),
             (Value::Map(m), "contains" | "has") => {
-                let key = args.first().map(|a| a.value.as_string()).unwrap_or_default();
+                let key = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
                 Ok(Value::Bool(m.contains_key(&key)))
             }
             (Value::Integer(n), "to_str") => Ok(Value::String(n.to_string())),
@@ -1217,13 +1448,25 @@ impl Interpreter {
         }
     }
 
-    async fn call_agent_task(&mut self, agent_name: &str, task_name: &str, args: Vec<CallArgValue>) -> Result<Value> {
-        let def = self.agents.get(agent_name).cloned().ok_or_else(|| {
-            runtime_error(format!("Unknown agent: `{agent_name}`"))
-        })?;
-        let task = def.tasks.iter().find(|t| t.name == task_name).cloned().ok_or_else(|| {
-            runtime_error(format!("Agent `{agent_name}` has no task `{task_name}`"))
-        })?;
+    async fn call_agent_task(
+        &mut self,
+        agent_name: &str,
+        task_name: &str,
+        args: Vec<CallArgValue>,
+    ) -> Result<Value> {
+        let def = self
+            .agents
+            .get(agent_name)
+            .cloned()
+            .ok_or_else(|| runtime_error(format!("Unknown agent: `{agent_name}`")))?;
+        let task = def
+            .tasks
+            .iter()
+            .find(|t| t.name == task_name)
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(format!("Agent `{agent_name}` has no task `{task_name}`"))
+            })?;
         self.call_task(task_name, &task, args).await
     }
 }
@@ -1234,27 +1477,42 @@ impl Interpreter {
 
 impl Interpreter {
     pub async fn start_agent(&mut self, agent_name: &str) -> Result<()> {
-        let def = self.agents.get(agent_name).cloned().ok_or_else(|| {
-            runtime_error(format!("Unknown agent: `{agent_name}`"))
-        })?;
+        let def = self
+            .agents
+            .get(agent_name)
+            .cloned()
+            .ok_or_else(|| runtime_error(format!("Unknown agent: `{agent_name}`")))?;
         let mut state = HashMap::new();
         for f in &def.state_fields {
             let mut tmp_env = Environment::new();
-            state.insert(f.name.clone(), self.eval_expr(&f.default, &mut tmp_env).await?);
+            state.insert(
+                f.name.clone(),
+                self.eval_expr(&f.default, &mut tmp_env).await?,
+            );
         }
-        let inst = Arc::new(Mutex::new(AgentInstance { def: def.clone(), state }));
-        self.live_agents.lock().unwrap().insert(agent_name.to_string(), inst.clone());
+        let inst = Arc::new(Mutex::new(AgentInstance {
+            def: def.clone(),
+            state,
+        }));
+        self.live_agents
+            .lock()
+            .unwrap()
+            .insert(agent_name.to_string(), inst.clone());
 
         // Run @on_start block, if any.
-        let on_start = def.attributes.iter().find(|a| a.name == "on_start").cloned();
-        if let Some(attr) = on_start {
-            if let AttributeBody::Block(body) = attr.body {
-                let prev = self.current_agent.take();
-                self.current_agent = Some(inst.clone());
-                let mut env = Environment::new();
-                self.exec_block(&body, &mut env).await?;
-                self.current_agent = prev;
-            }
+        let on_start = def
+            .attributes
+            .iter()
+            .find(|a| a.name == "on_start")
+            .cloned();
+        if let Some(attr) = on_start
+            && let AttributeBody::Block(body) = attr.body
+        {
+            let prev = self.current_agent.take();
+            self.current_agent = Some(inst.clone());
+            let mut env = Environment::new();
+            self.exec_block(&body, &mut env).await?;
+            self.current_agent = prev;
         }
         Ok(())
     }
@@ -1262,36 +1520,53 @@ impl Interpreter {
     pub async fn stop_agent(&mut self, agent_name: &str) -> Result<()> {
         // Run @on_stop block before removing from live_agents.
         // Clone the def out before awaiting to avoid holding the lock across an await.
-        let def = self.live_agents.lock().unwrap()
+        let def = self
+            .live_agents
+            .lock()
+            .unwrap()
             .get(agent_name)
             .map(|inst| inst.lock().unwrap().def.clone());
         if let Some(def) = def {
             let on_stop = def.attributes.iter().find(|a| a.name == "on_stop").cloned();
-            if let Some(attr) = on_stop {
-                if let AttributeBody::Block(body) = attr.body {
-                    let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
-                    let prev = self.current_agent.take();
-                    self.current_agent = inst;
-                    let mut env = Environment::new();
-                    self.exec_block(&body, &mut env).await?;
-                    self.current_agent = prev;
-                }
+            if let Some(attr) = on_stop
+                && let AttributeBody::Block(body) = attr.body
+            {
+                let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
+                let prev = self.current_agent.take();
+                self.current_agent = inst;
+                let mut env = Environment::new();
+                self.exec_block(&body, &mut env).await?;
+                self.current_agent = prev;
             }
         }
         self.live_agents.lock().unwrap().remove(agent_name);
         Ok(())
     }
 
-    pub async fn run_agent_task(&mut self, agent_name: &str, task_name: &str, args: Vec<CallArgValue>) -> Result<Value> {
+    pub async fn run_agent_task(
+        &mut self,
+        agent_name: &str,
+        task_name: &str,
+        args: Vec<CallArgValue>,
+    ) -> Result<Value> {
         let inst = self.live_agents.lock().unwrap().get(agent_name).cloned();
         let inst = match inst {
             Some(i) => i,
-            None => return Err(runtime_error(format!("Agent `{agent_name}` is not running"))),
+            None => {
+                return Err(runtime_error(format!(
+                    "Agent `{agent_name}` is not running"
+                )));
+            }
         };
         let def = inst.lock().unwrap().def.clone();
-        let task = def.tasks.iter().find(|t| t.name == task_name).cloned().ok_or_else(|| {
-            runtime_error(format!("Agent `{agent_name}` has no task `{task_name}`"))
-        })?;
+        let task = def
+            .tasks
+            .iter()
+            .find(|t| t.name == task_name)
+            .cloned()
+            .ok_or_else(|| {
+                runtime_error(format!("Agent `{agent_name}` has no task `{task_name}`"))
+            })?;
         let prev = self.current_agent.take();
         self.current_agent = Some(inst);
         let result = self.call_task(task_name, &task, args).await;
@@ -1311,7 +1586,9 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Sub, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a - b)),
         (Mul, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a * b)),
         (Div, Value::Integer(a), Value::Integer(b)) => {
-            if *b == 0 { return Err(runtime_error("Division by zero")); }
+            if *b == 0 {
+                return Err(runtime_error("Division by zero"));
+            }
             Ok(Value::Integer(a / b))
         }
         (Mod, Value::Integer(a), Value::Integer(b)) => Ok(Value::Integer(a % b)),
@@ -1356,13 +1633,18 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Or, a, b) => Ok(Value::Bool(a.is_truthy() || b.is_truthy())),
         _ => Err(runtime_error(format!(
             "Cannot apply `{:?}` to {} and {}",
-            op, l.type_name(), r.type_name()
+            op,
+            l.type_name(),
+            r.type_name()
         ))),
     }
 }
 
 fn is_pascal_case(s: &str) -> bool {
-    s.chars().next().map(|c| c.is_ascii_uppercase()).unwrap_or(false)
+    s.chars()
+        .next()
+        .map(|c| c.is_ascii_uppercase())
+        .unwrap_or(false)
 }
 
 fn chrono_now_iso() -> String {

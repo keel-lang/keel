@@ -21,10 +21,12 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 |---|---|---|
 | `Ai` | 🟡 | LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳ |
 | `Io` | ✅ | Human interaction: `ask`, `confirm`, `notify`, `show` |
-| `Http` | ✅ | HTTP client: `get`, `post`, `request` |
+| `Http` | ✅ | HTTP client + server: `get`, `post`, `request`, `serve` |
 | `Email` | 🟡 | IMAP/SMTP: `fetch`, `send`, `archive` |
 | `File` | ✅ | Filesystem: `read`, `write`, `exists`, `list` |
 | `Json` | ✅ | JSON: `parse`, `stringify` |
+| `Cache` | ✅ | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |
+| `Str` | ✅ | Regex & string tools: `match`, `extract`, `truncate`, `pad` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
 | `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
 | `Memory` | ⏳ | Persistent semantic memory: `remember`, `recall`, `forget` (stubbed — no vector store yet) |

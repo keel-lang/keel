@@ -97,6 +97,55 @@ response = Http.request(
 
 **Returns:** `HttpResponse?` — see [Types](./types.md) for the shape.
 
+### `Http.serve` — inbound HTTP (webhooks)
+
+Start an HTTP listener on a port. Each incoming request invokes the handler closure:
+
+```keel
+Http.serve(8080, (request) => {
+  method = request["method"]   # "GET", "POST", …
+  path   = request["path"]     # "/webhook/events"
+  body   = request["body"]     # raw body string
+
+  if method == "POST" {
+    Io.show("Received: {body}")
+    { status: 200, body: "OK" }
+  } else {
+    { status: 405, body: "Method Not Allowed" }
+  }
+})
+```
+
+- `request` — map with `method`, `path`, `body` (all strings)
+- Return a map with `status` (integer, 100–999) and `body` (string)
+- The server runs in a background task; `Http.serve` returns immediately
+- The event loop stays alive as long as at least one server is active, even with no running agents
+
+> **Handlers run outside any agent context.** An `Http.serve` handler
+> is a top-level closure — it fires on the event loop with no
+> `current_agent` set. That has two consequences:
+>
+> - **`self.<field>` raises a runtime error** inside a handler. Agent
+>   state is only reachable from within an agent's tasks / `on`
+>   handlers / attribute blocks.
+> - **`Ai.*` calls are not agent-aware.** No `@role`, no `@rules`, and
+>   no `@model` injection — calls fall back to the default model
+>   (`KEEL_OLLAMA_MODEL`) with a bare system prompt. Results are still
+>   returned, just without the agent's identity layered in.
+>
+> To use agent state or an agent's `@role` / `@model` from a handler,
+> route the request into a live agent:
+>
+> ```keel
+> Http.serve(8080, (request) => {
+>   Agent.send(Triage, request, event: "http_request")
+>   { status: 202, body: "accepted" }
+> })
+> ```
+>
+> The matching `on http_request(req) { ... }` handler on `Triage`
+> runs *with* `self.`, `@role`, `@rules`, and `@model` all wired up.
+
 ## `Db` <span class="badge badge-soon">Coming soon</span>
 
 ```keel

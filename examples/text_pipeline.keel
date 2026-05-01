@@ -1,0 +1,31 @@
+agent TextPipeline {
+    @on_start {
+        text = "Invoice #1042 — Total: $3,750.00 due 2026-05-15"
+
+        # Regex match
+        if Str.match(text, "\\d{4}-\\d{2}-\\d{2}") {
+            Io.show("Found a date")
+        }
+
+        # Extract first capture group
+        amount = Str.extract(text, "\\$(\\S+)")
+        Io.show("Amount: {amount}")
+
+        invoice = Str.extract(text, "#(\\d+)")
+        Io.show("Invoice: {invoice}")
+
+        # Truncate long strings
+        short = Str.truncate(text, 20)
+        Io.show("Short: {short}")
+
+        # Pad for alignment
+        label1 = Str.pad("ID", 10)
+        label2 = Str.pad("Amount", 10)
+        Io.show("{label1}{label2}")
+
+        # Zero-padded invoice number
+        padded_id = Str.pad(invoice, 6, char: "0")
+        Io.show("Padded ID: {padded_id}")
+    }
+}
+run(TextPipeline)

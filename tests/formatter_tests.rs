@@ -19,7 +19,10 @@ fn format_source(src: &str) -> String {
 fn assert_idempotent(src: &str) {
     let once = format_source(src);
     let twice = format_source(&once);
-    assert_eq!(once, twice, "formatter not idempotent.\n--- once ---\n{once}\n--- twice ---\n{twice}");
+    assert_eq!(
+        once, twice,
+        "formatter not idempotent.\n--- once ---\n{once}\n--- twice ---\n{twice}"
+    );
 }
 
 #[test]
@@ -42,12 +45,15 @@ fn idempotent_on_every_example() {
     for entry in std::fs::read_dir(&examples_dir).expect("read examples dir") {
         let entry = entry.expect("dir entry");
         let path = entry.path();
-        if path.extension().map(|e| e != "keel").unwrap_or(true) { continue; }
+        if path.extension().map(|e| e != "keel").unwrap_or(true) {
+            continue;
+        }
         let src = std::fs::read_to_string(&path).expect("read keel file");
         let once = format_source(&src);
         let twice = format_source(&once);
         assert_eq!(
-            once, twice,
+            once,
+            twice,
             "formatter not idempotent on {}\n--- once ---\n{once}\n--- twice ---\n{twice}",
             path.display()
         );
@@ -58,7 +64,8 @@ fn idempotent_on_every_example() {
 
 #[test]
 fn idempotent_rich_enum_construction() {
-    assert_idempotent(r#"
+    assert_idempotent(
+        r#"
 type Action =
   | reply { to: str, tone: str }
   | archive
@@ -66,12 +73,14 @@ type Action =
 task t() {
   a = Action.reply { to: "x", tone: "y" }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn idempotent_when_arms() {
-    assert_idempotent(r#"
+    assert_idempotent(
+        r#"
 type U = low | medium | high
 
 task t(u: U) -> str {
@@ -80,12 +89,14 @@ task t(u: U) -> str {
     medium, high => "hi"
   }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn idempotent_nested_blocks() {
-    assert_idempotent(r#"
+    assert_idempotent(
+        r#"
 agent Bot {
   @role "..."
 
@@ -102,5 +113,6 @@ agent Bot {
 }
 
 run(Bot)
-"#);
+"#,
+    );
 }

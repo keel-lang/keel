@@ -4,6 +4,53 @@
 
 ---
 
+## v0.1.8 — 2026-04-30
+### Reactive Agents & Text Processing
+
+HTTP webhook handling, in-memory caching, regex & string tools, LSP go-to-definition and rename.
+
+#### `Cache` namespace
+
+Process-scoped in-memory cache with optional TTL. Useful for deduplication, rate-limit tokens, and short-lived computed results across agents.
+
+```keel
+Cache.set("key", value, ttl: 5.minutes)
+v = Cache.get("key")    # value or none
+Cache.delete("key")
+Cache.clear()
+```
+
+#### `Str` namespace
+
+Regex matching and string manipulation:
+
+```keel
+Str.match(text, "\\d+")                 # bool
+Str.extract(text, "(\\d+)")             # str? — first capture group
+Str.truncate("hello world", 5)          # "hello…"
+Str.pad("42", 6, char: "0")             # "000042"
+```
+
+#### `Http.serve` — webhook listener
+
+React to inbound HTTP requests without polling:
+
+```keel
+Http.serve(8080, (req) => {
+  Io.show("Got {req["method"]} {req["path"]}")
+  { status: 200, body: "OK" }
+})
+```
+
+The handler receives `{method, path, body}` and returns `{status, body}`. The event loop keeps running as long as at least one server is active.
+
+#### LSP go-to-definition & rename
+
+- **Go-to-definition** — jump to `task`, `agent`, and `type` declarations from any usage
+- **Rename** — rename a user-defined symbol and all its usages in the open file (prelude names are blocked)
+
+---
+
 ## v0.1.7 — 2026-04-30
 ### Structured Concurrency & Agent Constraints
 

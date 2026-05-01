@@ -36,9 +36,7 @@ impl EmailConnection {
         }
 
         if imap_host.is_empty() || user.is_empty() || pass.is_empty() {
-            return Err(
-                "Email connection requires host, user, and pass fields".to_string()
-            );
+            return Err("Email connection requires host, user, and pass fields".to_string());
         }
 
         Ok(EmailConnection {
@@ -56,18 +54,16 @@ pub fn fetch_emails(conn: &EmailConnection) -> Result<Vec<Value>, String> {
         .build()
         .map_err(|e| format!("TLS error: {e}"))?;
 
-    let client = imap::connect(
-        (&conn.imap_host as &str, 993),
-        &conn.imap_host,
-        &tls,
-    )
-    .map_err(|e| format!("IMAP connect failed ({}): {}", conn.imap_host, e))?;
+    let client = imap::connect((&conn.imap_host as &str, 993), &conn.imap_host, &tls)
+        .map_err(|e| format!("IMAP connect failed ({}): {}", conn.imap_host, e))?;
 
     let mut session = client
         .login(&conn.user, &conn.pass)
         .map_err(|e| format!("IMAP login failed: {}", e.0))?;
 
-    session.select("INBOX").map_err(|e| format!("IMAP select INBOX: {e}"))?;
+    session
+        .select("INBOX")
+        .map_err(|e| format!("IMAP select INBOX: {e}"))?;
 
     let unseen = session
         .uid_search("UNSEEN")
@@ -85,7 +81,11 @@ pub fn fetch_emails(conn: &EmailConnection) -> Result<Vec<Value>, String> {
     uid_list.sort_unstable();
     uid_list.reverse();
     uid_list.truncate(20);
-    let fetch_range = uid_list.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(",");
+    let fetch_range = uid_list
+        .iter()
+        .map(|id| id.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
 
     let messages = session
         .uid_fetch(&fetch_range, "(UID RFC822)")
@@ -118,18 +118,16 @@ pub fn archive_email(conn: &EmailConnection, uid: u32, folder: &str) -> Result<(
         .build()
         .map_err(|e| format!("TLS error: {e}"))?;
 
-    let client = imap::connect(
-        (&conn.imap_host as &str, 993),
-        &conn.imap_host,
-        &tls,
-    )
-    .map_err(|e| format!("IMAP connect failed ({}): {}", conn.imap_host, e))?;
+    let client = imap::connect((&conn.imap_host as &str, 993), &conn.imap_host, &tls)
+        .map_err(|e| format!("IMAP connect failed ({}): {}", conn.imap_host, e))?;
 
     let mut session = client
         .login(&conn.user, &conn.pass)
         .map_err(|e| format!("IMAP login failed: {}", e.0))?;
 
-    session.select("INBOX").map_err(|e| format!("IMAP select INBOX: {e}"))?;
+    session
+        .select("INBOX")
+        .map_err(|e| format!("IMAP select INBOX: {e}"))?;
 
     let uid_str = uid.to_string();
     if session.uid_mv(&uid_str, folder).is_err() {
@@ -164,11 +162,15 @@ pub fn send_email(
     subject: &str,
     body: &str,
 ) -> Result<(), String> {
-    use lettre::{Message, SmtpTransport, Transport};
     use lettre::transport::smtp::authentication::Credentials;
+    use lettre::{Message, SmtpTransport, Transport};
 
     let email = Message::builder()
-        .from(conn.user.parse().map_err(|e| format!("Invalid from address: {e}"))?)
+        .from(
+            conn.user
+                .parse()
+                .map_err(|e| format!("Invalid from address: {e}"))?,
+        )
         .to(to.parse().map_err(|e| format!("Invalid to address: {e}"))?)
         .subject(subject)
         .body(body.to_string())
@@ -181,7 +183,9 @@ pub fn send_email(
         .credentials(creds)
         .build();
 
-    mailer.send(&email).map_err(|e| format!("SMTP send failed: {e}"))?;
+    mailer
+        .send(&email)
+        .map_err(|e| format!("SMTP send failed: {e}"))?;
 
     println!(
         "  {} Email sent to {}",

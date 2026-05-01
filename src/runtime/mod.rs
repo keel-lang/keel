@@ -2,7 +2,7 @@
 //!
 //! Every Keel program starts with these namespaces in scope:
 //!   `Ai`, `Io`, `Schedule`, `Email`, `Http`, `Memory`, `Async`,
-//!   `Control`, `Env`, `Log`, `Agent`.
+//!   `Control`, `Env`, `Log`, `Agent`, `Cache`, `Str`, `File`, `Json`.
 //!
 //! Top-level convenience bindings (`run`, `stop`) wrap `Agent.*`.
 
@@ -11,32 +11,46 @@ pub mod human;
 pub mod llm;
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
-use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use crate::interpreter::{
-    CallArgValue, Interpreter, Namespace,
-};
 use crate::interpreter::value::Value;
+use crate::interpreter::{CallArgValue, Interpreter, Namespace};
 
 /// Common "symbol" identifiers used as hints in stdlib argument lists
 /// (`unit: sentences`, `format: bullets`, `backoff: exponential`, …).
 /// v0.1 binds them as plain strings so user programs can write them as
 /// bare identifiers without special parser treatment.
 const SYMBOL_IDENTS: &[&str] = &[
-    "sentence", "sentences", "line", "lines", "word", "words",
-    "paragraph", "paragraphs",
-    "bullets", "prose", "json",
-    "exponential", "linear", "fixed",
-    "google", "bing", "arxiv",
-    "text", "html", "markdown",
+    "sentence",
+    "sentences",
+    "line",
+    "lines",
+    "word",
+    "words",
+    "paragraph",
+    "paragraphs",
+    "bullets",
+    "prose",
+    "json",
+    "exponential",
+    "linear",
+    "fixed",
+    "google",
+    "bing",
+    "arxiv",
+    "text",
+    "html",
+    "markdown",
 ];
 
 pub fn install_prelude(interp: &mut Interpreter) {
     for s in SYMBOL_IDENTS {
-        interp.globals.insert((*s).to_string(), Value::String((*s).to_string()));
+        interp
+            .globals
+            .insert((*s).to_string(), Value::String((*s).to_string()));
     }
     interp.register_namespace(io_namespace());
     interp.register_namespace(schedule_namespace());
@@ -54,6 +68,8 @@ pub fn install_prelude(interp: &mut Interpreter) {
     interp.register_namespace(time_namespace());
     interp.register_namespace(file_namespace());
     interp.register_namespace(json_namespace());
+    interp.register_namespace(cache_namespace());
+    interp.register_namespace(str_namespace());
 
     // Top-level: run / stop are convenience re-exports of Agent.run / Agent.stop.
     interp.register_top_fn(
@@ -106,11 +122,16 @@ macro_rules! ns {
 }
 
 fn find_arg<'a>(args: &'a [CallArgValue], name: &str) -> Option<&'a Value> {
-    args.iter().find(|a| a.name.as_deref() == Some(name)).map(|a| &a.value)
+    args.iter()
+        .find(|a| a.name.as_deref() == Some(name))
+        .map(|a| &a.value)
 }
 
 fn positional(args: &[CallArgValue], idx: usize) -> Option<&Value> {
-    args.iter().filter(|a| a.name.is_none()).nth(idx).map(|a| &a.value)
+    args.iter()
+        .filter(|a| a.name.is_none())
+        .nth(idx)
+        .map(|a| &a.value)
 }
 
 // ---------------------------------------------------------------------------
@@ -190,23 +211,24 @@ fn schedule_namespace() -> Namespace {
     })
 }
 
-async fn schedule_at(
-    interp: &mut Interpreter,
-    args: Vec<CallArgValue>,
-) -> miette::Result<Value> {
+async fn schedule_at(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miette::Result<Value> {
     let when_str = positional(&args, 0)
         .map(|v| v.as_string())
         .ok_or_else(|| miette::miette!("Schedule.at: missing datetime argument"))?;
 
-    let target = parse_datetime(&when_str)
-        .ok_or_else(|| miette::miette!("Schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime"))?;
+    let target = parse_datetime(&when_str).ok_or_else(|| {
+        miette::miette!("Schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime")
+    })?;
     let now = chrono::Utc::now();
     let delay_secs = (target - now).num_seconds().max(0) as f64;
 
-    let (params, body) = args.iter().find_map(|a| match &a.value {
-        Value::Closure(p, b) => Some((p.clone(), b.clone())),
-        _ => None,
-    }).ok_or_else(|| miette::miette!("Schedule.at: missing closure argument"))?;
+    let (params, body) = args
+        .iter()
+        .find_map(|a| match &a.value {
+            Value::Closure(p, b) => Some((p.clone(), b.clone())),
+            _ => None,
+        })
+        .ok_or_else(|| miette::miette!("Schedule.at: missing closure argument"))?;
 
     let agent_name = interp
         .current_agent
@@ -222,7 +244,10 @@ async fn schedule_at(
     let tx = interp.event_tx.clone();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
-        let _ = tx.send(crate::interpreter::Event::FireClosure { agent_name, closure_id });
+        let _ = tx.send(crate::interpreter::Event::FireClosure {
+            agent_name,
+            closure_id,
+        });
     });
     Ok(Value::None)
 }
@@ -233,30 +258,41 @@ fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Some(dt.with_timezone(&chrono::Utc));
     }
-    for fmt in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"] {
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d",
+    ] {
         if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
-            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc));
+            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                ndt,
+                chrono::Utc,
+            ));
         }
         if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, fmt) {
             let ndt = nd.and_hms_opt(0, 0, 0)?;
-            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(ndt, chrono::Utc));
+            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                ndt,
+                chrono::Utc,
+            ));
         }
     }
     None
 }
 
-async fn schedule_cron(
-    interp: &mut Interpreter,
-    args: Vec<CallArgValue>,
-) -> miette::Result<Value> {
+async fn schedule_cron(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miette::Result<Value> {
     let expr_str = positional(&args, 0)
         .map(|v| v.as_string())
         .ok_or_else(|| miette::miette!("Schedule.cron: missing cron expression argument"))?;
 
-    let (params, body) = args.iter().find_map(|a| match &a.value {
-        Value::Closure(p, b) => Some((p.clone(), b.clone())),
-        _ => None,
-    }).ok_or_else(|| miette::miette!("Schedule.cron: missing closure argument"))?;
+    let (params, body) = args
+        .iter()
+        .find_map(|a| match &a.value {
+            Value::Closure(p, b) => Some((p.clone(), b.clone())),
+            _ => None,
+        })
+        .ok_or_else(|| miette::miette!("Schedule.cron: missing closure argument"))?;
 
     let agent_name = interp
         .current_agent
@@ -279,13 +315,18 @@ async fn schedule_cron(
         loop {
             let now = chrono::Utc::now();
             if let Some(next_run) = next_cron_execution(&cron_spec, now) {
-                let delay = (next_run - now).to_std().unwrap_or_else(|_| std::time::Duration::from_secs(0));
+                let delay = (next_run - now)
+                    .to_std()
+                    .unwrap_or_else(|_| std::time::Duration::from_secs(0));
                 tokio::time::sleep(delay).await;
 
-                if tx.send(crate::interpreter::Event::FireClosure {
-                    agent_name: agent_name.clone(),
-                    closure_id,
-                }).is_err() {
+                if tx
+                    .send(crate::interpreter::Event::FireClosure {
+                        agent_name: agent_name.clone(),
+                        closure_id,
+                    })
+                    .is_err()
+                {
                     break; // receiver dropped — event loop has exited
                 }
             } else {
@@ -380,8 +421,11 @@ fn parse_cron_field(field: &str, min: u32, max: u32) -> Option<Vec<u32>> {
     Some(values)
 }
 
-fn next_cron_execution(spec: &CronSpec, from: chrono::DateTime<chrono::Utc>) -> Option<chrono::DateTime<chrono::Utc>> {
-    use chrono::{Timelike, Datelike};
+fn next_cron_execution(
+    spec: &CronSpec,
+    from: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    use chrono::{Datelike, Timelike};
 
     // Start from the next minute
     let mut dt = from + chrono::Duration::minutes(1);
@@ -392,11 +436,11 @@ fn next_cron_execution(spec: &CronSpec, from: chrono::DateTime<chrono::Utc>) -> 
 
     // Try up to 4 years ahead to find a match
     for _ in 0..2_102_400 {
-        let m = dt.minute() as u32;
-        let h = dt.hour() as u32;
-        let d = dt.day() as u32;
-        let mo = dt.month() as u32;
-        let wd = (dt.weekday().number_from_sunday() % 7) as u32;
+        let m = dt.minute();
+        let h = dt.hour();
+        let d = dt.day();
+        let mo = dt.month();
+        let wd = dt.weekday().number_from_sunday() % 7;
 
         if spec.minutes.contains(&m)
             && spec.hours.contains(&h)
@@ -407,7 +451,7 @@ fn next_cron_execution(spec: &CronSpec, from: chrono::DateTime<chrono::Utc>) -> 
             return Some(dt);
         }
 
-        dt = dt + chrono::Duration::minutes(1);
+        dt += chrono::Duration::minutes(1);
     }
     None
 }
@@ -417,15 +461,21 @@ async fn schedule_fire(
     args: Vec<CallArgValue>,
     recurring: bool,
 ) -> miette::Result<Value> {
-    let duration = args.iter().find_map(|a| match &a.value {
-        Value::Duration(s) => Some(*s),
-        _ => None,
-    }).ok_or_else(|| miette::miette!("Schedule: missing duration argument"))?;
+    let duration = args
+        .iter()
+        .find_map(|a| match &a.value {
+            Value::Duration(s) => Some(*s),
+            _ => None,
+        })
+        .ok_or_else(|| miette::miette!("Schedule: missing duration argument"))?;
 
-    let (params, body) = args.iter().find_map(|a| match &a.value {
-        Value::Closure(p, b) => Some((p.clone(), b.clone())),
-        _ => None,
-    }).ok_or_else(|| miette::miette!("Schedule: missing closure argument"))?;
+    let (params, body) = args
+        .iter()
+        .find_map(|a| match &a.value {
+            Value::Closure(p, b) => Some((p.clone(), b.clone())),
+            _ => None,
+        })
+        .ok_or_else(|| miette::miette!("Schedule: missing closure argument"))?;
 
     let agent_name = interp
         .current_agent
@@ -453,10 +503,13 @@ async fn schedule_fire(
             interval.tick().await; // consume the immediate tick (already fired above)
             loop {
                 interval.tick().await;
-                if tx.send(crate::interpreter::Event::FireClosure {
-                    agent_name: agent_name.clone(),
-                    closure_id,
-                }).is_err() {
+                if tx
+                    .send(crate::interpreter::Event::FireClosure {
+                        agent_name: agent_name.clone(),
+                        closure_id,
+                    })
+                    .is_err()
+                {
                     break; // receiver dropped — event loop has exited
                 }
             }
@@ -705,7 +758,7 @@ fn extract_criteria(args: &[CallArgValue]) -> Vec<(String, String)> {
 }
 
 /// Convert a serde_json::Value to a Keel Value (for Ai.extract results).
-fn json_to_value(v: &serde_json::Value) -> Value {
+pub fn json_to_value(v: &serde_json::Value) -> Value {
     match v {
         serde_json::Value::Null => Value::None,
         serde_json::Value::Bool(b) => Value::Bool(*b),
@@ -747,7 +800,7 @@ fn email_namespace() -> Namespace {
                 return Ok(Value::List(vec![]));
             };
             // `unread: true` is the v0.1 default (and only) filter.
-            let _unread_only = matches!(find_arg(&args, "unread"), Some(Value::Bool(false))) == false;
+            let _unread_only = !matches!(find_arg(&args, "unread"), Some(Value::Bool(false)));
             match tokio::task::spawn_blocking(move || email::fetch_emails(&conn)).await {
                 Ok(Ok(emails)) => Ok(Value::List(emails)),
                 Ok(Err(msg)) => Err(miette::miette!("{msg}")),
@@ -822,7 +875,12 @@ fn email_conn_from_env() -> Option<email::EmailConnection> {
         .ok()
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| imap_host.replace("imap.", "smtp."));
-    Some(email::EmailConnection { imap_host, smtp_host, user, pass })
+    Some(email::EmailConnection {
+        imap_host,
+        smtp_host,
+        user,
+        pass,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -947,7 +1005,8 @@ pub fn set_trace(on: bool) {
 static ASYNC_HANDLE_COUNTER: OnceLock<AtomicU64> = OnceLock::new();
 
 fn next_handle_id() -> u64 {
-    ASYNC_HANDLE_COUNTER.get_or_init(|| AtomicU64::new(0))
+    ASYNC_HANDLE_COUNTER
+        .get_or_init(|| AtomicU64::new(0))
         .fetch_add(1, Ordering::SeqCst)
 }
 
@@ -1098,14 +1157,21 @@ fn agents_in_team(interp: &crate::interpreter::Interpreter, team: &str) -> Vec<S
     for (name, instance) in live.iter() {
         let def = instance.lock().unwrap().def.clone();
         let in_team = def.attributes.iter().any(|attr| {
-            if attr.name != "team" { return false }
-            let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body else { return false };
+            if attr.name != "team" {
+                return false;
+            }
+            let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body else {
+                return false;
+            };
             items.iter().any(|e| match e {
                 Expr::StringLit(parts) => {
-                    let s: String = parts.iter().filter_map(|p| match p {
-                        StringPart::Literal(s) => Some(s.clone()),
-                        _ => None,
-                    }).collect();
+                    let s: String = parts
+                        .iter()
+                        .filter_map(|p| match p {
+                            StringPart::Literal(s) => Some(s.clone()),
+                            _ => None,
+                        })
+                        .collect();
                     s == team
                 }
                 Expr::Ident(s) => s == team,
@@ -1200,7 +1266,7 @@ fn async_namespace() -> Namespace {
     ns!("Async", {
         // Async.spawn(fn) — spawn fn as an independent Tokio task.
         // Returns a handle (as a map with an id).
-        "spawn" => |interp, args| Box::pin(async move {
+        "spawn" => |_interp, args| Box::pin(async move {
             let (params, body) = args.iter().find_map(|a| match &a.value {
                 Value::Closure(p, b) => Some((p.clone(), b.clone())),
                 _ => None,
@@ -1315,6 +1381,96 @@ fn http_namespace() -> Namespace {
             let body = cfg.get("json").or_else(|| cfg.get("body")).cloned();
             http_send(&method, &url, headers, body).await
         }),
+        // Http.serve(port, handler) — start an HTTP server on the given port.
+        // The handler closure receives a request map with {method, path, body}
+        // and should return a response map with {status, body}.
+        //
+        // IMPORTANT: handlers run OUTSIDE any agent context. The closure is
+        // registered with the sentinel name `"__http_serve__"` and fired via
+        // `Event::FireClosureWithArgs`, which calls `call_closure` directly
+        // without setting `self.current_agent`. Concretely:
+        //   - `self.<field>` from inside a handler raises a runtime error
+        //     (no current agent).
+        //   - `Ai.*` calls work, but with no agent `@role`, no `@rules`,
+        //     and the model defaults to `KEEL_OLLAMA_MODEL` (no `@model`
+        //     injection). For agent-aware behaviour, dispatch into a live
+        //     agent via `Agent.send(MyAgent, data, event: "http_request")`.
+        // See `docs/src/guide/connections.md` for the user-facing callout.
+        "serve" => |interp, args| Box::pin(async move {
+            let port = match positional(&args, 0) {
+                Some(Value::Integer(p)) if *p > 0 && *p < 65536 => *p as u16,
+                _ => 8080u16,
+            };
+
+            // Extract closure from args
+            let (params, body) = args.iter().find_map(|a| match &a.value {
+                Value::Closure(p, b) => Some((p.clone(), b.clone())),
+                _ => None,
+            }).ok_or_else(|| miette::miette!("Http.serve: missing closure argument"))?;
+
+            let closure_id = interp.register_closure("__http_serve__".to_string(), params, body);
+            let event_tx = interp.event_tx.clone();
+            let server_counter = interp.active_http_servers.clone();
+
+            server_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            tokio::spawn(async move {
+                use axum::{Router, routing::any, extract::Request, response::{Response, IntoResponse}, body::Body};
+
+                let app = Router::new().fallback(any(move |req: Request<Body>| {
+                    let tx = event_tx.clone();
+                    async move {
+                        let method = req.method().as_str().to_string();
+                        let path = req.uri().path().to_string();
+                        let (_, body) = req.into_parts();
+                        let body_bytes = axum::body::to_bytes(body, 1_048_576).await.unwrap_or_default();
+                        let body_str = String::from_utf8_lossy(&body_bytes).to_string();
+
+                        let req_json = serde_json::json!({
+                            "method": method,
+                            "path": path,
+                            "body": body_str,
+                        }).to_string();
+
+                        let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
+                        let _ = tx.send(crate::interpreter::Event::FireClosureWithArgs {
+                            closure_id,
+                            request_json: req_json,
+                            response_tx: resp_tx,
+                        });
+
+                        let resp_json = resp_rx.await.unwrap_or_else(|_| r#"{"status":500,"body":"error"}"#.into());
+                        let v: serde_json::Value = serde_json::from_str(&resp_json).unwrap_or_else(|_| serde_json::json!({}));
+                        let status_u16 = v.get("status").and_then(|s| s.as_u64())
+                            .and_then(|n| if (100..1000).contains(&n) { Some(n as u16) } else { None })
+                            .unwrap_or(200);
+                        let body_out = v.get("body").and_then(|b| b.as_str()).unwrap_or("").to_string();
+
+                        Response::builder()
+                            .status(status_u16)
+                            .body(Body::from(body_out))
+                            .unwrap_or_else(|_| Response::new(Body::from("internal error")))
+                            .into_response()
+                    }
+                }));
+
+                let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!("Http.serve: failed to bind 0.0.0.0:{port}: {e}");
+                        server_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                        return;
+                    }
+                };
+
+                if let Err(e) = axum::serve(listener, app).await {
+                    eprintln!("Http.serve: server error: {e}");
+                }
+                server_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            });
+
+            Ok(Value::None)
+        }),
     })
 }
 
@@ -1354,17 +1510,29 @@ async fn http_send(
                     req = req.json(&json);
                 }
             }
-            Value::String(s) => { req = req.body(s); }
-            _ => { req = req.body(b.as_string()); }
+            Value::String(s) => {
+                req = req.body(s);
+            }
+            _ => {
+                req = req.body(b.as_string());
+            }
         }
     }
 
-    let response = req.send().await.map_err(|e| miette::miette!("Http {method_upper} {url}: {e}"))?;
+    let response = req
+        .send()
+        .await
+        .map_err(|e| miette::miette!("Http {method_upper} {url}: {e}"))?;
     let status = response.status().as_u16() as i64;
     let response_headers = response
         .headers()
         .iter()
-        .map(|(k, v)| (k.as_str().to_string(), Value::String(v.to_str().unwrap_or("").to_string())))
+        .map(|(k, v)| {
+            (
+                k.as_str().to_string(),
+                Value::String(v.to_str().unwrap_or("").to_string()),
+            )
+        })
         .collect::<HashMap<_, _>>();
     let body_text = response.text().await.unwrap_or_default();
 
@@ -1372,7 +1540,10 @@ async fn http_send(
     result.insert("status".to_string(), Value::Integer(status));
     result.insert("body".to_string(), Value::String(body_text));
     result.insert("headers".to_string(), Value::Map(response_headers));
-    result.insert("is_ok".to_string(), Value::Bool((200..300).contains(&status)));
+    result.insert(
+        "is_ok".to_string(),
+        Value::Bool((200..300).contains(&status)),
+    );
     Ok(Value::Map(result))
 }
 
@@ -1404,13 +1575,11 @@ fn file_namespace() -> Namespace {
                 .map(|v| v.as_string())
                 .ok_or_else(|| miette::miette!("File.write: missing content argument"))?;
 
-            if let Some(parent) = std::path::Path::new(&path).parent() {
-                if !parent.as_os_str().is_empty() {
-                    match tokio::fs::create_dir_all(parent).await {
-                        Err(e) => return Err(miette::miette!("FileError: File.write create_dir_all: {e}")),
-                        _ => {}
-                    }
-                }
+            if let Some(parent) = std::path::Path::new(&path).parent()
+                && !parent.as_os_str().is_empty()
+                && let Err(e) = tokio::fs::create_dir_all(parent).await
+            {
+                return Err(miette::miette!("FileError: File.write create_dir_all: {e}"));
             }
             match tokio::fs::write(&path, &content).await {
                 Ok(_) => Ok(Value::None),
@@ -1449,6 +1618,161 @@ fn file_namespace() -> Namespace {
                     Ok(Value::List(names))
                 }
                 Err(e) => Err(miette::miette!("FileError: File.list `{dir_path}`: {e}")),
+            }
+        }),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Cache — in-memory process-scoped storage with optional TTL
+// ---------------------------------------------------------------------------
+
+type CacheStore = Mutex<HashMap<String, (Value, Option<Instant>)>>;
+static CACHE: OnceLock<CacheStore> = OnceLock::new();
+
+fn cache_store() -> &'static CacheStore {
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn cache_namespace() -> Namespace {
+    ns!("Cache", {
+        "set" => |_i, args| Box::pin(async move {
+            let key = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Cache.set: missing key argument"))?;
+            let value = positional(&args, 1)
+                .cloned()
+                .ok_or_else(|| miette::miette!("Cache.set: missing value argument"))?;
+
+            let expires_at = find_arg(&args, "ttl")
+                .and_then(|v| match v {
+                    Value::Duration(secs) => Some(*secs),
+                    _ => None,
+                })
+                .map(|secs| Instant::now() + std::time::Duration::from_secs_f64(secs));
+
+            let cache = cache_store();
+            cache.lock().unwrap().insert(key, (value, expires_at));
+            Ok(Value::None)
+        }),
+        "get" => |_i, args| Box::pin(async move {
+            let key = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Cache.get: missing key argument"))?;
+
+            let cache = cache_store();
+            let mut cache_lock = cache.lock().unwrap();
+
+            match cache_lock.get(&key) {
+                None => Ok(Value::None),
+                Some((_, Some(expiry))) if Instant::now() > *expiry => {
+                    cache_lock.remove(&key);
+                    Ok(Value::None)
+                }
+                Some((v, _)) => Ok(v.clone()),
+            }
+        }),
+        "delete" => |_i, args| Box::pin(async move {
+            let key = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Cache.delete: missing key argument"))?;
+
+            let cache = cache_store();
+            cache.lock().unwrap().remove(&key);
+            Ok(Value::None)
+        }),
+        "clear" => |_i, _args| Box::pin(async move {
+            let cache = cache_store();
+            cache.lock().unwrap().clear();
+            Ok(Value::None)
+        }),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Str — regex and string processing
+// ---------------------------------------------------------------------------
+
+fn str_namespace() -> Namespace {
+    ns!("Str", {
+        "match" => |_i, args| Box::pin(async move {
+            let text = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Str.match: missing text argument"))?;
+            let pattern = positional(&args, 1)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Str.match: missing pattern argument"))?;
+
+            let re = regex::Regex::new(&pattern)
+                .map_err(|e| miette::miette!("Str.match: invalid regex: {e}"))?;
+
+            Ok(Value::Bool(re.is_match(&text)))
+        }),
+        "extract" => |_i, args| Box::pin(async move {
+            let text = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Str.extract: missing text argument"))?;
+            let pattern = positional(&args, 1)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Str.extract: missing pattern argument"))?;
+
+            let re = regex::Regex::new(&pattern)
+                .map_err(|e| miette::miette!("Str.extract: invalid regex: {e}"))?;
+
+            match re.captures(&text) {
+                Some(caps) => {
+                    match caps.get(1) {
+                        Some(m) => Ok(Value::String(m.as_str().to_string())),
+                        None => Ok(Value::None),
+                    }
+                }
+                None => Ok(Value::None),
+            }
+        }),
+        "truncate" => |_i, args| Box::pin(async move {
+            let text = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Str.truncate: missing text argument"))?;
+            let max_i = positional(&args, 1)
+                .and_then(|v| v.as_int())
+                .ok_or_else(|| miette::miette!("Str.truncate: missing max argument"))?;
+            if max_i < 0 {
+                return Err(miette::miette!("Str.truncate: max must be non-negative, got {max_i}"));
+            }
+            let max_chars = max_i as usize;
+
+            let char_count = text.chars().count();
+            if char_count <= max_chars {
+                Ok(Value::String(text))
+            } else {
+                let truncated: String = text.chars().take(max_chars).collect();
+                Ok(Value::String(format!("{}…", truncated)))
+            }
+        }),
+        "pad" => |_i, args| Box::pin(async move {
+            let text = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Str.pad: missing text argument"))?;
+            let width_i = positional(&args, 1)
+                .and_then(|v| v.as_int())
+                .ok_or_else(|| miette::miette!("Str.pad: missing width argument"))?;
+            if width_i < 0 {
+                return Err(miette::miette!("Str.pad: width must be non-negative, got {width_i}"));
+            }
+            let width = width_i as usize;
+
+            let pad_char_str = find_arg(&args, "char")
+                .map(|v| v.as_string())
+                .unwrap_or_else(|| " ".to_string());
+
+            let pad_char = pad_char_str.chars().next().unwrap_or(' ');
+            let len = text.chars().count();
+
+            if len >= width {
+                Ok(Value::String(text))
+            } else {
+                let padding: String = std::iter::repeat_n(pad_char, width - len).collect();
+                Ok(Value::String(format!("{}{}", padding, text)))
             }
         }),
     })
@@ -1529,7 +1853,7 @@ fn time_namespace() -> Namespace {
 
 /// Convert a Keel `Value` tree into a `serde_json::Value` suitable for
 /// sending as an HTTP JSON body.
-fn value_to_json(v: &Value) -> serde_json::Value {
+pub fn value_to_json(v: &Value) -> serde_json::Value {
     match v {
         Value::None => serde_json::Value::Null,
         Value::Bool(b) => serde_json::Value::Bool(*b),

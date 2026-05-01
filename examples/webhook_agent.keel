@@ -1,0 +1,33 @@
+agent WebhookAgent {
+    state {
+        request_count: int = 0
+    }
+
+    on http_request(data: map) {
+        self.request_count = self.request_count + 1
+        method = data.get("method")
+        path = data.get("path")
+        Io.show("Request #{self.request_count}: {method} {path}")
+    }
+
+    @on_start {
+        Io.show("Webhook server starting on port 8080")
+
+        Http.serve(8080, (request) => {
+            method = request.get("method")
+            path = request.get("path")
+
+            # Route to agent for stateful processing
+            Agent.send(WebhookAgent, request, event: "http_request")
+
+            if path == "/health" {
+                { status: 200, body: "OK" }
+            } else {
+                { status: 200, body: "Received {method} {path}" }
+            }
+        })
+
+        Io.show("Listening for requests...")
+    }
+}
+run(WebhookAgent)

@@ -57,12 +57,18 @@ fn check_example(name: &str) -> bool {
 }
 
 fn run_inline(src: &str, trace: bool) -> (bool, String, String) {
-    let mut tmp = tempfile::Builder::new().suffix(".keel").tempfile().expect("tempfile");
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
     tmp.write_all(src.as_bytes()).expect("write tempfile");
     let path = tmp.path().to_owned();
     let bin = keel_binary();
     let mut cmd = Command::new(&bin);
-    cmd.env("KEEL_ONESHOT", "1").env("KEEL_LLM", "mock").arg("run").arg(&path);
+    cmd.env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .arg("run")
+        .arg(&path);
     if trace {
         cmd.env("KEEL_TRACE", "1");
     }
@@ -100,6 +106,9 @@ fn examples_all_parse() {
         "broadcast_team",
         "nested_interp",
         "map_methods",
+        "cache_demo",
+        "text_pipeline",
+        "webhook_agent",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -113,23 +122,35 @@ fn examples_all_parse() {
 fn showcase_runs_end_to_end() {
     ensure_binary_built();
     let (ok, stdout, stderr) = run_example("showcase");
-    assert!(ok, "showcase.keel exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "showcase.keel exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
 
     // list + list and list.push produce 4 incidents; count() in interpolation
-    assert!(stdout.contains("4 incidents in queue"),
-        "list concat/push or string interpolation missing:\n{stdout}");
+    assert!(
+        stdout.contains("4 incidents in queue"),
+        "list concat/push or string interpolation missing:\n{stdout}"
+    );
 
     // All incident IDs present, including the one added via push
     assert!(stdout.contains("INC-101"), "INC-101 missing:\n{stdout}");
-    assert!(stdout.contains("INC-104"), "pushed INC-104 missing:\n{stdout}");
+    assert!(
+        stdout.contains("INC-104"),
+        "pushed INC-104 missing:\n{stdout}"
+    );
 
     // @on_stop fired for OnCall before removal
-    assert!(stdout.contains("OnCall shift complete"),
-        "OnCall @on_stop missing:\n{stdout}");
+    assert!(
+        stdout.contains("OnCall shift complete"),
+        "OnCall @on_stop missing:\n{stdout}"
+    );
 
     // Shift summary line present (fallback value in mock mode)
-    assert!(stdout.contains("Shift summary:"),
-        "shift summary line missing:\n{stdout}");
+    assert!(
+        stdout.contains("Shift summary:"),
+        "shift summary line missing:\n{stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +211,10 @@ fn repl_evaluates_let_and_expression() {
 
     let out = child.wait_with_output().expect("wait repl");
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(stdout.contains("30"), "expected REPL to compute 30, got:\n{stdout}");
+    assert!(
+        stdout.contains("30"),
+        "expected REPL to compute 30, got:\n{stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -234,7 +258,10 @@ agent Ticker {
 }
 run(Ticker)
 "#;
-    let mut tmp = tempfile::Builder::new().suffix(".keel").tempfile().expect("tempfile");
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
     tmp.write_all(src.as_bytes()).expect("write");
     let path = tmp.path().to_owned();
     let bin = keel_binary();
@@ -311,7 +338,10 @@ agent Summarizer {
 run(Summarizer)
 "#;
     let (ok, stdout, _stderr) = run_inline(src, true);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}"
+    );
     assert!(
         stdout.contains("bulleted list"),
         "format directive missing\nstdout:\n{stdout}"
@@ -335,7 +365,10 @@ agent Prompter {
 run(Prompter)
 "#;
     let (ok, stdout, _stderr) = run_inline(src, true);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}"
+    );
     assert!(
         stdout.contains("valid JSON only"),
         "JSON format directive missing from trace\nstdout:\n{stdout}"
@@ -361,10 +394,22 @@ agent Extractor {
 run(Extractor)
 "#;
     let (ok, stdout, _stderr) = run_inline(src, true);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}");
-    assert!(stdout.contains("vendor"), "vendor field missing from trace\nstdout:\n{stdout}");
-    assert!(stdout.contains("amount"), "amount field missing from trace\nstdout:\n{stdout}");
-    assert!(stdout.contains("date"), "date field missing from trace\nstdout:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {_stderr}"
+    );
+    assert!(
+        stdout.contains("vendor"),
+        "vendor field missing from trace\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("amount"),
+        "amount field missing from trace\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("date"),
+        "date field missing from trace\nstdout:\n{stdout}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -385,8 +430,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("high"), "expected 'high' branch, stdout:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("high"),
+        "expected 'high' branch, stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -403,8 +454,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("low"), "expected 'low' branch, stdout:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("low"),
+        "expected 'low' branch, stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -420,7 +477,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("hello annotated"), "stdout:\n{stdout}");
 }
 
@@ -438,7 +498,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("present"), "stdout:\n{stdout}");
 }
 
@@ -480,7 +543,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("x"), "stdout:\n{stdout}");
     assert!(stdout.contains("y"), "stdout:\n{stdout}");
     assert!(stdout.contains("z"), "stdout:\n{stdout}");
@@ -502,7 +568,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("a"), "stdout:\n{stdout}");
     assert!(stdout.contains("b"), "stdout:\n{stdout}");
     assert!(stdout.contains("c"), "stdout:\n{stdout}");
@@ -522,8 +591,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("size=3"), "expected 'size=3' in stdout:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("size=3"),
+        "expected 'size=3' in stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -540,8 +615,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("doubled=10"), "expected 'doubled=10' in stdout:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("doubled=10"),
+        "expected 'doubled=10' in stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -559,7 +640,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(
         stdout.contains("A stopped"),
         "expected @on_stop output before removal:\nstdout: {stdout}"
@@ -586,7 +670,10 @@ agent Boss {
 run(Boss)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(
         stdout.contains("processed"),
         "expected Worker handler to fire:\nstdout: {stdout}"
@@ -668,8 +755,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("label=high"), "expected 'label=high' in:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("label=high"),
+        "expected 'label=high' in:\n{stdout}"
+    );
 }
 
 #[test]
@@ -686,8 +779,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("hi there world"), "expected nested interp resolution:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("hi there world"),
+        "expected nested interp resolution:\n{stdout}"
+    );
 }
 
 #[test]
@@ -716,9 +815,18 @@ run(A)
     // and returns "ok" on the 3rd. Control.retry must catch the runtime
     // errors and re-invoke the closure until success.
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("attempts=3"), "expected 3 attempts:\n{stdout}");
-    assert!(stdout.contains("result=ok"), "expected ok result:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("attempts=3"),
+        "expected 3 attempts:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("result=ok"),
+        "expected ok result:\n{stdout}"
+    );
 }
 
 #[test]
@@ -736,8 +844,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("result=fast"), "expected fast result:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("result=fast"),
+        "expected fast result:\n{stdout}"
+    );
 }
 
 #[test]
@@ -758,9 +872,18 @@ run(A)
     // try/catch is not yet wired in the interpreter, so a tripped timeout
     // surfaces as a non-zero exit. Validate the error is the right one.
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected non-zero exit on timeout\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stderr.contains("TimeoutError"), "expected TimeoutError diagnostic:\n{stderr}");
-    assert!(!stdout.contains("did-not-time-out"), "long call must not complete:\n{stdout}");
+    assert!(
+        !ok,
+        "expected non-zero exit on timeout\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("TimeoutError"),
+        "expected TimeoutError diagnostic:\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("did-not-time-out"),
+        "long call must not complete:\n{stdout}"
+    );
 }
 
 #[test]
@@ -800,10 +923,22 @@ agent Coordinator {
 run(Coordinator)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("Alpha got incident"), "Alpha should fire:\n{stdout}");
-    assert!(stdout.contains("Beta got incident"), "Beta should fire:\n{stdout}");
-    assert!(!stdout.contains("Gamma got"), "Gamma must not fire (different team):\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("Alpha got incident"),
+        "Alpha should fire:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Beta got incident"),
+        "Beta should fire:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("Gamma got"),
+        "Gamma must not fire (different team):\n{stdout}"
+    );
 }
 
 #[test]
@@ -820,8 +955,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("archived"), "expected archive call to no-op silently:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("archived"),
+        "expected archive call to no-op silently:\n{stdout}"
+    );
 }
 
 #[test]
@@ -835,11 +976,21 @@ task t() {
     n: int = m.get("a")
 }
 "#;
-    let mut tmp = tempfile::Builder::new().suffix(".keel").tempfile().expect("tempfile");
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
     tmp.write_all(src.as_bytes()).expect("write");
     let path = tmp.path().to_owned();
-    let output = Command::new(&bin).arg("check").arg(&path).output().expect("run keel check");
-    assert!(!output.status.success(), "expected check to fail on map.get assignment");
+    let output = Command::new(&bin)
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("run keel check");
+    assert!(
+        !output.status.success(),
+        "expected check to fail on map.get assignment"
+    );
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let combined = format!("{stdout}{stderr}");
@@ -863,8 +1014,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("keys-count=2"), "expected 2 keys:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("keys-count=2"),
+        "expected 2 keys:\n{stdout}"
+    );
 }
 
 #[test]
@@ -875,7 +1032,10 @@ fn lsp_hover_reports_let_binding_type() {
     let offset = src.find("items").unwrap() + 1;
     let label = checker::type_at(src, offset).expect("hover should resolve `items`");
     assert!(label.contains("list"), "expected list type, got: {label}");
-    assert!(label.contains("int"), "expected int element type, got: {label}");
+    assert!(
+        label.contains("int"),
+        "expected int element type, got: {label}"
+    );
 }
 
 #[test]
@@ -884,7 +1044,10 @@ fn lsp_hover_reports_namespace() {
     let src = "agent A { @on_start { Io.show(\"x\") } }\n";
     let offset = src.find("Io").unwrap() + 1;
     let label = checker::type_at(src, offset).expect("hover on Io");
-    assert!(label.contains("namespace"), "expected namespace label, got: {label}");
+    assert!(
+        label.contains("namespace"),
+        "expected namespace label, got: {label}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -892,7 +1055,7 @@ fn lsp_hover_reports_namespace() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn v0_1_7_schedule_cron_accepts_expression() {
+fn schedule_cron_accepts_expression() {
     let src = r#"
 agent CronTest {
     @on_start {
@@ -905,12 +1068,18 @@ agent CronTest {
 run(CronTest)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("cron-parsed"), "Schedule.cron should accept cron expressions:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("cron-parsed"),
+        "Schedule.cron should accept cron expressions:\n{stdout}"
+    );
 }
 
 #[test]
-fn v0_1_7_async_spawn_returns_handle() {
+fn async_spawn_returns_handle() {
     let src = r#"
 agent AsyncTest {
     @on_start {
@@ -923,12 +1092,18 @@ agent AsyncTest {
 run(AsyncTest)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("spawn-ok"), "Async.spawn should work:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("spawn-ok"),
+        "Async.spawn should work:\n{stdout}"
+    );
 }
 
 #[test]
-fn v0_1_7_tools_capability_gating_parses() {
+fn tools_capability_gating_parses() {
     let src = r#"
 agent RestrictedAgent {
     @tools [Io, Schedule]
@@ -940,6 +1115,229 @@ agent RestrictedAgent {
 run(RestrictedAgent)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("allowed"), "@tools attribute should parse:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("allowed"),
+        "@tools attribute should parse:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.8 — Reactive Agents & Text Processing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cache_set_get() {
+    let src = r#"
+agent CacheTest {
+    @on_start {
+        Cache.set("key", "value")
+        v = Cache.get("key")
+        Io.show("got={v}")
+    }
+}
+run(CacheTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("got=value"),
+        "Cache.set/get failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn cache_delete() {
+    let src = r#"
+agent CacheTest {
+    @on_start {
+        Cache.set("temp", "x")
+        Cache.delete("temp")
+        v = Cache.get("temp")
+        if v == none {
+            Io.show("deleted")
+        }
+    }
+}
+run(CacheTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("deleted"), "Cache.delete failed:\n{stdout}");
+}
+
+#[test]
+fn cache_clear() {
+    let src = r#"
+agent CacheTest {
+    @on_start {
+        Cache.set("a", "1")
+        Cache.set("b", "2")
+        Cache.clear()
+        v = Cache.get("a")
+        if v == none {
+            Io.show("cleared")
+        }
+    }
+}
+run(CacheTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("cleared"), "Cache.clear failed:\n{stdout}");
+}
+
+#[test]
+fn str_match_true() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        result = Str.match("hello world", "\\w+")
+        if result {
+            Io.show("matched")
+        }
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("matched"),
+        "Str.match true case failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn str_match_false() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        result = Str.match("hello world", "^\\d+$")
+        if result {
+            Io.show("matched")
+        } else {
+            Io.show("no-match")
+        }
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("no-match"),
+        "Str.match false case failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn str_extract() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        v = Str.extract("Total: $99.99", "\\$(\\S+)")
+        Io.show("amount={v}")
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("amount=99.99"),
+        "Str.extract failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn str_truncate() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        v = Str.truncate("hello world", 5)
+        Io.show("short={v}")
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("short=hello…"),
+        "Str.truncate failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn str_pad() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        v = Str.pad("42", 5)
+        Io.show("padded={v}")
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("padded=   42"), "Str.pad failed:\n{stdout}");
+}
+
+#[test]
+fn lsp_goto_definition_finds_task() {
+    use keel_lang::types::checker;
+    let src = "task greet() -> str {\n    \"hello\"\n}\nagent A {\n    @on_start {\n        r = greet()\n    }\n}\n";
+    let offset = src.find("greet").unwrap() + 1;
+    let span = checker::definition_of(src, offset);
+    assert!(
+        span.is_some(),
+        "definition_of should find `task greet` declaration"
+    );
+    let s = span.unwrap();
+    let name = &src[s.clone()];
+    assert_eq!(
+        name, "greet",
+        "span should cover the identifier, got: {name:?}"
+    );
+}
+
+#[test]
+fn lsp_usages_of_finds_all_occurrences() {
+    use keel_lang::types::checker;
+    let src = "task foo() -> str { \"x\" }\nagent A { @on_start { r = foo() s = foo() } }\n";
+    let spans = checker::usages_of(src, "foo");
+    assert!(
+        spans.len() >= 3,
+        "expected at least 3 occurrences of `foo` (decl + 2 calls), got {}",
+        spans.len()
+    );
 }

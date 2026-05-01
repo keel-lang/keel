@@ -32,7 +32,11 @@ struct Fmt {
 
 impl Fmt {
     fn new() -> Self {
-        Fmt { buf: String::new(), indent: 0, at_line_start: true }
+        Fmt {
+            buf: String::new(),
+            indent: 0,
+            at_line_start: true,
+        }
     }
 
     fn into_string(self) -> String {
@@ -65,8 +69,14 @@ impl Fmt {
         self.at_line_start = true;
     }
 
-    fn indent(&mut self) { self.indent += 1; }
-    fn dedent(&mut self) { if self.indent > 0 { self.indent -= 1; } }
+    fn indent(&mut self) {
+        self.indent += 1;
+    }
+    fn dedent(&mut self) {
+        if self.indent > 0 {
+            self.indent -= 1;
+        }
+    }
 
     // -----------------------------------------------------------------
     // Declarations
@@ -104,7 +114,9 @@ impl Fmt {
                     if let Some(fields) = &v.fields {
                         self.push(" { ");
                         for (i, f) in fields.iter().enumerate() {
-                            if i > 0 { self.push(", "); }
+                            if i > 0 {
+                                self.push(", ");
+                            }
                             self.push(&format!("{}: ", f.name));
                             self.push(&self.type_expr_str(&f.ty));
                         }
@@ -200,7 +212,9 @@ impl Fmt {
 
     fn params(&mut self, params: &[Param]) {
         for (i, p) in params.iter().enumerate() {
-            if i > 0 { self.push(", "); }
+            if i > 0 {
+                self.push(", ");
+            }
             self.push(&format!("{}: ", p.name));
             self.push(&self.type_expr_str(&p.ty));
             if let Some(default) = &p.default {
@@ -321,7 +335,12 @@ impl Fmt {
                     self.push(&self.expr_str(e));
                 }
             }
-            Stmt::For { binding, iter, filter, body } => {
+            Stmt::For {
+                binding,
+                iter,
+                filter,
+                body,
+            } => {
                 self.push(&format!("for {binding} in "));
                 self.push(&self.expr_str(iter));
                 if let Some(pred) = filter {
@@ -338,7 +357,11 @@ impl Fmt {
                 self.dedent();
                 self.push("}");
             }
-            Stmt::If { cond, then_body, else_body } => {
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 self.push("if ");
                 self.push(&self.expr_str(cond));
                 self.push(" {");
@@ -406,7 +429,9 @@ impl Fmt {
 
     fn when_arm(&mut self, arm: &WhenArm) {
         for (i, p) in arm.patterns.iter().enumerate() {
-            if i > 0 { self.push(", "); }
+            if i > 0 {
+                self.push(", ");
+            }
             self.push(&self.pattern_str(p));
         }
         if let Some(g) = &arm.guard {
@@ -415,12 +440,12 @@ impl Fmt {
         }
         self.push(" => ");
         // Single-expression arms stay inline; multi-stmt arms open a block.
-        if arm.body.len() == 1 {
-            if let Stmt::Expr(e) = &arm.body[0].0 {
-                self.push(&self.expr_str(e));
-                self.newline();
-                return;
-            }
+        if arm.body.len() == 1
+            && let Stmt::Expr(e) = &arm.body[0].0
+        {
+            self.push(&self.expr_str(e));
+            self.newline();
+            return;
         }
         self.push("{");
         self.newline();
@@ -497,7 +522,12 @@ impl Fmt {
                 format!("({})", parts.join(", "))
             }
             Expr::BinaryOp { left, op, right } => {
-                format!("{} {} {}", self.expr_str(left), binop_str(*op), self.expr_str(right))
+                format!(
+                    "{} {} {}",
+                    self.expr_str(left),
+                    binop_str(*op),
+                    self.expr_str(right)
+                )
             }
             Expr::UnaryOp { op, expr } => match op {
                 UnOp::Neg => format!("-{}", self.expr_str(expr)),
@@ -506,25 +536,44 @@ impl Fmt {
             Expr::NullCoalesce(l, r) => format!("{} ?? {}", self.expr_str(l), self.expr_str(r)),
             Expr::Pipeline(l, r) => format!("{} |> {}", self.expr_str(l), self.expr_str(r)),
             Expr::Call { callee, args } => {
-                format!("{}({})", self.expr_at(callee, indent), self.args_at(args, indent))
+                format!(
+                    "{}({})",
+                    self.expr_at(callee, indent),
+                    self.args_at(args, indent)
+                )
             }
-            Expr::MethodCall { object, method, args } => {
-                format!("{}.{}({})", self.expr_at(object, indent), method, self.args_at(args, indent))
+            Expr::MethodCall {
+                object,
+                method,
+                args,
+            } => {
+                format!(
+                    "{}.{}({})",
+                    self.expr_at(object, indent),
+                    method,
+                    self.args_at(args, indent)
+                )
             }
-            Expr::Cast { expr, ty } => format!("{} as {}", self.expr_str(expr), self.type_expr_str(ty)),
-            Expr::IfExpr { cond, then_body, else_body } => {
+            Expr::Cast { expr, ty } => {
+                format!("{} as {}", self.expr_str(expr), self.type_expr_str(ty))
+            }
+            Expr::IfExpr {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 let then_str = self.block_inline(then_body);
                 // When else_body is a single if-expression, emit `else if …`
                 // so that re-parsing produces the same AST (idempotent).
-                if else_body.len() == 1 {
-                    if let (Stmt::Expr(inner @ Expr::IfExpr { .. }), _) = &else_body[0] {
-                        return format!(
-                            "if {} {{ {} }} else {}",
-                            self.expr_str(cond),
-                            then_str,
-                            self.expr_str(inner),
-                        );
-                    }
+                if else_body.len() == 1
+                    && let (Stmt::Expr(inner @ Expr::IfExpr { .. }), _) = &else_body[0]
+                {
+                    return format!(
+                        "if {} {{ {} }} else {}",
+                        self.expr_str(cond),
+                        then_str,
+                        self.expr_str(inner),
+                    );
                 }
                 format!(
                     "if {} {{ {} }} else {{ {} }}",
@@ -537,18 +586,23 @@ impl Fmt {
                 // Multi-arm when as expr — fall back to the same shape
                 // as the statement form but inlined.
                 let arms_str: Vec<String> = arms.iter().map(|a| self.arm_inline(a)).collect();
-                format!("when {} {{ {} }}", self.expr_str(subject), arms_str.join("; "))
+                format!(
+                    "when {} {{ {} }}",
+                    self.expr_str(subject),
+                    arms_str.join("; ")
+                )
             }
             Expr::Lambda { params, body } => {
                 let params_str = if params.len() == 1 && params[0].ty.is_none() {
                     params[0].name.clone()
                 } else {
-                    let parts: Vec<String> = params.iter().map(|p| {
-                        match &p.ty {
+                    let parts: Vec<String> = params
+                        .iter()
+                        .map(|p| match &p.ty {
                             Some(t) => format!("{}: {}", p.name, self.type_expr_str(t)),
                             None => p.name.clone(),
-                        }
-                    }).collect();
+                        })
+                        .collect();
                     format!("({})", parts.join(", "))
                 };
                 match body {
@@ -559,7 +613,11 @@ impl Fmt {
             Expr::Duration { value, unit } => {
                 format!("{}.{}", self.expr_str(value), unit.canonical_name())
             }
-            Expr::EnumVariant { ty, variant, fields } => {
+            Expr::EnumVariant {
+                ty,
+                variant,
+                fields,
+            } => {
                 if fields.is_empty() {
                     format!("{ty}.{variant}")
                 } else {
@@ -580,11 +638,15 @@ impl Fmt {
         let inner_indent = indent + 1;
         let mut s = format!("{params_str} => {{\n");
         for (stmt, _) in body {
-            for _ in 0..inner_indent { s.push_str(INDENT); }
+            for _ in 0..inner_indent {
+                s.push_str(INDENT);
+            }
             self.write_stmt(&mut s, stmt, inner_indent);
             s.push('\n');
         }
-        for _ in 0..indent { s.push_str(INDENT); }
+        for _ in 0..indent {
+            s.push_str(INDENT);
+        }
         s.push('}');
         s
     }
@@ -612,7 +674,12 @@ impl Fmt {
                 s.push_str(&self.expr_at(e, indent));
             }
             Stmt::Return(None) => s.push_str("return"),
-            Stmt::For { binding, iter, filter, body } => {
+            Stmt::For {
+                binding,
+                iter,
+                filter,
+                body,
+            } => {
                 s.push_str(&format!("for {binding} in "));
                 s.push_str(&self.expr_at(iter, indent));
                 if let Some(pred) = filter {
@@ -621,20 +688,30 @@ impl Fmt {
                 }
                 s.push_str(" {\n");
                 self.write_block(s, body, indent + 1);
-                for _ in 0..indent { s.push_str(INDENT); }
+                for _ in 0..indent {
+                    s.push_str(INDENT);
+                }
                 s.push('}');
             }
-            Stmt::If { cond, then_body, else_body } => {
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 s.push_str("if ");
                 s.push_str(&self.expr_at(cond, indent));
                 s.push_str(" {\n");
                 self.write_block(s, then_body, indent + 1);
-                for _ in 0..indent { s.push_str(INDENT); }
+                for _ in 0..indent {
+                    s.push_str(INDENT);
+                }
                 s.push('}');
                 if let Some(eb) = else_body {
                     s.push_str(" else {\n");
                     self.write_block(s, eb, indent + 1);
-                    for _ in 0..indent { s.push_str(INDENT); }
+                    for _ in 0..indent {
+                        s.push_str(INDENT);
+                    }
                     s.push('}');
                 }
             }
@@ -643,23 +720,31 @@ impl Fmt {
                 s.push_str(&self.expr_at(subject, indent));
                 s.push_str(" {\n");
                 for arm in arms {
-                    for _ in 0..(indent + 1) { s.push_str(INDENT); }
+                    for _ in 0..(indent + 1) {
+                        s.push_str(INDENT);
+                    }
                     self.write_when_arm(s, arm, indent + 1);
                 }
-                for _ in 0..indent { s.push_str(INDENT); }
+                for _ in 0..indent {
+                    s.push_str(INDENT);
+                }
                 s.push('}');
             }
             Stmt::TryCatch { body, catches } => {
                 s.push_str("try {\n");
                 self.write_block(s, body, indent + 1);
-                for _ in 0..indent { s.push_str(INDENT); }
+                for _ in 0..indent {
+                    s.push_str(INDENT);
+                }
                 s.push('}');
                 for c in catches {
                     s.push_str(&format!(" catch {}: ", c.name));
                     s.push_str(&self.type_expr_str(&c.ty));
                     s.push_str(" {\n");
                     self.write_block(s, &c.body, indent + 1);
-                    for _ in 0..indent { s.push_str(INDENT); }
+                    for _ in 0..indent {
+                        s.push_str(INDENT);
+                    }
                     s.push('}');
                 }
             }
@@ -668,7 +753,9 @@ impl Fmt {
 
     fn write_block(&self, s: &mut String, block: &Block, indent: usize) {
         for (stmt, _) in block {
-            for _ in 0..indent { s.push_str(INDENT); }
+            for _ in 0..indent {
+                s.push_str(INDENT);
+            }
             self.write_stmt(s, stmt, indent);
             s.push('\n');
         }
@@ -682,16 +769,18 @@ impl Fmt {
             s.push_str(&self.expr_at(g, indent));
         }
         s.push_str(" => ");
-        if arm.body.len() == 1 {
-            if let Stmt::Expr(e) = &arm.body[0].0 {
-                s.push_str(&self.expr_at(e, indent));
-                s.push('\n');
-                return;
-            }
+        if arm.body.len() == 1
+            && let Stmt::Expr(e) = &arm.body[0].0
+        {
+            s.push_str(&self.expr_at(e, indent));
+            s.push('\n');
+            return;
         }
         s.push_str("{\n");
         self.write_block(s, &arm.body, indent + 1);
-        for _ in 0..indent { s.push_str(INDENT); }
+        for _ in 0..indent {
+            s.push_str(INDENT);
+        }
         s.push_str("}\n");
     }
 
@@ -707,10 +796,7 @@ impl Fmt {
     }
 
     fn block_inline(&self, block: &Block) -> String {
-        let parts: Vec<String> = block
-            .iter()
-            .map(|(s, _)| self.stmt_inline(s))
-            .collect();
+        let parts: Vec<String> = block.iter().map(|(s, _)| self.stmt_inline(s)).collect();
         parts.join("; ")
     }
 
@@ -720,7 +806,10 @@ impl Fmt {
             Stmt::Return(Some(e)) => format!("return {}", self.expr_str(e)),
             Stmt::Return(None) => "return".into(),
             Stmt::Let { name, ty, value } => {
-                let ty_str = ty.as_ref().map(|t| format!(": {}", self.type_expr_str(t))).unwrap_or_default();
+                let ty_str = ty
+                    .as_ref()
+                    .map(|t| format!(": {}", self.type_expr_str(t)))
+                    .unwrap_or_default();
                 format!("{name}{ty_str} = {}", self.expr_str(value))
             }
             Stmt::SelfAssign { field, value } => format!("self.{field} = {}", self.expr_str(value)),
@@ -731,7 +820,11 @@ impl Fmt {
     fn arm_inline(&self, arm: &WhenArm) -> String {
         let pats: Vec<String> = arm.patterns.iter().map(|p| self.pattern_str(p)).collect();
         let body = self.block_inline(&arm.body);
-        let guard = arm.guard.as_ref().map(|g| format!(" where {}", self.expr_str(g))).unwrap_or_default();
+        let guard = arm
+            .guard
+            .as_ref()
+            .map(|g| format!(" where {}", self.expr_str(g)))
+            .unwrap_or_default();
         format!("{}{guard} => {body}", pats.join(", "))
     }
 
@@ -764,12 +857,15 @@ impl Fmt {
         s
     }
 
+    #[allow(clippy::only_used_in_recursion)]
     fn type_expr_str(&self, ty: &TypeExpr) -> String {
         match ty {
             TypeExpr::Named(n) => n.clone(),
             TypeExpr::Nullable(inner) => format!("{}?", self.type_expr_str(inner)),
             TypeExpr::List(inner) => format!("list[{}]", self.type_expr_str(inner)),
-            TypeExpr::Map(k, v) => format!("map[{}, {}]", self.type_expr_str(k), self.type_expr_str(v)),
+            TypeExpr::Map(k, v) => {
+                format!("map[{}, {}]", self.type_expr_str(k), self.type_expr_str(v))
+            }
             TypeExpr::Set(inner) => format!("set[{}]", self.type_expr_str(inner)),
             TypeExpr::Struct(fields) => {
                 let parts: Vec<String> = fields
@@ -800,7 +896,10 @@ impl Fmt {
 /// non-identifier characters.
 fn map_key_form(k: &str) -> String {
     let is_ident = !k.is_empty()
-        && k.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
+        && k.chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic() || c == '_')
+            .unwrap_or(false)
         && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if is_ident {
         k.to_string()
@@ -823,8 +922,18 @@ fn map_key_form(k: &str) -> String {
 
 fn binop_str(op: BinOp) -> &'static str {
     match op {
-        BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*", BinOp::Div => "/", BinOp::Mod => "%",
-        BinOp::Eq => "==", BinOp::Neq => "!=", BinOp::Lt => "<", BinOp::Gt => ">",
-        BinOp::Lte => "<=", BinOp::Gte => ">=", BinOp::And => "and", BinOp::Or => "or",
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::Eq => "==",
+        BinOp::Neq => "!=",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::Lte => "<=",
+        BinOp::Gte => ">=",
+        BinOp::And => "and",
+        BinOp::Or => "or",
     }
 }

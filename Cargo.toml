@@ -1,6 +1,6 @@
 [package]
 name = "keel-lang"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 description = "Keel — a programming language where AI agents are first-class citizens"
 license = "MIT"
@@ -32,6 +32,8 @@ lettre = { version = "0.11", features = ["tokio1-native-tls"] }
 imap = "2"
 native-tls = "0.2"
 chrono = "0.4"
+regex = "1"
+axum = "0.8"
 
 
 [dev-dependencies]

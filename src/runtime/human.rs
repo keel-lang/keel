@@ -78,10 +78,7 @@ fn show_table(items: &[Value]) {
     for item in items {
         if let Value::Map(fields) = item {
             for (i, col) in columns.iter().enumerate() {
-                let val_len = fields
-                    .get(col)
-                    .map(|v| v.as_string().len())
-                    .unwrap_or(0);
+                let val_len = fields.get(col).map(|v| v.as_string().len()).unwrap_or(0);
                 if val_len > widths[i] {
                     widths[i] = val_len;
                 }
@@ -114,10 +111,7 @@ fn show_table(items: &[Value]) {
                 .iter()
                 .enumerate()
                 .map(|(i, col)| {
-                    let val = fields
-                        .get(col)
-                        .map(|v| v.as_string())
-                        .unwrap_or_default();
+                    let val = fields.get(col).map(|v| v.as_string()).unwrap_or_default();
                     let truncated = if val.len() > widths[i] {
                         format!("{}…", &val[..widths[i] - 1])
                     } else {
@@ -140,7 +134,7 @@ fn format_display_value(val: &Value) -> String {
         Value::None => "none".dimmed().to_string(),
         Value::EnumVariant(ty, var, _) => format!("{ty}.{var}").bright_cyan().to_string(),
         Value::List(items) => {
-            let inner: Vec<String> = items.iter().map(|i| format_display_value(i)).collect();
+            let inner: Vec<String> = items.iter().map(format_display_value).collect();
             format!("[{}]", inner.join(", "))
         }
         Value::Map(fields) => {

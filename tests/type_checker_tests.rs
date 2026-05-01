@@ -27,27 +27,32 @@ fn expect_error(source: &str, substring: &str) {
 
 #[test]
 fn valid_minimal_agent() {
-    type_ok(r#"
+    type_ok(
+        r#"
 agent Greeter {
   @role "hi"
 }
 
 run(Greeter)
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_task_with_return_type() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task greet(name: str) -> str {
   "hello"
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_enum_and_when() {
-    type_ok(r#"
+    type_ok(
+        r#"
 type Urgency = low | medium | high | critical
 
 task triage(u: Urgency) {
@@ -56,12 +61,14 @@ task triage(u: Urgency) {
     high, critical => { return }
   }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_self_inside_agent() {
-    type_ok(r#"
+    type_ok(
+        r#"
 agent Counter {
   @role "count"
   state { count: int = 0 }
@@ -70,12 +77,14 @@ agent Counter {
     self.count = self.count + 1
   }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_agent_task_calls_sibling() {
-    type_ok(r#"
+    type_ok(
+        r#"
 agent Bot {
   @role "x"
 
@@ -87,7 +96,8 @@ agent Bot {
     Io.notify("hi")
   }
 }
-"#);
+"#,
+    );
 }
 
 // ─── Errors: undefined / scope ──────────────────────────────────────────────
@@ -154,7 +164,8 @@ task t(u: Urgency) {
 
 #[test]
 fn valid_when_with_wildcard() {
-    type_ok(r#"
+    type_ok(
+        r#"
 type Urgency = low | medium | high | critical
 
 task t(u: Urgency) {
@@ -163,7 +174,8 @@ task t(u: Urgency) {
     _ => { return }
   }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
@@ -185,11 +197,13 @@ task t(code: int) {
 
 #[test]
 fn valid_let_annotation_matching_type() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   x: str = "hello"
 }
-"#);
+"#,
+    );
 }
 
 #[test]
@@ -258,7 +272,8 @@ task call_it() {
 fn valid_classify_inferred_enum() {
     // `Ai.classify(..., as: Mood, fallback: Mood.neutral)` should bind
     // the result as Mood so `when` on it is exhaustive.
-    type_ok(r#"
+    type_ok(
+        r#"
 type Mood = happy | neutral | sad
 
 task t(text: str) {
@@ -269,14 +284,16 @@ task t(text: str) {
     sad => { return }
   }
 }
-"#);
+"#,
+    );
 }
 
 // ─── Rich enum variants ─────────────────────────────────────────────────────
 
 #[test]
 fn valid_rich_enum_variant() {
-    type_ok(r#"
+    type_ok(
+        r#"
 type Action =
   | reply { to: str, tone: str }
   | archive
@@ -284,7 +301,8 @@ type Action =
 task make() -> Action {
   Action.reply { to: "x", tone: "friendly" }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
@@ -337,29 +355,35 @@ task t() {
 
 #[test]
 fn valid_nullable_unwrapped_with_assert() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   x: str = Env.get("KEY")!
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_nullable_coalesced() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   x: str = Env.get("KEY") ?? "default"
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_non_nullable_assigned_to_nullable() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   x: str? = "hello"
 }
-"#);
+"#,
+    );
 }
 
 // ─── v0.1.5: return-type matching ──────────────────────────────────────────
@@ -378,20 +402,24 @@ task t() -> str {
 
 #[test]
 fn valid_return_stmt_matches_declared() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() -> str {
   return "hello"
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_task_no_return_type() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   return 42
 }
-"#);
+"#,
+    );
 }
 
 // ─── v0.1.5: struct field checks ───────────────────────────────────────────
@@ -412,41 +440,48 @@ task t() {
 
 #[test]
 fn valid_struct_all_fields_present() {
-    type_ok(r#"
+    type_ok(
+        r#"
 type Person { name: str, age: int }
 
 task t() {
   p: Person = { name: "Alice", age: 30 }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_struct_extra_fields_allowed() {
-    type_ok(r#"
+    type_ok(
+        r#"
 type Person { name: str }
 
 task t() {
   p: Person = { name: "Alice", extra: 42 }
 }
-"#);
+"#,
+    );
 }
 
 // ─── v0.1.5: generic list type inference ───────────────────────────────────
 
 #[test]
 fn valid_list_push_preserves_element_type() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   items: list[str] = ["a", "b"]
   more = items.push("c")
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_list_concatenation_inferred() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   a = ["x", "y"]
   b = ["z"]
@@ -455,22 +490,26 @@ task t() {
     Io.notify(item)
   }
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_list_len_is_int() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   items = ["a", "b", "c"]
   n: int = items.len()
 }
-"#);
+"#,
+    );
 }
 
 #[test]
 fn valid_list_filter_preserves_type() {
-    type_ok(r#"
+    type_ok(
+        r#"
 task t() {
   items = ["a", "bb", "ccc"]
   short = items.filter(x => true)
@@ -478,5 +517,6 @@ task t() {
     Io.notify(s)
   }
 }
-"#);
+"#,
+    );
 }

@@ -3,13 +3,15 @@ use tower_lsp::lsp_types::DiagnosticSeverity;
 
 #[test]
 fn clean_program_has_no_diagnostics() {
-    let diags = analyze(r#"
+    let diags = analyze(
+        r#"
 agent Greeter {
   @role "hi"
 }
 
 run(Greeter)
-"#);
+"#,
+    );
     assert!(diags.is_empty(), "expected no diagnostics, got: {diags:?}");
 }
 
@@ -23,18 +25,21 @@ fn parse_error_emits_diagnostic() {
 
 #[test]
 fn type_error_emits_diagnostic() {
-    let diags = analyze(r#"
+    let diags = analyze(
+        r#"
 task t() {
   x = undefined_name
 }
-"#);
+"#,
+    );
     assert!(!diags.is_empty(), "expected a type diagnostic");
     assert!(diags.iter().any(|d| d.message.contains("undefined")));
 }
 
 #[test]
 fn non_exhaustive_when_emits_diagnostic() {
-    let diags = analyze(r#"
+    let diags = analyze(
+        r#"
 type U = low | medium | high
 
 task t(u: U) {
@@ -42,7 +47,8 @@ task t(u: U) {
     low => { return }
   }
 }
-"#);
+"#,
+    );
     assert!(diags.iter().any(|d| d.message.contains("non-exhaustive")));
 }
 
@@ -50,8 +56,9 @@ task t(u: U) {
 fn diagnostic_location_tracks_line() {
     // Undefined on line 3 (0-indexed: 2).
     let diags = analyze("\n\ntask t() { x = bogus }\n");
-    let msg = diags
-        .iter()
-        .find(|d| d.message.contains("undefined"));
-    assert!(msg.is_some(), "expected undefined diagnostic; got {diags:?}");
+    let msg = diags.iter().find(|d| d.message.contains("undefined"));
+    assert!(
+        msg.is_some(),
+        "expected undefined diagnostic; got {diags:?}"
+    );
 }

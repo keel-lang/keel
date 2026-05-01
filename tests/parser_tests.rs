@@ -12,9 +12,7 @@ fn parse_ok(source: &str) -> Program {
 fn parse_err(source: &str) -> String {
     let named = NamedSource::new("test.keel", source.to_string());
     let tokens = lex(source, &named).expect("lexer failed");
-    parse(tokens, source.len(), &named)
-        .unwrap_err()
-        .to_string()
+    parse(tokens, source.len(), &named).unwrap_err().to_string()
 }
 
 fn first_decl(program: &Program) -> &Decl {
@@ -203,10 +201,14 @@ agent Bot {
     let prog = parse_ok(src);
     match first_decl(&prog) {
         Decl::Agent(a) => {
-            let tools = a.items.iter().find_map(|it| match it {
-                AgentItem::Attribute(attr) if attr.name == "tools" => Some(attr),
-                _ => None,
-            }).expect("expected @tools");
+            let tools = a
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    AgentItem::Attribute(attr) if attr.name == "tools" => Some(attr),
+                    _ => None,
+                })
+                .expect("expected @tools");
             match &tools.body {
                 AttributeBody::Expr(Expr::ListLit(items)) => {
                     assert_eq!(items.len(), 2);
@@ -229,10 +231,14 @@ agent Bot {
     let prog = parse_ok(src);
     match first_decl(&prog) {
         Decl::Agent(a) => {
-            let limits = a.items.iter().find_map(|it| match it {
-                AgentItem::Attribute(attr) if attr.name == "limits" => Some(attr),
-                _ => None,
-            }).expect("expected @limits");
+            let limits = a
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    AgentItem::Attribute(attr) if attr.name == "limits" => Some(attr),
+                    _ => None,
+                })
+                .expect("expected @limits");
             match &limits.body {
                 AttributeBody::Expr(Expr::StructLit(fields)) => {
                     assert_eq!(fields.len(), 2);
@@ -260,10 +266,14 @@ agent Bot {
     let prog = parse_ok(src);
     match first_decl(&prog) {
         Decl::Agent(a) => {
-            let on_start = a.items.iter().find_map(|it| match it {
-                AgentItem::Attribute(attr) if attr.name == "on_start" => Some(attr),
-                _ => None,
-            }).expect("expected @on_start");
+            let on_start = a
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    AgentItem::Attribute(attr) if attr.name == "on_start" => Some(attr),
+                    _ => None,
+                })
+                .expect("expected @on_start");
             match &on_start.body {
                 AttributeBody::Block(body) => {
                     assert!(!body.is_empty(), "on_start body should contain statements");
@@ -289,10 +299,14 @@ agent Counter {
     let prog = parse_ok(src);
     match first_decl(&prog) {
         Decl::Agent(a) => {
-            let state = a.items.iter().find_map(|it| match it {
-                AgentItem::State(fields) => Some(fields),
-                _ => None,
-            }).expect("expected state");
+            let state = a
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    AgentItem::State(fields) => Some(fields),
+                    _ => None,
+                })
+                .expect("expected state");
             assert_eq!(state.len(), 2);
             assert_eq!(state[0].name, "count");
             assert_eq!(state[1].name, "last");
@@ -314,10 +328,14 @@ agent Bot {
     let prog = parse_ok(src);
     match first_decl(&prog) {
         Decl::Agent(a) => {
-            let handler = a.items.iter().find_map(|it| match it {
-                AgentItem::On(h) => Some(h),
-                _ => None,
-            }).expect("expected on handler");
+            let handler = a
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    AgentItem::On(h) => Some(h),
+                    _ => None,
+                })
+                .expect("expected on handler");
             assert_eq!(handler.event, "message");
             assert!(handler.param.is_some());
         }
@@ -335,7 +353,11 @@ fn parse_namespace_method_call() {
         Decl::Task(t) => {
             assert_eq!(t.body.len(), 1);
             match &t.body[0].0 {
-                Stmt::Expr(Expr::MethodCall { object, method, args }) => {
+                Stmt::Expr(Expr::MethodCall {
+                    object,
+                    method,
+                    args,
+                }) => {
                     assert!(matches!(object.as_ref(), Expr::Ident(n) if n == "Ai"));
                     assert_eq!(method, "classify");
                     assert_eq!(args.len(), 2);
@@ -368,14 +390,12 @@ fn parse_explicit_lambda_arg() {
 fn parse_as_cast() {
     let prog = parse_ok(r#"task t() { x = Ai.prompt(system: "hi") as MyType }"#);
     match first_decl(&prog) {
-        Decl::Task(t) => {
-            match &t.body[0].0 {
-                Stmt::Let { value, .. } => {
-                    assert!(matches!(value, Expr::Cast { .. }));
-                }
-                other => panic!("expected Let, got {:?}", other),
+        Decl::Task(t) => match &t.body[0].0 {
+            Stmt::Let { value, .. } => {
+                assert!(matches!(value, Expr::Cast { .. }));
             }
-        }
+            other => panic!("expected Let, got {:?}", other),
+        },
         other => panic!("expected Task, got {:?}", other),
     }
 }

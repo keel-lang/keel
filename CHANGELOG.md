@@ -8,6 +8,57 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.8] — 2026-04-30
+
+### Reactive Agents & Text Processing
+
+This release adds HTTP webhook handling, in-memory caching, regex and string tools, and LSP go-to-definition and rename.
+
+#### Cache namespace
+
+Process-scoped in-memory cache with optional TTL:
+
+```keel
+Cache.set("key", "value", ttl: 60.seconds)
+val = Cache.get("key")          // returns value or none
+Cache.delete("key")
+Cache.clear()
+```
+
+#### Str namespace
+
+Regex matching and string manipulation:
+
+```keel
+if Str.match(text, "\\d+") {
+  number = Str.extract(text, "(\\d+)")
+}
+text = Str.truncate("hello world", 5)      // "hello…"
+text = Str.pad("42", 5)                    // "   42"
+text = Str.pad("42", 5, char: "0")         // "00042"
+```
+
+#### Http.serve
+
+HTTP listener for webhooks and reactive agents:
+
+```keel
+Http.serve(8080, (request) => {
+  method = request["method"]
+  path = request["path"]
+  body = request["body"]
+  { status: 200, body: "OK" }
+})
+```
+
+The handler receives a `request` map with `method`, `path`, `body` and returns a response map with `status`, `body`.
+
+#### LSP go-to-definition & rename
+
+Jump to task/agent/type declarations and rename symbols across a file in VS Code and other LSP clients.
+
+---
+
 ## [0.1.7] — 2026-04-30
 
 ### Structured Concurrency & Agent Constraints

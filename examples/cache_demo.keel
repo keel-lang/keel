@@ -1,0 +1,31 @@
+agent CacheDemo {
+    @on_start {
+        # Basic set and get
+        Cache.set("greeting", "Hello, Keel!")
+        val = Cache.get("greeting")
+        Io.show(val)
+
+        # Set with TTL
+        Cache.set("token", "abc123", ttl: 5.minutes)
+        token = Cache.get("token")
+        Io.show("Token: {token}")
+
+        # Delete a key
+        Cache.set("temp", "remove-me")
+        Cache.delete("temp")
+        gone = Cache.get("temp")
+        if gone == none {
+            Io.show("key deleted")
+        }
+
+        # Clear all entries
+        Cache.set("a", "1")
+        Cache.set("b", "2")
+        Cache.clear()
+        empty = Cache.get("a")
+        if empty == none {
+            Io.show("cache cleared")
+        }
+    }
+}
+run(CacheDemo)

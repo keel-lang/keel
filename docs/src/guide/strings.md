@@ -75,3 +75,53 @@ notify user "Price: \{not interpolated\}"
 | `.replace(old, new)` | `str` | `"hello".replace("l","r")` → `"herro"` |
 | `.to_int()` | `int?` | `"42".to_int()` → `42` |
 | `.to_float()` | `float?` | `"3.14".to_float()` → `3.14` |
+
+## `Str` namespace — regex & processing
+
+The `Str` namespace provides regex matching and string manipulation:
+
+```keel
+# Test if a pattern matches
+if Str.match(text, "\\d{4}-\\d{2}-\\d{2}") {
+  Io.show("looks like a date")
+}
+
+# Extract first capture group (returns str?)
+phone = Str.extract(text, "(\\+?\\d[\\d\\s-]{7,})")
+
+# Truncate with ellipsis
+short = Str.truncate("Hello, World!", 7)   # "Hello, …"
+
+# Left-pad with spaces (or custom char)
+padded  = Str.pad("42", 6)              # "    42"
+zeroed  = Str.pad("42", 6, char: "0")  # "000042"
+```
+
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `Str.match(text, pattern)` | `bool` | True if regex matches anywhere in `text` |
+| `Str.extract(text, pattern)` | `str?` | First capture group; `none` if no match |
+| `Str.truncate(text, max)` | `str` | Truncates to `max` chars; appends `"…"` if cut. `max` must be ≥ 0 |
+| `Str.pad(text, width, char?)` | `str` | Left-pads to `width` with `char` (default `" "`). `width` must be ≥ 0 |
+
+Patterns use standard regex syntax (Rust `regex` crate — no look-behind).
+
+## `Cache` namespace — in-memory shared cache
+
+`Cache` is a process-scoped, in-memory key-value store with optional TTL. It persists across agent restarts within the same process run but is cleared when the process exits.
+
+```keel
+Cache.set("session:abc", user_data, ttl: 30.minutes)
+session = Cache.get("session:abc")   # value or none (if expired/missing)
+Cache.delete("session:abc")
+Cache.clear()                        # flush everything
+```
+
+| Method | Returns | Notes |
+|--------|---------|-------|
+| `Cache.set(key, value, ttl?)` | `none` | `ttl` is a duration literal; omit for no expiry |
+| `Cache.get(key)` | `Value?` | `none` if missing or expired |
+| `Cache.delete(key)` | `none` | No-op if key doesn't exist |
+| `Cache.clear()` | `none` | Flushes all entries |
+
+> **Scope:** `Cache` fills the gap between `self.` (per-agent state) and `Memory` (persistent vector store, planned for v0.2). Use it for rate-limiting tokens, deduplication keys, or short-lived computed results.

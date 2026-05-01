@@ -354,10 +354,7 @@ impl fmt::Display for Token {
 // Lexer entry point
 // ---------------------------------------------------------------------------
 
-pub fn lex(
-    source: &str,
-    named_src: &NamedSource<String>,
-) -> miette::Result<Vec<Spanned<Token>>> {
+pub fn lex(source: &str, named_src: &NamedSource<String>) -> miette::Result<Vec<Spanned<Token>>> {
     let lexer = Token::lexer(source);
     let mut raw_tokens: Vec<Spanned<Token>> = Vec::new();
 
@@ -399,20 +396,20 @@ pub(crate) fn normalize_newlines(tokens: Vec<Spanned<Token>>) -> Vec<Spanned<Tok
             if result.is_empty() {
                 continue;
             }
-            if let Some((prev, _)) = result.last() {
-                if continues_to_next_line(prev) {
-                    continue;
-                }
+            if let Some((prev, _)) = result.last()
+                && continues_to_next_line(prev)
+            {
+                continue;
             }
             if let Some((Token::Newline, _)) = result.last() {
                 continue;
             }
             result.push((token, span));
         } else {
-            if continues_from_prev_line(&token) {
-                if let Some((Token::Newline, _)) = result.last() {
-                    result.pop();
-                }
+            if continues_from_prev_line(&token)
+                && let Some((Token::Newline, _)) = result.last()
+            {
+                result.pop();
             }
             result.push((token, span));
         }

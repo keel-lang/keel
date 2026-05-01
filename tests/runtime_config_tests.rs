@@ -23,7 +23,11 @@ fn log_threshold_and_trace_round_trip() {
     assert_eq!(runtime::current_log_threshold(), 2);
 
     assert!(!runtime::set_log_threshold("louder"));
-    assert_eq!(runtime::current_log_threshold(), 2, "invalid level must not mutate");
+    assert_eq!(
+        runtime::current_log_threshold(),
+        2,
+        "invalid level must not mutate"
+    );
 
     assert!(runtime::set_log_threshold("error"));
     assert_eq!(runtime::current_log_threshold(), 3);

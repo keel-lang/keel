@@ -1,4 +1,4 @@
-use keel_lang::lexer::{lex, Token};
+use keel_lang::lexer::{Token, lex};
 use miette::NamedSource;
 
 fn tokens(source: &str) -> Vec<Token> {
@@ -65,10 +65,7 @@ fn lex_control_flow_keywords() {
 #[test]
 fn lex_cast_and_logic_keywords() {
     let toks = tokens("as and or not");
-    assert_eq!(
-        toks,
-        vec![Token::As, Token::And, Token::Or, Token::Not]
-    );
+    assert_eq!(toks, vec![Token::As, Token::And, Token::Or, Token::Not]);
 }
 
 #[test]

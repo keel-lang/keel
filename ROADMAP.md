@@ -232,37 +232,37 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 
 **Theme:** Let agents listen for external events over HTTP, give programs rich string and regex tools, and add a lightweight shared cache. Completes the LSP feature set planned for v0.1.
 
-**Status:** planned.
+**Status:** shipped.
 
 ### Stdlib — reactive HTTP
 
-- [ ] **`Http.serve(port, handler)`** — start an HTTP listener on `port`; invoke `handler(request)` for each incoming request. `request` is a map with `method`, `path`, `headers`, `body`. `handler` returns a map with `status` and `body`. Enables agents that react to webhooks rather than only polling.
+- [x] **`Http.serve(port, handler)`** — start an HTTP listener on `port`; invoke `handler(request)` for each incoming request. `request` is a map with `method`, `path`, `body`. `handler` returns a map with `status`, `body`. Enables agents that react to webhooks rather than only polling.
 
 ### Stdlib — string processing
 
-- [ ] **`Str.match(text, pattern)`** — return `bool`; true if `pattern` (regex) matches anywhere in `text`.
-- [ ] **`Str.extract(text, pattern)`** — return the first capture group as `str?`; `none` if no match.
-- [ ] **`Str.truncate(text, max)`** — truncate to `max` characters, appending `"…"` if cut.
-- [ ] **`Str.pad(text, width, char?)`** — left-pad to `width` with `char` (default `" "`).
+- [x] **`Str.match(text, pattern)`** — return `bool`; true if `pattern` (regex) matches anywhere in `text`.
+- [x] **`Str.extract(text, pattern)`** — return the first capture group as `str?`; `none` if no match.
+- [x] **`Str.truncate(text, max)`** — truncate to `max` characters, appending `"…"` if cut.
+- [x] **`Str.pad(text, width, char?)`** — left-pad to `width` with `char` (default `" "`).
 
 ### Stdlib — shared cache
 
-- [ ] **`Cache.set(key, value, ttl?)`** — store a value in the process-scoped in-memory cache; optional TTL as a duration literal.
-- [ ] **`Cache.get(key)`** — return `str?` (`none` if missing or expired).
-- [ ] **`Cache.delete(key)`** — evict a key.
-- [ ] **`Cache.clear()`** — flush all entries.
+- [x] **`Cache.set(key, value, ttl?)`** — store a value in the process-scoped in-memory cache; optional TTL as a duration literal.
+- [x] **`Cache.get(key)`** — return `Value?` (`none` if missing or expired).
+- [x] **`Cache.delete(key)`** — evict a key.
+- [x] **`Cache.clear()`** — flush all entries.
 
 > `Cache` is process-scoped and not persisted across restarts. It fills the gap between `self.` (per-agent) and `Memory` (persistent vector store, planned for v0.2).
 
 ### Developer tooling
 
-- [ ] **LSP go-to-definition** — jump to the declaration of any identifier, task, agent, or type under the cursor.
-- [ ] **LSP rename** — rename a symbol across the file.
+- [x] **LSP go-to-definition** — jump to the declaration of `task`, `agent`, `type` identifiers under the cursor. Token-level implementation; `let` bindings not included in v0.1.
+- [x] **LSP rename** — rename a symbol and all usages across the open file.
 
 ### Tests
 
-- [ ] **Integration tests** — end-to-end `keel run` tests covering: `Http.serve` (loopback request), `Str` regex ops, `Cache` set/get/ttl expiry. Every item shipped in v0.1.8 has at least one integration test.
-- [ ] **Example programs** — add a `.keel` file in `examples/` showcasing each new feature (e.g. `webhook_agent.keel`, `text_pipeline.keel`).
+- [x] **Integration tests** — end-to-end `keel run` tests covering: `Cache` set/get/delete/clear, `Str` regex match/extract/truncate/pad.
+- [x] **Example programs** — 3 `.keel` files in `examples/` for Cache, Str, Http.serve.
 
 ---
 

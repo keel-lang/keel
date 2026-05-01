@@ -19,7 +19,6 @@
 - [Control Flow](./guide/control-flow.md)
 - [Collections & Lambdas](./guide/collections.md)
 - [Error Handling](./guide/error-handling.md)
-- [String Interpolation](./guide/strings.md)
 - [The Prelude & Interfaces](./guide/prelude.md)
 
 # Standard Library
@@ -28,6 +27,7 @@
 - [Io (human interaction)](./guide/human-interaction.md)
 - [Schedule (time & cron)](./guide/scheduling.md)
 - [Email & Http (connections)](./guide/connections.md)
+- [Str & Cache (text & memory)](./guide/strings.md)
 
 # CLI Reference
 

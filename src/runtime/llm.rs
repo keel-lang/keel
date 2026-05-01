@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 enum Provider {
-    Ollama { base_url: String },
+    Ollama {
+        base_url: String,
+    },
     /// No-op provider for tests. Every call returns `CallFailed`.
     Mock,
 }
@@ -74,6 +76,12 @@ fn trace() -> bool {
     super::trace_enabled()
 }
 
+impl Default for LlmClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LlmClient {
     pub fn new() -> Self {
         if std::env::var("KEEL_LLM").as_deref() == Ok("mock") {
@@ -94,7 +102,11 @@ impl LlmClient {
                 ollama_host.dimmed()
             );
             for (keel_name, ollama_name) in &model_map {
-                println!("     {} → {}", keel_name.dimmed(), ollama_name.bright_cyan());
+                println!(
+                    "     {} → {}",
+                    keel_name.dimmed(),
+                    ollama_name.bright_cyan()
+                );
             }
             if !ollama_default.is_empty() {
                 println!("     {} → {}", "*".dimmed(), ollama_default.bright_cyan());
@@ -103,7 +115,9 @@ impl LlmClient {
 
         LlmClient {
             client,
-            provider: Provider::Ollama { base_url: ollama_host },
+            provider: Provider::Ollama {
+                base_url: ollama_host,
+            },
             model_map,
             ollama_default,
         }
@@ -125,10 +139,10 @@ impl LlmClient {
         //   KEEL_MODEL_SMART=mistral:7b-instruct
         let mut map = HashMap::new();
         for (key, val) in std::env::vars() {
-            if let Some(suffix) = key.strip_prefix("KEEL_MODEL_") {
-                if !val.is_empty() {
-                    map.insert(suffix.to_ascii_lowercase().replace('_', "-"), val);
-                }
+            if let Some(suffix) = key.strip_prefix("KEEL_MODEL_")
+                && !val.is_empty()
+            {
+                map.insert(suffix.to_ascii_lowercase().replace('_', "-"), val);
             }
         }
         map
@@ -188,7 +202,11 @@ impl LlmClient {
             if !rules.is_empty() {
                 println!("  {} Rules injected: {}", "→".dimmed(), rules.len());
             }
-            println!("  {} system prompt: {}", "→".dimmed(), truncate(&full_system, 200).dimmed());
+            println!(
+                "  {} system prompt: {}",
+                "→".dimmed(),
+                truncate(&full_system, 200).dimmed()
+            );
         }
 
         match &self.provider {
@@ -199,14 +217,26 @@ impl LlmClient {
         }
     }
 
-    async fn call_ollama(&self, base_url: &str, system: &str, user: &str, model: &str) -> LlmResult {
+    async fn call_ollama(
+        &self,
+        base_url: &str,
+        system: &str,
+        user: &str,
+        model: &str,
+    ) -> LlmResult {
         let resolved = self.resolve_model(model)?;
         let url = format!("{base_url}/api/chat");
         let request = OllamaRequest {
             model: resolved.to_string(),
             messages: vec![
-                ChatMessage { role: "system".into(), content: system.to_string() },
-                ChatMessage { role: "user".into(), content: user.to_string() },
+                ChatMessage {
+                    role: "system".into(),
+                    content: system.to_string(),
+                },
+                ChatMessage {
+                    role: "user".into(),
+                    content: user.to_string(),
+                },
             ],
             stream: false,
         };
@@ -221,7 +251,9 @@ impl LlmClient {
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(LlmError::CallFailed(format!("Ollama returned {status}: {body}")));
+            return Err(LlmError::CallFailed(format!(
+                "Ollama returned {status}: {body}"
+            )));
         }
 
         let body: OllamaResponse = response
@@ -274,12 +306,20 @@ impl LlmClient {
                     let lv = variant.to_lowercase();
                     if cleaned == lv || cleaned.contains(&lv) {
                         if trace() {
-                            println!("  {} Result: {}", "✓".bright_green(), variant.bright_white().bold());
+                            println!(
+                                "  {} Result: {}",
+                                "✓".bright_green(),
+                                variant.bright_white().bold()
+                            );
                         }
                         return Ok(Some(variant.clone()));
                     }
                 }
-                println!("  {} LLM returned '{}', no exact match", "⚠".bright_yellow(), cleaned.dimmed());
+                println!(
+                    "  {} LLM returned '{}', no exact match",
+                    "⚠".bright_yellow(),
+                    cleaned.dimmed()
+                );
                 Ok(None)
             }
             Err(LlmError::ConfigError(msg)) => Err(msg),
@@ -290,6 +330,7 @@ impl LlmClient {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn summarize(
         &self,
         role: Option<&str>,
@@ -329,7 +370,8 @@ impl LlmClient {
             _ => {}
         }
         if let Some(n) = max {
-            let unit_str = unit.as_deref()
+            let unit_str = unit
+                .as_deref()
                 .or_else(|| length.as_ref().map(|(_, u)| u.as_str()))
                 .unwrap_or("items");
             system.push_str(&format!(" Use at most {n} {unit_str}."));
@@ -349,6 +391,7 @@ impl LlmClient {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn draft(
         &self,
         role: Option<&str>,
@@ -370,7 +413,8 @@ impl LlmClient {
             println!("     prompt: {}", truncate(description, 80).dimmed());
         }
 
-        let mut system = format!("You are a text drafter. Draft the following with a {tone_s} tone.");
+        let mut system =
+            format!("You are a text drafter. Draft the following with a {tone_s} tone.");
         if let Some(g) = guidance {
             system.push_str(&format!("\n\nAdditional guidance: {g}"));
         }
@@ -472,7 +516,8 @@ impl LlmClient {
                     let mut map = HashMap::new();
                     map.insert(target_langs[0].clone(), trimmed);
                     Ok(Some(map))
-                } else if let Ok(parsed) = serde_json::from_str::<HashMap<String, String>>(&trimmed) {
+                } else if let Ok(parsed) = serde_json::from_str::<HashMap<String, String>>(&trimmed)
+                {
                     Ok(Some(parsed))
                 } else {
                     let mut map = HashMap::new();
@@ -529,7 +574,11 @@ impl LlmClient {
                     choice = trimmed.to_string();
                 }
                 if trace() {
-                    println!("  {} Decision: {}", "✓".bright_green(), choice.bright_white().bold());
+                    println!(
+                        "  {} Decision: {}",
+                        "✓".bright_green(),
+                        choice.bright_white().bold()
+                    );
                 }
                 Ok(Some((choice, reason)))
             }
@@ -564,12 +613,12 @@ impl LlmClient {
         match self.call(role, rules, &full_sys, user, model).await {
             Ok(response) => {
                 let trimmed = response.trim().to_string();
-                if response_format.as_deref() == Some("json") {
-                    if serde_json::from_str::<serde_json::Value>(&trimmed).is_err() {
-                        return Err(format!(
-                            "Ai.prompt: response_format: json was set but LLM returned non-JSON: {trimmed}"
-                        ));
-                    }
+                if response_format.as_deref() == Some("json")
+                    && serde_json::from_str::<serde_json::Value>(&trimmed).is_err()
+                {
+                    return Err(format!(
+                        "Ai.prompt: response_format: json was set but LLM returned non-JSON: {trimmed}"
+                    ));
                 }
                 if trace() {
                     println!("  {} Response ready", "✓".bright_green());

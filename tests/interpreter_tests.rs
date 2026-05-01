@@ -19,9 +19,7 @@ async fn run_program(source: &str) -> Result<(), String> {
     let named = NamedSource::new("test.keel", source.to_string());
     let tokens = lex(source, &named).map_err(|e| e.to_string())?;
     let program = parse(tokens, source.len(), &named).map_err(|e| e.to_string())?;
-    interpreter::run(program)
-        .await
-        .map_err(|e| e.to_string())
+    interpreter::run(program).await.map_err(|e| e.to_string())
 }
 
 fn run_ok(source: &str) {
@@ -33,11 +31,7 @@ fn run_ok(source: &str) {
 
 fn run_err(source: &str) -> String {
     let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        run_program(source)
-            .await
-            .expect_err("program should fail")
-    })
+    rt.block_on(async { run_program(source).await.expect_err("program should fail") })
 }
 
 // ─── Basic execution ─────────────────────────────────────────────────────────

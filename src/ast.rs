@@ -244,10 +244,7 @@ pub enum Stmt {
         else_body: Option<Block>,
     },
     /// `when expr { arms }` — statement form.
-    When {
-        subject: Expr,
-        arms: Vec<WhenArm>,
-    },
+    When { subject: Expr, arms: Vec<WhenArm> },
     /// `try { ... } catch err: Type { ... }`
     TryCatch {
         body: Block,
@@ -278,10 +275,7 @@ pub enum Pattern {
     /// Literal value.
     Literal(Expr),
     /// Rich enum variant destructure: `reply { to, tone }`.
-    Variant {
-        name: String,
-        bindings: Vec<String>,
-    },
+    Variant { name: String, bindings: Vec<String> },
 }
 
 // ---------------------------------------------------------------------------

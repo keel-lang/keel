@@ -32,7 +32,10 @@ impl std::fmt::Display for TypeError {
 
 impl TypeError {
     fn new(msg: impl Into<String>) -> Self {
-        TypeError { message: msg.into(), span: None }
+        TypeError {
+            message: msg.into(),
+            span: None,
+        }
     }
     fn at(mut self, span: Span) -> Self {
         self.span = Some(span);
@@ -68,7 +71,10 @@ pub enum Ty {
 
 impl Ty {
     fn strip_nullable(&self) -> &Ty {
-        match self { Ty::Nullable(inner) => inner, _ => self }
+        match self {
+            Ty::Nullable(inner) => inner,
+            _ => self,
+        }
     }
 }
 
@@ -119,7 +125,9 @@ struct Scope {
 
 impl Scope {
     fn new() -> Self {
-        Scope { frames: vec![HashMap::new()] }
+        Scope {
+            frames: vec![HashMap::new()],
+        }
     }
     fn push(&mut self) {
         self.frames.push(HashMap::new());
@@ -136,7 +144,9 @@ impl Scope {
     }
     fn get(&self, name: &str) -> Option<&Ty> {
         for f in self.frames.iter().rev() {
-            if let Some(t) = f.get(name) { return Some(t); }
+            if let Some(t) = f.get(name) {
+                return Some(t);
+            }
         }
         None
     }
@@ -157,8 +167,10 @@ impl Checker {
     fn new() -> Self {
         let mut prelude = HashSet::new();
         // Prelude namespaces
-        for n in ["Ai", "Io", "Http", "Email", "Search", "Db", "Memory",
-                 "Schedule", "Async", "Control", "Env", "Time", "Log", "Agent"] {
+        for n in [
+            "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
+            "Env", "Time", "Log", "Agent", "Cache", "Str", "File", "Json",
+        ] {
             prelude.insert(n.to_string());
         }
         // Top-level builtins
@@ -166,22 +178,60 @@ impl Checker {
             prelude.insert(n.to_string());
         }
         // Built-in type names
-        for n in ["int", "float", "str", "bool", "none", "datetime", "duration", "dynamic",
-                  "list", "map", "set", "Result", "Message", "SearchResult", "Memory",
-                  "HttpResponse", "Decision", "Error",
-                  "AIError", "NetworkError", "TimeoutError", "NullError",
-                  "TypeError", "ParseError"] {
+        for n in [
+            "int",
+            "float",
+            "str",
+            "bool",
+            "none",
+            "datetime",
+            "duration",
+            "dynamic",
+            "list",
+            "map",
+            "set",
+            "Result",
+            "Message",
+            "SearchResult",
+            "Memory",
+            "HttpResponse",
+            "Decision",
+            "Error",
+            "AIError",
+            "NetworkError",
+            "TimeoutError",
+            "NullError",
+            "TypeError",
+            "ParseError",
+        ] {
             prelude.insert(n.to_string());
         }
         // Symbol identifiers used as hint args (see runtime::SYMBOL_IDENTS)
         // and attribute-value keywords (`@memory persistent`, etc.).
-        for n in ["sentence", "sentences", "line", "lines", "word", "words",
-                  "paragraph", "paragraphs",
-                  "bullets", "prose", "json",
-                  "exponential", "linear", "fixed",
-                  "google", "bing", "arxiv",
-                  "text", "html", "markdown",
-                  "persistent", "session"] {
+        for n in [
+            "sentence",
+            "sentences",
+            "line",
+            "lines",
+            "word",
+            "words",
+            "paragraph",
+            "paragraphs",
+            "bullets",
+            "prose",
+            "json",
+            "exponential",
+            "linear",
+            "fixed",
+            "google",
+            "bing",
+            "arxiv",
+            "text",
+            "html",
+            "markdown",
+            "persistent",
+            "session",
+        ] {
             prelude.insert(n.to_string());
         }
 
@@ -261,7 +311,10 @@ impl Checker {
             .as_ref()
             .map(|ty| self.resolve_type(ty))
             .unwrap_or(Ty::None_);
-        TaskSig { params, return_type }
+        TaskSig {
+            params,
+            return_type,
+        }
     }
 
     fn agent_info(&self, a: &AgentDecl) -> AgentInfo {
@@ -284,7 +337,11 @@ impl Checker {
                 AgentItem::Attribute(_) => {}
             }
         }
-        AgentInfo { state_fields, tasks, handlers }
+        AgentInfo {
+            state_fields,
+            tasks,
+            handlers,
+        }
     }
 
     // -----------------------------------------------------------------
@@ -315,12 +372,20 @@ impl Checker {
             },
             TypeExpr::Nullable(inner) => Ty::Nullable(Box::new(self.resolve_type(inner))),
             TypeExpr::List(inner) => Ty::List(Box::new(self.resolve_type(inner))),
-            TypeExpr::Map(k, v) => Ty::Map(Box::new(self.resolve_type(k)), Box::new(self.resolve_type(v))),
+            TypeExpr::Map(k, v) => Ty::Map(
+                Box::new(self.resolve_type(k)),
+                Box::new(self.resolve_type(v)),
+            ),
             TypeExpr::Set(inner) => Ty::Set(Box::new(self.resolve_type(inner))),
             TypeExpr::Struct(fields) => Ty::Struct(
-                fields.iter().map(|f| (f.name.clone(), self.resolve_type(&f.ty))).collect(),
+                fields
+                    .iter()
+                    .map(|f| (f.name.clone(), self.resolve_type(&f.ty)))
+                    .collect(),
             ),
-            TypeExpr::Tuple(items) => Ty::Tuple(items.iter().map(|t| self.resolve_type(t)).collect()),
+            TypeExpr::Tuple(items) => {
+                Ty::Tuple(items.iter().map(|t| self.resolve_type(t)).collect())
+            }
             TypeExpr::Func(params, ret) => Ty::Func(
                 params.iter().map(|t| self.resolve_type(t)).collect(),
                 Box::new(self.resolve_type(ret)),
@@ -367,17 +432,17 @@ impl Checker {
     /// from anywhere inside the agent body.
     fn fresh_scope(&self) -> Scope {
         let mut scope = Scope::new();
-        if let Some(agent_name) = &self.current_agent {
-            if let Some(info) = self.agents.get(agent_name) {
-                for (name, sig) in &info.tasks {
-                    scope.define(
-                        name.clone(),
-                        Ty::Func(
-                            sig.params.iter().map(|(_, t)| t.clone()).collect(),
-                            Box::new(sig.return_type.clone()),
-                        ),
-                    );
-                }
+        if let Some(agent_name) = &self.current_agent
+            && let Some(info) = self.agents.get(agent_name)
+        {
+            for (name, sig) in &info.tasks {
+                scope.define(
+                    name.clone(),
+                    Ty::Func(
+                        sig.params.iter().map(|(_, t)| t.clone()).collect(),
+                        Box::new(sig.return_type.clone()),
+                    ),
+                );
             }
         }
         scope
@@ -462,14 +527,19 @@ impl Checker {
             Stmt::Return(opt) => {
                 if let Some(e) = opt {
                     let actual = self.infer_expr(e, scope);
-                    if let Some(expected) = self.current_return_ty.clone() {
-                        if !matches!(expected, Ty::None_ | Ty::Unknown | Ty::Dynamic) {
-                            self.expect(&actual, &expected, "return value");
-                        }
+                    if let Some(expected) = self.current_return_ty.clone()
+                        && !matches!(expected, Ty::None_ | Ty::Unknown | Ty::Dynamic)
+                    {
+                        self.expect(&actual, &expected, "return value");
                     }
                 }
             }
-            Stmt::For { binding, iter, filter, body } => {
+            Stmt::For {
+                binding,
+                iter,
+                filter,
+                body,
+            } => {
                 let iter_ty = self.infer_expr(iter, scope);
                 let element_ty = match iter_ty.strip_nullable() {
                     Ty::List(inner) => *inner.clone(),
@@ -490,7 +560,11 @@ impl Checker {
                 }
                 scope.pop();
             }
-            Stmt::If { cond, then_body, else_body } => {
+            Stmt::If {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 let cond_ty = self.infer_expr(cond, scope);
                 self.expect(&cond_ty, &Ty::Bool, "`if` condition");
                 self.check_block(then_body, scope);
@@ -556,9 +630,12 @@ impl Checker {
         // Exhaustiveness
         match subject_ty.strip_nullable() {
             Ty::Enum(name) => {
-                if has_wildcard { return; }
+                if has_wildcard {
+                    return;
+                }
                 if let Some(variants) = self.enum_variants.get(name) {
-                    let missing: Vec<&String> = variants.iter().filter(|v| !covered.contains(*v)).collect();
+                    let missing: Vec<&String> =
+                        variants.iter().filter(|v| !covered.contains(*v)).collect();
                     if !missing.is_empty() {
                         let names: Vec<String> = missing.iter().map(|s| s.to_string()).collect();
                         self.err(format!(
@@ -604,7 +681,9 @@ impl Checker {
             }
 
             Expr::Ident(name) => {
-                if let Some(t) = scope.get(name) { return t.clone(); }
+                if let Some(t) = scope.get(name) {
+                    return t.clone();
+                }
                 if let Some(t) = self.top_tasks.get(name) {
                     return Ty::Func(
                         t.params.iter().map(|(_, ty)| ty.clone()).collect(),
@@ -656,9 +735,11 @@ impl Checker {
                 }
                 let obj_ty = self.infer_expr(obj, scope);
                 match obj_ty.strip_nullable() {
-                    Ty::Struct(fields) => {
-                        fields.iter().find(|(n, _)| n == field).map(|(_, t)| t.clone()).unwrap_or(Ty::Unknown)
-                    }
+                    Ty::Struct(fields) => fields
+                        .iter()
+                        .find(|(n, _)| n == field)
+                        .map(|(_, t)| t.clone())
+                        .unwrap_or(Ty::Unknown),
                     _ => Ty::Unknown,
                 }
             }
@@ -689,7 +770,9 @@ impl Checker {
                 let mut element_ty = Ty::Unknown;
                 for (i, e) in items.iter().enumerate() {
                     let ty = self.infer_expr(e, scope);
-                    if i == 0 { element_ty = ty; }
+                    if i == 0 {
+                        element_ty = ty;
+                    }
                 }
                 Ty::List(Box::new(element_ty))
             }
@@ -731,45 +814,54 @@ impl Checker {
             }
 
             Expr::Call { callee, args } => {
-                for a in args { self.infer_expr(&a.value, scope); }
-                if let Expr::Ident(name) = callee.as_ref() {
-                    if let Some(sig) = self.top_tasks.get(name).cloned() {
-                        let expected = sig.params.len();
-                        // Count only positional args (named args may map to params by name).
-                        let positional: usize = args.iter().filter(|a| a.name.is_none()).count();
-                        if positional > expected {
-                            self.err(format!(
-                                "task `{name}` takes {expected} argument(s), got {positional}"
-                            ));
-                        }
-                        return sig.return_type.clone();
+                for a in args {
+                    self.infer_expr(&a.value, scope);
+                }
+                if let Expr::Ident(name) = callee.as_ref()
+                    && let Some(sig) = self.top_tasks.get(name).cloned()
+                {
+                    let expected = sig.params.len();
+                    // Count only positional args (named args may map to params by name).
+                    let positional: usize = args.iter().filter(|a| a.name.is_none()).count();
+                    if positional > expected {
+                        self.err(format!(
+                            "task `{name}` takes {expected} argument(s), got {positional}"
+                        ));
                     }
+                    return sig.return_type.clone();
                 }
                 let _ = self.infer_expr(callee, scope);
                 Ty::Unknown
             }
 
-            Expr::MethodCall { object, method, args } => {
-                for a in args { self.infer_expr(&a.value, scope); }
+            Expr::MethodCall {
+                object,
+                method,
+                args,
+            } => {
+                for a in args {
+                    self.infer_expr(&a.value, scope);
+                }
                 // Special cases for inferring Ai.classify → Enum(T)
                 if let Expr::Ident(name) = object.as_ref() {
-                    if name == "Ai" && method == "classify" {
-                        if let Some(as_arg) = args.iter().find(|a| a.name.as_deref() == Some("as")) {
-                            if let Expr::Ident(enum_name) = &as_arg.value {
-                                if self.enum_variants.contains_key(enum_name) {
-                                    let base = Ty::Enum(enum_name.clone());
-                                    return if args.iter().any(|a| a.name.as_deref() == Some("fallback")) {
-                                        base
-                                    } else {
-                                        Ty::Nullable(Box::new(base))
-                                    };
-                                }
-                            }
-                        }
+                    if name == "Ai"
+                        && method == "classify"
+                        && let Some(as_arg) = args.iter().find(|a| a.name.as_deref() == Some("as"))
+                        && let Expr::Ident(enum_name) = &as_arg.value
+                        && self.enum_variants.contains_key(enum_name)
+                    {
+                        let base = Ty::Enum(enum_name.clone());
+                        return if args.iter().any(|a| a.name.as_deref() == Some("fallback")) {
+                            base
+                        } else {
+                            Ty::Nullable(Box::new(base))
+                        };
                     }
                     if name == "Ai" {
                         match method.as_str() {
-                            "draft" | "summarize" | "translate" | "prompt" => return Ty::Nullable(Box::new(Ty::Str)),
+                            "draft" | "summarize" | "translate" | "prompt" => {
+                                return Ty::Nullable(Box::new(Ty::Str));
+                            }
                             "extract" => return Ty::Nullable(Box::new(Ty::Unknown)),
                             "decide" => return Ty::Nullable(Box::new(Ty::Unknown)),
                             _ => {}
@@ -819,7 +911,11 @@ impl Checker {
                 self.resolve_type(ty)
             }
 
-            Expr::IfExpr { cond, then_body, else_body } => {
+            Expr::IfExpr {
+                cond,
+                then_body,
+                else_body,
+            } => {
                 let c = self.infer_expr(cond, scope);
                 self.expect(&c, &Ty::Bool, "`if` condition");
                 let then_ty = self.block_type(then_body, scope);
@@ -836,21 +932,31 @@ impl Checker {
             Expr::Lambda { params, body } => {
                 scope.push();
                 for p in params {
-                    let ty = p.ty.as_ref().map(|t| self.resolve_type(t)).unwrap_or(Ty::Unknown);
+                    let ty =
+                        p.ty.as_ref()
+                            .map(|t| self.resolve_type(t))
+                            .unwrap_or(Ty::Unknown);
                     scope.define(p.name.clone(), ty);
                 }
                 let ret = match body {
                     LambdaBody::Expr(e) => self.infer_expr(e, scope),
                     LambdaBody::Block(b) => {
-                        for (s, _) in b { self.check_stmt(s, scope); }
+                        for (s, _) in b {
+                            self.check_stmt(s, scope);
+                        }
                         Ty::Unknown
                     }
                 };
                 scope.pop();
                 Ty::Func(
-                    params.iter().map(|p| {
-                        p.ty.as_ref().map(|t| self.resolve_type(t)).unwrap_or(Ty::Unknown)
-                    }).collect(),
+                    params
+                        .iter()
+                        .map(|p| {
+                            p.ty.as_ref()
+                                .map(|t| self.resolve_type(t))
+                                .unwrap_or(Ty::Unknown)
+                        })
+                        .collect(),
                     Box::new(ret),
                 )
             }
@@ -860,11 +966,15 @@ impl Checker {
                 Ty::Duration
             }
 
-            Expr::EnumVariant { ty: name, variant, fields } => {
-                if let Some(variants) = self.enum_variants.get(name) {
-                    if !variants.contains(variant) {
-                        self.err(format!("enum `{name}` has no variant `{variant}`"));
-                    }
+            Expr::EnumVariant {
+                ty: name,
+                variant,
+                fields,
+            } => {
+                if let Some(variants) = self.enum_variants.get(name)
+                    && !variants.contains(variant)
+                {
+                    self.err(format!("enum `{name}` has no variant `{variant}`"));
                 }
                 for (_, v) in fields {
                     self.infer_expr(v, scope);
@@ -891,8 +1001,12 @@ impl Checker {
     }
 
     fn expect(&mut self, actual: &Ty, expected: &Ty, context: &str) {
-        if matches!(actual, Ty::Unknown | Ty::Dynamic) { return; }
-        if matches!(expected, Ty::Unknown | Ty::Dynamic) { return; }
+        if matches!(actual, Ty::Unknown | Ty::Dynamic) {
+            return;
+        }
+        if matches!(expected, Ty::Unknown | Ty::Dynamic) {
+            return;
+        }
 
         // Nullable actual where non-nullable expected — caller must unwrap.
         if matches!(actual, Ty::Nullable(_)) && !matches!(expected, Ty::Nullable(_)) {
@@ -908,7 +1022,9 @@ impl Checker {
         let expected_base = expected.strip_nullable();
 
         // Struct structural compatibility: all expected fields must be present.
-        if let (Ty::Struct(actual_fields), Ty::Struct(expected_fields)) = (actual_base, expected_base) {
+        if let (Ty::Struct(actual_fields), Ty::Struct(expected_fields)) =
+            (actual_base, expected_base)
+        {
             for (exp_name, exp_ty) in expected_fields {
                 match actual_fields.iter().find(|(n, _)| n == exp_name) {
                     None => self.err(format!("{context}: missing field `{exp_name}`")),
@@ -924,13 +1040,13 @@ impl Checker {
         // declared `map[K, V]` is treated as a map when keys are strings and
         // every field value matches V. This matches the surface syntax where
         // the same `{...}` form serves as both struct and map literal.
-        if let (Ty::Struct(actual_fields), Ty::Map(key_ty, value_ty)) = (actual_base, expected_base) {
-            if matches!(key_ty.as_ref(), Ty::Str | Ty::Unknown | Ty::Dynamic) {
-                for (name, act_ty) in actual_fields {
-                    self.expect(act_ty, value_ty, &format!("{context}[{name}]"));
-                }
-                return;
+        if let (Ty::Struct(actual_fields), Ty::Map(key_ty, value_ty)) = (actual_base, expected_base)
+            && matches!(key_ty.as_ref(), Ty::Str | Ty::Unknown | Ty::Dynamic)
+        {
+            for (name, act_ty) in actual_fields {
+                self.expect(act_ty, value_ty, &format!("{context}[{name}]"));
             }
+            return;
         }
 
         if actual_base != expected_base && !matches!(actual_base, Ty::Unknown | Ty::Dynamic) {
@@ -952,14 +1068,11 @@ impl Checker {
 // for the identifier under the cursor. Used by the LSP `hover` handler.
 // ---------------------------------------------------------------------------
 
-/// Resolve the inferred type for the identifier at `offset` (UTF-8 byte
-/// offset into `text`). Returns `None` if the cursor is not on an
-/// identifier or the identifier can't be resolved.
-pub fn type_at(text: &str, offset: usize) -> Option<String> {
+/// Get the identifier and its span at the given byte offset.
+pub fn ident_at_offset(text: &str, offset: usize) -> Option<String> {
     use crate::lexer::Token;
     use logos::Logos;
 
-    let mut name: Option<String> = None;
     for (result, span) in Token::lexer(text).spanned() {
         if span.start > offset {
             break;
@@ -968,23 +1081,115 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             continue;
         }
         if let Ok(Token::Ident(n)) = result {
-            name = Some(n);
-            break;
+            return Some(n);
         }
     }
-    let name = name?;
+    None
+}
+
+/// Get the span of the identifier at the given byte offset.
+pub fn ident_span_at_offset(text: &str, offset: usize) -> Option<crate::lexer::Span> {
+    use crate::lexer::Token;
+    use logos::Logos;
+
+    for (result, span) in Token::lexer(text).spanned() {
+        if span.start > offset {
+            break;
+        }
+        if span.end < offset {
+            continue;
+        }
+        if let Ok(Token::Ident(_)) = result {
+            return Some(span);
+        }
+    }
+    None
+}
+
+/// Find the declaration span of an identifier at the given offset.
+/// Returns the span of the declared name in task/agent/type declarations.
+pub fn definition_of(text: &str, offset: usize) -> Option<crate::lexer::Span> {
+    use crate::lexer::Token;
+    use logos::Logos;
+
+    let name = ident_at_offset(text, offset)?;
+
+    let tokens: Vec<(Token, crate::lexer::Span)> = Token::lexer(text)
+        .spanned()
+        .filter_map(|(r, s)| r.ok().map(|t| (t, s)))
+        .collect();
+
+    for i in 0..tokens.len().saturating_sub(1) {
+        match (&tokens[i].0, &tokens[i + 1].0) {
+            (Token::Task | Token::Agent | Token::Type, Token::Ident(n)) if n == &name => {
+                return Some(tokens[i + 1].1.clone());
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Find all spans of usages of the given identifier name.
+pub fn usages_of(text: &str, name: &str) -> Vec<crate::lexer::Span> {
+    use crate::lexer::Token;
+    use logos::Logos;
+
+    Token::lexer(text)
+        .spanned()
+        .filter_map(|(r, s)| r.ok().map(|t| (t, s)))
+        .filter_map(|(tok, span)| {
+            if let Token::Ident(n) = tok
+                && n == name
+            {
+                return Some(span);
+            }
+            None
+        })
+        .collect()
+}
+
+/// Resolve the inferred type for the identifier at `offset` (UTF-8 byte
+/// offset into `text`). Returns `None` if the cursor is not on an
+/// identifier or the identifier can't be resolved.
+pub fn type_at(text: &str, offset: usize) -> Option<String> {
+    let name = ident_at_offset(text, offset)?;
 
     if matches!(
         name.as_str(),
-        "Ai" | "Io" | "Http" | "Email" | "Search" | "Db" | "Memory"
-            | "Schedule" | "Async" | "Control" | "Env" | "Time" | "Log" | "Agent"
+        "Ai" | "Io"
+            | "Http"
+            | "Email"
+            | "Search"
+            | "Db"
+            | "Memory"
+            | "Schedule"
+            | "Async"
+            | "Control"
+            | "Env"
+            | "Time"
+            | "Log"
+            | "Agent"
+            | "Cache"
+            | "Str"
+            | "File"
+            | "Json"
     ) {
         return Some(format!("namespace `{name}`"));
     }
     if matches!(
         name.as_str(),
-        "int" | "float" | "str" | "bool" | "none" | "datetime" | "duration"
-            | "list" | "map" | "set" | "dynamic"
+        "int"
+            | "float"
+            | "str"
+            | "bool"
+            | "none"
+            | "datetime"
+            | "duration"
+            | "list"
+            | "map"
+            | "set"
+            | "dynamic"
     ) {
         return Some(format!("type `{name}`"));
     }
@@ -1060,7 +1265,12 @@ fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String,
             let bound = ty.as_ref().map(|t| c.resolve_type(t)).unwrap_or(inferred);
             out.insert(name.clone(), bound);
         }
-        Stmt::For { binding, iter, body, .. } => {
+        Stmt::For {
+            binding,
+            iter,
+            body,
+            ..
+        } => {
             let mut scope = Scope::new();
             let iter_ty = c.infer_expr(iter, &mut scope);
             let elem = match iter_ty.strip_nullable() {
@@ -1072,7 +1282,11 @@ fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String,
                 collect_stmt_bindings(s, c, out);
             }
         }
-        Stmt::If { then_body, else_body, .. } => {
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
             for (s, _) in then_body {
                 collect_stmt_bindings(s, c, out);
             }
@@ -1134,16 +1348,14 @@ fn infer_binary(op: BinOp, l: &Ty, r: &Ty) -> Ty {
     let lb = l.strip_nullable();
     let rb = r.strip_nullable();
     match op {
-        Add | Sub | Mul | Div | Mod => {
-            match (lb, rb) {
-                (Ty::Int, Ty::Int) => Ty::Int,
-                (Ty::Float, Ty::Float) => Ty::Float,
-                (Ty::Float, Ty::Int) | (Ty::Int, Ty::Float) => Ty::Float,
-                (Ty::Str, Ty::Str) if matches!(op, Add) => Ty::Str,
-                (Ty::List(le), Ty::List(_)) if matches!(op, Add) => Ty::List(le.clone()),
-                _ => Ty::Unknown,
-            }
-        }
+        Add | Sub | Mul | Div | Mod => match (lb, rb) {
+            (Ty::Int, Ty::Int) => Ty::Int,
+            (Ty::Float, Ty::Float) => Ty::Float,
+            (Ty::Float, Ty::Int) | (Ty::Int, Ty::Float) => Ty::Float,
+            (Ty::Str, Ty::Str) if matches!(op, Add) => Ty::Str,
+            (Ty::List(le), Ty::List(_)) if matches!(op, Add) => Ty::List(le.clone()),
+            _ => Ty::Unknown,
+        },
         Eq | Neq | Lt | Gt | Lte | Gte => Ty::Bool,
         And | Or => Ty::Bool,
     }

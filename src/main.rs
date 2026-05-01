@@ -6,7 +6,11 @@ use std::path::PathBuf;
 use keel_lang::{formatter, interpreter, lexer, lsp, parser, repl, runtime, types, vm};
 
 #[derive(Parser)]
-#[command(name = "keel", version, about = "Keel — AI agents as first-class citizens")]
+#[command(
+    name = "keel",
+    version,
+    about = "Keel — AI agents as first-class citizens"
+)]
 struct Cli {
     /// Print internal runtime detail: LLM call metadata, input previews,
     /// per-call results, provider banner. Off by default.
@@ -71,12 +75,12 @@ async fn main() -> Result<()> {
     // `--log-level <lvl>` sets the Log namespace's threshold. Validate
     // up-front so a typo fails fast instead of silently falling back
     // to the default.
-    if let Some(level) = &cli.log_level {
-        if !runtime::set_log_threshold(level) {
-            return Err(miette::miette!(
-                "--log-level: `{level}` is not a valid level (expected debug|info|warn|error)"
-            ));
-        }
+    if let Some(level) = &cli.log_level
+        && !runtime::set_log_threshold(level)
+    {
+        return Err(miette::miette!(
+            "--log-level: `{level}` is not a valid level (expected debug|info|warn|error)"
+        ));
     }
 
     // Top-level SIGINT watcher: exits the process regardless of what
@@ -244,8 +248,8 @@ fn build_file(path: &PathBuf) -> Result<()> {
     }
 
     // Compile to bytecode
-    let compiled = vm::compiler::compile(&program)
-        .map_err(|e| miette::miette!("Compilation error: {e}"))?;
+    let compiled =
+        vm::compiler::compile(&program).map_err(|e| miette::miette!("Compilation error: {e}"))?;
 
     // Write bytecode to .keelc file
     let out_path = path.with_extension("keelc");
@@ -253,7 +257,11 @@ fn build_file(path: &PathBuf) -> Result<()> {
     fs::write(&out_path, bytes).into_diagnostic()?;
 
     let op_count: usize = compiled.main.ops.len()
-        + compiled.functions.iter().map(|f| f.ops.len()).sum::<usize>();
+        + compiled
+            .functions
+            .iter()
+            .map(|f| f.ops.len())
+            .sum::<usize>();
 
     eprintln!(
         "✓ Compiled {} → {} ({} ops, {} functions)",
@@ -295,7 +303,10 @@ fn init_project(name: Option<String>) -> Result<()> {
 
     let dir = PathBuf::from(&project_name);
     if dir.exists() {
-        return Err(miette::miette!("Directory '{}' already exists", project_name));
+        return Err(miette::miette!(
+            "Directory '{}' already exists",
+            project_name
+        ));
     }
 
     fs::create_dir_all(&dir)
@@ -333,7 +344,7 @@ run({agent_name})
 }
 
 fn to_pascal_case(s: &str) -> String {
-    s.split(|c: char| c == '_' || c == '-' || c == ' ')
+    s.split(['_', '-', ' '])
         .filter(|w| !w.is_empty())
         .map(|w| {
             let mut chars = w.chars();

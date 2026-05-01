@@ -51,6 +51,11 @@ impl LanguageServer for Backend {
                     trigger_characters: Some(vec![".".to_string()]),
                     ..CompletionOptions::default()
                 }),
+                definition_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
                 ..ServerCapabilities::default()
             },
         })
@@ -77,7 +82,10 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri.clone();
         // FULL sync mode: the last content change holds the new full text.
         if let Some(change) = params.content_changes.pop() {
-            self.docs.lock().unwrap().insert(uri.clone(), change.text.clone());
+            self.docs
+                .lock()
+                .unwrap()
+                .insert(uri.clone(), change.text.clone());
             self.publish(&uri, &change.text).await;
         }
     }
@@ -107,21 +115,13 @@ impl LanguageServer for Backend {
         }))
     }
 
-    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let uri = params.text_document_position.text_document.uri;
-        let pos = params.text_document_position.position;
-        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
-            Some(t) => t,
-            None => return Ok(None),
-        };
-
-        let offset = position_to_offset(&text, pos);
+    async fn completion(&self, _params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let mut completions = Vec::new();
 
         // Get prelude namespace suggestions
         let namespaces = vec![
-            "Ai", "Io", "Schedule", "Email", "Http", "Env", "Log", "Agent",
-            "Control", "Async", "Memory", "Search", "Db", "Time", "File", "Json"
+            "Ai", "Io", "Schedule", "Email", "Http", "Env", "Log", "Agent", "Control", "Async",
+            "Memory", "Search", "Db", "Time", "File", "Json", "Cache", "Str",
         ];
 
         for ns in namespaces {
@@ -175,6 +175,16 @@ impl LanguageServer for Backend {
             ("send", "Agent method"),
             ("delegate", "Agent method"),
             ("broadcast", "Agent method"),
+            // Cache
+            ("set", "Cache method"),
+            ("get", "Cache method"),
+            ("delete", "Cache method"),
+            ("clear", "Cache method"),
+            // Str
+            ("match", "Str method"),
+            ("extract", "Str method"),
+            ("truncate", "Str method"),
+            ("pad", "Str method"),
         ];
 
         for (method, kind) in methods {
@@ -188,10 +198,34 @@ impl LanguageServer for Backend {
 
         // Get reserved keywords
         let keywords = vec![
-            "agent", "task", "interface", "type", "extern", "use", "from",
-            "state", "on", "self", "if", "else", "when", "where", "for", "in",
-            "try", "catch", "return", "as", "and", "or", "not",
-            "true", "false", "none", "now", "set"
+            "agent",
+            "task",
+            "interface",
+            "type",
+            "extern",
+            "use",
+            "from",
+            "state",
+            "on",
+            "self",
+            "if",
+            "else",
+            "when",
+            "where",
+            "for",
+            "in",
+            "try",
+            "catch",
+            "return",
+            "as",
+            "and",
+            "or",
+            "not",
+            "true",
+            "false",
+            "none",
+            "now",
+            "set",
         ];
 
         for kw in keywords {
@@ -207,6 +241,127 @@ impl LanguageServer for Backend {
         } else {
             Ok(Some(CompletionResponse::Array(completions)))
         }
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let pos = params.text_document_position_params.position;
+        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let offset = position_to_offset(&text, pos);
+        let Some(span) = checker::definition_of(&text, offset) else {
+            return Ok(None);
+        };
+        Ok(Some(GotoDefinitionResponse::Scalar(Location {
+            uri,
+            range: byte_range_to_lsp(&text, &span),
+        })))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> Result<Option<PrepareRenameResponse>> {
+        let uri = params.text_document.uri;
+        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let offset = position_to_offset(&text, params.position);
+        let Some(name) = checker::ident_at_offset(&text, offset) else {
+            return Ok(None);
+        };
+        // Block renaming of prelude namespaces, built-in types, and keywords
+        if matches!(
+            name.as_str(),
+            "Ai" | "Io"
+                | "Http"
+                | "Email"
+                | "Search"
+                | "Db"
+                | "Memory"
+                | "Schedule"
+                | "Async"
+                | "Control"
+                | "Env"
+                | "Time"
+                | "Log"
+                | "Agent"
+                | "Cache"
+                | "Str"
+                | "File"
+                | "Json"
+                | "int"
+                | "float"
+                | "str"
+                | "bool"
+                | "none"
+                | "datetime"
+                | "duration"
+                | "true"
+                | "false"
+                | "run"
+                | "stop"
+        ) {
+            return Ok(None);
+        }
+        // v0.1 rename is scope-unaware: only allow renaming top-level
+        // declarations (task / agent / type names). Local variables would
+        // require AST-level scope tracking to rename safely; until that
+        // lands, decline rather than risk renaming the wrong scope.
+        if checker::definition_of(&text, offset).is_none() {
+            return Ok(None);
+        }
+        let Some(span) = checker::ident_span_at_offset(&text, offset) else {
+            return Ok(None);
+        };
+        Ok(Some(PrepareRenameResponse::Range(byte_range_to_lsp(
+            &text, &span,
+        ))))
+    }
+
+    async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+        let uri = params.text_document_position.text_document.uri;
+        let pos = params.text_document_position.position;
+        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+            Some(t) => t,
+            None => return Ok(None),
+        };
+        let offset = position_to_offset(&text, pos);
+        let Some(name) = checker::ident_at_offset(&text, offset) else {
+            return Ok(None);
+        };
+        // v0.1 rename is scope-unaware: only allow renaming top-level
+        // declarations (task / agent / type names), where a file-wide
+        // rename is correct. For local variables (let bindings, params,
+        // etc.) `definition_of` returns `None` — decline the rename
+        // rather than risk clobbering an identically-named binding in
+        // another scope.
+        if checker::definition_of(&text, offset).is_none() {
+            return Ok(None);
+        }
+        let spans = checker::usages_of(&text, &name);
+        if spans.is_empty() {
+            return Ok(None);
+        }
+        let edits: Vec<TextEdit> = spans
+            .iter()
+            .map(|s| TextEdit {
+                range: byte_range_to_lsp(&text, s),
+                new_text: params.new_name.clone(),
+            })
+            .collect();
+        let mut changes = HashMap::new();
+        changes.insert(uri, edits);
+        Ok(Some(WorkspaceEdit {
+            changes: Some(changes),
+            ..Default::default()
+        }))
     }
 }
 
@@ -332,5 +487,8 @@ fn offset_to_position(text: &str, offset: usize) -> Position {
             col += 1;
         }
     }
-    Position { line, character: col }
+    Position {
+        line,
+        character: col,
+    }
 }

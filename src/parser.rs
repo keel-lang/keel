@@ -1,9 +1,9 @@
-use chumsky::prelude::*;
 use chumsky::Stream;
+use chumsky::prelude::*;
 use miette::NamedSource;
 
 use crate::ast::*;
-use crate::lexer::{normalize_newlines, Span, Spanned, Token};
+use crate::lexer::{Span, Spanned, Token, normalize_newlines};
 
 type P<T> = BoxedParser<'static, Token, T, Simple<Token>>;
 
@@ -72,7 +72,11 @@ fn newlines() -> P<()> {
 }
 
 fn sep() -> P<()> {
-    just(Token::Newline).repeated().at_least(1).ignored().boxed()
+    just(Token::Newline)
+        .repeated()
+        .at_least(1)
+        .ignored()
+        .boxed()
 }
 
 /// Separator for struct fields and items: comma, newline, or both.
@@ -108,6 +112,7 @@ fn field_name() -> P<String> {
         Token::State => "state".to_string(),
         Token::For => "for".to_string(),
         Token::Return => "return".to_string(),
+        Token::Set => "set".to_string(),
     }
     .boxed()
 }
@@ -129,13 +134,34 @@ fn unescape_plain(s: &str) -> String {
             continue;
         }
         match chars.peek() {
-            Some('n') => { chars.next(); out.push('\n'); }
-            Some('t') => { chars.next(); out.push('\t'); }
-            Some('r') => { chars.next(); out.push('\r'); }
-            Some('\\') => { chars.next(); out.push('\\'); }
-            Some('"') => { chars.next(); out.push('"'); }
-            Some('{') => { chars.next(); out.push('{'); }
-            Some('}') => { chars.next(); out.push('}'); }
+            Some('n') => {
+                chars.next();
+                out.push('\n');
+            }
+            Some('t') => {
+                chars.next();
+                out.push('\t');
+            }
+            Some('r') => {
+                chars.next();
+                out.push('\r');
+            }
+            Some('\\') => {
+                chars.next();
+                out.push('\\');
+            }
+            Some('"') => {
+                chars.next();
+                out.push('"');
+            }
+            Some('{') => {
+                chars.next();
+                out.push('{');
+            }
+            Some('}') => {
+                chars.next();
+                out.push('}');
+            }
             Some(_) | None => out.push('\\'),
         }
     }
@@ -158,8 +184,7 @@ fn type_expr() -> P<TypeExpr> {
     recursive(|ty: Recursive<Token, TypeExpr, Simple<Token>>| {
         let named = ident().map(TypeExpr::Named);
 
-        let dynamic_ty = just(Token::Ident("dynamic".to_string()))
-            .to(TypeExpr::Dynamic);
+        let dynamic_ty = just(Token::Ident("dynamic".to_string())).to(TypeExpr::Dynamic);
 
         let struct_ty = just(Token::LBrace)
             .ignore_then(newlines())
@@ -201,9 +226,7 @@ fn type_expr() -> P<TypeExpr> {
                     (TypeExpr::Named(n), Some(args)) if n == "set" && args.len() == 1 => {
                         TypeExpr::Set(Box::new(args.into_iter().next().unwrap()))
                     }
-                    (TypeExpr::Named(n), Some(args)) => {
-                        TypeExpr::Generic(n.clone(), args)
-                    }
+                    (TypeExpr::Named(n), Some(args)) => TypeExpr::Generic(n.clone(), args),
                     _ => base,
                 };
                 if nullable.is_some() {
@@ -232,9 +255,7 @@ fn expr_parser() -> P<Expr> {
         let inner_stmt = stmt_parser_with(expr.clone().boxed());
         let inner_block = just(Token::LBrace)
             .ignore_then(newlines())
-            .ignore_then(
-                inner_stmt.separated_by(sep()).allow_trailing(),
-            )
+            .ignore_then(inner_stmt.separated_by(sep()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
             .boxed();
@@ -250,7 +271,9 @@ fn expr_parser() -> P<Expr> {
         let now_lit = just(Token::Now).to(Expr::Now);
 
         // ── Lambda ───────────────────────────────────────────────
-        let lambda_body = expr.clone().map(|e| LambdaBody::Expr(Box::new(e)))
+        let lambda_body = expr
+            .clone()
+            .map(|e| LambdaBody::Expr(Box::new(e)))
             .or(inner_block.clone().map(LambdaBody::Block))
             .boxed();
 
@@ -288,11 +311,7 @@ fn expr_parser() -> P<Expr> {
         let set_lit = just(Token::Set)
             .ignore_then(just(Token::LBracket))
             .ignore_then(newlines())
-            .ignore_then(
-                expr.clone()
-                    .separated_by(field_sep())
-                    .allow_trailing(),
-            )
+            .ignore_then(expr.clone().separated_by(field_sep()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBracket))
             .map(Expr::SetLit);
@@ -300,11 +319,7 @@ fn expr_parser() -> P<Expr> {
         // ── List ─────────────────────────────────────────────────
         let list_lit = just(Token::LBracket)
             .ignore_then(newlines())
-            .ignore_then(
-                expr.clone()
-                    .separated_by(field_sep())
-                    .allow_trailing(),
-            )
+            .ignore_then(expr.clone().separated_by(field_sep()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBracket))
             .map(Expr::ListLit);
@@ -374,7 +389,11 @@ fn expr_parser() -> P<Expr> {
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
-            .map(|((ty, variant), fields)| Expr::EnumVariant { ty, variant, fields })
+            .map(|((ty, variant), fields)| Expr::EnumVariant {
+                ty,
+                variant,
+                fields,
+            })
             .boxed();
 
         // ── If-expression (usable on any RHS) ────────────────────
@@ -438,17 +457,16 @@ fn expr_parser() -> P<Expr> {
         let call_arg_parser = arg_label
             .then_ignore(just(Token::Colon))
             .then(expr.clone())
-            .map(|(name, value)| CallArg { name: Some(name), value })
+            .map(|(name, value)| CallArg {
+                name: Some(name),
+                value,
+            })
             .or(expr.clone().map(|value| CallArg { name: None, value }))
             .boxed();
 
         let call_args = just(Token::LParen)
             .ignore_then(newlines())
-            .ignore_then(
-                call_arg_parser
-                    .separated_by(field_sep())
-                    .allow_trailing(),
-            )
+            .ignore_then(call_arg_parser.separated_by(field_sep()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RParen))
             .boxed();
@@ -469,8 +487,7 @@ fn expr_parser() -> P<Expr> {
                 .ignore_then(field_name())
                 .map(PostfixOp::NullDotAccess),
             just(Token::Bang).to(PostfixOp::NullAssert),
-            call_args.clone()
-                .map(PostfixOp::Call),
+            call_args.clone().map(PostfixOp::Call),
             just(Token::As)
                 .ignore_then(type_expr())
                 .map(PostfixOp::Cast),
@@ -480,29 +497,30 @@ fn expr_parser() -> P<Expr> {
         let postfix = primary
             .then(postfix_op.repeated())
             .foldl(|expr, op| match op {
-                PostfixOp::DotAccess { field, args: Some(args) } => Expr::MethodCall {
+                PostfixOp::DotAccess {
+                    field,
+                    args: Some(args),
+                } => Expr::MethodCall {
                     object: Box::new(expr),
                     method: field,
                     args,
                 },
                 PostfixOp::DotAccess { field, args: None } => {
                     // Duration sugar: `5.minutes` after an Integer primary.
-                    if let Expr::Integer(n) = &expr {
-                        if let Some(unit) = parse_duration_unit(&field) {
-                            return Expr::Duration {
-                                value: Box::new(Expr::Integer(*n)),
-                                unit,
-                            };
-                        }
+                    if let Expr::Integer(n) = &expr
+                        && let Some(unit) = parse_duration_unit(&field)
+                    {
+                        return Expr::Duration {
+                            value: Box::new(Expr::Integer(*n)),
+                            unit,
+                        };
                     }
                     // `Urgency.medium` and `Http.ok` both emit FieldAccess;
                     // the type checker resolves enum variants vs. namespace
                     // members based on the identifier's bound type.
                     Expr::FieldAccess(Box::new(expr), field)
                 }
-                PostfixOp::NullDotAccess(field) => {
-                    Expr::NullFieldAccess(Box::new(expr), field)
-                }
+                PostfixOp::NullDotAccess(field) => Expr::NullFieldAccess(Box::new(expr), field),
                 PostfixOp::NullAssert => Expr::NullAssert(Box::new(expr)),
                 PostfixOp::Call(args) => Expr::Call {
                     callee: Box::new(expr),
@@ -528,30 +546,43 @@ fn expr_parser() -> P<Expr> {
             .boxed();
 
         // ── * / % ────────────────────────────────────────────────
-        let product = unary.clone()
+        let product = unary
+            .clone()
             .then(
-                just(Token::Star).to(BinOp::Mul)
+                just(Token::Star)
+                    .to(BinOp::Mul)
                     .or(just(Token::Slash).to(BinOp::Div))
                     .or(just(Token::Percent).to(BinOp::Mod))
                     .then(unary)
                     .repeated(),
             )
-            .foldl(|l, (op, r)| Expr::BinaryOp { left: Box::new(l), op, right: Box::new(r) })
+            .foldl(|l, (op, r)| Expr::BinaryOp {
+                left: Box::new(l),
+                op,
+                right: Box::new(r),
+            })
             .boxed();
 
         // ── + - ──────────────────────────────────────────────────
-        let sum = product.clone()
+        let sum = product
+            .clone()
             .then(
-                just(Token::Plus).to(BinOp::Add)
+                just(Token::Plus)
+                    .to(BinOp::Add)
                     .or(just(Token::Minus).to(BinOp::Sub))
                     .then(product)
                     .repeated(),
             )
-            .foldl(|l, (op, r)| Expr::BinaryOp { left: Box::new(l), op, right: Box::new(r) })
+            .foldl(|l, (op, r)| Expr::BinaryOp {
+                left: Box::new(l),
+                op,
+                right: Box::new(r),
+            })
             .boxed();
 
         // ── == != < > <= >= ──────────────────────────────────────
-        let cmp = sum.clone()
+        let cmp = sum
+            .clone()
             .then(
                 choice((
                     just(Token::EqEq).to(BinOp::Eq),
@@ -564,31 +595,47 @@ fn expr_parser() -> P<Expr> {
                 .then(sum)
                 .repeated(),
             )
-            .foldl(|l, (op, r)| Expr::BinaryOp { left: Box::new(l), op, right: Box::new(r) })
+            .foldl(|l, (op, r)| Expr::BinaryOp {
+                left: Box::new(l),
+                op,
+                right: Box::new(r),
+            })
             .boxed();
 
         // ── and ──────────────────────────────────────────────────
-        let land = cmp.clone()
+        let land = cmp
+            .clone()
             .then(just(Token::And).to(BinOp::And).then(cmp).repeated())
-            .foldl(|l, (op, r)| Expr::BinaryOp { left: Box::new(l), op, right: Box::new(r) })
+            .foldl(|l, (op, r)| Expr::BinaryOp {
+                left: Box::new(l),
+                op,
+                right: Box::new(r),
+            })
             .boxed();
 
         // ── or ───────────────────────────────────────────────────
-        let lor = land.clone()
+        let lor = land
+            .clone()
             .then(just(Token::Or).to(BinOp::Or).then(land).repeated())
-            .foldl(|l, (op, r)| Expr::BinaryOp { left: Box::new(l), op, right: Box::new(r) })
+            .foldl(|l, (op, r)| Expr::BinaryOp {
+                left: Box::new(l),
+                op,
+                right: Box::new(r),
+            })
             .boxed();
 
         // ── |> ───────────────────────────────────────────────────
         // Pipeline has lower precedence than `??` — SPEC §18.
-        let pipeline = lor.clone()
+        let pipeline = lor
+            .clone()
             .then(just(Token::Pipe).ignore_then(lor).repeated())
             .foldl(|l, r| Expr::Pipeline(Box::new(l), Box::new(r)))
             .boxed();
 
         // ── ?? ───────────────────────────────────────────────────
         // Null-coalesce is the top of the expression chain.
-        pipeline.clone()
+        pipeline
+            .clone()
             .then(just(Token::NullCoalesce).ignore_then(pipeline).repeated())
             .foldl(|l, r| Expr::NullCoalesce(Box::new(l), Box::new(r)))
     })
@@ -666,7 +713,12 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then(expr.clone())
             .then(just(Token::Where).ignore_then(expr.clone()).or_not())
             .then(block.clone())
-            .map(|(((binding, iter), filter), body)| Stmt::For { binding, iter, filter, body })
+            .map(|(((binding, iter), filter), body)| Stmt::For {
+                binding,
+                iter,
+                filter,
+                body,
+            })
             .boxed();
 
         let if_stmt = just(Token::If)
@@ -686,7 +738,11 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
                         Box::new(default),
                     ))
                 } else {
-                    Stmt::If { cond, then_body, else_body }
+                    Stmt::If {
+                        cond,
+                        then_body,
+                        else_body,
+                    }
                 }
             })
             .boxed();
@@ -710,11 +766,13 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
                     Some(b) => Pattern::Variant { name, bindings: b },
                     None => Pattern::Ident(name),
                 }))
-            .or(plain_string().map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
+            .or(plain_string()
+                .map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
             .or(integer_lit().map(|n| Pattern::Literal(Expr::Integer(n))))
             .boxed();
 
-        let when_arm_body = block.clone()
+        let when_arm_body = block
+            .clone()
             .or(expr.clone().map(|e| vec![(Stmt::Expr(e), 0..0)]))
             .boxed();
 
@@ -724,7 +782,11 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then(just(Token::Where).ignore_then(expr.clone()).or_not())
             .then_ignore(just(Token::FatArrow))
             .then(when_arm_body)
-            .map(|((patterns, guard), body)| WhenArm { patterns, guard, body })
+            .map(|((patterns, guard), body)| WhenArm {
+                patterns,
+                guard,
+                body,
+            })
             .boxed();
 
         let when_stmt = just(Token::When)
@@ -791,12 +853,7 @@ fn type_decl() -> P<Decl> {
         .then(
             just(Token::LBrace)
                 .ignore_then(newlines())
-                .ignore_then(
-                    field_def
-                        .clone()
-                        .separated_by(field_sep())
-                        .allow_trailing(),
-                )
+                .ignore_then(field_def.clone().separated_by(field_sep()).allow_trailing())
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RBrace))
                 .or_not(),
@@ -808,21 +865,25 @@ fn type_decl() -> P<Decl> {
         .then(
             newlines()
                 .ignore_then(just(Token::Bar))
-                .ignore_then(ident().then(
-                    just(Token::LBrace)
-                        .ignore_then(newlines())
-                        .ignore_then(
-                            field_name()
-                                .then_ignore(just(Token::Colon))
-                                .then(type_expr())
-                                .map(|(n, t)| Field { name: n, ty: t })
-                                .separated_by(field_sep())
-                                .allow_trailing(),
+                .ignore_then(
+                    ident()
+                        .then(
+                            just(Token::LBrace)
+                                .ignore_then(newlines())
+                                .ignore_then(
+                                    field_name()
+                                        .then_ignore(just(Token::Colon))
+                                        .then(type_expr())
+                                        .map(|(n, t)| Field { name: n, ty: t })
+                                        .separated_by(field_sep())
+                                        .allow_trailing(),
+                                )
+                                .then_ignore(newlines())
+                                .then_ignore(just(Token::RBrace))
+                                .or_not(),
                         )
-                        .then_ignore(newlines())
-                        .then_ignore(just(Token::RBrace))
-                        .or_not(),
-                ).map(|(name, fields)| EnumVariant { name, fields }))
+                        .map(|(name, fields)| EnumVariant { name, fields }),
+                )
                 .repeated(),
         )
         .map(|(first, rest)| {
@@ -866,11 +927,7 @@ fn type_decl() -> P<Decl> {
 
     just(Token::Type)
         .ignore_then(ident())
-        .then(
-            just(Token::Eq)
-                .ignore_then(after_eq)
-                .or(struct_def),
-        )
+        .then(just(Token::Eq).ignore_then(after_eq).or(struct_def))
         .map(|(name, def)| Decl::Type(TypeDecl { name, def }))
         .boxed()
 }
@@ -879,7 +936,11 @@ fn interface_decl() -> P<Decl> {
     let param = ident()
         .then_ignore(just(Token::Colon))
         .then(type_expr())
-        .map(|(name, ty)| Param { name, ty, default: None });
+        .map(|(name, ty)| Param {
+            name,
+            ty,
+            default: None,
+        });
 
     let task_sig = just(Token::Task)
         .ignore_then(ident())
@@ -891,7 +952,11 @@ fn interface_decl() -> P<Decl> {
                 .then_ignore(just(Token::RParen)),
         )
         .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
-        .map(|((name, params), return_type)| TaskSig { name, params, return_type });
+        .map(|((name, params), return_type)| TaskSig {
+            name,
+            params,
+            return_type,
+        });
 
     just(Token::Interface)
         .ignore_then(ident())
@@ -908,7 +973,11 @@ fn extern_decl() -> P<Decl> {
     let param = ident()
         .then_ignore(just(Token::Colon))
         .then(type_expr())
-        .map(|(name, ty)| Param { name, ty, default: None });
+        .map(|(name, ty)| Param {
+            name,
+            ty,
+            default: None,
+        });
 
     just(Token::Extern)
         .ignore_then(just(Token::Task))
@@ -925,13 +994,18 @@ fn extern_decl() -> P<Decl> {
         .then_ignore(just(Token::From))
         .then(plain_string())
         .map(|(((name, params), return_type), source)| {
-            Decl::Extern(ExternDecl { name, params, return_type, source })
+            Decl::Extern(ExternDecl {
+                name,
+                params,
+                return_type,
+                source,
+            })
         })
         .boxed()
 }
 
 fn use_decl() -> P<Decl> {
-    let file = plain_string().map(|path| UseKind::File(path));
+    let file = plain_string().map(UseKind::File);
 
     let symbol = ident()
         .then_ignore(just(Token::From))
@@ -939,7 +1013,12 @@ fn use_decl() -> P<Decl> {
         .map(|(name, source)| UseKind::Symbol { name, source });
 
     let package = ident()
-        .then(just(Token::Slash).ignore_then(ident()).repeated().at_least(1))
+        .then(
+            just(Token::Slash)
+                .ignore_then(ident())
+                .repeated()
+                .at_least(1),
+        )
         .map(|(first, rest)| {
             let mut segments = vec![first];
             segments.extend(rest);
@@ -986,23 +1065,30 @@ fn agent_item() -> P<AgentItem> {
             if BLOCK_BODY_ATTRIBUTES.contains(&name.as_str()) {
                 Ok(name)
             } else {
-                Err(Simple::custom(span, format!("'{}' is not a block attribute", name)))
+                Err(Simple::custom(
+                    span,
+                    format!("'{}' is not a block attribute", name),
+                ))
             }
         }))
         .then(block_toplevel())
-        .map(|(name, body)| AgentItem::Attribute(AttributeDecl {
-            name,
-            body: AttributeBody::Block(body),
-        }))
+        .map(|(name, body)| {
+            AgentItem::Attribute(AttributeDecl {
+                name,
+                body: AttributeBody::Block(body),
+            })
+        })
         .boxed();
 
     let expr_attr = just(Token::AtSign)
         .ignore_then(ident())
         .then(expr_parser())
-        .map(|(name, body)| AgentItem::Attribute(AttributeDecl {
-            name,
-            body: AttributeBody::Expr(body),
-        }))
+        .map(|(name, body)| {
+            AgentItem::Attribute(AttributeDecl {
+                name,
+                body: AttributeBody::Expr(body),
+            })
+        })
         .boxed();
 
     let state = just(Token::State)
@@ -1033,7 +1119,11 @@ fn agent_item() -> P<AgentItem> {
                     ident()
                         .then_ignore(just(Token::Colon))
                         .then(type_expr())
-                        .map(|(name, ty)| Param { name, ty, default: None }),
+                        .map(|(name, ty)| Param {
+                            name,
+                            ty,
+                            default: None,
+                        }),
                 )
                 .then_ignore(just(Token::RParen))
                 .or_not(),
@@ -1098,14 +1188,39 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
         if ch == '\\' {
             if let Some(&next) = chars.peek() {
                 match next {
-                    'n' => { chars.next(); current.push('\n'); }
-                    't' => { chars.next(); current.push('\t'); }
-                    'r' => { chars.next(); current.push('\r'); }
-                    '\\' => { chars.next(); current.push('\\'); }
-                    '"' => { chars.next(); current.push('"'); }
-                    '{' => { chars.next(); current.push('{'); }
-                    '}' => { chars.next(); current.push('}'); }
-                    _ => { current.push('\\'); current.push(next); chars.next(); }
+                    'n' => {
+                        chars.next();
+                        current.push('\n');
+                    }
+                    't' => {
+                        chars.next();
+                        current.push('\t');
+                    }
+                    'r' => {
+                        chars.next();
+                        current.push('\r');
+                    }
+                    '\\' => {
+                        chars.next();
+                        current.push('\\');
+                    }
+                    '"' => {
+                        chars.next();
+                        current.push('"');
+                    }
+                    '{' => {
+                        chars.next();
+                        current.push('{');
+                    }
+                    '}' => {
+                        chars.next();
+                        current.push('}');
+                    }
+                    _ => {
+                        current.push('\\');
+                        current.push(next);
+                        chars.next();
+                    }
                 }
             }
         } else if ch == '{' {
@@ -1140,7 +1255,9 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
                             inner_depth += 1;
                             expr_text.push(nc);
                         } else if nc == '}' {
-                            if inner_depth > 0 { inner_depth -= 1; }
+                            if inner_depth > 0 {
+                                inner_depth -= 1;
+                            }
                             expr_text.push(nc);
                         } else if nc == '"' && inner_depth == 0 {
                             expr_text.push(nc);
@@ -1154,13 +1271,17 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
                     expr_text.push(c);
                 } else if c == '}' {
                     depth -= 1;
-                    if depth == 0 { break; }
+                    if depth == 0 {
+                        break;
+                    }
                     expr_text.push(c);
                 } else {
                     expr_text.push(c);
                 }
             }
-            parts.push(StringPart::Interpolation(Box::new(parse_interp_expr(&expr_text))));
+            parts.push(StringPart::Interpolation(Box::new(parse_interp_expr(
+                &expr_text,
+            ))));
         } else {
             current.push(ch);
         }
@@ -1199,5 +1320,7 @@ fn parse_interp_expr(text: &str) -> Expr {
 
     // On parse failure, fall back to treating the whole slot as an identifier
     // so a bad expression never silently produces a corrupt AST node.
-    expr_parser().parse(stream).unwrap_or_else(|_| Expr::Ident(text.to_string()))
+    expr_parser()
+        .parse(stream)
+        .unwrap_or_else(|_| Expr::Ident(text.to_string()))
 }

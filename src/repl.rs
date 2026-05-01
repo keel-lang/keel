@@ -6,13 +6,13 @@
 //! and `(`/`)` — a line with open delimiters prompts for continuation.
 
 use miette::{NamedSource, Result};
-use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
+use rustyline::error::ReadlineError;
 
 use crate::ast::{Decl, Stmt};
+use crate::interpreter::Interpreter;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::Value;
-use crate::interpreter::Interpreter;
 use crate::{lexer, parser};
 
 const PROMPT: &str = "keel> ";
@@ -21,8 +21,7 @@ const CONT_PROMPT: &str = "  ... ";
 pub async fn start() -> Result<()> {
     println!("Keel REPL — v0.1 (alpha). Ctrl-D to exit.");
 
-    let mut rl = DefaultEditor::new()
-        .map_err(|e| miette::miette!("readline init failed: {e}"))?;
+    let mut rl = DefaultEditor::new().map_err(|e| miette::miette!("readline init failed: {e}"))?;
     let history_path = dirs_history_path();
     if let Some(path) = &history_path {
         let _ = rl.load_history(path);
@@ -33,7 +32,11 @@ pub async fn start() -> Result<()> {
     let mut pending = String::new();
 
     loop {
-        let prompt = if pending.is_empty() { PROMPT } else { CONT_PROMPT };
+        let prompt = if pending.is_empty() {
+            PROMPT
+        } else {
+            CONT_PROMPT
+        };
         let line = match rl.readline(prompt) {
             Ok(line) => line,
             Err(ReadlineError::Interrupted) => {
@@ -101,12 +104,16 @@ fn is_balanced(s: &str) -> bool {
             continue;
         }
         match ch {
-            '"' => { in_string = true; }
+            '"' => {
+                in_string = true;
+            }
             '{' | '[' | '(' => depth += 1,
             '}' | ']' | ')' => depth -= 1,
             _ => {}
         }
-        if depth < 0 { return true; } // let parser error out on mismatched close
+        if depth < 0 {
+            return true;
+        } // let parser error out on mismatched close
     }
     depth == 0
 }
@@ -148,11 +155,7 @@ async fn eval_source(
     Ok(last)
 }
 
-async fn eval_stmt(
-    interp: &mut Interpreter,
-    env: &mut Environment,
-    stmt: &Stmt,
-) -> Result<Value> {
+async fn eval_stmt(interp: &mut Interpreter, env: &mut Environment, stmt: &Stmt) -> Result<Value> {
     match interp.exec_stmt(stmt, env).await? {
         crate::interpreter::StmtOutcome::Value(v) => Ok(v),
         crate::interpreter::StmtOutcome::Return(v) => Ok(v),
@@ -163,38 +166,61 @@ async fn eval_stmt(
 /// Register a declaration (type / task / agent / interface / extern /
 /// use) in the REPL's persistent interpreter.
 fn interp_register(interp: &mut Interpreter, decl: &Decl) -> Result<()> {
-    use crate::ast::{AgentItem, AttributeDecl, AttributeBody};
+    use crate::ast::{AgentItem, AttributeBody, AttributeDecl};
     match decl {
         Decl::Type(t) => {
-            interp.globals.insert(t.name.clone(), Value::Namespace(t.name.clone()));
+            interp
+                .globals
+                .insert(t.name.clone(), Value::Namespace(t.name.clone()));
             if let crate::ast::TypeDef::SimpleEnum(variants) = &t.def {
                 interp.enum_types.insert(t.name.clone(), variants.clone());
             }
         }
         Decl::Task(t) => {
-            interp.globals.insert(t.name.clone(), Value::Task(t.name.clone(), t.clone()));
+            interp
+                .globals
+                .insert(t.name.clone(), Value::Task(t.name.clone(), t.clone()));
         }
         Decl::Agent(a) => {
             let def = crate::interpreter::AgentDef {
                 name: a.name.clone(),
-                attributes: a.items.iter().filter_map(|it| match it {
-                    AgentItem::Attribute(attr @ AttributeDecl { .. }) => Some(attr.clone()),
-                    _ => None,
-                }).collect(),
-                state_fields: a.items.iter().filter_map(|it| match it {
-                    AgentItem::State(fields) => Some(fields.clone()),
-                    _ => None,
-                }).flatten().collect(),
-                tasks: a.items.iter().filter_map(|it| match it {
-                    AgentItem::Task(t) => Some(t.clone()),
-                    _ => None,
-                }).collect(),
-                handlers: a.items.iter().filter_map(|it| match it {
-                    AgentItem::On(h) => Some(h.clone()),
-                    _ => None,
-                }).collect(),
+                attributes: a
+                    .items
+                    .iter()
+                    .filter_map(|it| match it {
+                        AgentItem::Attribute(attr @ AttributeDecl { .. }) => Some(attr.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                state_fields: a
+                    .items
+                    .iter()
+                    .filter_map(|it| match it {
+                        AgentItem::State(fields) => Some(fields.clone()),
+                        _ => None,
+                    })
+                    .flatten()
+                    .collect(),
+                tasks: a
+                    .items
+                    .iter()
+                    .filter_map(|it| match it {
+                        AgentItem::Task(t) => Some(t.clone()),
+                        _ => None,
+                    })
+                    .collect(),
+                handlers: a
+                    .items
+                    .iter()
+                    .filter_map(|it| match it {
+                        AgentItem::On(h) => Some(h.clone()),
+                        _ => None,
+                    })
+                    .collect(),
             };
-            interp.globals.insert(a.name.clone(), Value::AgentRef(a.name.clone()));
+            interp
+                .globals
+                .insert(a.name.clone(), Value::AgentRef(a.name.clone()));
             interp.agents.insert(a.name.clone(), def);
             // Silence unused-import warning.
             let _: Option<AttributeBody> = None;

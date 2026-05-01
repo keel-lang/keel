@@ -1,8 +1,8 @@
 pub mod ast;
 pub mod formatter;
 pub mod interpreter;
-pub mod lsp;
 pub mod lexer;
+pub mod lsp;
 pub mod parser;
 pub mod repl;
 pub mod runtime;

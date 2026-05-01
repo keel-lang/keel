@@ -109,7 +109,9 @@ impl fmt::Display for Value {
             Value::List(items) => {
                 write!(f, "[")?;
                 for (i, item) in items.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{item}")?;
                 }
                 write!(f, "]")
@@ -117,22 +119,26 @@ impl fmt::Display for Value {
             Value::Map(fields) => {
                 write!(f, "{{")?;
                 for (i, (k, v)) in fields.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{k}: {v}")?;
                 }
                 write!(f, "}}")
             }
             Value::EnumVariant(ty, variant, fields) => {
                 write!(f, "{ty}.{variant}")?;
-                if let Some(fields) = fields {
-                    if !fields.is_empty() {
-                        write!(f, " {{")?;
-                        for (i, (k, v)) in fields.iter().enumerate() {
-                            if i > 0 { write!(f, ", ")?; }
-                            write!(f, "{k}: {v}")?;
+                if let Some(fields) = fields
+                    && !fields.is_empty()
+                {
+                    write!(f, " {{")?;
+                    for (i, (k, v)) in fields.iter().enumerate() {
+                        if i > 0 {
+                            write!(f, ", ")?;
                         }
-                        write!(f, "}}")?;
+                        write!(f, "{k}: {v}")?;
                     }
+                    write!(f, "}}")?;
                 }
                 Ok(())
             }
