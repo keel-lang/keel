@@ -33,6 +33,7 @@
 
 - [keel run](./cli/run.md)
 - [keel check](./cli/check.md)
+- [keel lint](./cli/lint.md)
 - [keel build](./cli/build.md)
 - [keel fmt](./cli/fmt.md)
 - [keel init](./cli/init.md)

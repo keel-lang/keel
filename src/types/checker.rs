@@ -116,6 +116,10 @@ struct Checker {
     /// Pre-seeded names that must not be reported as undefined
     /// (prelude namespaces, built-in types, symbol identifiers, etc.).
     prelude: HashSet<String>,
+    /// Span of the statement currently being checked. Set at the top of
+    /// `check_stmt` so every `err()` call within a statement — including
+    /// errors raised by `infer_expr` — automatically gets a location.
+    current_span: Option<Span>,
 }
 
 /// Chained lexical scope: newer scopes on the back of the vec.
@@ -245,12 +249,20 @@ impl Checker {
             current_agent: None,
             current_return_ty: None,
             prelude,
+            current_span: None,
         }
     }
 
+    /// Emit an error, automatically attaching the current statement's span
+    /// when one is available.
     fn err(&mut self, msg: impl Into<String>) {
-        self.errors.push(TypeError::new(msg));
+        let mut e = TypeError::new(msg);
+        if let Some(ref s) = self.current_span {
+            e = e.at(s.clone());
+        }
+        self.errors.push(e);
     }
+
     #[allow(dead_code)]
     fn err_at(&mut self, msg: impl Into<String>, span: Span) {
         self.errors.push(TypeError::new(msg).at(span));
@@ -418,9 +430,9 @@ impl Checker {
                     }
                     self.current_agent = None;
                 }
-                Decl::Stmt((stmt, _)) => {
+                Decl::Stmt((stmt, span)) => {
                     let mut scope = Scope::new();
-                    self.check_stmt(stmt, &mut scope);
+                    self.check_stmt(stmt, span.clone(), &mut scope);
                 }
                 _ => {}
             }
@@ -485,13 +497,14 @@ impl Checker {
 
     fn check_block(&mut self, block: &Block, scope: &mut Scope) {
         scope.push();
-        for (stmt, _) in block {
-            self.check_stmt(stmt, scope);
+        for (stmt, span) in block {
+            self.check_stmt(stmt, span.clone(), scope);
         }
         scope.pop();
     }
 
-    fn check_stmt(&mut self, stmt: &Stmt, scope: &mut Scope) {
+    fn check_stmt(&mut self, stmt: &Stmt, span: Span, scope: &mut Scope) {
+        self.current_span = Some(span.clone());
         match stmt {
             Stmt::Let { name, ty, value } => {
                 let inferred = self.infer_expr(value, scope);
@@ -555,9 +568,11 @@ impl Checker {
                     let pty = self.infer_expr(pred, scope);
                     self.expect(&pty, &Ty::Bool, "for-where predicate");
                 }
-                for (s, _) in body {
-                    self.check_stmt(s, scope);
+                for (s, s_span) in body {
+                    self.check_stmt(s, s_span.clone(), scope);
                 }
+                // Restore span to the for-statement after processing body
+                self.current_span = Some(span.clone());
                 scope.pop();
             }
             Stmt::If {
@@ -574,7 +589,7 @@ impl Checker {
             }
             Stmt::When { subject, arms } => {
                 let subject_ty = self.infer_expr(subject, scope);
-                self.check_when_arms(&subject_ty, arms, scope);
+                self.check_when_arms(&subject_ty, arms, scope, span);
             }
             Stmt::TryCatch { body, catches } => {
                 self.check_block(body, scope);
@@ -582,8 +597,8 @@ impl Checker {
                     scope.push();
                     let ty = self.resolve_type(&c.ty);
                     scope.define(c.name.clone(), ty);
-                    for (s, _) in &c.body {
-                        self.check_stmt(s, scope);
+                    for (s, s_span) in &c.body {
+                        self.check_stmt(s, s_span.clone(), scope);
                     }
                     scope.pop();
                 }
@@ -594,7 +609,13 @@ impl Checker {
         }
     }
 
-    fn check_when_arms(&mut self, subject_ty: &Ty, arms: &[WhenArm], scope: &mut Scope) {
+    fn check_when_arms(
+        &mut self,
+        subject_ty: &Ty,
+        arms: &[WhenArm],
+        scope: &mut Scope,
+        when_span: Span,
+    ) {
         let mut has_wildcard = false;
         let mut covered: HashSet<String> = HashSet::new();
         for arm in arms {
@@ -621,11 +642,15 @@ impl Checker {
                 let g_ty = self.infer_expr(g, scope);
                 self.expect(&g_ty, &Ty::Bool, "`when` guard");
             }
-            for (s, _) in &arm.body {
-                self.check_stmt(s, scope);
+            for (s, s_span) in &arm.body {
+                self.check_stmt(s, s_span.clone(), scope);
             }
             scope.pop();
         }
+
+        // Restore the when-statement's span so exhaustiveness errors point
+        // to the `when` line, not to whatever was last checked inside arms.
+        self.current_span = Some(when_span);
 
         // Exhaustiveness
         match subject_ty.strip_nullable() {
@@ -719,6 +744,8 @@ impl Checker {
                 self.err(format!("agent `{agent_name}` has no state field `{field}`"));
                 Ty::Unknown
             }
+
+            Expr::SelfRef => Ty::Unknown,
 
             Expr::FieldAccess(obj, field) => {
                 // Enum variant shortcut: `Urgency.medium`.
@@ -824,8 +851,15 @@ impl Checker {
                     // Count only positional args (named args may map to params by name).
                     let positional: usize = args.iter().filter(|a| a.name.is_none()).count();
                     if positional > expected {
+                        let param_names: Vec<&str> =
+                            sig.params.iter().map(|(n, _)| n.as_str()).collect();
+                        let hint = if param_names.is_empty() {
+                            "task takes no arguments".to_string()
+                        } else {
+                            format!("expected: {}", param_names.join(", "))
+                        };
                         self.err(format!(
-                            "task `{name}` takes {expected} argument(s), got {positional}"
+                            "task `{name}` takes {expected} argument(s), got {positional} — {hint}"
                         ));
                     }
                     return sig.return_type.clone();
@@ -925,7 +959,10 @@ impl Checker {
 
             Expr::WhenExpr { subject, arms } => {
                 let subject_ty = self.infer_expr(subject, scope);
-                self.check_when_arms(&subject_ty, arms, scope);
+                // Use a dummy span for when-expressions; the statement-level span
+                // (already set in current_span) is used for any errors.
+                let span = self.current_span.clone().unwrap_or(0..0);
+                self.check_when_arms(&subject_ty, arms, scope, span);
                 Ty::Unknown
             }
 
@@ -941,8 +978,8 @@ impl Checker {
                 let ret = match body {
                     LambdaBody::Expr(e) => self.infer_expr(e, scope),
                     LambdaBody::Block(b) => {
-                        for (s, _) in b {
-                            self.check_stmt(s, scope);
+                        for (s, s_span) in b {
+                            self.check_stmt(s, s_span.clone(), scope);
                         }
                         Ty::Unknown
                     }
@@ -987,11 +1024,11 @@ impl Checker {
     fn block_type(&mut self, block: &Block, scope: &mut Scope) -> Ty {
         scope.push();
         let mut last = Ty::None_;
-        for (stmt, _) in block {
+        for (stmt, span) in block {
             last = match stmt {
                 Stmt::Expr(e) => self.infer_expr(e, scope),
                 other => {
-                    self.check_stmt(other, scope);
+                    self.check_stmt(other, span.clone(), scope);
                     Ty::None_
                 }
             };

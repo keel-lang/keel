@@ -56,6 +56,44 @@ fn check_example(name: &str) -> bool {
         .success()
 }
 
+fn lint_inline(src: &str) -> (bool, String, String) {
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let bin = keel_binary();
+    let output = Command::new(&bin)
+        .arg("lint")
+        .arg(&path)
+        .output()
+        .expect("run keel lint");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
+fn check_inline_output(src: &str) -> (bool, String, String) {
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let bin = keel_binary();
+    let output = Command::new(&bin)
+        .arg("check")
+        .arg(&path)
+        .output()
+        .expect("run keel check");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
 fn run_inline(src: &str, trace: bool) -> (bool, String, String) {
     let mut tmp = tempfile::Builder::new()
         .suffix(".keel")
@@ -109,6 +147,7 @@ fn examples_all_parse() {
         "cache_demo",
         "text_pipeline",
         "webhook_agent",
+        "lint_best_practices",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -1340,4 +1379,289 @@ fn lsp_usages_of_finds_all_occurrences() {
         "expected at least 3 occurrences of `foo` (decl + 2 calls), got {}",
         spans.len()
     );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.9 — Tooling: keel lint + keel check error quality
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lint_unused_variable_warns() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    unused = "hello"
+    Io.show("done")
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(!ok, "lint should exit non-zero when there are warnings");
+    assert!(
+        stderr.contains("unused"),
+        "expected unused-variable warning:\n{stderr}"
+    );
+}
+
+#[test]
+fn lint_underscore_prefix_suppresses_unused_warning() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    _ignored = "hello"
+    Io.show("done")
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(
+        ok,
+        "underscore-prefixed binding should suppress lint warning:\n{stderr}"
+    );
+}
+
+#[test]
+fn lint_uncalled_task_warns() {
+    ensure_binary_built();
+    let src = r#"
+task unused_helper() {
+  Io.show("never")
+}
+agent A {
+  @on_start {
+    Io.show("start")
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(!ok, "lint should exit non-zero for uncalled task");
+    assert!(
+        stderr.contains("unused_helper"),
+        "expected uncalled-task warning:\n{stderr}"
+    );
+}
+
+#[test]
+fn lint_called_task_no_warning() {
+    ensure_binary_built();
+    let src = r#"
+task greet() {
+  Io.show("hi")
+}
+agent A {
+  @on_start {
+    greet()
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(ok, "called task should not produce warnings:\n{stderr}");
+}
+
+#[test]
+fn lint_ai_call_outside_agent_warns() {
+    ensure_binary_built();
+    let src = r#"
+task process(text: str) -> str {
+  result = Ai.summarize(text)
+  result ?? "none"
+}
+agent A {
+  @on_start {
+    Io.show(process("hi"))
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(!ok, "Ai.* outside agent should produce a warning");
+    assert!(
+        stderr.contains("outside an agent"),
+        "expected outside-agent warning:\n{stderr}"
+    );
+}
+
+#[test]
+fn lint_ai_call_inside_agent_no_warning() {
+    ensure_binary_built();
+    let src = r#"
+agent Assistant {
+  @role "helper"
+  @model "ollama:llama3.2"
+
+  @on_start {
+    result = Ai.summarize("some text")
+    Io.show(result ?? "none")
+  }
+}
+run(Assistant)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(ok, "Ai.* inside agent should not warn:\n{stderr}");
+}
+
+#[test]
+fn lint_state_written_not_read_warns() {
+    ensure_binary_built();
+    let src = r#"
+agent Sink {
+  state {
+    events: int = 0
+  }
+  on tick(n: int) {
+    self.events = 42
+    Io.show("ticked")
+  }
+}
+run(Sink)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(!ok, "write-only state field should produce a warning");
+    assert!(
+        stderr.contains("events"),
+        "expected state-field warning:\n{stderr}"
+    );
+}
+
+#[test]
+fn lint_state_written_and_read_no_warning() {
+    ensure_binary_built();
+    let src = r#"
+agent Counter {
+  state {
+    count: int = 0
+  }
+  @on_start {
+    self.count = self.count + 1
+    Io.show("count ok")
+  }
+}
+run(Counter)
+"#;
+    let (ok, _stdout, stderr) = lint_inline(src);
+    assert!(
+        ok,
+        "state field written and read should not warn:\n{stderr}"
+    );
+}
+
+#[test]
+fn lint_clean_program_exits_zero() {
+    ensure_binary_built();
+    let (ok, _stdout, stderr) = lint_inline(
+        r#"
+task greet(name: str) -> str {
+  msg = "Hello, " + name + "!"
+  msg
+}
+
+agent Greeter {
+  state {
+    call_count: int = 0
+  }
+
+  @on_start {
+    result = greet("World")
+    Io.show(result)
+    self.call_count = self.call_count + 1
+    total = self.call_count
+    Io.show(total)
+  }
+}
+
+run(Greeter)
+"#,
+    );
+    assert!(
+        ok,
+        "clean program should produce no lint warnings:\n{stderr}"
+    );
+}
+
+#[test]
+fn type_error_includes_source_span() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    x: int = "not an int"
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected type error");
+    // miette renders spans as ╭─[file:line:col]
+    assert!(
+        stderr.contains('╭') || stderr.contains('['),
+        "type error should include source location:\n{stderr}"
+    );
+}
+
+#[test]
+fn type_error_arity_includes_param_names() {
+    ensure_binary_built();
+    let src = r#"
+task greet(name: str, title: str) -> str {
+  name + title
+}
+agent A {
+  @on_start {
+    r = greet("a", "b", "c", "d")
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected arity type error");
+    assert!(
+        stderr.contains("name") || stderr.contains("title"),
+        "arity error should list param names:\n{stderr}"
+    );
+}
+
+#[test]
+fn stop_self_exits_cleanly() {
+    ensure_binary_built();
+    let src = r#"
+agent Greeter {
+  @on_start {
+    Io.show("hi")
+    stop(self)
+  }
+}
+run(Greeter)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("hi"), "expected output:\n{stdout}");
+}
+
+#[test]
+fn stop_self_resolves_to_current_agent() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Agent.run(B)
+    stop(self)
+  }
+}
+agent B {
+  @on_start {
+    Io.show("B ran")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("B ran"), "B should have run:\n{stdout}");
 }

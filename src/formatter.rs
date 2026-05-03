@@ -495,6 +495,7 @@ impl Fmt {
             Expr::StringLit(parts) => self.string_lit(parts),
             Expr::Ident(name) => name.clone(),
             Expr::SelfAccess(f) => format!("self.{f}"),
+            Expr::SelfRef => "self".to_string(),
             Expr::FieldAccess(obj, f) => format!("{}.{}", self.expr_str(obj), f),
             Expr::NullFieldAccess(obj, f) => format!("{}?.{}", self.expr_str(obj), f),
             Expr::NullAssert(e) => format!("{}!", self.expr_str(e)),

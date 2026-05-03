@@ -25,15 +25,17 @@ Success:
 ✓ examples/email_agent.keel is valid
 ```
 
-Error:
+Error with source span (v0.1.9+):
 
 ```
   × Type error
    ╭─[agent.keel:8:5]
- 7 │   every 1.day {
+ 7 │   @on_start {
  8 │     greet(42)
    ·     ────┬────
-   ·         ╰── Argument 'name' of task 'greet': expected str, got int
+   ·         ╰── task `greet` takes 1 argument(s), got 0 — expected: name
  9 │   }
    ╰────
 ```
+
+Every error from `keel check` includes a line:column pointer and an underlined source excerpt. Arity errors list the expected parameter names as a hint.

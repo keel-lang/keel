@@ -8,6 +8,138 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.10] — 2026-05-03
+
+### `keel init` — three fixes
+
+**In-place initialization.** Running `keel init` with no argument now scaffolds directly into the current directory instead of creating a subdirectory named after the parent folder.
+
+```bash
+mkdir myproject && cd myproject
+keel init          # writes main.keel here, not myproject/myproject/
+keel run main.keel
+```
+
+**Absolute/relative path argument.** `keel init /some/path/myproject` now uses the basename (`myproject`) as the project and agent name. Previously the full path was used, producing an invalid agent name.
+
+```bash
+keel init /tmp/mybot   # agent MyBot { ... }  ✓  (was: agent /tmp/mybot { ... })
+```
+
+**Runnable template.** The generated `main.keel` now prints and exits cleanly instead of scheduling a timer. The old template used `Schedule.every` which kept the process alive forever without any visible output.
+
+```keel
+agent MyBot {
+  @role "Describe what this agent does"
+
+  @on_start {
+    Io.show("Hello from MyBot!")
+    stop(self)
+  }
+}
+
+run(MyBot)
+```
+
+### `stop(self)` — self-stop from inside an agent
+
+Bare `self` now resolves to an `AgentRef` for the current agent, so an agent can stop itself without repeating its own name.
+
+```keel
+agent Worker {
+  @on_start {
+    Io.show("done")
+    stop(self)     # was: stop(Worker)
+  }
+}
+```
+
+`self` as an expression is valid anywhere inside an agent body where an `AgentRef` is expected. It errors at runtime if used outside an agent context.
+
+---
+
+## [0.1.9] — 2026-05-02
+
+### Tooling — Linter & Sharper Errors
+
+#### `keel lint` command
+
+New command that checks a Keel program for style and best-practice issues beyond type correctness.
+
+```bash
+keel lint agent.keel
+keel lint --fix agent.keel
+```
+
+Four rules:
+
+**Unused variable** — warns when a local binding is assigned but never read.
+
+```keel
+agent Noisy {
+  @on_start {
+    temp = "debug"        # ⚠ unused — prefix with _temp to suppress
+    Io.show("hello")
+  }
+}
+```
+
+**Uncalled task** — warns when a `task` is declared but never invoked anywhere in the program.
+
+```keel
+task helper(x: int) -> int { x + 1 }   # ⚠ never called
+
+agent Main {
+  @on_start { Io.show("hi") }
+}
+```
+
+**`Ai.*` outside agent** — warns when `Ai.classify`, `Ai.summarize`, etc. are called from a plain task or top-level statement without `@role` / `@model` context.
+
+```keel
+task process(text: str) -> str {
+  Ai.summarize(text)   # ⚠ Ai.* called outside agent context
+}
+```
+
+**State written, never read** — warns when an agent state field is assigned but `self.field` is never referenced.
+
+```keel
+agent Counter {
+  state { total: int = 0 }
+  @on_start {
+    self.total = self.total + 1   # ⚠ self.total is written but never read
+  }
+}
+```
+
+`--fix` removes unused variable assignments automatically. Prefix a variable with `_` to suppress the warning:
+
+```keel
+_debug = expensive_call()   # suppressed — no warning
+```
+
+#### `keel check` — source spans in all diagnostics
+
+Every error from `keel check` now includes a line:column pointer and an underlined source excerpt rendered via `miette`. Previously, many errors printed only a message with no location. Arity errors now list the expected parameter names as a correction hint:
+
+```
+  × Type error
+   ╭─[agent.keel:8:5]
+ 7 │   @on_start {
+ 8 │     greet()
+   ·     ───┬───
+   ·        ╰── task `greet` takes 1 argument(s), got 0 — expected: name
+ 9 │   }
+   ╰────
+```
+
+#### New example: `examples/lint_best_practices.keel`
+
+Demonstrates variable reuse, state tracking, and task calls — the patterns the linter validates as correct.
+
+---
+
 ## [0.1.8] — 2026-04-30
 
 ### Reactive Agents & Text Processing

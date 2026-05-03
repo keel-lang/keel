@@ -175,9 +175,10 @@ agent Counter {
 run(MyAgent)                      # start
 run(MyAgent, background: true)    # background: Coming soon
 stop(MyAgent)                     # graceful shutdown
+stop(self)                        # self-stop from inside the agent
 ```
 
-`run` and `stop` are prelude functions re-exported at the top level.
+`run` and `stop` are prelude functions re-exported at the top level. Inside an agent body, bare `self` resolves to the current agent reference, so `stop(self)` is equivalent to `stop(MyAgent)` without hard-coding the name.
 
 > **Status:** `run(Agent)` and `stop(Agent)` are wired. `run(Agent, background: true)` <span class="badge badge-soon">Coming soon</span> — v0.1 treats every `run` as foreground and uses the event loop for non-blocking behavior.
 

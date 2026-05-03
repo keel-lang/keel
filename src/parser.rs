@@ -307,6 +307,8 @@ fn expr_parser() -> P<Expr> {
             .ignore_then(ident())
             .map(Expr::SelfAccess);
 
+        let self_ref = just(Token::SelfKw).map(|_| Expr::SelfRef);
+
         // ── Set literal: `set[1, 2, 3]` ──────────────────────────
         let set_lit = just(Token::Set)
             .ignore_then(just(Token::LBracket))
@@ -425,6 +427,7 @@ fn expr_parser() -> P<Expr> {
             if_expr,
             rich_enum_variant,
             self_access,
+            self_ref,
             set_lit,
             float_lit,
             int_lit,

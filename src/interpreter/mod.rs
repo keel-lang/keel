@@ -840,6 +840,17 @@ impl Interpreter {
                     }
                 }
 
+                Expr::SelfRef => {
+                    if let Some(agent) = &self.current_agent {
+                        let name = agent.lock().unwrap().def.name.clone();
+                        Ok(Value::AgentRef(name))
+                    } else {
+                        Err(runtime_error(
+                            "`self` used outside of an agent context".to_string(),
+                        ))
+                    }
+                }
+
                 Expr::FieldAccess(obj, field) => {
                     // Enum variant access: `Urgency.medium`. If `obj` is
                     // a bare identifier naming a registered type, produce
@@ -1514,6 +1525,7 @@ impl Interpreter {
             self.exec_block(&body, &mut env).await?;
             self.current_agent = prev;
         }
+
         Ok(())
     }
 

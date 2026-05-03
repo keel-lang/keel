@@ -314,6 +314,8 @@ pub enum Expr {
     NullAssert(Box<Expr>),
     /// `self.field`
     SelfAccess(String),
+    /// bare `self` — resolves to an AgentRef for the current agent
+    SelfRef,
 
     // ── Compound literals ────────────────────────────────────────────
     /// `{key: value, ...}`

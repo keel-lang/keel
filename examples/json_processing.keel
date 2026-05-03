@@ -1,24 +1,14 @@
 agent JsonProcessor {
-    @on_start {
-        let json_str = "{\"name\": \"Alice\", \"age\": 30, \"active\": true}"
-        let data = Json.parse(json_str)
-        Io.show(data)
-
-        let name = data["name"]
-        Io.show(name)
-
-        let user = {
-            name: "Bob",
-            age: 25,
-            email: "bob@example.com"
-        }
-        let json_output = Json.stringify(user)
-        Io.show(json_output)
-
-        let config_str = "{\"timeout\": 30, \"retries\": 3}"
-        let config = Json.parse(config_str)
-        Io.show(config)
-    }
+  @on_start {
+    user = { name: "Alice", age: 30, active: true }
+    json_output = Json.stringify(user)
+    Io.show(json_output)
+    arr_str = "[1, 2, 3]"
+    arr = Json.parse(arr_str)
+    Io.show(arr)
+    config = { timeout: 30, retries: 3 }
+    Io.show(Json.stringify(config))
+  }
 }
 
 run(JsonProcessor)

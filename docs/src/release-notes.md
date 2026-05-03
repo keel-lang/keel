@@ -4,6 +4,69 @@
 
 ---
 
+## v0.1.10 — 2026-05-03
+
+### `keel init` fixes & `stop(self)`
+
+**`keel init` with no argument** now initializes in the current directory instead of creating a duplicate subdirectory.
+
+**Path arguments** (`keel init /tmp/mybot`) now use the basename as the project name — previously the full path was injected into the agent name.
+
+**Runnable scaffold** — the generated template no longer uses `Schedule.every`. It prints and exits immediately via `stop(self)`, so `keel run main.keel` works out of the box.
+
+**`stop(self)`** — bare `self` now resolves to an `AgentRef` for the current agent anywhere inside an agent body.
+
+```keel
+agent Worker {
+  @on_start {
+    Io.show("Hello from Worker!")
+    stop(self)
+  }
+}
+```
+
+---
+
+## v0.1.9 — 2026-05-02
+### Tooling — Linter & Sharper Errors
+
+New `keel lint` command and source-span diagnostics in `keel check`.
+
+#### `keel lint` — style and best-practice checks
+
+```bash
+keel lint <file.keel>
+keel lint --fix <file.keel>
+```
+
+Four rules ship in v0.1.9:
+
+| Rule | Trigger |
+|------|---------|
+| Unused variable | binding assigned but never read |
+| Uncalled task | `task` declared but never invoked |
+| `Ai.*` outside agent | LLM call without `@role` / `@model` context |
+| State written, never read | `self.x =` appears but `self.x` is never used |
+
+`--fix` auto-removes unused variable assignments. Prefix a name with `_` to suppress the unused warning.
+
+#### `keel check` — source spans in every diagnostic
+
+Every error from `keel check` now includes a line:column pointer and an underlined source excerpt. Arity errors include the expected parameter names as a hint:
+
+```
+  × Type error
+   ╭─[agent.keel:8:5]
+ 7 │   @on_start {
+ 8 │     greet(42)
+   ·     ────┬────
+   ·         ╰── task `greet` takes 1 argument(s), got 0 — expected: name
+ 9 │   }
+   ╰────
+```
+
+---
+
 ## v0.1.8 — 2026-04-30
 ### Reactive Agents & Text Processing
 

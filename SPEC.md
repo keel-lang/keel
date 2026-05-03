@@ -996,6 +996,23 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 | Unreachable code / catch | Warning |
 | Deprecated attribute | Warning |
 
+All `keel check` errors and warnings include a source-span pointer (line:column) and an underlined excerpt. Arity errors list the expected parameter names as a correction hint.
+
+---
+
+## 18a. Lint Rules (`keel lint`)
+
+`keel lint` checks for style and best-practice issues that are not type errors. The program may still run; lint warnings indicate dead code or likely misuse patterns.
+
+| Rule | Trigger | Suppression |
+|------|---------|-------------|
+| Unused variable | binding assigned but never read | prefix name with `_` |
+| Uncalled task | `task` declared but never invoked | — |
+| `Ai.*` outside agent | LLM method called without `@role` / `@model` context | — |
+| State written, never read | `self.x =` appears but `self.x` never used | — |
+
+`keel lint --fix` auto-removes unused variable assignment lines.
+
 ---
 
 ## 19. IDE Contract
@@ -1068,10 +1085,13 @@ Cast        <- "as" Type
 Args        <- Arg ("," Arg)*
 Arg         <- (IDENT ":")? Expr                                         # named args supported
 
-PrimaryExpr <- Literal / "self" / IDENT / Lambda
+PrimaryExpr <- Literal / SelfExpr / IDENT / Lambda
              / TupleLit / ListLit / MapLit / SetLit
              / IfExpr / WhenExpr / TryExpr
              / "(" Expr ")"
+
+SelfExpr    <- "self" "." IDENT                                          # field access → value of that state field
+             / "self"                                                     # bare self → AgentRef for the current agent
 
 Lambda      <- IDENT "=>" (Expr / Block)
              / "(" LambdaParams? ")" "=>" (Expr / Block)
