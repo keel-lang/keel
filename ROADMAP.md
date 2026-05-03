@@ -270,41 +270,41 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 
 **Theme:** Make the day-to-day development experience first-class — a polished VS Code extension, a linter, a Tree-sitter grammar for other editors, and sharper error output from `keel check`.
 
-**Status:** planned.
+**Status:** shipped 2026-05-02.
 
 ### VS Code extension (`keel-lang/vscode-keel`)
 
-> The extension currently lives in `editors/vscode/` in this repo. It ships a TextMate grammar, `language-configuration.json`, and an LSP config. v0.1.9 moves it to its own repo and completes it into a publishable extension.
-
-- [ ] **Scaffold `keel-lang/vscode-keel`** — move `editors/vscode/` into the new repo; set up its own CI, `package.json` scripts, and `CHANGELOG.md`. Remove `editors/` from this repo.
-- [ ] **Snippets** — `agent`, `task`, `type`, `interface`, `on`, `@on_start` scaffolds with tab stops.
-- [ ] **Format-on-save** — register `keel fmt` as the VS Code document formatter (`editor.formatOnSave` respects it).
-- [ ] **Run / Check commands** — `Keel: Run File` and `Keel: Check File` in the command palette; both shell out to `keel run` / `keel check` and pipe output to a dedicated output channel.
-- [ ] **Extension icon** — use the brand logo from `brand/`.
-- [ ] **Marketplace publish** — build and publish the `.vsix` to the VS Code Marketplace under the `keel-lang` publisher. Publish pipeline is independent of the language release workflow.
+- [x] **Scaffold `keel-lang/vscode-keel`** — standalone repo with its own CI, `package.json`, `CHANGELOG.md`.
+- [x] **Snippets** — 18 snippets: `agent`, `task`, `type`, `interface`, `on`, `@on_start`, `when`, `try`, and more.
+- [x] **Format-on-save** — `keel fmt` registered as the document formatter.
+- [x] **Run / Check / Lint commands** — `Keel: Run File`, `Keel: Check File`, `Keel: Lint File`, `Keel: Format File` in the command palette.
+- [x] **Extension icon** — brand logo from `brand/png/avatar-128.png`.
+- [x] **Marketplace publish** — published to VS Code Marketplace as `keel-lang.keel-lang` v0.1.0 on 2026-05-02. CI builds on every push; `v*` tag triggers publish.
 
 ### Tree-sitter grammar (`keel-lang/tree-sitter-keel`)
+
+- [x] **Scaffold `keel-lang/tree-sitter-keel`** — standalone repo with `grammar.js` covering the full Keel surface, highlight/locals queries, Node bindings, and test corpus. Neovim, Helix, and Zed setup documented in README.
 
 - [ ] **Scaffold `keel-lang/tree-sitter-keel`** — standalone repo following Tree-sitter conventions (`grammar.js`, `src/`, `bindings/`). Enables syntax highlighting and basic navigation in Neovim, Helix, Zed, and any editor with Tree-sitter support.
 
 ### Linter (`keel lint`)
 
-- [ ] **`keel lint <file>`** — style and best-practice checks beyond type errors:
-  - Unused variables and task arguments.
-  - Tasks declared but never called or registered.
+- [x] **`keel lint <file>`** — style and best-practice checks beyond type errors:
+  - Unused variables (suppress with `_` prefix).
+  - Tasks declared but never called.
   - `Ai.*` calls outside an agent (no `@role` / `@model` context).
-  - Agent state fields (`self.x`) written but never read, or read before first write.
-- [ ] **`--fix` flag** — auto-apply safe single-line fixes (e.g. remove unused `let` bindings).
+  - Agent state fields written but never read.
+- [x] **`--fix` flag** — auto-removes unused variable assignment lines.
 
 ### `keel check` error quality
 
-- [ ] **Source spans in all diagnostics** — every error and warning from `keel check` includes a line:column pointer and an underlined excerpt, matching the style of `rustc` / `tsc`.
-- [ ] **Suggestion hints** — where the fix is unambiguous (e.g. missing `!` on a nullable, wrong argument count), append a `hint:` line with the suggested correction.
+- [x] **Source spans in all diagnostics** — every error from `keel check` includes a line:column pointer and an underlined source excerpt via `miette`.
+- [x] **Suggestion hints** — arity errors append the expected parameter names as a `hint:` correction.
 
 ### Tests
 
-- [ ] **Integration tests** — at least one test per lint rule: unused variable, uncalled task, `Ai.*` outside agent, unread state field.
-- [ ] **Example programs** — add `.keel` files in `examples/` that demonstrate correct patterns the linter validates against (doubles as living documentation of best practices).
+- [x] **Integration tests** — one test per lint rule: unused variable, uncalled task, `Ai.*` outside agent, unread state field; plus span and arity-hint tests for `keel check`.
+- [x] **Example programs** — `examples/lint_best_practices.keel` demonstrates the correct patterns the linter validates.
 
 ---
 
