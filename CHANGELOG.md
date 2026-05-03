@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ---
 
-## [0.1.10] — 2026-05-03
+## [0.1.9] — 2026-05-03
 
 ### `keel init` — three fixes
 
@@ -55,10 +55,6 @@ agent Worker {
 ```
 
 `self` as an expression is valid anywhere inside an agent body where an `AgentRef` is expected. It errors at runtime if used outside an agent context.
-
----
-
-## [0.1.9] — 2026-05-02
 
 ### Tooling — Linter & Sharper Errors
 

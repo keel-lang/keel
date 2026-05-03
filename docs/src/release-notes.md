@@ -4,7 +4,7 @@
 
 ---
 
-## v0.1.10 — 2026-05-03
+## v0.1.9 — 2026-05-03
 
 ### `keel init` fixes & `stop(self)`
 
@@ -27,7 +27,6 @@ agent Worker {
 
 ---
 
-## v0.1.9 — 2026-05-02
 ### Tooling — Linter & Sharper Errors
 
 New `keel lint` command and source-span diagnostics in `keel check`.
