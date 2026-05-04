@@ -146,10 +146,9 @@ pub struct Interpreter {
     pub active_http_servers: Arc<AtomicU64>,
     /// Source for diagnostics (optional).
     pub source: Option<NamedSource<String>>,
-    /// Stem of the source file being run (e.g. `"counter"` for `counter.keel`).
-    /// Used to namespace persistent Memory storage so two programs with an
-    /// agent named `Counter` don't collide. Defaults to `"program"` when no
-    /// source file is known (e.g. REPL, inline eval).
+    /// Memory namespace derived from the source file path via `derive_program_name`.
+    /// Format: `<stem>_<sha256[:12]>` for real files; `__repl__` / `__inline__`
+    /// for REPL and inline evaluations. Defaults to `"__inline__"`.
     pub program_name: String,
 }
 
@@ -171,7 +170,7 @@ impl Interpreter {
             next_closure_id: 0,
             active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
-            program_name: "program".to_string(),
+            program_name: "__inline__".to_string(),
         };
         crate::runtime::install_prelude(&mut interp);
         interp
@@ -396,14 +395,15 @@ impl Default for Interpreter {
 // Public entry points
 // ---------------------------------------------------------------------------
 
-pub async fn run_with_source(program: Program, source: Option<NamedSource<String>>) -> Result<()> {
+pub async fn run_with_source(
+    program: Program,
+    source: Option<NamedSource<String>>,
+    source_path: Option<&std::path::Path>,
+) -> Result<()> {
     let mut interp = Interpreter::new();
-    if let Some(ref s) = source
-        && let Some(stem) = std::path::Path::new(s.name())
-            .file_stem()
-            .and_then(|s| s.to_str())
-    {
-        interp.program_name = stem.to_string();
+    if let Some(path) = source_path {
+        let raw = path.to_str().unwrap_or("__inline__");
+        interp.program_name = crate::runtime::derive_program_name(raw);
     }
     interp.source = source;
     interp.execute(program).await

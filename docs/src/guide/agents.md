@@ -93,7 +93,7 @@ Binds stdlib modules as the agent's declared capabilities. The runtime uses this
 @memory persistent    # | session | none
 ```
 
-- `persistent` — survives restarts; stored in `~/.keel/memory/<program>/<agent>.json` (JSON key-value store). Each source file gets its own subdirectory so two programs with an agent named `Counter` don't share data.
+- `persistent` — survives restarts; stored in `~/.keel/memory/<stem>_<hash12>/<agent>.json` (JSON key-value store). The `<hash12>` is a SHA-256 fingerprint of the canonical source file path, so two programs with the same filename in different directories never share data.
 - `session` — lives for the life of the process; cleared on restart. This is the **default** when `@memory` is omitted.
 - `none` — disables `Memory.*` for this agent; any call raises `CapabilityError`.
 

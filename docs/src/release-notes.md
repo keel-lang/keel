@@ -4,6 +4,36 @@
 
 ---
 
+## v0.1.11 — 2026-05-04
+
+### Memory — safe cross-process storage (**breaking path change**)
+
+> **Breaking:** The persistent memory directory format changed. Move existing data manually (see below).
+
+Persistent memory is now both path-safe and cross-process safe:
+
+**New path format:** `~/.keel/memory/<stem>_<hash12>/<agent>.json`
+
+The `<hash12>` is derived from the SHA-256 of the canonical source file path, ensuring two programs with the same filename in different directories never share a storage bucket.
+
+**Cross-process writes are now safe.** Each `Memory.*` operation holds an advisory `flock` on a sidecar `<agent>.lock` file. Multiple concurrent `keel run` processes against the same agent serialize correctly.
+
+**Crash durability.** Writes call `fsync` on the temp file before rename, and `fsync` on the parent directory after rename.
+
+**Path validation.** Agent names containing `.`, `/`, `\`, or `\0` are rejected with a hard error (previously `debug_assert`).
+
+**Migration:** data at the old path `~/.keel/memory/<stem>/<agent>.json` is not auto-migrated. Move it to the new location:
+
+```bash
+# find the new directory name for your program
+keel run --print-memory-dir myprog.keel  # not yet available; use the hash formula
+# or simply let Keel recreate it from scratch
+```
+
+See the [Agents guide](./guide/agents.md#memory--agent-memory-scope) for the updated path format and multi-process safety notes.
+
+---
+
 ## v0.1.10 — 2026-05-03
 
 ### Memory namespace

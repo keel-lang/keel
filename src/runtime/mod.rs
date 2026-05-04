@@ -11,10 +11,15 @@ pub mod human;
 pub mod llm;
 
 use std::collections::HashMap;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write as IoWrite;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+
+use fs2::FileExt;
+use sha2::{Digest, Sha256};
 
 use crate::interpreter::value::Value;
 use crate::interpreter::{CallArgValue, Interpreter, Namespace};
@@ -912,32 +917,31 @@ fn env_namespace() -> Namespace {
 // Two backing stores, selected by the agent's `@memory` attribute:
 //
 //   @memory session     — in-process HashMap, cleared at process exit (default).
-//   @memory persistent  — JSON file at ~/.keel/memory/<program>/<agent>.json;
-//                         survives restarts. The <program> component comes from
-//                         the source file stem so two programs with an agent
-//                         named "Counter" don't share storage.
+//   @memory persistent  — JSON file at ~/.keel/memory/<basename>_<hash12>/<agent>.json;
+//                         survives restarts. The directory name is derived from the
+//                         canonical source file path so two programs that happen to
+//                         share a basename (e.g. counter.keel in different dirs) each
+//                         get their own storage bucket.
 //   @memory none        — raises CapabilityError on any Memory.* call.
 //
 // Memory.* is only valid inside an agent body; calls from top-level code or
 // plain tasks raise an error ("requires an agent context").
 //
-// Path safety: Keel identifiers are [A-Za-z_][A-Za-z0-9_]* — no slashes,
-// dots, or other path-special characters — so <program>/<agent> cannot escape
-// the memory directory. A debug_assert enforces this invariant so a future
-// relaxation of identifier rules is caught early.
+// Identity uniqueness: the directory name is <sanitized_stem>_<SHA-256[:12]> where
+// the hash is computed over the OsStr bytes of the canonicalized file path.
+// REPL / stdin / inline sources that have no stable on-disk path use ephemeral
+// namespace names (__repl__, __stdin__, __inline__) and share storage across all
+// sessions of that kind.
 //
-// Persistent I/O serialization: PERSIST_LOCK serializes all load→mutate→save
-// sequences so concurrent Async.spawn tasks within one process can't interleave
-// and lose writes. Note: two separate `keel run` processes against the same
-// agent are NOT safe — they race on the same file. File-locking is a v0.2
-// concern; the SPEC documents this limitation.
+// Cross-process safety: `with_locked` uses advisory flock (fs2) on a sidecar
+// <agent>.lock file. The sidecar is never renamed, so the lock target is stable
+// even while the data file is being atomically replaced.
 //
-// Atomic writes: save_persistent writes to <path>.tmp then renames into place
-// so a crash mid-write never leaves a truncated file. If the rename itself
-// fails (e.g. ENOSPC), the .tmp is cleaned up before the error is returned.
+// Atomic writes: write to <agent>.json.tmp → fsync → rename → fsync(parent dir).
+// Stale .tmp from a previous crash is removed at lock-acquisition time.
 //
 // Corrupt-file safety: if the JSON file fails to parse it is renamed to
-// <path>.bak so the user can inspect/recover the data, and an error is
+// <agent>.json.bak so the user can inspect/recover the data, and an error is
 // returned rather than silently starting fresh.
 // ---------------------------------------------------------------------------
 
@@ -948,26 +952,78 @@ fn session_store() -> &'static SessionStore {
     SESSION_MEMORY.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-// Serializes all persistent read-modify-write operations across agents within
-// one process. Per-agent locking is a v0.2 performance concern.
-static PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-fn persist_lock() -> &'static Mutex<()> {
-    PERSIST_LOCK.get_or_init(|| Mutex::new(()))
+/// Derive the memory directory name from a raw source path string.
+///
+/// For real files: `<sanitized_stem>_<sha256[:12]>` where the hash is over the
+/// canonical path bytes. For REPL / stdin / inline: `__repl__`, `__stdin__`,
+/// `__inline__`.
+pub(crate) fn derive_program_name(raw_source_name: &str) -> String {
+    let path = std::path::Path::new(raw_source_name);
+    let resolved: Option<std::path::PathBuf> = std::fs::canonicalize(path)
+        .ok()
+        .or_else(|| std::path::absolute(path).ok());
+    match resolved {
+        Some(p) if p.is_file() || p.is_symlink() => {
+            let bytes = p.as_os_str().as_encoded_bytes();
+            let mut h = Sha256::new();
+            h.update(bytes);
+            let hex = format!("{:x}", h.finalize());
+            let hash12 = &hex[..12];
+            let basename = p.file_stem().and_then(|s| s.to_str()).unwrap_or("program");
+            let safe_basename = sanitize_memory_basename(basename);
+            format!("{safe_basename}_{hash12}")
+        }
+        _ => classify_special_source(raw_source_name),
+    }
 }
 
-fn persistent_memory_path(program_name: &str, agent_name: &str) -> std::path::PathBuf {
-    // Keel identifiers are [A-Za-z_][A-Za-z0-9_]* — safe for use as path components.
-    debug_assert!(
-        program_name
-            .chars()
-            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'),
-        "program_name contains path-unsafe characters: {program_name}"
-    );
-    debug_assert!(
-        agent_name.chars().all(|c| c.is_alphanumeric() || c == '_'),
-        "agent_name contains path-unsafe characters: {agent_name}"
-    );
-    // HOME on Unix; USERPROFILE on Windows; fallback to cwd.
+fn sanitize_memory_basename(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(64)
+        .collect();
+    if cleaned.is_empty() {
+        "program".into()
+    } else {
+        cleaned
+    }
+}
+
+fn classify_special_source(raw: &str) -> String {
+    match raw {
+        "<repl>" | "repl" => "__repl__".into(),
+        "<stdin>" | "stdin" => "__stdin__".into(),
+        "<inline>" | "inline" => "__inline__".into(),
+        other => {
+            let safe = sanitize_memory_basename(other);
+            format!("__{safe}__")
+        }
+    }
+}
+
+/// Hard path-component validation — guards against any future relaxation of
+/// identifier rules or unexpected input reaching the memory path construction.
+fn validate_memory_path_component(name: &str, kind: &str) -> miette::Result<()> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains('\0')
+    {
+        return Err(miette::miette!("Memory: invalid {kind} name {name:?}"));
+    }
+    Ok(())
+}
+
+fn persistent_memory_dir(program_name: &str) -> std::path::PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
@@ -975,60 +1031,115 @@ fn persistent_memory_path(program_name: &str, agent_name: &str) -> std::path::Pa
         .join(".keel")
         .join("memory")
         .join(program_name)
-        .join(format!("{agent_name}.json"))
 }
 
-fn load_persistent(
-    program_name: &str,
-    agent_name: &str,
-) -> Result<serde_json::Map<String, serde_json::Value>, miette::Report> {
-    let path = persistent_memory_path(program_name, agent_name);
+/// Acquire advisory flock on `<agent>.lock`, clean up any stale `.tmp`,
+/// load the store, call `body`, and (if exclusive) write back atomically.
+fn with_locked<R>(
+    program: &str,
+    agent: &str,
+    exclusive: bool,
+    body: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>) -> miette::Result<R>,
+) -> miette::Result<R> {
+    validate_memory_path_component(agent, "agent")?;
+    let dir = persistent_memory_dir(program);
+    fs::create_dir_all(&dir).map_err(|e| {
+        miette::miette!("Memory: failed to create directory {}: {e}", dir.display())
+    })?;
+
+    let lock_path = dir.join(format!("{agent}.lock"));
+    let lock_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| {
+            miette::miette!(
+                "Memory: failed to open lock file {}: {e}",
+                lock_path.display()
+            )
+        })?;
+
+    if exclusive {
+        lock_file
+            .lock_exclusive()
+            .map_err(|e| miette::miette!("Memory: failed to acquire exclusive lock: {e}"))?;
+    } else {
+        lock_file
+            .lock_shared()
+            .map_err(|e| miette::miette!("Memory: failed to acquire shared lock: {e}"))?;
+    }
+    // Lock releases on drop when lock_file goes out of scope.
+
+    // Clean up any stale .tmp left by a previous crash (we hold the lock now).
+    let data_path = dir.join(format!("{agent}.json"));
+    let _ = fs::remove_file(data_path.with_extension("json.tmp"));
+
+    let mut store = memory_read_or_empty(&data_path)?;
+    let result = body(&mut store)?;
+    if exclusive {
+        memory_write_atomic(&data_path, &store)?;
+    }
+    Ok(result)
+}
+
+fn memory_read_or_empty(
+    path: &std::path::Path,
+) -> miette::Result<serde_json::Map<String, serde_json::Value>> {
     if !path.exists() {
         return Ok(serde_json::Map::new());
     }
-    let contents = std::fs::read_to_string(&path)
+    let contents = fs::read_to_string(path)
         .map_err(|e| miette::miette!("Memory: failed to read {}: {e}", path.display()))?;
     match serde_json::from_str::<serde_json::Value>(&contents) {
         Ok(serde_json::Value::Object(m)) => Ok(m),
         _ => {
-            // Corrupt file — rename to .bak so the user can inspect/recover it.
             let bak = path.with_extension("json.bak");
-            let _ = std::fs::rename(&path, &bak);
+            let _ = fs::rename(path, &bak);
+            let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("agent");
             Err(miette::miette!(
-                "Memory: {agent_name}.json was corrupt; renamed to {} — starting fresh",
+                "Memory: {stem}.json was corrupt; renamed to {} — starting fresh",
                 bak.display()
             ))
         }
     }
 }
 
-fn save_persistent(
-    program_name: &str,
-    agent_name: &str,
+fn memory_write_atomic(
+    path: &std::path::Path,
     store: &serde_json::Map<String, serde_json::Value>,
-) -> Result<(), miette::Report> {
-    let path = persistent_memory_path(program_name, agent_name);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
-            miette::miette!(
-                "Memory: failed to create directory {}: {e}",
-                parent.display()
-            )
-        })?;
-    }
+) -> miette::Result<()> {
+    let tmp = path.with_extension("json.tmp");
     let json = serde_json::to_string_pretty(&serde_json::Value::Object(store.clone()))
         .map_err(|e| miette::miette!("Memory: serialization failed: {e}"))?;
-    // Atomic write: write to a sibling .tmp, then rename into place.
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, &json)
-        .map_err(|e| miette::miette!("Memory: failed to write {}: {e}", tmp.display()))?;
-    if let Err(e) = std::fs::rename(&tmp, &path) {
-        let _ = std::fs::remove_file(&tmp); // clean up stale .tmp
+    {
+        let mut f = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&tmp)
+            .map_err(|e| {
+                miette::miette!("Memory: failed to open temp file {}: {e}", tmp.display())
+            })?;
+        f.write_all(json.as_bytes())
+            .map_err(|e| miette::miette!("Memory: failed to write {}: {e}", tmp.display()))?;
+        f.sync_all()
+            .map_err(|e| miette::miette!("Memory: failed to sync {}: {e}", tmp.display()))?;
+    }
+    if let Err(e) = fs::rename(&tmp, path) {
+        let _ = fs::remove_file(&tmp);
         return Err(miette::miette!(
             "Memory: failed to rename {} -> {}: {e}",
             tmp.display(),
             path.display()
         ));
+    }
+    // fsync parent dir so the rename itself is durable.
+    if let Some(parent) = path.parent()
+        && let Ok(d) = File::open(parent)
+    {
+        let _ = d.sync_all();
     }
     Ok(())
 }
@@ -1093,10 +1204,10 @@ fn memory_namespace() -> Namespace {
                 )),
                 "persistent" => {
                     assert_memory_serializable(&value)?;
-                    let _guard = persist_lock().lock().unwrap();
-                    let mut store = load_persistent(&program_name, &agent_name)?;
-                    store.insert(key, value_to_json(&value));
-                    save_persistent(&program_name, &agent_name, &store)?;
+                    with_locked(&program_name, &agent_name, true, move |store| {
+                        store.insert(key, value_to_json(&value));
+                        Ok(())
+                    })?;
                     Ok(Value::None)
                 }
                 _ => {
@@ -1125,9 +1236,10 @@ fn memory_namespace() -> Namespace {
                     "CapabilityError: Memory.recall is not allowed — agent has @memory none"
                 )),
                 "persistent" => {
-                    let _guard = persist_lock().lock().unwrap();
-                    let store = load_persistent(&program_name, &agent_name)?;
-                    Ok(store.get(&key).map(json_to_value).unwrap_or(Value::None))
+                    let v = with_locked(&program_name, &agent_name, false, move |store| {
+                        Ok(store.get(&key).map(json_to_value).unwrap_or(Value::None))
+                    })?;
+                    Ok(v)
                 }
                 _ => {
                     let result = session_store()
@@ -1155,10 +1267,10 @@ fn memory_namespace() -> Namespace {
                     "CapabilityError: Memory.forget is not allowed — agent has @memory none"
                 )),
                 "persistent" => {
-                    let _guard = persist_lock().lock().unwrap();
-                    let mut store = load_persistent(&program_name, &agent_name)?;
-                    store.remove(&key);
-                    save_persistent(&program_name, &agent_name, &store)?;
+                    with_locked(&program_name, &agent_name, true, move |store| {
+                        store.remove(&key);
+                        Ok(())
+                    })?;
                     Ok(Value::None)
                 }
                 _ => {
@@ -1173,6 +1285,61 @@ fn memory_namespace() -> Namespace {
             }
         }),
     })
+}
+
+#[cfg(test)]
+mod memory_unit_tests {
+    use super::*;
+
+    #[test]
+    fn memory_invalid_agent_name_rejected() {
+        let result = with_locked("__inline__", "../evil", false, |_| Ok(()));
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("invalid agent name"),
+            "expected invalid agent name error, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn derive_program_name_repl() {
+        assert_eq!(derive_program_name("<repl>"), "__repl__");
+        assert_eq!(derive_program_name("repl"), "__repl__");
+    }
+
+    #[test]
+    fn derive_program_name_inline() {
+        assert_eq!(derive_program_name("<inline>"), "__inline__");
+        assert_eq!(derive_program_name("inline"), "__inline__");
+    }
+
+    #[test]
+    fn derive_program_name_nonexistent_file() {
+        // Non-existent paths that don't match special names get the __X__ treatment.
+        let result = derive_program_name("/nonexistent/path/foo.keel");
+        assert!(result.starts_with("__"), "got: {result}");
+    }
+
+    #[test]
+    fn derive_program_name_real_file() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let name = derive_program_name(tmp.path().to_str().unwrap());
+        // Should be <stem>_<12hexchars>
+        let parts: Vec<&str> = name.rsplitn(2, '_').collect();
+        assert_eq!(parts[0].len(), 12, "hash should be 12 chars: {name}");
+        assert!(
+            parts[0].chars().all(|c| c.is_ascii_hexdigit()),
+            "hash should be hex: {name}"
+        );
+    }
+
+    #[test]
+    fn derive_program_name_same_file_same_name() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let p = tmp.path().to_str().unwrap();
+        assert_eq!(derive_program_name(p), derive_program_name(p));
+    }
 }
 
 // ---------------------------------------------------------------------------

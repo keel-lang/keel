@@ -180,7 +180,7 @@ async fn run_file(path: &PathBuf) -> Result<()> {
     }
 
     // Interpret
-    interpreter::run_with_source(program, Some(named_src.clone())).await?;
+    interpreter::run_with_source(program, Some(named_src.clone()), Some(path)).await?;
 
     Ok(())
 }

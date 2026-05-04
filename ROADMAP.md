@@ -326,7 +326,7 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 ### `@memory` attribute enforcement
 
 - [x] **`@memory session`** — in-process store, cleared on restart (default when attribute is omitted).
-- [x] **`@memory persistent`** — file-backed JSON store at `~/.keel/memory/<agent-name>.json`; survives restarts.
+- [x] **`@memory persistent`** — file-backed JSON store at `~/.keel/memory/<stem>_<hash12>/<agent>.json`; survives restarts. (v0.1.11: path updated to include canonical-path hash for isolation; flock added for cross-process safety.)
 - [x] **`@memory none`** — raises `CapabilityError` on any `Memory.*` call inside the agent.
 
 ### Example
@@ -355,6 +355,37 @@ The v0.1 Alpha section has been updated to accurately reflect all items shipped 
 
 - [x] **Integration tests** — session remember/recall, recall on missing key returns `none`, forget removes key, `@memory none` raises `CapabilityError`, default mode acts as session.
 - [x] **Example program** — `examples/memory_agent.keel`.
+
+---
+
+## v0.1.11 — Memory Storage Safety
+
+**Theme:** Make persistent `Memory` safe for cross-process use and give each source file a unique storage bucket.
+
+**Status:** shipped.
+
+### Changes
+
+- [x] **Path identity** — directory name changed from `<stem>` to `<stem>_<sha256[:12]>`. Two `counter.keel` files in different directories now have separate storage.
+- [x] **Cross-process safety** — `flock` advisory locking via `fs2`. Each `Memory.*` call acquires exclusive (write) or shared (read) lock on a sidecar `.lock` file.
+- [x] **Crash durability** — `fsync` on temp file + parent dir before and after rename.
+- [x] **Hard path validation** — agent names validated at storage boundary (replaces `debug_assert`).
+- [x] **New dependencies** — `sha2 = "0.10"`, `fs2 = "0.4"`.
+
+### Tests
+
+- [x] Identity isolation: same basename, different paths → separate storage
+- [x] Symlink resolves to same storage as target
+- [x] `repl.keel` file uses `repl_<hash>`, not `__repl__`
+- [x] Cross-process write race: both processes complete, JSON is valid
+- [x] Concurrent reads: two processes with shared lock both succeed
+- [x] `.lock` file exists alongside `.json` after write
+- [x] Corrupt file renamed to `.bak`, error returned
+- [x] Invalid agent name rejected (unit test)
+
+### Breaking
+
+Existing persistent memory data at `~/.keel/memory/<stem>/` is not migrated. Move manually if needed.
 
 ---
 

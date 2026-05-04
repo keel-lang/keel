@@ -8,6 +8,49 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.11] — 2026-05-03
+
+### Memory — safe cross-process storage (breaking path change)
+
+Persistent memory storage is now path-safe and cross-process safe.
+
+#### Breaking
+
+The persistent memory directory layout changed:
+
+| Before (v0.1.10) | After (v0.1.11) |
+|---|---|
+| `~/.keel/memory/<file-stem>/<agent>.json` | `~/.keel/memory/<stem>_<hash12>/<agent>.json` |
+
+The `<hash12>` is the first 12 hex characters of the SHA-256 hash of the canonicalized source file path. Two programs that happen to share a filename (e.g. `counter.keel` in different directories) now get their own storage buckets. Existing data is **not** auto-migrated; move manually if needed.
+
+#### What changed
+
+**Identity** — directory name is now `<stem>_<hash12>` derived from the canonical file path. REPL / stdin / inline sessions use `__repl__`, `__stdin__`, `__inline__` (no hash, stable within their kind).
+
+**Cross-process safety** — each `Memory.*` operation acquires an advisory `flock` on a sidecar `<agent>.lock` file (exclusive for writes, shared for reads). The sidecar is never renamed, so the lock target is stable while the data file is being atomically replaced.
+
+**Crash durability** — `Memory.remember` now calls `fsync` on the temp file before rename, and `fsync` on the parent directory after rename. A crash mid-write leaves the previous `.json` intact.
+
+**Path validation** — agent names are now validated at the storage boundary (hard error, not `debug_assert`). Identifiers containing `.`, `/`, `\`, or `\0` are rejected.
+
+```keel
+agent Bot {
+  @memory persistent   # stored at ~/.keel/memory/bot_<hash12>/Bot.json
+
+  @on_start {
+    last = Memory.recall("last_user")
+    if last != none {
+      Io.show("Welcome back, {last}!")
+    }
+    Memory.remember("last_user", "Alice")
+    stop(self)
+  }
+}
+```
+
+---
+
 ## [0.1.10] — 2026-05-03
 
 ### Memory namespace

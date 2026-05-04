@@ -856,10 +856,24 @@ Keys are namespaced per `(program, agent)` pair — two programs that happen to 
 | Attribute | Behaviour |
 |---|---|
 | `@memory session` | In-process HashMap; cleared at process exit (default when attribute is omitted) |
-| `@memory persistent` | JSON file at `~/.keel/memory/<program>/<agent>.json`; survives restarts |
+| `@memory persistent` | JSON file at `~/.keel/memory/<stem>_<hash12>/<agent>.json`; survives restarts |
 | `@memory none` | Any `Memory.*` call raises `CapabilityError` |
 
-**Multi-process safety note:** `@memory persistent` is safe within one process (writes are serialized). Two concurrent `keel run` invocations against the same program/agent can race on the same file. File locking is a v0.2 concern; do not rely on cross-process consistency in v0.1.
+#### Persistent storage path
+
+The directory name is `<stem>_<hash12>` where `<stem>` is the sanitized basename of the source file and `<hash12>` is the first 12 hex characters of the SHA-256 hash of the canonicalized file path. This ensures two programs with the same filename in different directories never share storage.
+
+Special sources that have no stable on-disk path use fixed namespace names:
+
+| Source | Namespace |
+|---|---|
+| File (e.g. `counter.keel`) | `counter_<hash12>` |
+| REPL | `__repl__` |
+| stdin / inline | `__stdin__` / `__inline__` |
+
+#### Multi-process safety
+
+Each `Memory.*` operation acquires an advisory `flock` on a sidecar `<agent>.lock` file (exclusive for writes, shared for reads). Concurrent `keel run` processes against the same program/agent are safe — writes are serialized by the kernel lock. The lock target is a stable sidecar file that is never renamed.
 
 ### v0.2 note: semantic search
 
