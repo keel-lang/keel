@@ -2,6 +2,33 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
+## Range operator `..`
+
+`start..end` produces an **inclusive** `list[int]` containing every integer from `start` to `end`.
+
+```keel
+digits = 1..5        # [1, 2, 3, 4, 5]
+single = 4..4        # [4]
+empty  = 5..3        # []  (start > end → empty)
+```
+
+Both operands must be `int` — using a `float` or `str` is a type error.
+
+Ranges work directly with `for`:
+
+```keel
+for i in 0..2 {
+  Io.notify("{i}")   # 0, 1, 2
+}
+```
+
+Because the result is a plain `list[int]`, all list methods apply:
+
+```keel
+count  = (1..10).count()                  # 10
+evens  = (1..10).filter(n => n % 2 == 0) # [2, 4, 6, 8, 10]
+```
+
 ## Lists
 
 ```keel

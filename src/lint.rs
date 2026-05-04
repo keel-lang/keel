@@ -396,7 +396,7 @@ fn ident_reads_in_expr(expr: &Expr, out: &mut HashSet<String>) {
             ident_reads_in_expr(right, out);
         }
         Expr::UnaryOp { expr: inner, .. } => ident_reads_in_expr(inner, out),
-        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) => {
+        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) | Expr::Range(l, r) => {
             ident_reads_in_expr(l, out);
             ident_reads_in_expr(r, out);
         }
@@ -566,7 +566,7 @@ fn ai_methods_in_expr(expr: &Expr, out: &mut Vec<String>) {
         | Expr::Cast { expr: inner, .. } => {
             ai_methods_in_expr(inner, out);
         }
-        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) => {
+        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) | Expr::Range(l, r) => {
             ai_methods_in_expr(l, out);
             ai_methods_in_expr(r, out);
         }
@@ -713,7 +713,7 @@ fn self_in_expr(expr: &Expr, reads: &mut HashSet<String>, written: &mut HashSet<
         | Expr::Cast { expr: inner, .. } => {
             self_in_expr(inner, reads, written);
         }
-        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) => {
+        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) | Expr::Range(l, r) => {
             self_in_expr(l, reads, written);
             self_in_expr(r, reads, written);
         }

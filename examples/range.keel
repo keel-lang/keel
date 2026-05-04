@@ -1,0 +1,9 @@
+agent Counter {
+  @on_start {
+    for i in 1..5 {
+      Io.notify("{i}")
+    }
+  }
+}
+
+run(Counter)

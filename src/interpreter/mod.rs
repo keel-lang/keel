@@ -672,8 +672,23 @@ impl Interpreter {
                     body,
                 } => {
                     let iter_v = self.eval_expr(iter, env).await?;
-                    let items = match iter_v {
-                        Value::List(items) => items,
+                    // Build an owned iterator without materializing a range.
+                    enum ForIter {
+                        List(std::vec::IntoIter<Value>),
+                        Range(std::ops::RangeInclusive<i64>),
+                    }
+                    impl Iterator for ForIter {
+                        type Item = Value;
+                        fn next(&mut self) -> Option<Value> {
+                            match self {
+                                ForIter::List(it) => it.next(),
+                                ForIter::Range(it) => it.next().map(Value::Integer),
+                            }
+                        }
+                    }
+                    let iter: ForIter = match iter_v {
+                        Value::List(items) => ForIter::List(items.into_iter()),
+                        Value::Range(lo, hi) => ForIter::Range(lo..=hi),
                         other => {
                             return Err(runtime_error(format!(
                                 "`for` expects a list, got {}",
@@ -681,7 +696,7 @@ impl Interpreter {
                             )));
                         }
                     };
-                    for item in items {
+                    for item in iter {
                         env.push_scope();
                         env.define(binding.clone(), item);
                         if let Some(pred) = filter {
@@ -1026,6 +1041,19 @@ impl Interpreter {
                         self.eval_expr(right, env).await
                     } else {
                         Ok(l)
+                    }
+                }
+
+                Expr::Range(start, end) => {
+                    let s = self.eval_expr(start, env).await?;
+                    let e = self.eval_expr(end, env).await?;
+                    match (s, e) {
+                        (Value::Integer(lo), Value::Integer(hi)) => Ok(Value::Range(lo, hi)),
+                        (l, r) => Err(runtime_error(format!(
+                            "range `..` expects two integers, got {} and {}",
+                            l.type_name(),
+                            r.type_name()
+                        ))),
                     }
                 }
 
@@ -1402,6 +1430,84 @@ impl Interpreter {
                     .collect();
                 Ok(Value::List(parts))
             }
+            (Value::Range(lo, hi), "count" | "len") => {
+                Ok(Value::Integer(if lo <= hi { hi - lo + 1 } else { 0 }))
+            }
+            (Value::Range(lo, hi), "is_empty") => Ok(Value::Bool(lo > hi)),
+            (Value::Range(lo, hi), "contains") => {
+                let target = args.first().and_then(|a| a.value.as_int());
+                Ok(Value::Bool(target.is_some_and(|n| n >= *lo && n <= *hi)))
+            }
+            (Value::Range(lo, hi), "first") => Ok(if lo <= hi {
+                Value::Integer(*lo)
+            } else {
+                Value::None
+            }),
+            (Value::Range(lo, hi), "last") => Ok(if lo <= hi {
+                Value::Integer(*hi)
+            } else {
+                Value::None
+            }),
+            (Value::Range(lo, hi), "map") => {
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("map expects a function argument"))?;
+                let (params, body) = match closure {
+                    Value::Closure(p, b) => (p, b),
+                    _ => return Err(runtime_error("map argument must be a function")),
+                };
+                let count = if lo <= hi { (hi - lo + 1) as usize } else { 0 };
+                let mut out = Vec::with_capacity(count);
+                for n in *lo..=*hi {
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: Value::Integer(n),
+                            }],
+                        )
+                        .await?;
+                    out.push(res);
+                }
+                Ok(Value::List(out))
+            }
+            (Value::Range(lo, hi), "filter") => {
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("filter expects a function argument"))?;
+                let (params, body) = match closure {
+                    Value::Closure(p, b) => (p, b),
+                    _ => return Err(runtime_error("filter argument must be a function")),
+                };
+                let mut out = Vec::new();
+                for n in *lo..=*hi {
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: Value::Integer(n),
+                            }],
+                        )
+                        .await?;
+                    if res.is_truthy() {
+                        out.push(Value::Integer(n));
+                    }
+                }
+                Ok(Value::List(out))
+            }
+            (Value::Range(lo, hi), "push") => {
+                let mut result: Vec<Value> = (*lo..=*hi).map(Value::Integer).collect();
+                if let Some(arg) = args.first() {
+                    result.push(arg.value.clone());
+                }
+                Ok(Value::List(result))
+            }
             (Value::List(items), "count" | "len") => Ok(Value::Integer(items.len() as i64)),
             (Value::List(items), "is_empty") => Ok(Value::Bool(items.is_empty())),
             (Value::List(items), "contains") => {
@@ -1680,6 +1786,22 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Add, Value::List(a), Value::List(b)) => {
             let mut result = a.clone();
             result.extend(b.clone());
+            Ok(Value::List(result))
+        }
+        // Concatenating with a range materializes it — user explicitly asked for a list.
+        (Add, Value::Range(lo, hi), Value::List(b)) => {
+            let mut result: Vec<Value> = (*lo..=*hi).map(Value::Integer).collect();
+            result.extend(b.clone());
+            Ok(Value::List(result))
+        }
+        (Add, Value::List(a), Value::Range(lo, hi)) => {
+            let mut result = a.clone();
+            result.extend((*lo..=*hi).map(Value::Integer));
+            Ok(Value::List(result))
+        }
+        (Add, Value::Range(lo1, hi1), Value::Range(lo2, hi2)) => {
+            let mut result: Vec<Value> = (*lo1..=*hi1).map(Value::Integer).collect();
+            result.extend((*lo2..=*hi2).map(Value::Integer));
             Ok(Value::List(result))
         }
         (Eq, a, b) => Ok(Value::Bool(a == b)),

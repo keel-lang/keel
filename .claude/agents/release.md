@@ -1,7 +1,7 @@
 ---
 name: release
-description: Runs the full keel release checklist — format, lint, tests, docs, metadata — then commits, pushes to main, shows a confirmation gate, and (only after explicit user approval) creates the tag that triggers the CI release. Always use this agent for releases; it runs on Haiku to keep costs low.
-model: claude-haiku-4-5-20251001
+description: Use this agent when the user says "release", "ship a release", "cut a release", "release v0.x.y", "publish a new version", "tag and release", or "release keel". Runs the full keel release checklist — format, lint, tests, docs, metadata — then gates on explicit user confirmation before committing, pushing to main, or tagging. Always gates; never commits or pushes without approval.
+model: haiku
 tools: Bash, Read, Edit, Write, AskUserQuestion
 ---
 
@@ -81,33 +81,31 @@ Verify before committing:
 - `ROADMAP.md` — shipped items marked `[x]`, new release row added, no stale `[ ]` markers.
 - `Cargo.toml` — `version` bumped to the new version.
 
-## Step 8 — Commit and Push to `main`
+## Step 8 — Confirmation Gate for Commit (REQUIRED)
 
-Stage all changed files explicitly:
+Use `AskUserQuestion` to show the user:
+
+1. The list of files staged (`git status --short`).
+2. The proposed commit message.
+3. The question: **"Ready to commit and push to main? (yes/no)"**
+
+Do not run `git commit` or `git push` until the answer is an explicit yes. If no, stop and ask what they want to change first.
+
+Once approved, stage and commit:
 
 ```bash
 git add Cargo.toml Cargo.lock CHANGELOG.md ROADMAP.md SPEC.md \
         src/ tests/ docs/ examples/
+git commit -m "Release v0.1.X — <short theme>"
+git push origin main
 ```
 
 Write the commit message as a human developer would. No AI attribution, no model names, no `Co-Authored-By`:
 
-```
-Release v0.1.X — <short theme in plain English>
-
-<Body: what changed and why, 3–6 lines, past tense.>
-```
-
 Good: `Release v0.1.11 — Memory storage safety (path hash + flock)`  
 Bad: anything mentioning Claude, a model, or a ticket shortlink.
 
-Push to main:
-
-```bash
-git push origin main
-```
-
-## Step 9 — Confirmation Gate (REQUIRED)
+## Step 9 — Confirmation Gate for Tag (REQUIRED)
 
 Use `AskUserQuestion` to show the user:
 

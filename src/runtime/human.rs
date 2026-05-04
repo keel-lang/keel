@@ -31,6 +31,9 @@ pub fn show(value: &Value) {
             }
             println!("  {}", "└".dimmed());
         }
+        Value::Range(lo, hi) => {
+            println!("  {}", format!("{lo}..{hi}").bright_yellow());
+        }
         Value::List(items) => {
             if items.is_empty() {
                 println!("  {}", "(empty list)".dimmed());
@@ -133,6 +136,7 @@ fn format_display_value(val: &Value) -> String {
         Value::Bool(b) => format!("{b}").bright_magenta().to_string(),
         Value::None => "none".dimmed().to_string(),
         Value::EnumVariant(ty, var, _) => format!("{ty}.{var}").bright_cyan().to_string(),
+        Value::Range(lo, hi) => format!("{lo}..{hi}"),
         Value::List(items) => {
             let inner: Vec<String> = items.iter().map(format_display_value).collect();
             format!("[{}]", inner.join(", "))

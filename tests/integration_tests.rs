@@ -172,6 +172,7 @@ fn examples_all_parse() {
         "webhook_agent",
         "lint_best_practices",
         "memory_agent",
+        "range",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -2412,5 +2413,117 @@ run(CT)
     assert!(
         !json_path.exists(),
         ".json should be gone after rename to .bak"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.12 — Range operator `..`
+// ---------------------------------------------------------------------------
+
+#[test]
+fn range_basic_for_loop() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    for i in 1..3 {
+      Io.show("{i}")
+    }
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains('1'), "expected 1 in output:\n{stdout}");
+    assert!(stdout.contains('2'), "expected 2 in output:\n{stdout}");
+    assert!(stdout.contains('3'), "expected 3 in output:\n{stdout}");
+}
+
+#[test]
+fn range_assigned_to_variable() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    xs = 1..4
+    Io.show("{xs.count()}")
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains('4'), "expected count 4 for 1..4:\n{stdout}");
+}
+
+#[test]
+fn range_type_error_non_int() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    xs = 1.0..3.0
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected type error for float range\nstderr: {stderr}");
+    assert!(
+        stderr.contains("int") || stderr.contains("range"),
+        "error should mention int or range:\n{stderr}"
+    );
+}
+
+#[test]
+fn range_empty() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    xs = 5..3
+    Io.show("{xs.count()}")
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains('0'),
+        "expected empty range to have count 0:\n{stdout}"
+    );
+}
+
+#[test]
+fn range_single() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    xs = 4..4
+    Io.show("{xs.count()}")
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains('1'),
+        "expected single-element range to have count 1:\n{stdout}"
     );
 }

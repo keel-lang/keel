@@ -835,6 +835,18 @@ impl Checker {
                 self.infer_expr(r, scope)
             }
 
+            Expr::Range(start, end) => {
+                let s = self.infer_expr(start, scope);
+                let e = self.infer_expr(end, scope);
+                if !matches!(s.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                    self.err(format!("range start must be int, got {}", describe_ty(&s)));
+                }
+                if !matches!(e.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                    self.err(format!("range end must be int, got {}", describe_ty(&e)));
+                }
+                Ty::List(Box::new(Ty::Int))
+            }
+
             Expr::Pipeline(l, r) => {
                 let _ = self.infer_expr(l, scope);
                 self.infer_expr(r, scope)

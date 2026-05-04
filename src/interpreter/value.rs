@@ -14,6 +14,8 @@ pub enum Value {
 
     /// List of values
     List(Vec<Value>),
+    /// Lazy inclusive integer range — stores only lo and hi, never materializes.
+    Range(i64, i64),
     /// Map / struct literal — keys are always strings
     Map(HashMap<String, Value>),
 
@@ -50,7 +52,7 @@ impl Value {
             Value::String(_) => "str",
             Value::Bool(_) => "bool",
             Value::None => "none",
-            Value::List(_) => "list",
+            Value::List(_) | Value::Range(_, _) => "list",
             Value::Map(_) => "map",
             Value::EnumVariant(_, _, _) => "enum",
             Value::Duration(_) => "duration",
@@ -69,6 +71,7 @@ impl Value {
             Value::Integer(0) => false,
             Value::String(s) if s.is_empty() => false,
             Value::List(l) if l.is_empty() => false,
+            Value::Range(lo, hi) if lo > hi => false,
             _ => true,
         }
     }
@@ -116,6 +119,7 @@ impl fmt::Display for Value {
                 }
                 write!(f, "]")
             }
+            Value::Range(lo, hi) => write!(f, "{lo}..{hi}"),
             Value::Map(fields) => {
                 write!(f, "{{")?;
                 for (i, (k, v)) in fields.iter().enumerate() {
@@ -173,6 +177,7 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::None, Value::None) => true,
+            (Value::Range(a1, a2), Value::Range(b1, b2)) => a1 == b1 && a2 == b2,
             (Value::EnumVariant(t1, v1, _), Value::EnumVariant(t2, v2, _)) => t1 == t2 && v1 == v2,
             _ => false,
         }

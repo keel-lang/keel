@@ -8,6 +8,35 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.12] — 2026-05-04
+
+### Range operator `..`
+
+`start..end` produces an **inclusive** `list[int]` containing every integer from `start` to `end`.
+
+```keel
+agent Counter {
+  @on_start {
+    for i in 1..5 {
+      Io.notify("{i}")   # prints 1, 2, 3, 4, 5
+    }
+
+    xs = 0..3            # xs == [0, 1, 2, 3]
+    Io.notify("{xs.count()}")   # prints 4
+  }
+}
+run(Counter)
+```
+
+- Both operands must be `int`; non-integer bounds are a type error.
+- `5..3` → `[]` (empty when start > end). `4..4` → `[4]`.
+- **Lazy evaluation** — `1..1_000_000_000` is O(1) memory. `for i in 1..n` never materializes the list. Analytical methods (`count`, `is_empty`, `contains`, `first`, `last`) are O(1). `map`/`filter` iterate lazily and return a new `list`.
+- No spaces around `..` in formatted output.
+- SPEC grammar updated: `RangeExpr <- AddExpr (".." AddExpr)?` inserted between `CompExpr` and `AddExpr`.
+- Bare `!` postfix (null assert) added to SPEC §20 grammar alongside `!.IDENT`.
+
+---
+
 ## [0.1.11] — 2026-05-03
 
 ### Memory — safe cross-process storage (breaking path change)

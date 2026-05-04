@@ -1,6 +1,6 @@
 ---
 name: design-lang
-description: Design languages and type systems in the style of Anders Hejlsberg, creator of Turbo Pascal, Delphi, C#, and TypeScript. Emphasizes practical type systems, developer productivity, gradual typing, and IDE-driven language design. Use when designing languages, type systems, or developer tools.
+description: This skill should be used when adding or modifying any Keel language feature — new syntax, new built-in, new stdlib namespace, or behaviour change — to validate the idea against Hejlsberg's design principles before touching SPEC.md or source. Also use when the user asks to "design a language feature", "validate this language idea", "should we add X to keel", or "review this syntax proposal". Emphasizes developer productivity, gradual typing, IDE-driven design, and pragmatic type systems.
 tags: typescript, language-design, type-system, c#, turbo-pascal, delphi, generics, ide, tooling, developer-experience
 ---
 

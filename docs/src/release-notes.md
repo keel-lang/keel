@@ -4,6 +4,31 @@
 
 ---
 
+## v0.1.12 — 2026-05-04
+
+### Range operator `..`
+
+`start..end` produces an inclusive `list[int]`. Both bounds must be `int`.
+
+```keel
+for i in 1..5 {
+  Io.notify("{i}")    # 1, 2, 3, 4, 5
+}
+
+xs = 0..3             # [0, 1, 2, 3]
+xs.count()            # 4
+```
+
+- `5..3` → `[]` (empty when start > end)
+- `4..4` → `[4]` (single element)
+- Non-integer bounds are a type error at compile time
+- All list methods work on ranges: `.filter`, `.map`, `.count`, etc.
+- SPEC grammar updated: `RangeExpr <- AddExpr (".." AddExpr)?`
+
+See the [Collections guide](guide/collections.md) for full documentation.
+
+---
+
 ## v0.1.11 — 2026-05-04
 
 ### Memory — safe cross-process storage (**breaking path change**)

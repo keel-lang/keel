@@ -389,6 +389,33 @@ Existing persistent memory data at `~/.keel/memory/<stem>/` is not migrated. Mov
 
 ---
 
+## v0.1.12 — Range Operator `..`
+
+**Theme:** Implement the inclusive range operator `..` specified in SPEC.md §operator-table.
+
+**Status:** shipped.
+
+### Changes
+
+- [x] **`DotDot` token** — lexer emits `..` before the single `Dot` token; `continues_to_next_line` updated.
+- [x] **`Expr::Range`** — dedicated AST variant (like `NullCoalesce`); evaluates to `list[int]`.
+- [x] **Parser** — `RangeExpr` level inserted between `AddExpr` and `CompExpr` (tighter than comparison, looser than arithmetic); `..` is non-chainable.
+- [x] **Type checker** — both bounds must be `int`; emits "range start/end must be int" errors otherwise; returns `list[int]`.
+- [x] **Interpreter** — `Value::Range(i64, i64)` lazy variant; `for` iterates without allocating; analytical methods (`count`, `is_empty`, `contains`, `first`, `last`) are O(1); `map`/`filter` iterate lazily and return a new list.
+- [x] **Formatter** — `start..end` with no spaces.
+- [x] **SPEC** — `RangeExpr` added to grammar; bare `!` postfix documented in §20.
+
+### Tests
+
+- [x] `range_basic_for_loop` — `for i in 1..3` prints 1, 2, 3
+- [x] `range_assigned_to_variable` — `1..4` has count 4
+- [x] `range_type_error_non_int` — `1.0..3.0` is a type error
+- [x] `range_empty` — `5..3` produces empty list (count 0)
+- [x] `range_single` — `4..4` produces `[4]` (count 1)
+- [x] `examples_all_parse` — `range.keel` example added
+
+---
+
 ## Beyond v0.1
 
 v0.2 and later milestones are **deliberately un-planned** until v0.1 ships. Pre-planning scope before the core is landed would pre-commit us to things we haven't yet felt the weight of.

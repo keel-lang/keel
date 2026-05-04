@@ -131,6 +131,8 @@ pub enum Token {
     NullCoalesce,
     #[token("?.")]
     NullDot,
+    #[token("..")]
+    DotDot,
 
     // ── Single-char operators ────────────────────────────────────────
     #[token("=")]
@@ -323,6 +325,7 @@ impl fmt::Display for Token {
             Token::Gte => write!(f, ">="),
             Token::NullCoalesce => write!(f, "??"),
             Token::NullDot => write!(f, "?."),
+            Token::DotDot => write!(f, ".."),
             Token::Eq => write!(f, "="),
             Token::Lt => write!(f, "<"),
             Token::Gt => write!(f, ">"),
@@ -452,6 +455,7 @@ fn continues_to_next_line(token: &Token) -> bool {
             | Token::Colon
             | Token::Dot
             | Token::NullDot
+            | Token::DotDot
             | Token::In
             | Token::As
             | Token::Where

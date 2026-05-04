@@ -1108,14 +1108,15 @@ PipeExpr    <- OrExpr ("|>" OrExpr)*
 OrExpr      <- AndExpr ("or" AndExpr)*
 AndExpr     <- NotExpr ("and" NotExpr)*
 NotExpr     <- "not"? CompExpr
-CompExpr    <- AddExpr (("==" / "!=" / "<" / ">" / "<=" / ">=") AddExpr)?
+CompExpr    <- RangeExpr (("==" / "!=" / "<" / ">" / "<=" / ">=") RangeExpr)?
+RangeExpr   <- AddExpr (".." AddExpr)?
 AddExpr     <- MulExpr (("+" / "-") MulExpr)*
 MulExpr     <- UnaryExpr (("*" / "/" / "%") UnaryExpr)*
 UnaryExpr   <- ("-" / "not")? PostfixExpr
 PostfixExpr <- PrimaryExpr (FieldAccess / NullAccess / AssertAccess / Call / Index / Cast)*
 FieldAccess <- "." (IDENT / INT_LIT)
 NullAccess  <- "?." IDENT
-AssertAccess<- "!." IDENT
+AssertAccess<- "!." IDENT / "!"                                              # bare ! = null assert
 Call        <- "(" Args? ")"
 Index       <- "[" Expr "]"
 Cast        <- "as" Type

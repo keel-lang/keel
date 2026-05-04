@@ -583,8 +583,19 @@ fn expr_parser() -> P<Expr> {
             })
             .boxed();
 
+        // ── .. ───────────────────────────────────────────────────
+        // Range binds tighter than comparison: `a < 1..5` → `a < (1..5)`.
+        let range = sum
+            .clone()
+            .then(just(Token::DotDot).ignore_then(sum.clone()).or_not())
+            .map(|(start, end)| match end {
+                Some(end) => Expr::Range(Box::new(start), Box::new(end)),
+                None => start,
+            })
+            .boxed();
+
         // ── == != < > <= >= ──────────────────────────────────────
-        let cmp = sum
+        let cmp = range
             .clone()
             .then(
                 choice((
@@ -595,7 +606,7 @@ fn expr_parser() -> P<Expr> {
                     just(Token::Lt).to(BinOp::Lt),
                     just(Token::Gt).to(BinOp::Gt),
                 ))
-                .then(sum)
+                .then(range)
                 .repeated(),
             )
             .foldl(|l, (op, r)| Expr::BinaryOp {

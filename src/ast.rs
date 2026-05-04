@@ -341,6 +341,8 @@ pub enum Expr {
     NullCoalesce(Box<Expr>, Box<Expr>),
     /// `expr |> func`
     Pipeline(Box<Expr>, Box<Expr>),
+    /// `start..end` — inclusive integer range, evaluates to list[int].
+    Range(Box<Expr>, Box<Expr>),
 
     // ── Calls ────────────────────────────────────────────────────────
     /// `func(args)` or `func(name: value)` — also covers

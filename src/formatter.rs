@@ -536,6 +536,7 @@ impl Fmt {
             },
             Expr::NullCoalesce(l, r) => format!("{} ?? {}", self.expr_str(l), self.expr_str(r)),
             Expr::Pipeline(l, r) => format!("{} |> {}", self.expr_str(l), self.expr_str(r)),
+            Expr::Range(l, r) => format!("{}..{}", self.expr_str(l), self.expr_str(r)),
             Expr::Call { callee, args } => {
                 format!(
                     "{}({})",
