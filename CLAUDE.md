@@ -63,6 +63,8 @@ keel lsp                 # language server (stdin/stdout)
 
 ## Release Checklist
 
+> **Skill available:** use `/release` to run through this checklist interactively. The skill walks through every step, asks for confirmation before tagging, and prevents the most common mistakes. To save cost, switch to a cheaper model first: `/model haiku` → `/release`.
+
 Every release must pass all of the following before the version is bumped and CHANGELOG/ROADMAP are updated. Do not skip steps or mark a release done until the full list is green.
 
 **1. Format**
