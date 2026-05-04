@@ -5,21 +5,23 @@ description: This skill should be used when the user says "release", "ship a rel
 
 # Keel Release Workflow
 
-Run the full release checklist in order, stopping on any failure. After all checks pass, stage and commit, push to `main`, then show the user a confirmation gate before creating the tag that triggers the CI release.
+Run the full release checklist in order, stopping on any failure. After all checks pass, commit the changes, push to `main`, then show the user a confirmation gate before creating the tag that triggers the CI release.
 
-## Step 1 — Format
+## Step 1 — Format all code and examples
 
 ```bash
 cargo fmt
 ```
 
-Then format every new or modified example:
+This formats all Rust source. If it produces any diff, those changes will be included in the release commit — do not commit before running this.
+
+Then format every new or modified `.keel` example:
 
 ```bash
 cargo run -- fmt examples/<changed>.keel
 ```
 
-If `cargo fmt` produces any diff, stage it before continuing.
+Run `keel fmt` on **all** examples in `examples/` if in doubt — the formatter is idempotent.
 
 ## Step 2 — Lint
 
@@ -27,7 +29,7 @@ If `cargo fmt` produces any diff, stage it before continuing.
 cargo clippy -- -D warnings
 ```
 
-Zero warnings allowed. Fix every warning — never suppress with `#[allow(...)]` unless the suppression was there before this release.
+Applies to all source. Zero warnings allowed. Fix every warning — never suppress with `#[allow(...)]` unless the suppression already existed before this release.
 
 ## Step 3 — Unit + Integration Tests
 
@@ -50,6 +52,7 @@ Every `.keel` file in `examples/` must be listed in `examples_all_parse` and pas
 Update every affected page **before** the build step:
 
 - `docs/src/guide/` — the page users land on from search; must fully describe the feature with syntax and examples.
+- `docs/src/examples/` — update or add example walkthroughs if any example program changed.
 - `docs/src/release-notes.md` — one entry per release at the top.
 - `docs/src/SUMMARY.md` — add a link if a new page was added.
 
@@ -61,7 +64,7 @@ Tag anything not yet implemented:
 
 with a `> Status:` callout beneath it.
 
-Touching only `release-notes.md` is not enough. Every guide page the change touches must be updated.
+Touching only `release-notes.md` is not enough. Every guide and example page the change touches must be updated.
 
 ## Step 6 — Docs Build
 
@@ -84,7 +87,7 @@ Verify the following before committing:
 
 ## Step 8 — Commit and Push to `main`
 
-Stage all changed files explicitly (avoid `git add -A` to prevent accidental inclusion of `.env` or large binaries):
+Stage all changed files explicitly (avoid `git add -A` to prevent accidental inclusion of `.env` or large binaries). This commit includes formatting diffs from Step 1 as well as all feature changes:
 
 ```bash
 git add Cargo.toml Cargo.lock CHANGELOG.md ROADMAP.md SPEC.md \
@@ -108,7 +111,7 @@ Bad (never write):
 - Anything mentioning Claude, an AI model, or a ticket system shortlink.
 - `Co-Authored-By: ...` lines.
 
-Then push:
+Then push to `main`:
 
 ```bash
 git push origin main
@@ -160,21 +163,24 @@ The CI pipeline handles everything after the tag push:
 
 | Step | Command | Blocking? |
 |------|---------|-----------|
-| Format | `cargo fmt` | Yes |
+| Format | `cargo fmt` + `keel fmt examples/` | Yes — diff included in commit |
 | Lint | `cargo clippy -- -D warnings` | Yes (zero warnings) |
 | Tests | `cargo test` | Yes (except IMAP test) |
 | Examples | `cargo test examples_all_parse` | Yes |
+| Docs update | guide/ + examples/ + release-notes.md | Yes |
 | Docs build | `mdbook build docs/` | Yes |
-| Commit | `git add … && git commit` | — |
-| Push main | `git push origin main` | — |
+| Commit + push main | `git add … && git commit && git push` | Yes |
 | **Confirm** | **Ask user** | **Gate — mandatory** |
-| Tag | `git tag v… && git push origin v…` | After confirmation |
+| Tag | `git tag v… && git push origin v…` | After confirmation only |
 
 ## Common Mistakes
 
-- **Touching only `release-notes.md`** — the guide pages must also be updated.
+- **Forgetting `cargo fmt`** on all source, not just examples — it applies to all Rust code.
+- **Not including fmt diffs in the commit** — run fmt first, include its changes in the release commit.
+- **Touching only `release-notes.md`** — guide pages and example pages the change touches must also be updated.
+- **Skipping `docs/src/examples/`** — if an example program changed, its walkthrough page needs updating too.
 - **Suppressing clippy warnings** — fix the code instead.
-- **Running `gh release create`** — CI handles it; this creates a duplicate release.
+- **Running `gh release create`** — CI handles it; a manual run creates a duplicate release.
 - **Pushing the tag without confirming** — always show the gate, always wait for yes.
 - **Adding `Co-Authored-By` or AI attribution to commits** — never include these.
 - **Forgetting to add new examples to `examples_all_parse`** — the test will miss them silently unless they are listed.
