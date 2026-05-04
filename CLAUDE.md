@@ -63,7 +63,7 @@ keel lsp                 # language server (stdin/stdout)
 
 ## Release Checklist
 
-> **Skill available:** use `/release` to run through this checklist interactively. The skill walks through every step, asks for confirmation before tagging, and prevents the most common mistakes. To save cost, switch to a cheaper model first: `/model haiku` → `/release`.
+> **Agent available:** say "release" or "ship a release" to delegate this entire checklist to the release agent (`.claude/agents/release.md`). It runs on Haiku automatically to keep costs low, walks through every step, and gates on explicit confirmation before tagging.
 
 Every release must pass all of the following before the version is bumped and CHANGELOG/ROADMAP are updated. Do not skip steps or mark a release done until the full list is green.
 

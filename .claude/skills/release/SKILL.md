@@ -5,7 +5,13 @@ description: This skill should be used when the user says "release", "ship a rel
 
 # Keel Release Workflow
 
-Run the full release checklist in order, stopping on any failure. After all checks pass, commit the changes, push to `main`, then show the user a confirmation gate before creating the tag that triggers the CI release.
+Delegate to the release agent, which runs on Haiku to keep costs low:
+
+```
+Agent: .claude/agents/release.md
+```
+
+The agent runs the full checklist, commits and pushes to `main`, gates on explicit user confirmation, then tags to trigger CI. The steps below are the authoritative reference if running manually.
 
 ## Step 1 — Format all code and examples
 
