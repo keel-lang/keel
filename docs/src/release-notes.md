@@ -4,6 +4,36 @@
 
 ---
 
+## v0.1.10 — 2026-05-03
+
+### Memory namespace
+
+`Memory.remember`, `Memory.recall`, and `Memory.forget` are now real — they were no-op stubs since v0.1.0.
+
+The `@memory` attribute selects the scope:
+
+- **`session`** (default) — in-process, cleared on restart.
+- **`persistent`** — file-backed JSON at `~/.keel/memory/<agent-name>.json`, survives restarts.
+- **`none`** — `Memory.*` calls raise `CapabilityError`.
+
+```keel
+agent Counter {
+  @memory session
+
+  @on_start {
+    prev = Memory.recall("count")
+    count = if prev == none { 1 } else { prev + 1 }
+    Memory.remember("count", count)
+    Io.show("Visit {count}")
+    stop(self)
+  }
+}
+```
+
+See the [Agents guide](./guide/agents.md#memory--agent-memory-scope) for full syntax and the `persistent` mode example.
+
+---
+
 ## v0.1.9 — 2026-05-03
 
 ### `keel init` fixes & `stop(self)`

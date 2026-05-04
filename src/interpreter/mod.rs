@@ -146,6 +146,11 @@ pub struct Interpreter {
     pub active_http_servers: Arc<AtomicU64>,
     /// Source for diagnostics (optional).
     pub source: Option<NamedSource<String>>,
+    /// Stem of the source file being run (e.g. `"counter"` for `counter.keel`).
+    /// Used to namespace persistent Memory storage so two programs with an
+    /// agent named `Counter` don't collide. Defaults to `"program"` when no
+    /// source file is known (e.g. REPL, inline eval).
+    pub program_name: String,
 }
 
 impl Interpreter {
@@ -166,6 +171,7 @@ impl Interpreter {
             next_closure_id: 0,
             active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
+            program_name: "program".to_string(),
         };
         crate::runtime::install_prelude(&mut interp);
         interp
@@ -295,6 +301,44 @@ impl Interpreter {
         vec![]
     }
 
+    /// The name of the currently executing agent.
+    /// Returns `None` when called outside an agent context.
+    pub fn current_agent_name(&self) -> Option<String> {
+        self.current_agent
+            .as_ref()
+            .map(|a| a.lock().unwrap().def.name.clone())
+    }
+
+    /// Returns `(program_name, agent_name)` or an error if called outside
+    /// an agent context. Use this for any operation that must be agent-scoped.
+    pub fn require_agent_context(&self, caller: &str) -> miette::Result<(String, String)> {
+        match self.current_agent_name() {
+            Some(agent) => Ok((self.program_name.clone(), agent)),
+            None => Err(miette::miette!(
+                "{caller} requires an agent context — call it from inside an agent body"
+            )),
+        }
+    }
+
+    /// The value of the current agent's `@memory` attribute as a string
+    /// (`"persistent"`, `"session"`, or `"none"`), or `None` when the
+    /// attribute is absent (callers default to `"session"`).
+    pub fn current_memory_attr(&self) -> Option<String> {
+        let agent = self.current_agent.as_ref()?;
+        let def = agent.lock().unwrap().def.clone();
+        for attr in &def.attributes {
+            if attr.name == "memory" {
+                match &attr.body {
+                    AttributeBody::Expr(Expr::Ident(mode)) => return Some(mode.clone()),
+                    // `none` is a reserved keyword, so `@memory none` parses as Expr::None_
+                    AttributeBody::Expr(Expr::None_) => return Some("none".to_string()),
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
     fn agent_string_attr(&self, name: &str) -> Option<String> {
         let agent = self.current_agent.as_ref()?;
         let def = agent.lock().unwrap().def.clone();
@@ -354,6 +398,13 @@ impl Default for Interpreter {
 
 pub async fn run_with_source(program: Program, source: Option<NamedSource<String>>) -> Result<()> {
     let mut interp = Interpreter::new();
+    if let Some(ref s) = source
+        && let Some(stem) = std::path::Path::new(s.name())
+            .file_stem()
+            .and_then(|s| s.to_str())
+    {
+        interp.program_name = stem.to_string();
+    }
     interp.source = source;
     interp.execute(program).await
 }

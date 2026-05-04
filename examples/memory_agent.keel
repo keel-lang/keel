@@ -1,0 +1,12 @@
+agent Counter {
+  @memory session
+  @on_start {
+    prev = Memory.recall("count")
+    count = if prev == none { 1 } else { prev + 1 }
+    Memory.remember("count", count)
+    Io.show("Visit {count}")
+    stop(self)
+  }
+}
+
+run(Counter)

@@ -117,6 +117,29 @@ fn run_inline(src: &str, trace: bool) -> (bool, String, String) {
     (ok, stdout, stderr)
 }
 
+fn run_inline_with_home(src: &str, home: &std::path::Path) -> (bool, String, String) {
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let bin = keel_binary();
+    let output = Command::new(&bin)
+        .env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .env("HOME", home)
+        .env("USERPROFILE", home)
+        .arg("run")
+        .arg(&path)
+        .output()
+        .expect("run keel");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
 // ---------------------------------------------------------------------------
 // Smoke-check: every example must pass `keel check`
 // ---------------------------------------------------------------------------
@@ -148,6 +171,7 @@ fn examples_all_parse() {
         "text_pipeline",
         "webhook_agent",
         "lint_best_practices",
+        "memory_agent",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -1639,7 +1663,10 @@ agent Greeter {
 run(Greeter)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("hi"), "expected output:\n{stdout}");
 }
 
@@ -1662,6 +1689,233 @@ agent B {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("B ran"), "B should have run:\n{stdout}");
+}
+
+// ---------------------------------------------------------------------------
+// Memory namespace
+// ---------------------------------------------------------------------------
+
+#[test]
+fn memory_session_remember_recall() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @memory session
+  @on_start {
+    Memory.remember("name", "Alice")
+    val = Memory.recall("name")
+    Io.show("got: {val}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("got: Alice"),
+        "recall should return stored value:\n{stdout}"
+    );
+}
+
+#[test]
+fn memory_session_recall_missing_returns_none() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @memory session
+  @on_start {
+    val = Memory.recall("nonexistent")
+    if val == none {
+      Io.show("was none")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("was none"),
+        "missing key should return none:\n{stdout}"
+    );
+}
+
+#[test]
+fn memory_session_forget() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @memory session
+  @on_start {
+    Memory.remember("x", "hello")
+    Memory.forget("x")
+    val = Memory.recall("x")
+    if val == none {
+      Io.show("forgotten")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("forgotten"),
+        "forget should remove key:\n{stdout}"
+    );
+}
+
+#[test]
+fn memory_none_raises_capability_error() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @memory none
+  @on_start {
+    Memory.remember("x", "y")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected CapabilityError for @memory none");
+    assert!(
+        stderr.contains("CapabilityError"),
+        "expected CapabilityError in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn memory_default_mode_is_session() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Memory.remember("k", "v")
+    val = Memory.recall("k")
+    Io.show("val: {val}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("val: v"),
+        "default mode should act as session:\n{stdout}"
+    );
+}
+
+#[test]
+fn memory_persistent_survives_process_boundary() {
+    use std::io::Write as _;
+    ensure_binary_built();
+    let home = tempfile::tempdir().expect("tempdir");
+    // Both runs must use the same file path so they share the same program stem.
+    let prog = home.path().join("memory_test.keel");
+
+    let write_src = r#"
+agent A {
+  @memory persistent
+  @on_start {
+    Memory.remember("greeting", "hello-persistent")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    std::fs::File::create(&prog)
+        .unwrap()
+        .write_all(write_src.as_bytes())
+        .unwrap();
+    let bin = keel_binary();
+    let out = Command::new(&bin)
+        .env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .arg("run")
+        .arg(&prog)
+        .output()
+        .expect("run keel");
+    assert!(
+        out.status.success(),
+        "write run failed\nstderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let read_src = r#"
+agent A {
+  @memory persistent
+  @on_start {
+    val = Memory.recall("greeting")
+    Io.show("recalled: {val}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    std::fs::File::create(&prog)
+        .unwrap()
+        .write_all(read_src.as_bytes())
+        .unwrap();
+    let out = Command::new(&bin)
+        .env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .arg("run")
+        .arg(&prog)
+        .output()
+        .expect("run keel");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "read run failed\nstderr: {stderr}");
+    assert!(
+        stdout.contains("recalled: hello-persistent"),
+        "persistent value should survive process boundary:\n{stdout}"
+    );
+}
+
+#[test]
+fn memory_unknown_mode_raises_error() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @memory unknown_mode
+  @on_start {
+    Memory.remember("x", "y")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected error for unrecognized @memory value");
+    assert!(
+        stderr.contains("unrecognized") || stderr.contains("unknown_mode"),
+        "expected diagnostic naming the bad value:\n{stderr}"
+    );
 }

@@ -8,6 +8,53 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.10] — 2026-05-03
+
+### Memory namespace
+
+`Memory.remember`, `Memory.recall`, and `Memory.forget` are now real operations. They were no-op stubs since v0.1.0.
+
+```keel
+agent Counter {
+  @memory session
+
+  @on_start {
+    prev = Memory.recall("count")
+    count = if prev == none { 1 } else { prev + 1 }
+    Memory.remember("count", count)
+    Io.show("Visit {count}")
+    stop(self)
+  }
+}
+```
+
+#### `@memory` — scope selection
+
+Three modes, selected with the `@memory` attribute:
+
+- **`session`** (default when the attribute is omitted) — in-process store. Values persist across handler calls within a single program run and are cleared on restart.
+- **`persistent`** — file-backed JSON store at `~/.keel/memory/<agent-name>.json`. Values survive restarts.
+- **`none`** — disables `Memory.*` entirely for the agent. Any call raises `CapabilityError`.
+
+```keel
+agent Bot {
+  @memory persistent   # remembers across runs
+
+  @on_start {
+    last = Memory.recall("last_user")
+    if last != none {
+      Io.show("Welcome back, {last}!")
+    }
+    Memory.remember("last_user", "Alice")
+    stop(self)
+  }
+}
+```
+
+The persistent store is a simple JSON key-value file — one file per agent name. There is no vector search in v0.1; semantic recall is planned for v0.2 via the `VectorStore` interface.
+
+---
+
 ## [0.1.9] — 2026-05-03
 
 ### `keel init` — three fixes

@@ -73,7 +73,7 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> In v0.1.4, `@on_start`, `@on_stop`, and `@rules` are fully wired. `@tools`, `@memory`, `@limits`, `@team`, and `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+> As of v0.1.10, `@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@limits` (timeout) are fully wired. `@team`, `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
 
 ### `@tools` — capability list <span class="badge badge-soon">Coming soon</span>
 
@@ -87,19 +87,39 @@ Binds stdlib modules as the agent's declared capabilities. The runtime uses this
 
 > **Status:** parsed in v0.1, no capability gating enforced yet.
 
-### `@memory` — persistent semantic memory <span class="badge badge-soon">Coming soon</span>
+### `@memory` — agent memory scope
 
 ```keel
 @memory persistent    # | session | none
 ```
 
-- `persistent` — survives restarts (default SQLite backend)
-- `session` — lives for the life of the runtime
-- `none` — disables `Memory.*` operations for this agent
+- `persistent` — survives restarts; stored in `~/.keel/memory/<program>/<agent>.json` (JSON key-value store). Each source file gets its own subdirectory so two programs with an agent named `Counter` don't share data.
+- `session` — lives for the life of the process; cleared on restart. This is the **default** when `@memory` is omitted.
+- `none` — disables `Memory.*` for this agent; any call raises `CapabilityError`.
 
-Swap the backend by installing a different `VectorStore` implementation.
+```keel
+agent Counter {
+  @memory session
 
-> **Status:** `@memory` is parsed but ignored in v0.1, and `Memory.remember/recall/forget` are no-op stubs. A real vector-store backend is tracked in [ROADMAP](../../ROADMAP.md).
+  @on_start {
+    prev = Memory.recall("count")
+    count = if prev == none { 1 } else { prev + 1 }
+    Memory.remember("count", count)
+    Io.show("Visit {count}")
+    stop(self)
+  }
+}
+```
+
+The `Memory` namespace provides three operations:
+
+| Call | Description |
+|---|---|
+| `Memory.remember(key, value)` | Store any Keel value under `key` |
+| `Memory.recall(key)` | Return the stored value, or `none` if absent |
+| `Memory.forget(key)` | Delete the key |
+
+> **Note:** The persistent backend is a simple JSON file, not a vector store. Semantic search (`Ai.embed` + nearest-neighbour recall) is planned for v0.2 via the `VectorStore` interface.
 
 ### `@rules` — natural-language guardrails
 

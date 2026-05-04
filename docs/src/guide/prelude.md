@@ -29,7 +29,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Str` | ✅ | Regex & string tools: `match`, `extract`, `truncate`, `pad` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
 | `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
-| `Memory` | ⏳ | Persistent semantic memory: `remember`, `recall`, `forget` (stubbed — no vector store yet) |
+| `Memory` | ✅ | Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\|persistent\|none` (default: session). Persistent mode writes `~/.keel/memory/<agent>.json`. |
 | `Schedule` | ✅ | Time-based scheduling: `every`, `after`, `at`, `cron`, `sleep` |
 | `Async` | ✅ | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | ✅ | `retry`, `with_timeout`, `with_deadline` |

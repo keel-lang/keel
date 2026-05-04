@@ -35,23 +35,24 @@ Legend: **[x]** complete · **[~]** partial (works, but with caveats below) · *
   - [x] Nullable safety enforcement (`T?` not assignable to `T`; `!` unwraps; `??` coalesces)
   - [x] Return-type matching for `return expr` against declared `-> T`
   - [x] Struct/map subtyping checks (missing fields caught; extra fields allowed)
-  - [~] Generic type parameter inference — list/string method return types inferred; `map[K, V]` still opaque
-- [~] **Parser corners.** Known limits surfaced by the inbox_assistant example:
+  - [x] Generic type parameter inference — list/string method return types inferred; `map[K, V]` fully typed (shipped v0.1.5–v0.1.6)
+- [x] **Parser corners** — all known gaps closed:
   - [x] `if`-as-expression on the RHS of a binding (`x = if cond { a } else { b }`)
   - [x] Type annotations on `let` bindings (`x: T = ...`) — checker validates declared vs inferred type
-  - [ ] Nested `"..."` inside `{interp}` without escaping (escaped `\"` already works)
+  - [x] Nested `"..."` inside `{interp}` — lexer tracks brace depth and handles recursively (v0.1.6)
   - [x] String interpolation now routes through the real expression parser (function calls, binary ops, etc.)
   - [x] `!` postfix unwrap operator
   - [x] `list + list` / `list.push` concatenation
 
 #### Agent model
 - [x] Agent declaration + `run(Agent)` / `Agent.run` / `Agent.stop`
-- [x] `@on_start` block executed at boot (the only lifecycle hook currently wired)
+- [x] `@on_start` block executed at boot
+- [x] `@on_stop` block executed on agent stop (v0.1.4)
 - [x] Per-agent serial mailbox; `on <event>` handlers dispatched via the mpsc event loop
 - [x] `Agent.send(target, data, event:)` — posts an event to another agent's mailbox
 - [x] `self.` state read/write from handlers and tasks
-- [x] `Agent.delegate(target, task, args)` — posts a named task event to another agent's mailbox
-- [ ] `Agent.broadcast(team, data)` — referenced in docs, not registered; no `@team` handling either
+- [x] `Agent.delegate(target, task, args)` — posts a named task event to another agent's mailbox (v0.1.4)
+- [x] `Agent.broadcast(team, data)` — fans out to every live agent in the named `@team` (v0.1.6)
 
 #### Attributes
 
@@ -60,31 +61,35 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 | Attribute | Tier | Status | Notes |
 |---|---|---|---|
 | `@model "ollama:..."` | core | [x] | Read by `Ai.*` to pick the Ollama model |
-| `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt; the LLM gets the agent identity on every call |
+| `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt |
 | `@on_start { ... }` | stdlib | [x] | Block runs once when the agent starts |
-| `@on_stop { ... }` | stdlib | [x] | Block runs once when the agent stops |
-| `@tools [...]` | stdlib | [ ] | Parsed, no capability gating yet |
-| `@memory persistent\|session\|none` | stdlib | [ ] | Parsed, no effect (Memory namespace is itself a stub — see below) |
-| `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `Ai.*` call inside the agent |
-| `@limits { ... }` | stdlib | [ ] | Parsed as struct literal, no enforcement (no cost/token/timeout caps) |
-| `@team [...]` | stdlib | [ ] | Parsed, no team routing |
+| `@on_stop { ... }` | stdlib | [x] | Block runs once when the agent stops (v0.1.4) |
+| `@tools [...]` | stdlib | [x] | Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7) |
+| `@memory persistent\|session\|none` | stdlib | [x] | Selects memory scope; enforced at runtime (v0.1.10) |
+| `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `Ai.*` call (v0.1.3) |
+| `@limits { ... }` | stdlib | [~] | `timeout` enforced via `Control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level |
+| `@team [...]` | stdlib | [x] | Team membership used by `Agent.broadcast` routing (v0.1.6) |
 | `@provider MyProvider` | stdlib | [ ] | Parsed, no per-agent LLM-provider swap |
 
 #### Prelude namespaces
 
 | Namespace | Status | Implemented ops | Gaps |
 |---|---|---|---|
-| `Ai` | [~] | `classify` (with `considering:`), `summarize` (with `format:` and `max:` params), `draft`, `extract` (with `as: T` struct derivation), `translate`, `decide`, `prompt` (with `response_format:`) | `embed` returns `[]`; `Ai.install(provider)` not registered; `decide` returns a plain `{choice, reason, confidence: 1.0}` map instead of a `Decision[T]` type (all wired as of v0.1.3) |
+| `Ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json) | `embed` returns `[]`; `Ai.install(provider)` not registered |
 | `Io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
-| `Schedule` | [x] | `every`, `after`, `at` (RFC 3339 / ISO 8601), `sleep` | — |
-| `Email` | [~] | `fetch` (IMAP), `send` (SMTP) via env vars | `archive` is a no-op placeholder (no IMAP folder move) |
-| `Http` | [x] | `get`, `post`, `request` (via reqwest) | — |
+| `Schedule` | [x] | `every`, `after`, `at`, `cron`, `sleep` | — |
+| `Email` | [~] | `fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback) | — |
+| `Http` | [x] | `get`, `post`, `request`, `serve` (webhook listener) | — |
 | `Env` | [x] | `get`, `require` | — |
-| `Log` | [x] | `info`, `warn`, `error`, `debug`, `set_level`, `level`. Threshold controlled via `KEEL_LOG_LEVEL`, `--log-level`, or `Log.set_level("...")` at runtime (default `info`). | — |
-| `Agent` | [~] | `run`, `stop`, `send`, `delegate` | `broadcast` missing |
-| `Memory` | [ ] | — | `remember` / `recall` / `forget` all no-op stubs (no vector store, no embeddings) |
-| `Control` | [ ] | — | `retry` / `with_timeout` / `with_deadline` all no-op stubs |
-| `Async` | [~] | `sleep` | `spawn` / `join_all` / `select` all no-op stubs — structured concurrency not yet real |
+| `Log` | [x] | `info`, `warn`, `error`, `debug`, `set_level`, `level` | — |
+| `Agent` | [x] | `run`, `stop`, `send`, `delegate`, `broadcast` | — |
+| `Memory` | [x] | `remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON) | Vector-store backend (semantic search) is v0.2 |
+| `Control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
+| `Async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
+| `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | — |
+| `Str` | [x] | `match`, `extract`, `truncate`, `pad` | — |
+| `File` | [x] | `read`, `write`, `exists`, `list` | — |
+| `Json` | [x] | `parse`, `stringify` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Time` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error (use `now` keyword) |
@@ -97,24 +102,22 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 - [x] `keel run` / `keel check` / `keel init`
 - [x] `keel fmt` — idempotent round-trip against the AST
 - [x] `keel repl` — multi-line input, persistent environment
-- [~] `keel lsp` — publish-diagnostics (lex + parse + type-check) over tower-lsp
-  - [ ] Hover
-  - [ ] Completion
-  - [ ] Go-to-definition / rename
-- [ ] `keel build` — bytecode compiler + VM
+- [x] `keel lint` — unused vars, uncalled tasks, `Ai.*` outside agent, unread state; `--fix` flag (v0.1.9)
+- [x] `keel lsp` — diagnostics, hover, completion, go-to-definition, rename (v0.1.6–v0.1.8)
+- [ ] `keel build` — bytecode compiler + VM (explicitly deferred post-v0.1)
 
 #### Dependencies
 - [x] Rust edition 2024 (min rustc 1.85)
 - [x] Patch/minor `cargo update` is applied continuously; no version-pin drift tolerated.
-- [ ] **Major bumps deferred to v0.2** (each is its own mini-project, kept out of alpha so regressions are bisectable):
-  - `chumsky 0.9 → 1.0` — API rewrite; the parser in `src/parser.rs` would need reworking. Low payoff during alpha.
-  - `imap 2 → 3` — also resolves the `imap-proto` future-incompat warning `cargo` emits today.
-  - `colored 2 → 3`, `lettre 0.11 → 0.12` (and similar) — ergonomic bumps, batched with the two above.
+- [ ] **Major bumps deferred to v0.2:**
+  - `chumsky 0.9 → 1.0` — API rewrite; low payoff during alpha.
+  - `imap 2 → 3` — resolves the `imap-proto` future-incompat warning.
+  - `colored 2 → 3`, `lettre 0.11 → 0.12` — ergonomic bumps, batched with the above.
 
 **Deferred post-v0.1 with rationale:**
-- `keel build` bytecode compiler. The tree-walking interpreter is fast enough for alpha workloads (~8ms cold start), and a real VM has to re-solve async dispatch, closure capture across event-loop boundaries, and runtime-pluggable namespaces — costly without matching user payoff. Revisit when there's a concrete motivator (LLVM/WASM backend, embeddable runtime).
+- `keel build` bytecode compiler. The tree-walking interpreter is fast enough for alpha workloads (~8ms cold start). Revisit when there's a concrete motivator (LLVM/WASM backend, embeddable runtime).
 - Pluggable LLM provider registry. v0.1 ships with Ollama only; adding a second provider is the forcing function that justifies the registry plumbing.
-- `Memory` / `Control` / `Async` beyond their current stubs. Each needs its own interface design (vector store, retry policy, task graph). Punted to v0.2 so we don't paint ourselves into a corner during alpha.
+- Vector-store `Memory` backend. The v0.1.10 persistent store is a JSON file. Semantic search requires an embeddings pipeline and a `VectorStore` interface — that design belongs in v0.2.
 
 **Docs ↔ implementation reconciliation (short-term cleanup):**
 - [x] Tag every unimplemented or partial stdlib page in `docs/src/guide/*.md` with a `Coming soon` badge and a `> Status:` callout that links back to this roadmap
@@ -305,6 +308,53 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 
 - [x] **Integration tests** — one test per lint rule: unused variable, uncalled task, `Ai.*` outside agent, unread state field; plus span and arity-hint tests for `keel check`.
 - [x] **Example programs** — `examples/lint_best_practices.keel` demonstrates the correct patterns the linter validates.
+
+---
+
+## v0.1.10 — Persistent Memory
+
+**Theme:** Make the `Memory` namespace real and close out the last significant user-visible stub in the standard library.
+
+**Status:** shipped.
+
+### Memory namespace
+
+- [x] **`Memory.remember(key, value)`** — store any Keel value under `key`, scoped to the current agent.
+- [x] **`Memory.recall(key)`** — return the stored value, or `none` if absent.
+- [x] **`Memory.forget(key)`** — remove the key.
+
+### `@memory` attribute enforcement
+
+- [x] **`@memory session`** — in-process store, cleared on restart (default when attribute is omitted).
+- [x] **`@memory persistent`** — file-backed JSON store at `~/.keel/memory/<agent-name>.json`; survives restarts.
+- [x] **`@memory none`** — raises `CapabilityError` on any `Memory.*` call inside the agent.
+
+### Example
+
+```keel
+agent Counter {
+  @memory session
+
+  @on_start {
+    prev = Memory.recall("count")
+    count = if prev == none { 1 } else { prev + 1 }
+    Memory.remember("count", count)
+    Io.show("Visit {count}")
+    stop(self)
+  }
+}
+
+run(Counter)
+```
+
+### ROADMAP reconciliation
+
+The v0.1 Alpha section has been updated to accurately reflect all items shipped in v0.1.5–v0.1.9. All stale `[ ]` markers have been corrected.
+
+### Tests
+
+- [x] **Integration tests** — session remember/recall, recall on missing key returns `none`, forget removes key, `@memory none` raises `CapabilityError`, default mode acts as session.
+- [x] **Example program** — `examples/memory_agent.keel`.
 
 ---
 

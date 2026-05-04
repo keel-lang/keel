@@ -110,6 +110,7 @@ Must exit clean with no errors or broken links.
 - `SPEC.md` updated if the language surface changed
 - `CHANGELOG.md` has a new `[x.y.z]` section with `.keel` examples for features and explanation for bug fixes
 - `ROADMAP.md` items for this release marked `[x]` with status `shipped`
+- `ROADMAP.md` has no stale `[ ]` markers — every item still open must be genuinely unimplemented; anything shipped in a prior release must be `[x]`
 - `Cargo.toml` version bumped to the new version
 
 **8. Integration tests**

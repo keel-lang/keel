@@ -246,8 +246,6 @@ type Message {
 
 type SearchResult { title: str, url: str, snippet: str }
 
-type Memory { content: map[str, str], relevance: float, created_at: datetime }
-
 type HttpResponse {
   status: int
   body: str
@@ -308,7 +306,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Email` | IMAP/SMTP | `fetch`, `send`, `archive` |
 | `Search` | Web search providers | `web(query)`, custom providers via interface |
 | `Db` | SQL databases | `connect`, `query`, `exec` |
-| `Memory` | Persistent semantic memory | `remember`, `recall`, `forget` |
+| `Memory` | Per-agent key-value store | `remember(key, value)`, `recall(key) -> Value?`, `forget(key)` |
 | `Schedule` | Time-based scheduling | `every`, `after`, `at`, `cron` |
 | `Async` | Structured concurrency | `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | Control combinators | `retry`, `with_timeout`, `with_deadline` |
@@ -498,7 +496,8 @@ interface LlmProvider {
 
 interface VectorStore {
   task put(key: str, value: map[str, str], embedding: list[float]) -> none
-  task query(embedding: list[float], limit: int) -> list[Memory]
+  task query(embedding: list[float], limit: int) -> list[map[str, str]]
+  # Planned for v0.2 — backs Memory when semantic search is needed.
 }
 
 interface Tracer {
@@ -509,7 +508,7 @@ interface Tracer {
 ### 5.2 Why interfaces are core
 
 - `Ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding a single provider into the runtime locks users out of self-hosted, proprietary, or novel backends.
-- `Memory.recall` needs a vector store — there are many, users should pick.
+- `Memory` in v0.1 is a plain K/V store (JSON file); in v0.2 it will dispatch through a `VectorStore` interface so users can swap backends.
 - `Log.info` needs a sink — users want OTel, Datadog, or plain stdout.
 
 The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and let users swap.
@@ -820,27 +819,51 @@ The separation is intentional: limits are verifiable, rules are aspirational. Mi
 
 ---
 
-## 12. Memory (persistent)
+## 12. Memory
 
-Memory is a stdlib module backed by a `VectorStore` interface. Agents opt in with `@memory persistent` (or `session` or `none`).
+`Memory` is a per-agent key-value store. Agents opt in with `@memory persistent` (survives restarts), `@memory session` (in-process, default), or `@memory none` (disables `Memory.*` entirely).
 
 ```keel
-agent Support {
+agent Counter {
   @memory persistent
 
-  on ticket(t: Ticket) {
-    prior = Memory.recall("issues similar to {t.description}", limit: 5)
-    resolution = resolve(t, prior)
-    Memory.remember({
-      contact: t.contact,
-      resolution: resolution.summary,
-      at: now
-    })
+  @on_start {
+    count = Memory.recall("visits")
+    next = if count == none { 1 } else { count + 1 }
+    Memory.remember("visits", next)
+    Io.show("Visit {next}")
+    stop(self)
   }
 }
 ```
 
-Default implementation: embedded SQLite + a local embedding model. Swap by installing a different `VectorStore` implementation at startup.
+### Operations
+
+| Call | Returns | Notes |
+|---|---|---|
+| `Memory.remember(key, value)` | `none` | Store any Keel value under `key`, scoped to this agent |
+| `Memory.recall(key)` | `Value?` | Return stored value or `none` if absent |
+| `Memory.forget(key)` | `none` | Delete the key |
+
+### Scope and isolation
+
+Keys are namespaced per `(program, agent)` pair — two programs that happen to share an agent name (`Counter`) each get their own memory bucket. Two agents within the same program with different names also get separate buckets.
+
+`Memory.*` is only valid inside an agent body. Calling it from a top-level statement or a plain `task` raises a runtime error.
+
+### Persistence mode
+
+| Attribute | Behaviour |
+|---|---|
+| `@memory session` | In-process HashMap; cleared at process exit (default when attribute is omitted) |
+| `@memory persistent` | JSON file at `~/.keel/memory/<program>/<agent>.json`; survives restarts |
+| `@memory none` | Any `Memory.*` call raises `CapabilityError` |
+
+**Multi-process safety note:** `@memory persistent` is safe within one process (writes are serialized). Two concurrent `keel run` invocations against the same program/agent can race on the same file. File locking is a v0.2 concern; do not rely on cross-process consistency in v0.1.
+
+### v0.2 note: semantic search
+
+v0.1 `Memory` is a plain K/V store. The planned v0.2 upgrade adds a `VectorStore` interface (see §5.1) that backs `recall` with nearest-neighbour embedding search. The v0.1 API surface is a strict subset — existing programs will keep working when the backend is upgraded.
 
 ---
 

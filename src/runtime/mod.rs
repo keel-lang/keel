@@ -907,14 +907,271 @@ fn env_namespace() -> Namespace {
 }
 
 // ---------------------------------------------------------------------------
-// Memory (stub)
+// Memory — per-agent key-value store
+//
+// Two backing stores, selected by the agent's `@memory` attribute:
+//
+//   @memory session     — in-process HashMap, cleared at process exit (default).
+//   @memory persistent  — JSON file at ~/.keel/memory/<program>/<agent>.json;
+//                         survives restarts. The <program> component comes from
+//                         the source file stem so two programs with an agent
+//                         named "Counter" don't share storage.
+//   @memory none        — raises CapabilityError on any Memory.* call.
+//
+// Memory.* is only valid inside an agent body; calls from top-level code or
+// plain tasks raise an error ("requires an agent context").
+//
+// Path safety: Keel identifiers are [A-Za-z_][A-Za-z0-9_]* — no slashes,
+// dots, or other path-special characters — so <program>/<agent> cannot escape
+// the memory directory. A debug_assert enforces this invariant so a future
+// relaxation of identifier rules is caught early.
+//
+// Persistent I/O serialization: PERSIST_LOCK serializes all load→mutate→save
+// sequences so concurrent Async.spawn tasks within one process can't interleave
+// and lose writes. Note: two separate `keel run` processes against the same
+// agent are NOT safe — they race on the same file. File-locking is a v0.2
+// concern; the SPEC documents this limitation.
+//
+// Atomic writes: save_persistent writes to <path>.tmp then renames into place
+// so a crash mid-write never leaves a truncated file. If the rename itself
+// fails (e.g. ENOSPC), the .tmp is cleaned up before the error is returned.
+//
+// Corrupt-file safety: if the JSON file fails to parse it is renamed to
+// <path>.bak so the user can inspect/recover the data, and an error is
+// returned rather than silently starting fresh.
 // ---------------------------------------------------------------------------
+
+type SessionStore = Mutex<HashMap<String, HashMap<String, Value>>>;
+static SESSION_MEMORY: OnceLock<SessionStore> = OnceLock::new();
+
+fn session_store() -> &'static SessionStore {
+    SESSION_MEMORY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+// Serializes all persistent read-modify-write operations across agents within
+// one process. Per-agent locking is a v0.2 performance concern.
+static PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+fn persist_lock() -> &'static Mutex<()> {
+    PERSIST_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn persistent_memory_path(program_name: &str, agent_name: &str) -> std::path::PathBuf {
+    // Keel identifiers are [A-Za-z_][A-Za-z0-9_]* — safe for use as path components.
+    debug_assert!(
+        program_name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '_' || c == '-'),
+        "program_name contains path-unsafe characters: {program_name}"
+    );
+    debug_assert!(
+        agent_name.chars().all(|c| c.is_alphanumeric() || c == '_'),
+        "agent_name contains path-unsafe characters: {agent_name}"
+    );
+    // HOME on Unix; USERPROFILE on Windows; fallback to cwd.
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home)
+        .join(".keel")
+        .join("memory")
+        .join(program_name)
+        .join(format!("{agent_name}.json"))
+}
+
+fn load_persistent(
+    program_name: &str,
+    agent_name: &str,
+) -> Result<serde_json::Map<String, serde_json::Value>, miette::Report> {
+    let path = persistent_memory_path(program_name, agent_name);
+    if !path.exists() {
+        return Ok(serde_json::Map::new());
+    }
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| miette::miette!("Memory: failed to read {}: {e}", path.display()))?;
+    match serde_json::from_str::<serde_json::Value>(&contents) {
+        Ok(serde_json::Value::Object(m)) => Ok(m),
+        _ => {
+            // Corrupt file — rename to .bak so the user can inspect/recover it.
+            let bak = path.with_extension("json.bak");
+            let _ = std::fs::rename(&path, &bak);
+            Err(miette::miette!(
+                "Memory: {agent_name}.json was corrupt; renamed to {} — starting fresh",
+                bak.display()
+            ))
+        }
+    }
+}
+
+fn save_persistent(
+    program_name: &str,
+    agent_name: &str,
+    store: &serde_json::Map<String, serde_json::Value>,
+) -> Result<(), miette::Report> {
+    let path = persistent_memory_path(program_name, agent_name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            miette::miette!(
+                "Memory: failed to create directory {}: {e}",
+                parent.display()
+            )
+        })?;
+    }
+    let json = serde_json::to_string_pretty(&serde_json::Value::Object(store.clone()))
+        .map_err(|e| miette::miette!("Memory: serialization failed: {e}"))?;
+    // Atomic write: write to a sibling .tmp, then rename into place.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &json)
+        .map_err(|e| miette::miette!("Memory: failed to write {}: {e}", tmp.display()))?;
+    if let Err(e) = std::fs::rename(&tmp, &path) {
+        let _ = std::fs::remove_file(&tmp); // clean up stale .tmp
+        return Err(miette::miette!(
+            "Memory: failed to rename {} -> {}: {e}",
+            tmp.display(),
+            path.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Decode the `@memory` attribute for the current agent.
+/// Returns `"session"` (the default), `"persistent"`, or `"none"`.
+/// Errors on any other value so programmers see a clear diagnostic.
+fn memory_mode(interp: &Interpreter) -> miette::Result<&'static str> {
+    match interp.current_memory_attr().as_deref() {
+        None | Some("session") => Ok("session"),
+        Some("persistent") => Ok("persistent"),
+        Some("none") => Ok("none"),
+        Some(other) => Err(miette::miette!(
+            "Memory: unrecognized @memory value `{other}` — expected `session`, `persistent`, or `none`"
+        )),
+    }
+}
+
+/// Validate that a value can be round-tripped through JSON before storing it.
+/// Closures, agent refs, and namespace values serialize to null and would
+/// silently return `none` on recall — surface that as an error instead.
+fn assert_memory_serializable(value: &Value) -> miette::Result<()> {
+    match value {
+        Value::Closure(..) => Err(miette::miette!(
+            "Memory: cannot store a closure — only scalars, lists, and maps are supported"
+        )),
+        Value::Namespace(n) => Err(miette::miette!(
+            "Memory: cannot store namespace `{n}` — only scalars, lists, and maps are supported"
+        )),
+        Value::BuiltinFn(n) => Err(miette::miette!(
+            "Memory: cannot store built-in function `{n}` — only scalars, lists, and maps are supported"
+        )),
+        Value::AgentRef(_) => Err(miette::miette!(
+            "Memory: cannot store an agent reference — only scalars, lists, and maps are supported"
+        )),
+        Value::Task(n, _) => Err(miette::miette!(
+            "Memory: cannot store task `{n}` — only scalars, lists, and maps are supported"
+        )),
+        Value::Duration(_) => Err(miette::miette!(
+            "Memory: cannot store a duration literal — store the numeric value (e.g. seconds as int) instead"
+        )),
+        _ => Ok(()),
+    }
+}
 
 fn memory_namespace() -> Namespace {
     ns!("Memory", {
-        "remember" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
-        "recall" => |_i, _args| Box::pin(async move { Ok(Value::List(vec![])) }),
-        "forget" => |_i, _args| Box::pin(async move { Ok(Value::None) }),
+        "remember" => |interp, args| Box::pin(async move {
+            let (program_name, agent_name) = interp.require_agent_context("Memory.remember")?;
+            let mode = memory_mode(interp)?;
+
+            let key = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Memory.remember: missing key argument"))?;
+            let value = positional(&args, 1)
+                .cloned()
+                .ok_or_else(|| miette::miette!("Memory.remember: missing value argument"))?;
+
+            match mode {
+                "none" => Err(miette::miette!(
+                    "CapabilityError: Memory.remember is not allowed — agent has @memory none"
+                )),
+                "persistent" => {
+                    assert_memory_serializable(&value)?;
+                    let _guard = persist_lock().lock().unwrap();
+                    let mut store = load_persistent(&program_name, &agent_name)?;
+                    store.insert(key, value_to_json(&value));
+                    save_persistent(&program_name, &agent_name, &store)?;
+                    Ok(Value::None)
+                }
+                _ => {
+                    assert_memory_serializable(&value)?;
+                    session_store()
+                        .lock()
+                        .unwrap()
+                        .entry(agent_name)
+                        .or_default()
+                        .insert(key, value);
+                    Ok(Value::None)
+                }
+            }
+        }),
+
+        "recall" => |interp, args| Box::pin(async move {
+            let (program_name, agent_name) = interp.require_agent_context("Memory.recall")?;
+            let mode = memory_mode(interp)?;
+
+            let key = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Memory.recall: missing key argument"))?;
+
+            match mode {
+                "none" => Err(miette::miette!(
+                    "CapabilityError: Memory.recall is not allowed — agent has @memory none"
+                )),
+                "persistent" => {
+                    let _guard = persist_lock().lock().unwrap();
+                    let store = load_persistent(&program_name, &agent_name)?;
+                    Ok(store.get(&key).map(json_to_value).unwrap_or(Value::None))
+                }
+                _ => {
+                    let result = session_store()
+                        .lock()
+                        .unwrap()
+                        .get(&agent_name)
+                        .and_then(|m| m.get(&key))
+                        .cloned()
+                        .unwrap_or(Value::None);
+                    Ok(result)
+                }
+            }
+        }),
+
+        "forget" => |interp, args| Box::pin(async move {
+            let (program_name, agent_name) = interp.require_agent_context("Memory.forget")?;
+            let mode = memory_mode(interp)?;
+
+            let key = positional(&args, 0)
+                .map(|v| v.as_string())
+                .ok_or_else(|| miette::miette!("Memory.forget: missing key argument"))?;
+
+            match mode {
+                "none" => Err(miette::miette!(
+                    "CapabilityError: Memory.forget is not allowed — agent has @memory none"
+                )),
+                "persistent" => {
+                    let _guard = persist_lock().lock().unwrap();
+                    let mut store = load_persistent(&program_name, &agent_name)?;
+                    store.remove(&key);
+                    save_persistent(&program_name, &agent_name, &store)?;
+                    Ok(Value::None)
+                }
+                _ => {
+                    session_store()
+                        .lock()
+                        .unwrap()
+                        .entry(agent_name)
+                        .or_default()
+                        .remove(&key);
+                    Ok(Value::None)
+                }
+            }
+        }),
     })
 }
 

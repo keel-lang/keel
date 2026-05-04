@@ -124,4 +124,4 @@ Cache.clear()                        # flush everything
 | `Cache.delete(key)` | `none` | No-op if key doesn't exist |
 | `Cache.clear()` | `none` | Flushes all entries |
 
-> **Scope:** `Cache` fills the gap between `self.` (per-agent state) and `Memory` (persistent vector store, planned for v0.2). Use it for rate-limiting tokens, deduplication keys, or short-lived computed results.
+> **Scope:** `Cache` is process-wide (all agents share one store) and cleared on restart. `Memory` is per-agent and optionally persistent. Use `Cache` for rate-limiting tokens, deduplication keys, or short-lived shared results; use `Memory` for per-agent state that should survive across runs.
