@@ -74,11 +74,12 @@ See [LLM Providers](../config/llm-providers.md) and [Ollama Setup](../config/oll
 
 ## Editor support
 
-VS Code extension (syntax highlighting + LSP):
+VS Code extension (syntax highlighting + LSP) — maintained in its own repository:
 
 ```bash
-cd editors/vscode
-code --install-extension .
+git clone https://github.com/keel-lang/vscode-keel
+cd vscode-keel
+code --install-extension keel-lang-*.vsix
 ```
 
 ## Next steps

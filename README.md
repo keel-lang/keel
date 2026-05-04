@@ -155,11 +155,14 @@ export KEEL_MODEL_SMART=mistral:7b-instruct
 
 ## Editor Support
 
-VS Code extension with syntax highlighting and LSP:
+VS Code extension with syntax highlighting and LSP — maintained in its own repository:
+
+**[github.com/keel-lang/vscode-keel](https://github.com/keel-lang/vscode-keel)**
 
 ```bash
-cd editors/vscode
-code --install-extension .
+git clone https://github.com/keel-lang/vscode-keel
+cd vscode-keel
+code --install-extension keel-lang-*.vsix
 ```
 
 The LSP provides diagnostics, autocomplete, and hover. Refactoring and inlay hints are on the roadmap.

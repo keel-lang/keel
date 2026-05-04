@@ -26,7 +26,7 @@ brand/              # Logo, color tokens, mdBook theme (single source of truth)
 examples/           # .keel example programs
 tests/              # Lexer, parser, type checker, formatter, lsp, integration
 docs/               # mdBook documentation
-editors/vscode/     # VS Code extension (TextMate grammar + LSP config)
+                    # VS Code extension lives at github.com/keel-lang/vscode-keel
 ```
 
 ## Key Design Decisions
