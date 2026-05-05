@@ -5,6 +5,28 @@
 
 use crate::ast::*;
 
+fn binding_str(b: &Binding) -> String {
+    match b {
+        Binding::Ident(name) => name.clone(),
+        Binding::Destruct(DestructPat::Struct(fields)) => {
+            let parts: Vec<String> = fields
+                .iter()
+                .map(|(src, local)| {
+                    if src == local {
+                        src.clone()
+                    } else {
+                        format!("{src}: {local}")
+                    }
+                })
+                .collect();
+            format!("{{ {} }}", parts.join(", "))
+        }
+        Binding::Destruct(DestructPat::Tuple(names)) => {
+            format!("({})", names.join(", "))
+        }
+    }
+}
+
 pub fn format_program(program: &Program) -> String {
     let mut f = Fmt::new();
     for (i, (decl, _)) in program.declarations.iter().enumerate() {
@@ -215,7 +237,7 @@ impl Fmt {
             if i > 0 {
                 self.push(", ");
             }
-            self.push(&format!("{}: ", p.name));
+            self.push(&format!("{}: ", binding_str(&p.name)));
             self.push(&self.type_expr_str(&p.ty));
             if let Some(default) = &p.default {
                 self.push(" = ");
@@ -289,7 +311,7 @@ impl Fmt {
             AgentItem::On(h) => {
                 self.push(&format!("on {}", h.event));
                 if let Some(p) = &h.param {
-                    self.push(&format!("({}: ", p.name));
+                    self.push(&format!("({}: ", binding_str(&p.name)));
                     self.push(&self.type_expr_str(&p.ty));
                     self.push(")");
                 } else {
@@ -315,8 +337,8 @@ impl Fmt {
 
     fn stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { name, ty, value } => {
-                self.push(name);
+            Stmt::Let { binding, ty, value } => {
+                self.push(&binding_str(binding));
                 if let Some(t) = ty {
                     self.push(": ");
                     self.push(&self.type_expr_str(t));
@@ -341,7 +363,7 @@ impl Fmt {
                 filter,
                 body,
             } => {
-                self.push(&format!("for {binding} in "));
+                self.push(&format!("for {} in ", binding_str(binding)));
                 self.push(&self.expr_str(iter));
                 if let Some(pred) = filter {
                     self.push(" where ");
@@ -658,8 +680,8 @@ impl Fmt {
     fn write_stmt(&self, s: &mut String, stmt: &Stmt, indent: usize) {
         match stmt {
             Stmt::Expr(e) => s.push_str(&self.expr_at(e, indent)),
-            Stmt::Let { name, ty, value } => {
-                s.push_str(name);
+            Stmt::Let { binding, ty, value } => {
+                s.push_str(&binding_str(binding));
                 if let Some(t) = ty {
                     s.push_str(": ");
                     s.push_str(&self.type_expr_str(t));
@@ -682,7 +704,7 @@ impl Fmt {
                 filter,
                 body,
             } => {
-                s.push_str(&format!("for {binding} in "));
+                s.push_str(&format!("for {} in ", binding_str(binding)));
                 s.push_str(&self.expr_at(iter, indent));
                 if let Some(pred) = filter {
                     s.push_str(" where ");
@@ -807,12 +829,16 @@ impl Fmt {
             Stmt::Expr(e) => self.expr_str(e),
             Stmt::Return(Some(e)) => format!("return {}", self.expr_str(e)),
             Stmt::Return(None) => "return".into(),
-            Stmt::Let { name, ty, value } => {
+            Stmt::Let { binding, ty, value } => {
                 let ty_str = ty
                     .as_ref()
                     .map(|t| format!(": {}", self.type_expr_str(t)))
                     .unwrap_or_default();
-                format!("{name}{ty_str} = {}", self.expr_str(value))
+                format!(
+                    "{}{ty_str} = {}",
+                    binding_str(binding),
+                    self.expr_str(value)
+                )
             }
             Stmt::SelfAssign { field, value } => format!("self.{field} = {}", self.expr_str(value)),
             _ => "...".into(), // fallback for complex stmts inline

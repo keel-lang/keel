@@ -173,6 +173,7 @@ fn examples_all_parse() {
         "lint_best_practices",
         "memory_agent",
         "range",
+        "destructure",
     ] {
         assert!(check_example(name), "`keel check {name}.keel` failed");
     }
@@ -2525,5 +2526,224 @@ run(A)
     assert!(
         stdout.contains('1'),
         "expected single-element range to have count 1:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.13 — Destructuring
+// ---------------------------------------------------------------------------
+
+#[test]
+fn destruct_struct_shorthand() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    val = {name: "alice", age: 30}
+    {name, age} = val
+    Io.show("{name}:{age}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("alice:30"),
+        "destructure shorthand failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn destruct_struct_rename() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    val = {urgency: "high", category: "bug"}
+    {urgency: u, category: c} = val
+    Io.show("{u}:{c}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("high:bug"),
+        "destructure rename failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn destruct_tuple() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    pair = ("alpha", 42)
+    (label, count) = pair
+    Io.show("{label}:{count}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("alpha:42"),
+        "tuple destructure failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn destruct_in_for_loop() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    items = [
+      {name: "alice", score: 10},
+      {name: "bob", score: 20},
+    ]
+    for {name, score} in items {
+      Io.show("{name}={score}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("alice=10"),
+        "for-loop destructure failed:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("bob=20"),
+        "for-loop destructure failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn destruct_in_task_param() {
+    ensure_binary_built();
+    let src = r#"
+type Point = {x: int, y: int}
+
+task show_point({x, y}: Point) {
+  Io.show("{x},{y}")
+}
+
+agent A {
+  @on_start {
+    show_point({x: 3, y: 7})
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("3,7"),
+        "task param destructure failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn destruct_missing_field_type_error() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    val = {name: "alice"}
+    {name, nonexistent} = val
+    Io.show("{name}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should fail: nonexistent field in destructure");
+    assert!(
+        stderr.contains("nonexistent"),
+        "error should mention the missing field:\n{stderr}"
+    );
+}
+
+#[test]
+fn destruct_tuple_arity_mismatch_type_error() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    triple = (1, 2, 3)
+    (a, b) = triple
+    Io.show("{a}:{b}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should fail: tuple arity mismatch");
+    assert!(
+        stderr.contains("tuple") || stderr.contains("element"),
+        "error should mention tuple arity:\n{stderr}"
+    );
+}
+
+#[test]
+fn destruct_keyword_field_from() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    email = {from: "alice@example.com", subject: "hello"}
+    {from, subject} = email
+    Io.show("{from}:{subject}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("alice@example.com:hello"),
+        "keyword field 'from' destructure failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn examples_all_parse_includes_destructure() {
+    ensure_binary_built();
+    assert!(
+        check_example("destructure"),
+        "`keel check destructure.keel` failed"
     );
 }

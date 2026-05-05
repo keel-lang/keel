@@ -55,6 +55,7 @@ Before building, update every affected page:
 - `docs/src/examples/` — update if any example program changed.
 - `docs/src/release-notes.md` — one entry per release at the top.
 - `docs/src/SUMMARY.md` — add a link if a new page was added.
+- `docs/src/introduction.md` — update the `> **Latest: …**` tagline to summarise this release's headline features.
 
 Tag unimplemented features:
 
@@ -81,7 +82,11 @@ Verify before committing:
 - `ROADMAP.md` — shipped items marked `[x]`, new release row added, no stale `[ ]` markers.
 - `Cargo.toml` — `version` bumped to the new version.
 
-## Step 8 — Confirmation Gate for Commit (REQUIRED)
+## Step 8 — Integration Tests
+
+Every new feature must have at least one integration test in `tests/integration_tests.rs`. Test names describe what is being tested — no version prefixes. Verify before proceeding.
+
+## Step 9 — Confirmation Gate for Commit (REQUIRED)
 
 Use `AskUserQuestion` to show the user:
 
@@ -105,7 +110,7 @@ Write the commit message as a human developer would. No AI attribution, no model
 Good: `Release v0.1.11 — Memory storage safety (path hash + flock)`  
 Bad: anything mentioning Claude, a model, or a ticket shortlink.
 
-## Step 9 — Confirmation Gate for Tag (REQUIRED)
+## Step 10 — Confirmation Gate for Tag (REQUIRED)
 
 Use `AskUserQuestion` to show the user:
 
@@ -116,7 +121,7 @@ Use `AskUserQuestion` to show the user:
 
 Do not proceed until the answer is an explicit yes. If no, stop and report what the user wants to change.
 
-## Step 10 — Tag (after confirmation only)
+## Step 11 — Tag (after confirmation only)
 
 ```bash
 git tag v<version>

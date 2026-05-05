@@ -4,6 +4,26 @@
 
 ---
 
+## v0.1.13 — 2026-05-05
+
+### Destructuring (§8.4)
+
+All five destructuring forms from SPEC.md §8.4 are now implemented. No new keywords.
+
+```keel
+{urgency, category} = result             # struct shorthand
+{urgency: u, category: c} = result       # struct rename
+(label, count) = ("alpha", 42)           # tuple
+for {from, subject} in emails { ... }    # in for loop
+task handle({body, from}: Email) { ... } # in task params
+```
+
+Keyword-named fields (`from`, `state`, `in`, etc.) work in all positions. Missing struct fields and tuple arity mismatches are compile-time type errors.
+
+See the [Variables & Expressions guide](guide/expressions.md#destructuring) for full documentation.
+
+---
+
 ## v0.1.12 — 2026-05-04
 
 ### Range operator `..`

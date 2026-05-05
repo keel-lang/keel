@@ -8,6 +8,83 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.13] — 2026-05-05
+
+### Destructuring (§8.4)
+
+Keel now supports all five destructuring forms specified in SPEC.md §8.4. No new keywords — destructuring is pure syntax sugar over existing binding forms.
+
+**Struct shorthand** — bind fields by their original names:
+
+```keel
+{urgency, category} = result
+```
+
+**Struct rename** — bind a field under a different local name:
+
+```keel
+{urgency: u, category: c} = result
+```
+
+**Tuple positional** — bind list elements by position:
+
+```keel
+(label, count) = ("alpha", 42)
+```
+
+**For-loop iteration** — destructure each element as the loop variable:
+
+```keel
+for {from, subject} in emails {
+  Io.show("{from}: {subject}")
+}
+```
+
+**Task parameters** — destructure a struct argument at the call boundary:
+
+```keel
+task handle({body, from}: Email) {
+  Io.show("From {from}: {body}")
+}
+```
+
+The type checker enforces struct field existence and tuple arity. Missing fields and arity mismatches are compile-time errors. Keyword-named fields (`from`, `state`, `in`, etc.) are accepted in all destructure positions.
+
+**Example** — `examples/destructure.keel`:
+
+```keel
+type Email = { body: str, from: str, subject: str }
+
+task summarise({ body, from }: Email) -> str {
+  return "From {from}: {body}"
+}
+
+agent Inbox {
+  @on_start {
+    emails = [
+      { body: "hello", from: "alice@example.com", subject: "hi" },
+      { body: "world", from: "bob@example.com",   subject: "hey" },
+    ]
+    for { from, subject } in emails {
+      Io.show("{from}: {subject}")
+    }
+    { body, from } = { body: "test", from: "carol@example.com", subject: "test" }
+    Io.show("Body: {body}")
+    pair = ("alpha", 42)
+    (label, count) = pair
+    Io.show("{label} — {count}")
+    stop(self)
+  }
+}
+run(Inbox)
+```
+
+### Tests
+
+10 new integration tests: struct shorthand, struct rename, tuple, for-loop, task param, keyword field `from`, missing-field type error, tuple arity mismatch type error, and `examples_all_parse_includes_destructure`.
+
+---
+
 ## [0.1.12] — 2026-05-04
 
 ### Range operator `..`

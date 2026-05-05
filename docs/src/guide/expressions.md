@@ -112,3 +112,44 @@ records = [
   {name: "Bob", score: 87}
 ]
 ```
+
+## Destructuring
+
+Unpack struct fields or tuple elements directly into named bindings.
+
+**Struct shorthand** — field names become variable names:
+
+```keel
+{name, age} = person
+Io.show("{name} is {age}")
+```
+
+**Struct rename** — bind a field under a different local name:
+
+```keel
+{urgency: u, category: c} = result
+```
+
+**Tuple positional** — bind list elements by position:
+
+```keel
+(label, count) = ("alpha", 42)
+```
+
+**In a `for` loop** — destructure each element as it's iterated:
+
+```keel
+for {from, subject} in emails {
+  Io.show("{from}: {subject}")
+}
+```
+
+**In a task parameter** — destructure a struct argument at the call boundary:
+
+```keel
+task handle({body, from}: Email) {
+  Io.show("From {from}: {body}")
+}
+```
+
+The type checker enforces that struct fields exist and that tuple arity matches. Missing fields and mismatches are compile-time errors.

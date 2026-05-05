@@ -152,7 +152,7 @@ pub struct TaskDecl {
 
 #[derive(Debug, Clone)]
 pub struct Param {
-    pub name: String,
+    pub name: Binding,
     pub ty: TypeExpr,
     pub default: Option<Expr>,
 }
@@ -214,14 +214,39 @@ pub struct OnHandler {
 }
 
 // ---------------------------------------------------------------------------
+// Destructuring
+// ---------------------------------------------------------------------------
+
+/// Left-hand side of a destructuring assignment or parameter.
+/// Distinct from `Pattern` (used in `when` arms) — destructuring binds, not matches.
+#[derive(Debug, Clone)]
+pub enum DestructPat {
+    /// `{field}` shorthand or `{field: rename, ...}`.
+    /// Each entry is `(source_field, local_name)`.
+    /// For shorthand `{field}`, both strings are identical.
+    Struct(Vec<(String, String)>),
+    /// `(a, b, c)` — positional tuple bind.
+    Tuple(Vec<String>),
+}
+
+/// Left-hand side of a `let` binding, `for` loop variable, or task parameter name.
+#[derive(Debug, Clone)]
+pub enum Binding {
+    /// Simple identifier: `x = expr`
+    Ident(String),
+    /// Destructuring: `{a, b} = expr` or `(a, b) = expr`
+    Destruct(DestructPat),
+}
+
+// ---------------------------------------------------------------------------
 // Statements
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
-    /// `x = expr` or `x: Type = expr`
+    /// `x = expr`, `x: Type = expr`, `{a, b} = expr`, or `(a, b) = expr`
     Let {
-        name: String,
+        binding: Binding,
         ty: Option<TypeExpr>,
         value: Expr,
     },
@@ -229,9 +254,9 @@ pub enum Stmt {
     SelfAssign { field: String, value: Expr },
     /// `return expr`
     Return(Option<Expr>),
-    /// `for x in expr { ... }` or `for x in expr where pred { ... }`
+    /// `for x in expr { ... }`, `for {a, b} in expr { ... }`, or with `where pred`
     For {
-        binding: String,
+        binding: Binding,
         iter: Expr,
         filter: Option<Expr>,
         body: Block,

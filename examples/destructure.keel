@@ -1,0 +1,24 @@
+type Email = { body: str, from: str, subject: str }
+
+task summarise({ body, from }: Email) -> str {
+  return "From {from}: {body}"
+}
+
+agent Inbox {
+  @on_start {
+    emails = [{ body: "hello", from: "alice@example.com", subject: "hi" }, { body: "world", from: "bob@example.com", subject: "hey" }]
+    for { from, subject } in emails {
+      Io.show("{from}: {subject}")
+    }
+    { body, from } = { body: "test message", from: "carol@example.com", subject: "test" }
+    Io.show("Body: {body}, From: {from}")
+    result = summarise({ body: "greetings", from: "dave@example.com", subject: "hi" })
+    Io.show(result)
+    pair = ("alpha", 42)
+    (label, count) = pair
+    Io.show("{label} — {count}")
+    stop(self)
+  }
+}
+
+run(Inbox)

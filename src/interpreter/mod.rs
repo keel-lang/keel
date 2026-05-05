@@ -241,7 +241,7 @@ impl Interpreter {
         self.current_agent = Some(agent_inst);
         let mut env = Environment::new();
         if let Some(p) = &handler.param {
-            env.define(p.name.clone(), data);
+            bind_value(&p.name, data, &mut env)?;
         }
         let result = self.exec_block(&handler.body, &mut env).await;
         self.current_agent = prev;
@@ -627,6 +627,56 @@ fn type_expr_to_string(te: &TypeExpr) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Statement evaluation helpers
+// ---------------------------------------------------------------------------
+
+fn bind_destructure(pat: &DestructPat, value: Value, env: &mut Environment) -> Result<()> {
+    match pat {
+        DestructPat::Struct(fields) => {
+            let map = match value {
+                Value::Map(m) => m,
+                other => {
+                    return Err(runtime_error(format!(
+                        "cannot destructure {} as a struct",
+                        other.type_name()
+                    )));
+                }
+            };
+            for (source, local) in fields {
+                let v = map.get(source).cloned().unwrap_or(Value::None);
+                env.define(local.clone(), v);
+            }
+        }
+        DestructPat::Tuple(names) => {
+            let items = match value {
+                Value::List(items) => items,
+                other => {
+                    return Err(runtime_error(format!(
+                        "cannot destructure {} as a tuple",
+                        other.type_name()
+                    )));
+                }
+            };
+            for (i, name) in names.iter().enumerate() {
+                let v = items.get(i).cloned().unwrap_or(Value::None);
+                env.define(name.clone(), v);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn bind_value(binding: &Binding, value: Value, env: &mut Environment) -> Result<()> {
+    match binding {
+        Binding::Ident(name) => {
+            env.define(name.clone(), value);
+            Ok(())
+        }
+        Binding::Destruct(pat) => bind_destructure(pat, value, env),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Statement evaluation
 // ---------------------------------------------------------------------------
 
@@ -638,9 +688,9 @@ impl Interpreter {
     ) -> Pin<Box<dyn Future<Output = Result<StmtOutcome>> + Send + 'a>> {
         Box::pin(async move {
             match stmt {
-                Stmt::Let { name, value, .. } => {
+                Stmt::Let { binding, value, .. } => {
                     let v = self.eval_expr(value, env).await?;
-                    env.define(name.clone(), v);
+                    bind_value(binding, v, env)?;
                     Ok(StmtOutcome::Normal)
                 }
                 Stmt::SelfAssign { field, value } => {
@@ -698,7 +748,7 @@ impl Interpreter {
                     };
                     for item in iter {
                         env.push_scope();
-                        env.define(binding.clone(), item);
+                        bind_value(binding, item, env)?;
                         if let Some(pred) = filter {
                             let matched = self.eval_expr(pred, env).await?.is_truthy();
                             if !matched {
@@ -1259,7 +1309,7 @@ impl Interpreter {
         // Bind params by position (named args not wired for user tasks yet).
         for (i, p) in decl.params.iter().enumerate() {
             let v = args.get(i).map(|a| a.value.clone()).unwrap_or(Value::None);
-            env.define(p.name.clone(), v);
+            bind_value(&p.name, v, &mut env)?;
         }
         match self.exec_block(&decl.body, &mut env).await? {
             StmtOutcome::Value(v) | StmtOutcome::Return(v) => Ok(v),

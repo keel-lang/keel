@@ -42,6 +42,7 @@ docs/               # mdBook documentation
 
 - `.keel` file extension. (`.keelc` for compiled bytecode is reserved — `keel build` is deferred post-v0.1.)
 - Examples in `examples/`, tests in `tests/`, brand assets in `brand/`.
+- **Before adding or modifying any language feature** (new syntax, new built-in, new stdlib namespace, behaviour change), invoke the `design-lang` skill to validate the idea against Hejlsberg's design principles. Do this before touching `SPEC.md` or any source file.
 - Update `SPEC.md` before implementing new language features.
 - Update `CHANGELOG.md` with every feature (include .keel example) and bug fix (explain what broke).
 - Update `ROADMAP.md` when a feature ships, gets stubbed, or shifts scope.
@@ -63,60 +64,7 @@ keel lsp                 # language server (stdin/stdout)
 
 ## Release Checklist
 
-> **Agent available:** say "release" or "ship a release" to delegate this entire checklist to the release agent (`.claude/agents/release.md`). It runs on Haiku automatically to keep costs low, walks through every step, and gates on explicit confirmation before tagging.
-
-Every release must pass all of the following before the version is bumped and CHANGELOG/ROADMAP are updated. Do not skip steps or mark a release done until the full list is green.
-
-**1. Format**
-```
-cargo fmt
-```
-Run `keel fmt` on every new or modified example in `examples/`:
-```
-cargo run -- fmt examples/<name>.keel
-```
-
-**2. Lint**
-```
-cargo clippy -- -D warnings
-```
-Zero warnings allowed. Fix, don't suppress.
-
-**3. Tests — unit + integration**
-```
-cargo test
-```
-All tests must pass. The one known exception is `email_fetch_without_config_is_empty_list` which requires live IMAP credentials — all other failures are blocking.
-
-**4. Examples parse cleanly**
-```
-cargo test examples_all_parse --test integration_tests
-```
-Every file in `examples/` must be listed in `examples_all_parse` and pass `keel check`.
-
-**5. Docs update**
-Every new or changed feature must be reflected in the docs before the build step:
-- Add or update the relevant `docs/src/guide/` page — this is the page users land on; it must fully describe the feature with syntax and examples
-- Add an entry to `docs/src/release-notes.md`
-- Add a link in `docs/src/SUMMARY.md` if a new page was added
-- Tag anything unimplemented with `<span class="badge badge-soon">Coming soon</span>` and a `> Status:` callout
-- Touching only `release-notes.md` is not enough
-
-**6. Docs build**
-```
-mdbook build docs/
-```
-Must exit clean with no errors or broken links.
-
-**7. Spec & metadata**
-- `SPEC.md` updated if the language surface changed
-- `CHANGELOG.md` has a new `[x.y.z]` section with `.keel` examples for features and explanation for bug fixes
-- `ROADMAP.md` items for this release marked `[x]` with status `shipped`
-- `ROADMAP.md` has no stale `[ ]` markers — every item still open must be genuinely unimplemented; anything shipped in a prior release must be `[x]`
-- `Cargo.toml` version bumped to the new version
-
-**8. Integration tests**
-Every new feature must have at least one integration test in `tests/integration_tests.rs`. Test names describe what is being tested — no version prefixes.
+Say "release" or "ship a release" to delegate to the release agent (`.claude/agents/release.md`). It runs on Haiku, walks through every step, and gates on explicit confirmation before committing, pushing, or tagging.
 
 ## Reserved Keywords (v0.1)
 

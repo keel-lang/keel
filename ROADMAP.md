@@ -416,6 +416,49 @@ Existing persistent memory data at `~/.keel/memory/<stem>/` is not migrated. Mov
 
 ---
 
+## v0.1.13 — Destructuring (§8.4)
+
+**Theme:** Implement all destructuring forms prescribed in SPEC.md §8.4.
+
+**Status:** shipped.
+
+### Changes
+
+- [x] **`DestructPat` / `Binding` AST types** — `src/ast.rs` gains two new enums. `Stmt::Let.name: String` → `binding: Binding`, `Stmt::For.binding: String` → `Binding`, `Param.name: String` → `Binding`.
+- [x] **Parser** — `struct_destruct_pat()` and `tuple_destruct_pat()` standalone parsers; `destruct_struct_let`, `destruct_tuple_let`, `destruct_for_stmt` added to the statement `choice`; `task_decl` and `on_handler` param parsers extended to accept struct destructure.
+- [x] **Type checker** — `bind_to_scope()` helper enforces struct field existence and tuple arity; missing fields and arity mismatches are compile-time errors.
+- [x] **Interpreter** — `bind_value()` / `bind_destructure()` helpers; all `let`, `for`, and task-param binding paths updated.
+- [x] **Formatter** — `binding_str()` helper renders `{ a }`, `{ a: x, b }`, `(a, b)` correctly; idempotent roundtrip.
+- [x] **Linter** — `check_block_unused` extracts all names from destructure bindings; destructure bindings are not auto-fixable.
+- [x] **LSP** — `collect_stmt_bindings` and `collect_decl_bindings` updated; destructured names appear in hover results.
+
+### Supported forms
+
+```keel
+{urgency, category} = result          # struct shorthand
+{urgency: u, category: c} = result    # struct rename
+(urgency, summary) = triage_full(email)  # tuple
+for {from, subject} in emails { ... }   # in for
+task handle({body, from}: Email) { ... }  # in params
+```
+
+Keyword-named fields (`from`, `state`, `in`, etc.) work in all forms.
+
+### Tests
+
+- [x] `destruct_struct_shorthand` — `{name, age} = val`; both bound
+- [x] `destruct_struct_rename` — `{urgency: u, category: c} = val`; renamed locals bound
+- [x] `destruct_tuple` — `(label, count) = pair`; positional elements bound
+- [x] `destruct_in_for_loop` — `for {name, score} in items`; each element destructured per iteration
+- [x] `destruct_in_task_param` — `task show_point({x, y}: Point)`; called correctly
+- [x] `destruct_missing_field_type_error` — `{nonexistent} = val` → type error
+- [x] `destruct_tuple_arity_mismatch_type_error` — `(a, b) = triple` (3-tuple) → type error
+- [x] `destruct_keyword_field_from` — `{from, subject} = email` parses correctly
+- [x] `examples_all_parse_includes_destructure` — `keel check destructure.keel` passes
+- [x] `examples_all_parse` — `destructure` added to the smoke list
+
+---
+
 ## Beyond v0.1
 
 v0.2 and later milestones are **deliberately un-planned** until v0.1 ships. Pre-planning scope before the core is landed would pre-commit us to things we haven't yet felt the weight of.

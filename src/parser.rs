@@ -92,6 +92,43 @@ fn ident() -> P<String> {
     select! { Token::Ident(s) => s }.boxed()
 }
 
+/// Parses `{ field }` or `{ field: rename, field2, ... }`.
+/// Returns `Vec<(source_field, local_name)>`.
+/// Uses `field_name()` so keyword-named fields like `from` are accepted.
+/// Used for struct destructure patterns in let bindings, for loops, and task params.
+fn struct_destruct_pat() -> P<Vec<(String, String)>> {
+    // Rename target must be a plain ident (not a keyword) to become a valid variable name.
+    let entry = field_name()
+        .then(just(Token::Colon).ignore_then(ident()).or_not())
+        .map(|(src, rename)| {
+            let local = rename.unwrap_or_else(|| src.clone());
+            (src, local)
+        });
+
+    just(Token::LBrace)
+        .ignore_then(newlines())
+        .ignore_then(entry.separated_by(field_sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RBrace))
+        .boxed()
+}
+
+/// Parses `( a, b, c )` with at least 2 elements.
+/// Returns `Vec<String>` of positional names.
+fn tuple_destruct_pat() -> P<Vec<String>> {
+    just(Token::LParen)
+        .ignore_then(newlines())
+        .ignore_then(
+            ident()
+                .separated_by(just(Token::Comma).then_ignore(newlines()))
+                .at_least(2)
+                .allow_trailing(),
+        )
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RParen))
+        .boxed()
+}
+
 fn string_lit() -> P<String> {
     select! { Token::StringLit(s) => s }.boxed()
 }
@@ -713,7 +750,33 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then(just(Token::Colon).ignore_then(type_expr()).or_not())
             .then_ignore(just(Token::Eq))
             .then(expr.clone())
-            .map(|((name, ty), value)| Stmt::Let { name, ty, value })
+            .map(|((name, ty), value)| Stmt::Let {
+                binding: Binding::Ident(name),
+                ty,
+                value,
+            })
+            .boxed();
+
+        // {a, b} = expr  or  {a: x} = expr  (struct destructure)
+        let destruct_struct_let = struct_destruct_pat()
+            .then_ignore(just(Token::Eq))
+            .then(expr.clone())
+            .map(|(fields, value)| Stmt::Let {
+                binding: Binding::Destruct(DestructPat::Struct(fields)),
+                ty: None,
+                value,
+            })
+            .boxed();
+
+        // (a, b) = expr  (tuple destructure)
+        let destruct_tuple_let = tuple_destruct_pat()
+            .then_ignore(just(Token::Eq))
+            .then(expr.clone())
+            .map(|(names, value)| Stmt::Let {
+                binding: Binding::Destruct(DestructPat::Tuple(names)),
+                ty: None,
+                value,
+            })
             .boxed();
 
         let return_stmt = just(Token::Return)
@@ -728,7 +791,22 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then(just(Token::Where).ignore_then(expr.clone()).or_not())
             .then(block.clone())
             .map(|(((binding, iter), filter), body)| Stmt::For {
-                binding,
+                binding: Binding::Ident(binding),
+                iter,
+                filter,
+                body,
+            })
+            .boxed();
+
+        // for {a, b} in expr [where pred] { ... }
+        let destruct_for_stmt = just(Token::For)
+            .ignore_then(struct_destruct_pat())
+            .then_ignore(just(Token::In))
+            .then(expr.clone())
+            .then(just(Token::Where).ignore_then(expr.clone()).or_not())
+            .then(block.clone())
+            .map(|(((fields, iter), filter), body)| Stmt::For {
+                binding: Binding::Destruct(DestructPat::Struct(fields)),
                 iter,
                 filter,
                 body,
@@ -831,8 +909,11 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
 
         choice((
             self_assign,
+            destruct_struct_let,
+            destruct_tuple_let,
             let_stmt,
             return_stmt,
+            destruct_for_stmt,
             for_stmt,
             if_stmt,
             when_stmt,
@@ -951,7 +1032,7 @@ fn interface_decl() -> P<Decl> {
         .then_ignore(just(Token::Colon))
         .then(type_expr())
         .map(|(name, ty)| Param {
-            name,
+            name: Binding::Ident(name),
             ty,
             default: None,
         });
@@ -988,7 +1069,7 @@ fn extern_decl() -> P<Decl> {
         .then_ignore(just(Token::Colon))
         .then(type_expr())
         .map(|(name, ty)| Param {
-            name,
+            name: Binding::Ident(name),
             ty,
             default: None,
         });
@@ -1046,7 +1127,11 @@ fn use_decl() -> P<Decl> {
 }
 
 fn task_decl() -> P<TaskDecl> {
-    let param = ident()
+    let param_name = choice((
+        struct_destruct_pat().map(|fields| Binding::Destruct(DestructPat::Struct(fields))),
+        ident().map(Binding::Ident),
+    ));
+    let param = param_name
         .then_ignore(just(Token::Colon))
         .then(type_expr())
         .then(just(Token::Eq).ignore_then(expr_parser()).or_not())
@@ -1125,12 +1210,16 @@ fn agent_item() -> P<AgentItem> {
 
     let task = task_decl().map(AgentItem::Task).boxed();
 
+    let on_param_name = choice((
+        struct_destruct_pat().map(|fields| Binding::Destruct(DestructPat::Struct(fields))),
+        ident().map(Binding::Ident),
+    ));
     let on_handler = just(Token::On)
         .ignore_then(ident())
         .then(
             just(Token::LParen)
                 .ignore_then(
-                    ident()
+                    on_param_name
                         .then_ignore(just(Token::Colon))
                         .then(type_expr())
                         .map(|(name, ty)| Param {

@@ -316,7 +316,13 @@ impl Checker {
         let params = t
             .params
             .iter()
-            .map(|p| (p.name.clone(), self.resolve_type(&p.ty)))
+            .map(|p| {
+                let name = match &p.name {
+                    Binding::Ident(n) => n.clone(),
+                    Binding::Destruct(_) => "_".to_string(),
+                };
+                (name, self.resolve_type(&p.ty))
+            })
             .collect();
         let return_type = t
             .return_type
@@ -460,6 +466,79 @@ impl Checker {
         scope
     }
 
+    /// Bind `binding` to `ty` in `scope`, expanding destructure patterns field by field.
+    fn bind_to_scope(&mut self, binding: &Binding, ty: &Ty, scope: &mut Scope) {
+        match binding {
+            Binding::Ident(name) => {
+                scope.define(name.clone(), ty.clone());
+            }
+            Binding::Destruct(DestructPat::Struct(fields)) => {
+                let struct_fields: Vec<(String, Ty)> = match ty.strip_nullable() {
+                    Ty::Struct(f) => f.clone(),
+                    Ty::Unknown | Ty::Dynamic => {
+                        for (_, local) in fields {
+                            scope.define(local.clone(), Ty::Unknown);
+                        }
+                        return;
+                    }
+                    other => {
+                        self.err(format!(
+                            "cannot destructure {} as a struct",
+                            describe_ty(other)
+                        ));
+                        for (_, local) in fields {
+                            scope.define(local.clone(), Ty::Unknown);
+                        }
+                        return;
+                    }
+                };
+                for (source, local) in fields {
+                    let field_ty = struct_fields
+                        .iter()
+                        .find(|(n, _)| n == source)
+                        .map(|(_, t)| t.clone())
+                        .unwrap_or_else(|| {
+                            self.err(format!("field `{source}` not found in struct"));
+                            Ty::Unknown
+                        });
+                    scope.define(local.clone(), field_ty);
+                }
+            }
+            Binding::Destruct(DestructPat::Tuple(names)) => {
+                let elem_tys: Vec<Ty> = match ty.strip_nullable() {
+                    Ty::Tuple(items) => items.clone(),
+                    Ty::Unknown | Ty::Dynamic => {
+                        for name in names {
+                            scope.define(name.clone(), Ty::Unknown);
+                        }
+                        return;
+                    }
+                    other => {
+                        self.err(format!(
+                            "cannot destructure {} as a tuple",
+                            describe_ty(other)
+                        ));
+                        for name in names {
+                            scope.define(name.clone(), Ty::Unknown);
+                        }
+                        return;
+                    }
+                };
+                if names.len() != elem_tys.len() {
+                    self.err(format!(
+                        "tuple destructure expects {} element(s), got {}",
+                        elem_tys.len(),
+                        names.len()
+                    ));
+                }
+                for (i, name) in names.iter().enumerate() {
+                    let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown);
+                    scope.define(name.clone(), t);
+                }
+            }
+        }
+    }
+
     fn check_task(&mut self, t: &TaskDecl) {
         let declared_return = t.return_type.as_ref().map(|ty| self.resolve_type(ty));
         let prev_return_ty = self.current_return_ty.take();
@@ -467,7 +546,8 @@ impl Checker {
 
         let mut scope = self.fresh_scope();
         for p in &t.params {
-            scope.define(p.name.clone(), self.resolve_type(&p.ty));
+            let param_ty = self.resolve_type(&p.ty);
+            self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
         self.check_block(&t.body, &mut scope);
 
@@ -477,7 +557,8 @@ impl Checker {
     fn check_on_handler(&mut self, h: &OnHandler) {
         let mut scope = self.fresh_scope();
         if let Some(p) = &h.param {
-            scope.define(p.name.clone(), self.resolve_type(&p.ty));
+            let param_ty = self.resolve_type(&p.ty);
+            self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
         self.check_block(&h.body, &mut scope);
     }
@@ -506,7 +587,7 @@ impl Checker {
     fn check_stmt(&mut self, stmt: &Stmt, span: Span, scope: &mut Scope) {
         self.current_span = Some(span.clone());
         match stmt {
-            Stmt::Let { name, ty, value } => {
+            Stmt::Let { binding, ty, value } => {
                 let inferred = self.infer_expr(value, scope);
                 let bound = match ty {
                     Some(t) => {
@@ -514,14 +595,16 @@ impl Checker {
                         // Only check when declared type is concrete — Unknown
                         // means the checker couldn't resolve it (e.g. a named
                         // user-defined type), so a mismatch would be a false positive.
-                        if !matches!(declared, Ty::Unknown | Ty::Dynamic) {
+                        if let Binding::Ident(name) = binding
+                            && !matches!(declared, Ty::Unknown | Ty::Dynamic)
+                        {
                             self.expect(&inferred, &declared, &format!("`{name}`"));
                         }
                         declared
                     }
                     None => inferred,
                 };
-                scope.define(name.clone(), bound);
+                self.bind_to_scope(binding, &bound, scope);
             }
             Stmt::SelfAssign { field, value } => {
                 let Some(agent_name) = &self.current_agent.clone() else {
@@ -563,7 +646,7 @@ impl Checker {
                     }
                 };
                 scope.push();
-                scope.define(binding.clone(), element_ty);
+                self.bind_to_scope(binding, &element_ty, scope);
                 if let Some(pred) = filter {
                     let pty = self.infer_expr(pred, scope);
                     self.expect(&pty, &Ty::Bool, "for-where predicate");
@@ -1255,13 +1338,45 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
     bindings.get(&name).map(describe_ty)
 }
 
+fn insert_binding(binding: &Binding, ty: Ty, _c: &mut Checker, out: &mut HashMap<String, Ty>) {
+    match binding {
+        Binding::Ident(name) => {
+            out.insert(name.clone(), ty);
+        }
+        Binding::Destruct(DestructPat::Struct(fields)) => {
+            let struct_fields = match &ty {
+                Ty::Struct(f) => f.clone(),
+                _ => vec![],
+            };
+            for (source, local) in fields {
+                let field_ty = struct_fields
+                    .iter()
+                    .find(|(n, _)| n == source)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or(Ty::Unknown);
+                out.insert(local.clone(), field_ty);
+            }
+        }
+        Binding::Destruct(DestructPat::Tuple(names)) => {
+            let elem_tys = match ty {
+                Ty::Tuple(items) => items,
+                _ => vec![],
+            };
+            for (i, name) in names.iter().enumerate() {
+                let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown);
+                out.insert(name.clone(), t);
+            }
+        }
+    }
+}
+
 fn collect_decl_bindings(program: &Program, c: &mut Checker, out: &mut HashMap<String, Ty>) {
     for (decl, _) in &program.declarations {
         match decl {
             Decl::Stmt((stmt, _)) => collect_stmt_bindings(stmt, c, out),
             Decl::Task(t) => {
                 for p in &t.params {
-                    out.insert(p.name.clone(), c.resolve_type(&p.ty));
+                    insert_binding(&p.name, c.resolve_type(&p.ty), c, out);
                 }
                 for (s, _) in &t.body {
                     collect_stmt_bindings(s, c, out);
@@ -1277,7 +1392,7 @@ fn collect_decl_bindings(program: &Program, c: &mut Checker, out: &mut HashMap<S
                         }
                         AgentItem::Task(t) => {
                             for p in &t.params {
-                                out.insert(p.name.clone(), c.resolve_type(&p.ty));
+                                insert_binding(&p.name, c.resolve_type(&p.ty), c, out);
                             }
                             for (s, _) in &t.body {
                                 collect_stmt_bindings(s, c, out);
@@ -1285,7 +1400,7 @@ fn collect_decl_bindings(program: &Program, c: &mut Checker, out: &mut HashMap<S
                         }
                         AgentItem::On(h) => {
                             if let Some(p) = &h.param {
-                                out.insert(p.name.clone(), c.resolve_type(&p.ty));
+                                insert_binding(&p.name, c.resolve_type(&p.ty), c, out);
                             }
                             for (s, _) in &h.body {
                                 collect_stmt_bindings(s, c, out);
@@ -1308,11 +1423,11 @@ fn collect_decl_bindings(program: &Program, c: &mut Checker, out: &mut HashMap<S
 
 fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String, Ty>) {
     match stmt {
-        Stmt::Let { name, ty, value } => {
+        Stmt::Let { binding, ty, value } => {
             let mut scope = Scope::new();
             let inferred = c.infer_expr(value, &mut scope);
             let bound = ty.as_ref().map(|t| c.resolve_type(t)).unwrap_or(inferred);
-            out.insert(name.clone(), bound);
+            insert_binding(binding, bound, c, out);
         }
         Stmt::For {
             binding,
@@ -1326,7 +1441,7 @@ fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String,
                 Ty::List(inner) => *inner.clone(),
                 _ => Ty::Unknown,
             };
-            out.insert(binding.clone(), elem);
+            insert_binding(binding, elem, c, out);
             for (s, _) in body {
                 collect_stmt_bindings(s, c, out);
             }

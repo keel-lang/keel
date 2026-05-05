@@ -133,20 +133,31 @@ impl Linter {
 
     fn check_block_unused(&mut self, block: &Block) {
         // Collect let-bindings defined at this block level only (not in nested blocks).
-        let defined: Vec<(String, Span)> = block
-            .iter()
-            .filter_map(|(stmt, span)| {
-                if let Stmt::Let { name, .. } = stmt {
-                    Some((name.clone(), span.clone()))
-                } else {
-                    None
+        // Each entry is (name, span, fixable). Destructure bindings are not auto-fixable.
+        let mut defined: Vec<(String, Span, bool)> = Vec::new();
+        for (stmt, span) in block {
+            if let Stmt::Let { binding, .. } = stmt {
+                match binding {
+                    Binding::Ident(name) => {
+                        defined.push((name.clone(), span.clone(), true));
+                    }
+                    Binding::Destruct(DestructPat::Struct(fields)) => {
+                        for (_, local) in fields {
+                            defined.push((local.clone(), span.clone(), false));
+                        }
+                    }
+                    Binding::Destruct(DestructPat::Tuple(names)) => {
+                        for name in names {
+                            defined.push((name.clone(), span.clone(), false));
+                        }
+                    }
                 }
-            })
-            .collect();
+            }
+        }
 
         if !defined.is_empty() {
             let reads = ident_reads_in_block(block);
-            for (name, span) in &defined {
+            for (name, span, fixable) in &defined {
                 // Names prefixed with `_` are intentionally unused by convention.
                 if name.starts_with('_') {
                     continue;
@@ -159,7 +170,7 @@ impl Linter {
                             "remove this binding, use its value, or prefix with `_` to silence"
                                 .into(),
                         ),
-                        true,
+                        *fixable,
                     );
                 }
             }
