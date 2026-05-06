@@ -305,8 +305,6 @@ fn expr_parser() -> P<Expr> {
             .to(Expr::Bool(true))
             .or(just(Token::False).to(Expr::Bool(false)));
         let none_lit = just(Token::None_).to(Expr::None_);
-        let now_lit = just(Token::Now).to(Expr::Now);
-
         // ── Lambda ───────────────────────────────────────────────
         let lambda_body = expr
             .clone()
@@ -470,7 +468,6 @@ fn expr_parser() -> P<Expr> {
             int_lit,
             bool_lit,
             none_lit,
-            now_lit,
             str_expr,
             list_lit,
             struct_lit,
@@ -707,6 +704,7 @@ enum PostfixOp {
 
 fn parse_duration_unit(s: &str) -> Option<DurationUnit> {
     match s {
+        "milliseconds" | "millisecond" | "millis" | "ms" => Some(DurationUnit::Milliseconds),
         "seconds" | "second" | "sec" | "s" => Some(DurationUnit::Seconds),
         "minutes" | "minute" | "min" | "m" => Some(DurationUnit::Minutes),
         "hours" | "hour" | "hr" | "h" => Some(DurationUnit::Hours),
@@ -788,7 +786,7 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .ignore_then(ident())
             .then_ignore(just(Token::In))
             .then(expr.clone())
-            .then(just(Token::Where).ignore_then(expr.clone()).or_not())
+            .then(just(Token::If).ignore_then(expr.clone()).or_not())
             .then(block.clone())
             .map(|(((binding, iter), filter), body)| Stmt::For {
                 binding: Binding::Ident(binding),
@@ -798,12 +796,12 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             })
             .boxed();
 
-        // for {a, b} in expr [where pred] { ... }
+        // for {a, b} in expr [if pred] { ... }
         let destruct_for_stmt = just(Token::For)
             .ignore_then(struct_destruct_pat())
             .then_ignore(just(Token::In))
             .then(expr.clone())
-            .then(just(Token::Where).ignore_then(expr.clone()).or_not())
+            .then(just(Token::If).ignore_then(expr.clone()).or_not())
             .then(block.clone())
             .map(|(((fields, iter), filter), body)| Stmt::For {
                 binding: Binding::Destruct(DestructPat::Struct(fields)),

@@ -64,11 +64,11 @@ when urgency {
 }
 ```
 
-Guards with `where`:
+Guards with `where` (block body required when using a guard):
 
 ```keel
 when status {
-  active where user.is_admin => grant_access()
+  active where user.is_admin => { grant_access() }
   active                     => request_approval()
   _                          => deny()
 }
@@ -81,9 +81,19 @@ for email in emails {
   handle(email)
 }
 
-# With filter
-for email in emails where email.unread {
+# With inline filter
+for email in emails if email.unread {
   triage(email)
+}
+
+# Works with destructuring too
+for { from, subject } in emails if subject != "" {
+  Io.show("{from}: {subject}")
+}
+
+# Works with ranges
+for x in 1..10 if x % 2 == 0 {
+  Io.show(x)
 }
 ```
 

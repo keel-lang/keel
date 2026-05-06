@@ -147,35 +147,24 @@ fn run_inline_with_home(src: &str, home: &std::path::Path) -> (bool, String, Str
 #[test]
 fn examples_all_parse() {
     ensure_binary_built();
-    for name in [
-        "hello_world",
-        "data_pipeline",
-        "daily_digest",
-        "meeting_prep",
-        "code_reviewer",
-        "customer_support",
-        "email_agent",
-        "multi_agent_inbox",
-        "http_demo",
-        "at_demo",
-        "rich_enum",
-        "showcase",
-        "if_expression",
-        "list_building",
-        "agent_delegation",
-        "retry_on_failure",
-        "broadcast_team",
-        "nested_interp",
-        "map_methods",
-        "cache_demo",
-        "text_pipeline",
-        "webhook_agent",
-        "lint_best_practices",
-        "memory_agent",
-        "range",
-        "destructure",
-    ] {
-        assert!(check_example(name), "`keel check {name}.keel` failed");
+    let examples_dir = project_root().join("examples");
+    let mut names: Vec<String> = std::fs::read_dir(&examples_dir)
+        .expect("read examples directory")
+        .filter_map(|entry| {
+            let path = entry.expect("read examples entry").path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("keel") {
+                path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(str::to_owned)
+            } else {
+                None
+            }
+        })
+        .collect();
+    names.sort();
+
+    for name in names {
+        assert!(check_example(&name), "`keel check {name}.keel` failed");
     }
 }
 
@@ -784,21 +773,26 @@ run(A)
 }
 
 #[test]
-fn time_stub_raises_v2_error() {
+fn time_parse_shipped_in_v0_1_14() {
     ensure_binary_built();
     let src = r#"
 agent A {
     @on_start {
-        Time.parse("2026-01-01")
+        p = Time.parse("2026-01-01T00:00:00Z")
+        Io.show(p)
+        stop(self)
     }
 }
 run(A)
 "#;
-    let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected non-zero exit for Time stub");
+    let (ok, stdout, stderr) = run_inline(src, false);
     assert!(
-        stderr.contains("v0.2"),
-        "expected 'v0.2' in error message:\n{stderr}"
+        ok,
+        "Time.parse should work in v0.1.14\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("2026-01-01"),
+        "parsed date should appear:\n{stdout}"
     );
 }
 
@@ -2745,5 +2739,464 @@ fn examples_all_parse_includes_destructure() {
     assert!(
         check_example("destructure"),
         "`keel check destructure.keel` failed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.14 — if guards (for loops and when arms)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn if_guard_for_filters_elements() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [1, 2, 3, 4, 5]
+    for n in nums if n % 2 == 0 {
+      Io.show("even:{n}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("even:2"), "2 should pass filter:\n{stdout}");
+    assert!(stdout.contains("even:4"), "4 should pass filter:\n{stdout}");
+    assert!(
+        !stdout.contains("even:1"),
+        "1 should be filtered:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("even:3"),
+        "3 should be filtered:\n{stdout}"
+    );
+}
+
+#[test]
+fn if_guard_for_range() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    for x in 1..5 if x != 3 {
+      Io.show("x:{x}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("x:1"), "1 should appear:\n{stdout}");
+    assert!(stdout.contains("x:2"), "2 should appear:\n{stdout}");
+    assert!(!stdout.contains("x:3"), "3 should be filtered:\n{stdout}");
+    assert!(stdout.contains("x:4"), "4 should appear:\n{stdout}");
+    assert!(stdout.contains("x:5"), "5 should appear:\n{stdout}");
+}
+
+#[test]
+fn when_arm_where_guard() {
+    ensure_binary_built();
+    // Guard must be a non-trivial expression (not a bare ident) to avoid
+    // the lambda ambiguity: `ident => body` parses as a lambda.
+    let src = r#"
+type Status = active | inactive
+agent A {
+  @on_start {
+    s = Status.active
+    level = 5
+    when s {
+      active where level > 3 => Io.show("admin-active")
+      active                 => Io.show("user-active")
+      _                      => Io.show("inactive")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("admin-active"),
+        "guard should match:\n{stdout}"
+    );
+}
+
+#[test]
+fn when_arm_where_guard_falls_through() {
+    ensure_binary_built();
+    let src = r#"
+type Status = active | inactive
+agent A {
+  @on_start {
+    s = Status.active
+    level = 1
+    when s {
+      active where level > 3 => Io.show("admin-active")
+      active                 => Io.show("user-active")
+      _                      => Io.show("inactive")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("user-active"),
+        "guard false should fall through:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("admin-active"),
+        "admin branch should not fire:\n{stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// v0.1.14 — Time namespace
+// ---------------------------------------------------------------------------
+
+#[test]
+fn time_now_returns_iso_string() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    t = Time.now()
+    Io.show(t)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains('T') && (stdout.contains('+') || stdout.contains('Z')),
+        "Time.now() should return RFC 3339:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_parse_normalises_date() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    p = Time.parse("2026-05-01T00:00:00Z")
+    Io.show(p)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("2026-05-01"),
+        "parsed date should appear:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_parse_rejects_naive_without_tz() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    p = Time.parse("2026-05-01")
+    if p == none {
+      Io.show("none")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("none"),
+        "naive parse without tz should return none:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_parse_with_tz_coerces_naive() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    p = Time.parse("2026-05-01", tz: "UTC")
+    Io.show(p)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("2026-05-01"),
+        "naive parse with tz: should succeed:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_format_strftime() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    dt = Time.parse("2026-05-01T09:30:00Z")
+    s = dt.format(as: "%Y-%m-%d")
+    Io.show(s)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("2026-05-01"),
+        "formatted date should appear:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_diff_one_day() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    a = Time.parse("2026-05-02T00:00:00Z")
+    b = Time.parse("2026-05-01T00:00:00Z")
+    d = a - b
+    Io.show(d)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("1 days") || stdout.contains("86400"),
+        "diff should be 1 day:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_parts_returns_map() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    dt = Time.parse("2026-05-06T14:30:45Z")
+    p = dt.parts()
+    Io.show(p.year)
+    Io.show(p.month)
+    Io.show(p.day)
+    Io.show(p.hour)
+    Io.show(p.tz)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("2026"), "year should be 2026:\n{stdout}");
+    assert!(stdout.contains("5"), "month should be 5:\n{stdout}");
+    assert!(stdout.contains("6"), "day should be 6:\n{stdout}");
+    assert!(stdout.contains("14"), "hour should be 14:\n{stdout}");
+    assert!(
+        stdout.contains("+00:00"),
+        "tz should be UTC offset:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_now_with_tz() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    t = Time.now(tz: "Europe/Paris")
+    Io.show(t)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    // Paris is UTC+1 or UTC+2 — either offset appears
+    assert!(
+        stdout.contains("+01:00") || stdout.contains("+02:00"),
+        "Time.now(tz: Paris) should emit a European offset:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_datetime_arithmetic() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    base = Time.parse("2026-05-01T00:00:00Z")
+    future = base + 1.days
+    Io.show(future)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("2026-05-02"),
+        "adding 1 day should yield May 2:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_datetime_comparison() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    a = Time.parse("2026-05-02T00:00:00Z")
+    b = Time.parse("2026-05-01T00:00:00Z")
+    if a > b {
+      Io.show("later")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("later"),
+        "May 2 should be > May 1:\n{stdout}"
+    );
+}
+
+#[test]
+fn millisecond_duration_literal() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    d = 500.ms
+    Io.show(d)
+    d2 = 1500.millis
+    Io.show(d2)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("0.5"),
+        "500.ms should equal 0.5 seconds:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("1.5"),
+        "1500.millis should equal 1.5 seconds:\n{stdout}"
+    );
+}
+
+#[test]
+fn time_now_emits_millisecond_precision() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    t = Time.now()
+    Io.show(t)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    // RFC 3339 with milliseconds: contains a dot before Z or +
+    assert!(
+        stdout.contains('.') && (stdout.contains('Z') || stdout.contains('+')),
+        "Time.now() should emit millisecond-precision RFC 3339:\n{stdout}"
+    );
+}
+
+#[test]
+fn examples_all_parse_includes_if_guard_and_time() {
+    ensure_binary_built();
+    assert!(
+        check_example("if_guard"),
+        "`keel check if_guard.keel` failed"
+    );
+    assert!(
+        check_example("time_basic"),
+        "`keel check time_basic.keel` failed"
     );
 }

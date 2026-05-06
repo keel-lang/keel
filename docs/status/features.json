@@ -1,0 +1,252 @@
+{
+  "legend": {
+    "shipped": {
+      "roadmap": "[x]",
+      "docs": "✅"
+    },
+    "partial": {
+      "roadmap": "[~]",
+      "docs": "🟡"
+    },
+    "planned": {
+      "roadmap": "[ ]",
+      "docs": "⏳"
+    },
+    "deferred": {
+      "roadmap": "[ ]",
+      "docs": "⏳"
+    }
+  },
+  "attributes": [
+    {
+      "name": "@model \"ollama:...\"",
+      "tier": "core",
+      "status": "shipped",
+      "notes": "Read by `Ai.*` to pick the Ollama model"
+    },
+    {
+      "name": "@role \"...\"",
+      "tier": "core",
+      "status": "shipped",
+      "notes": "Prepended as `\"You are {role}.\\n\\n...\"` to every `Ai.*` system prompt"
+    },
+    {
+      "name": "@on_start { ... }",
+      "tier": "stdlib",
+      "status": "shipped",
+      "notes": "Block runs once when the agent starts"
+    },
+    {
+      "name": "@on_stop { ... }",
+      "tier": "stdlib",
+      "status": "shipped",
+      "notes": "Block runs once when the agent stops (v0.1.4)"
+    },
+    {
+      "name": "@tools [...]",
+      "tier": "stdlib",
+      "status": "shipped",
+      "notes": "Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7)"
+    },
+    {
+      "name": "@memory persistent\\|session\\|none",
+      "tier": "stdlib",
+      "status": "shipped",
+      "notes": "Selects memory scope; enforced at runtime (v0.1.10)"
+    },
+    {
+      "name": "@rules [...]",
+      "tier": "stdlib",
+      "status": "shipped",
+      "notes": "Injected as a bullet list into the system prompt of every `Ai.*` call (v0.1.3)"
+    },
+    {
+      "name": "@limits { ... }",
+      "tier": "stdlib",
+      "status": "partial",
+      "notes": "`timeout` enforced via `Control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level"
+    },
+    {
+      "name": "@team [...]",
+      "tier": "stdlib",
+      "status": "shipped",
+      "notes": "Team membership used by `Agent.broadcast` routing (v0.1.6)"
+    },
+    {
+      "name": "@provider MyProvider",
+      "tier": "stdlib",
+      "status": "planned",
+      "notes": "Parsed, no per-agent LLM-provider swap"
+    }
+  ],
+  "namespaces": [
+    {
+      "name": "Ai",
+      "status": "partial",
+      "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json)",
+      "gaps": "`embed` returns `[]`; `Ai.install(provider)` not registered",
+      "purpose": "LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳"
+    },
+    {
+      "name": "Io",
+      "status": "shipped",
+      "implemented_ops": "`notify`, `show`, `ask`, `confirm`",
+      "gaps": "—",
+      "purpose": "Human interaction: `ask`, `confirm`, `notify`, `show`"
+    },
+    {
+      "name": "Schedule",
+      "status": "shipped",
+      "implemented_ops": "`every`, `after`, `at`, `cron`, `sleep`",
+      "gaps": "—",
+      "purpose": "Time-based scheduling: `every`, `after`, `at`, `cron`, `sleep`"
+    },
+    {
+      "name": "Email",
+      "status": "partial",
+      "implemented_ops": "`fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback)",
+      "gaps": "—",
+      "purpose": "IMAP/SMTP: `fetch`, `send`, `archive`"
+    },
+    {
+      "name": "Http",
+      "status": "shipped",
+      "implemented_ops": "`get`, `post`, `request`, `serve` (webhook listener)",
+      "gaps": "—",
+      "purpose": "HTTP client + server: `get`, `post`, `request`, `serve`"
+    },
+    {
+      "name": "Env",
+      "status": "shipped",
+      "implemented_ops": "`get`, `require`",
+      "gaps": "—",
+      "purpose": "Environment: `get(name)`, `require(name)`"
+    },
+    {
+      "name": "Log",
+      "status": "shipped",
+      "implemented_ops": "`info`, `warn`, `error`, `debug`, `set_level`, `level`",
+      "gaps": "—",
+      "purpose": "Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level(\"debug\")` at runtime."
+    },
+    {
+      "name": "Agent",
+      "status": "shipped",
+      "implemented_ops": "`run`, `stop`, `send`, `delegate`, `broadcast`",
+      "gaps": "—",
+      "purpose": "`run`, `stop`, `send`, `delegate`, `broadcast`"
+    },
+    {
+      "name": "Memory",
+      "status": "shipped",
+      "implemented_ops": "`remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON)",
+      "gaps": "Vector-store backend (semantic search) is v0.2",
+      "purpose": "Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\\|persistent\\|none` (default: session). Persistent mode writes `~/.keel/memory/<agent>.json`."
+    },
+    {
+      "name": "Control",
+      "status": "shipped",
+      "implemented_ops": "`retry`, `with_timeout`, `with_deadline` (v0.1.6)",
+      "gaps": "—",
+      "purpose": "`retry`, `with_timeout`, `with_deadline`"
+    },
+    {
+      "name": "Async",
+      "status": "shipped",
+      "implemented_ops": "`spawn`, `join_all`, `select`, `sleep` (v0.1.7)",
+      "gaps": "—",
+      "purpose": "Structured concurrency: `spawn`, `join_all`, `select`, `sleep`"
+    },
+    {
+      "name": "Cache",
+      "status": "shipped",
+      "implemented_ops": "`set` (optional TTL), `get`, `delete`, `clear` — process-scoped",
+      "gaps": "—",
+      "purpose": "In-memory process-scoped cache: `set`, `get`, `delete`, `clear`"
+    },
+    {
+      "name": "Str",
+      "status": "shipped",
+      "implemented_ops": "`match`, `extract`, `truncate`, `pad`",
+      "gaps": "—",
+      "purpose": "Regex & string tools: `match`, `extract`, `truncate`, `pad`"
+    },
+    {
+      "name": "File",
+      "status": "shipped",
+      "implemented_ops": "`read`, `write`, `exists`, `list`",
+      "gaps": "—",
+      "purpose": "Filesystem: `read`, `write`, `exists`, `list`"
+    },
+    {
+      "name": "Json",
+      "status": "shipped",
+      "implemented_ops": "`parse`, `stringify`",
+      "gaps": "—",
+      "purpose": "JSON: `parse`, `stringify`"
+    },
+    {
+      "name": "Search",
+      "status": "partial",
+      "implemented_ops": "—",
+      "gaps": "Registered; all methods raise a clear \"planned for v0.2\" error",
+      "purpose": "Web search providers: `web(query)` — registered; raises \"planned for v0.2\" error"
+    },
+    {
+      "name": "Db",
+      "status": "partial",
+      "implemented_ops": "—",
+      "gaps": "Registered; all methods raise a clear \"planned for v0.2\" error",
+      "purpose": "SQL: `connect`, `query`, `exec` — registered; raises \"planned for v0.2\" error"
+    },
+    {
+      "name": "Time",
+      "status": "shipped",
+      "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week`",
+      "gaps": "—",
+      "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`."
+    }
+  ],
+  "cli": [
+    {
+      "name": "keel run",
+      "status": "shipped",
+      "notes": "Execute a .keel program"
+    },
+    {
+      "name": "keel check",
+      "status": "shipped",
+      "notes": "Type-check only, no execution"
+    },
+    {
+      "name": "keel fmt",
+      "status": "shipped",
+      "notes": "Auto-format; idempotent round-trip against the AST"
+    },
+    {
+      "name": "keel init",
+      "status": "shipped",
+      "notes": "Scaffold a new project"
+    },
+    {
+      "name": "keel repl",
+      "status": "shipped",
+      "notes": "Interactive REPL; multi-line input, persistent environment"
+    },
+    {
+      "name": "keel lint",
+      "status": "shipped",
+      "notes": "Static analysis; `--fix` flag (v0.1.9)"
+    },
+    {
+      "name": "keel lsp",
+      "status": "shipped",
+      "notes": "Language server; diagnostics, hover, completion, go-to-definition, rename"
+    },
+    {
+      "name": "keel build",
+      "status": "deferred",
+      "notes": "Bytecode compiler + VM; explicitly deferred post-v0.1"
+    }
+  ]
+}

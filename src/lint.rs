@@ -471,7 +471,6 @@ fn ident_reads_in_expr(expr: &Expr, out: &mut HashSet<String>) {
         | Expr::Float(_)
         | Expr::Bool(_)
         | Expr::None_
-        | Expr::Now
         | Expr::SelfAccess(_)
         | Expr::SelfRef => {}
     }
@@ -643,7 +642,6 @@ fn ai_methods_in_expr(expr: &Expr, out: &mut Vec<String>) {
         | Expr::Float(_)
         | Expr::Bool(_)
         | Expr::None_
-        | Expr::Now
         | Expr::Ident(_)
         | Expr::SelfAccess(_)
         | Expr::SelfRef => {}
@@ -792,7 +790,6 @@ fn self_in_expr(expr: &Expr, reads: &mut HashSet<String>, written: &mut HashSet<
         | Expr::Float(_)
         | Expr::Bool(_)
         | Expr::None_
-        | Expr::Now
         | Expr::Ident(_)
         | Expr::SelfRef => {}
     }

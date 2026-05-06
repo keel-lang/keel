@@ -82,9 +82,6 @@ pub enum Token {
     False,
     #[token("none")]
     None_,
-    #[token("now")]
-    Now,
-
     // ── Set literal form (`set[1, 2, 3]`) ────────────────────────────
     #[token("set")]
     Set,
@@ -310,7 +307,6 @@ impl fmt::Display for Token {
             Token::True => write!(f, "true"),
             Token::False => write!(f, "false"),
             Token::None_ => write!(f, "none"),
-            Token::Now => write!(f, "now"),
             Token::Set => write!(f, "set"),
             Token::Float(v) => write!(f, "{v}"),
             Token::Integer(v) => write!(f, "{v}"),

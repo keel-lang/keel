@@ -81,6 +81,22 @@ Verify before committing:
 - `CHANGELOG.md` — new `[x.y.z]` section with `.keel` examples for features, plain-English explanation for bug fixes.
 - `ROADMAP.md` — shipped items marked `[x]`, new release row added, no stale `[ ]` markers.
 - `Cargo.toml` — `version` bumped to the new version.
+- `docs/status/features.json` — update any namespace, attribute, or CLI entry whose status or content changed. Field rules:
+  - `namespace[*].purpose` must match the corresponding row in `docs/src/guide/prelude.md` exactly.
+  - `namespace[*].implemented_ops` and `namespace[*].gaps` must match the corresponding row in `ROADMAP.md`'s namespace table exactly.
+  - `attribute[*].notes` must match the corresponding row in `ROADMAP.md`'s attribute table exactly.
+  - `cli[*].notes` must match the corresponding row in `ROADMAP.md`'s CLI table exactly.
+  - `features.json` is the source of truth — keep the docs in sync with it, not the other way around.
+
+## Step 7a — Status Consistency
+
+Run the status consistency tests to verify `docs/status/features.json` is aligned with `ROADMAP.md` and `docs/src/guide/prelude.md`:
+
+```bash
+cargo test --test status_docs_tests
+```
+
+All five tests must pass. If any fail, the error message shows the exact expected row — update `features.json`, `ROADMAP.md`, or `prelude.md` accordingly, keeping `features.json` as the source of truth.
 
 ## Step 8 — Integration Tests
 
@@ -100,7 +116,7 @@ Once approved, stage and commit:
 
 ```bash
 git add Cargo.toml Cargo.lock CHANGELOG.md ROADMAP.md SPEC.md \
-        src/ tests/ docs/ examples/
+        src/ tests/ docs/ examples/ .github/
 git commit -m "Release v0.1.X — <short theme>"
 git push origin main
 ```

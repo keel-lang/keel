@@ -2,7 +2,7 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
-External connections live in stdlib namespaces. `Email` handles IMAP/SMTP. `Http` handles HTTP. `Db` handles SQL. Each one dispatches through an interface so the backend is swappable.
+External connections live in stdlib namespaces. `Email` handles IMAP/SMTP. `Http` handles HTTP. `Db` is reserved for SQL. The interface boundary is planned so these backends can become swappable; v0.1 wires the default `Email` and `Http` transports only.
 
 ## `Email`
 
@@ -164,7 +164,7 @@ Db.exec(db, "UPDATE status SET seen = true WHERE id = ?", params: [ticket.id])
 
 ## Swapping the backend <span class="badge badge-soon">Coming soon</span>
 
-Each namespace dispatches through an interface. To plug in a custom transport:
+The planned interface flow for custom transports is:
 
 ```keel
 # In your startup

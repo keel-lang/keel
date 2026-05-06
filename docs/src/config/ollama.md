@@ -62,7 +62,7 @@ keel run agent.keel
 ## Verify
 
 ```bash
-KEEL_OLLAMA_MODEL=gemma4 keel run examples/test_ollama.keel
+KEEL_OLLAMA_MODEL=gemma4 keel run examples/hello_world.keel
 ```
 
 Expected output:

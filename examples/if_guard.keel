@@ -1,0 +1,20 @@
+type Email = { from: str, subject: str, unread: bool }
+
+agent Inbox {
+  @on_start {
+    emails = [{ from: "alice@example.com", subject: "hello", unread: true }, { from: "bob@example.com", subject: "urgent", unread: true }, { from: "carol@example.com", subject: "fyi", unread: false }]
+    for email in emails if email.unread {
+      Io.show("Processing: {email.subject} from {email.from}")
+    }
+    for { from, subject } in emails if subject != "fyi" {
+      Io.show("{from}: {subject}")
+    }
+    Io.show("Even numbers 1-10:")
+    for n in 1..10 if n % 2 == 0 {
+      Io.show(n)
+    }
+    stop(self)
+  }
+}
+
+run(Inbox)

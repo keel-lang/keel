@@ -327,7 +327,6 @@ pub enum Expr {
     StringLit(Vec<StringPart>),
     Bool(bool),
     None_,
-    Now,
 
     // ── Identifiers & access ─────────────────────────────────────────
     Ident(String),
@@ -480,6 +479,7 @@ pub enum UnOp {
 
 #[derive(Debug, Clone, Copy)]
 pub enum DurationUnit {
+    Milliseconds,
     Seconds,
     Minutes,
     Hours,
@@ -491,6 +491,7 @@ impl DurationUnit {
     /// Canonical lower-case unit name for error messages and the formatter.
     pub fn canonical_name(self) -> &'static str {
         match self {
+            DurationUnit::Milliseconds => "ms",
             DurationUnit::Seconds => "seconds",
             DurationUnit::Minutes => "minutes",
             DurationUnit::Hours => "hours",

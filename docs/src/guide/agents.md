@@ -73,9 +73,9 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> As of v0.1.10, `@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@limits` (timeout) are fully wired. `@team`, `@provider` are parsed but have no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+> As of v0.1.10, `@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@limits` (timeout) are fully wired. `@team` is used by `Agent.broadcast` routing. `@provider` is parsed but has no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
 
-### `@tools` — capability list <span class="badge badge-soon">Coming soon</span>
+### `@tools` — capability list
 
 ```keel
 @tools [Email, Calendar, Http]
@@ -83,9 +83,9 @@ Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_
 
 Binds stdlib modules as the agent's declared capabilities. The runtime uses this list to:
 - Allow/deny which stdlib namespaces the agent can use
-- Report the agent's capabilities to the LLM (for tool-use style prompting)
+- Report the agent's capabilities to the LLM (for tool-use style prompting, planned)
 
-> **Status:** parsed in v0.1, no capability gating enforced yet.
+> **Status:** capability gating is enforced. If `@tools` is omitted, all namespaces are allowed. If it is present, calls to unlisted namespaces raise `CapabilityError`.
 
 ### `@memory` — agent memory scope
 
@@ -147,7 +147,7 @@ Rules are injected into every LLM prompt this agent makes as a bullet list under
 
 Enforced by the runtime with deterministic logic. Violations raise errors; they don't just ask the LLM nicely.
 
-> **Status:** parsed as a struct literal in v0.1 but not enforced — no cost, token, timeout, or confirmation gating yet.
+> **Status:** `timeout` is enforced via `Control.with_timeout`. Cost, token, and confirmation gates are parsed but not enforced at the Ollama level yet.
 
 ### `@on_start` / `@on_stop` — lifecycle hooks
 

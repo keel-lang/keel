@@ -649,7 +649,7 @@ impl Checker {
                 self.bind_to_scope(binding, &element_ty, scope);
                 if let Some(pred) = filter {
                     let pty = self.infer_expr(pred, scope);
-                    self.expect(&pty, &Ty::Bool, "for-where predicate");
+                    self.expect(&pty, &Ty::Bool, "for-if guard");
                 }
                 for (s, s_span) in body {
                     self.check_stmt(s, s_span.clone(), scope);
@@ -777,7 +777,6 @@ impl Checker {
             Expr::Float(_) => Ty::Float,
             Expr::Bool(_) => Ty::Bool,
             Expr::None_ => Ty::None_,
-            Expr::Now => Ty::Datetime,
 
             Expr::StringLit(parts) => {
                 for p in parts {
@@ -1011,6 +1010,13 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Time" {
+                        match method.as_str() {
+                            "now" => return Ty::Datetime,
+                            "parse" => return Ty::Nullable(Box::new(Ty::Datetime)),
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -1031,6 +1037,8 @@ impl Checker {
                     (Ty::Map(_, _), "len" | "count" | "size") => Ty::Int,
                     (Ty::Map(_, _), "is_empty") => Ty::Bool,
                     (Ty::Map(_, _), "contains" | "has") => Ty::Bool,
+                    (Ty::Datetime, "parts") => Ty::Unknown,
+                    (Ty::Datetime, "format") => Ty::Nullable(Box::new(Ty::Str)),
                     _ => Ty::Unknown,
                 }
             }

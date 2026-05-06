@@ -76,8 +76,8 @@ if else when where
 for in
 try catch return
 as and or not
-true false none now
+true false none
 set
 ```
 
-28 words. Anything else — `classify`, `every`, `role`, `memory`, `tools`, `delegate`, `fetch`, `send`, `ask`, `confirm`, `run`, `stop`, … — is a prelude identifier, not a keyword. See `SPEC.md §10`.
+Anything else — `classify`, `every`, `role`, `memory`, `tools`, `delegate`, `fetch`, `send`, `ask`, `confirm`, `run`, `stop`, … — is a prelude identifier, not a keyword. See `SPEC.md §10`.

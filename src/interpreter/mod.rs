@@ -914,7 +914,6 @@ impl Interpreter {
                 Expr::Float(f) => Ok(Value::Float(*f)),
                 Expr::Bool(b) => Ok(Value::Bool(*b)),
                 Expr::None_ => Ok(Value::None),
-                Expr::Now => Ok(Value::String(chrono_now_iso())),
 
                 Expr::StringLit(parts) => {
                     let mut out = String::new();
@@ -1390,12 +1389,7 @@ impl Interpreter {
                             if let Expr::Duration { value, unit } = expr
                                 && let Expr::Integer(n) = value.as_ref()
                             {
-                                let secs = match unit {
-                                    DurationUnit::Seconds => *n as f64,
-                                    DurationUnit::Minutes => (*n * 60) as f64,
-                                    DurationUnit::Hours => (*n * 3600) as f64,
-                                    _ => *n as f64,
-                                };
+                                let secs = Value::duration_seconds(*n, *unit);
                                 timeout = Some(secs);
                             }
                         }
@@ -1659,6 +1653,40 @@ impl Interpreter {
             (Value::Float(f), "to_str") => Ok(Value::String(f.to_string())),
             (Value::Bool(b), "to_str") => Ok(Value::String(b.to_string())),
             (Value::EnumVariant(_, v, _), "to_str") => Ok(Value::String(v.clone())),
+            // datetime methods — dispatched on strings that parse as RFC 3339
+            (Value::String(s), "parts") => {
+                use chrono::{Datelike, Timelike};
+                match chrono::DateTime::parse_from_rfc3339(s) {
+                    Ok(dt) => {
+                        let mut m = std::collections::HashMap::new();
+                        m.insert("year".into(), Value::Integer(dt.year() as i64));
+                        m.insert("month".into(), Value::Integer(dt.month() as i64));
+                        m.insert("day".into(), Value::Integer(dt.day() as i64));
+                        m.insert("hour".into(), Value::Integer(dt.hour() as i64));
+                        m.insert("minute".into(), Value::Integer(dt.minute() as i64));
+                        m.insert("second".into(), Value::Integer(dt.second() as i64));
+                        m.insert(
+                            "millisecond".into(),
+                            Value::Integer((dt.nanosecond() / 1_000_000) as i64),
+                        );
+                        m.insert("tz".into(), Value::String(dt.offset().to_string()));
+                        Ok(Value::Map(m))
+                    }
+                    Err(_) => Ok(Value::None),
+                }
+            }
+            (Value::String(s), "format") => {
+                let pattern = args
+                    .iter()
+                    .find(|a| a.name.as_deref() == Some("as"))
+                    .or_else(|| args.first())
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
+                match chrono::DateTime::parse_from_rfc3339(s) {
+                    Ok(dt) => Ok(Value::String(dt.format(&pattern).to_string())),
+                    Err(_) => Ok(Value::None),
+                }
+            }
             _ => Err(runtime_error(format!(
                 "Method `{method}` not available on {}",
                 obj.type_name()
@@ -1866,6 +1894,67 @@ fn eval_binary(op: BinOp, l: Value, r: Value) -> Result<Value> {
         (Gte, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
         (And, a, b) => Ok(Value::Bool(a.is_truthy() && b.is_truthy())),
         (Or, a, b) => Ok(Value::Bool(a.is_truthy() || b.is_truthy())),
+        // datetime (ISO string) ± duration → ISO string  (millisecond precision)
+        (Add, Value::String(s), Value::Duration(secs)) => {
+            use chrono::SecondsFormat;
+            let dt = parse_dt(s).ok_or_else(|| {
+                runtime_error(format!("cannot add duration to non-datetime string {s:?}"))
+            })?;
+            let ms = (*secs * 1000.0) as i64;
+            let shifted = dt + chrono::Duration::milliseconds(ms);
+            Ok(Value::String(
+                shifted.to_rfc3339_opts(SecondsFormat::Millis, true),
+            ))
+        }
+        (Sub, Value::String(s), Value::Duration(secs)) => {
+            use chrono::SecondsFormat;
+            let dt = parse_dt(s).ok_or_else(|| {
+                runtime_error(format!(
+                    "cannot subtract duration from non-datetime string {s:?}"
+                ))
+            })?;
+            let ms = (*secs * 1000.0) as i64;
+            let shifted = dt - chrono::Duration::milliseconds(ms);
+            Ok(Value::String(
+                shifted.to_rfc3339_opts(SecondsFormat::Millis, true),
+            ))
+        }
+        // datetime - datetime → duration (seconds)
+        (Sub, Value::String(a), Value::String(b)) => {
+            let da = parse_dt(a).ok_or_else(|| {
+                runtime_error(format!("cannot subtract: {a:?} is not a datetime string"))
+            })?;
+            let db = parse_dt(b).ok_or_else(|| {
+                runtime_error(format!("cannot subtract: {b:?} is not a datetime string"))
+            })?;
+            let secs = (da - db).num_milliseconds() as f64 / 1000.0;
+            Ok(Value::Duration(secs))
+        }
+        // datetime string comparison
+        (Lt, Value::String(a), Value::String(b)) => match (parse_dt(a), parse_dt(b)) {
+            (Some(da), Some(db)) => Ok(Value::Bool(da < db)),
+            _ => Err(runtime_error(format!(
+                "cannot compare strings {a:?} and {b:?} with `<`"
+            ))),
+        },
+        (Gt, Value::String(a), Value::String(b)) => match (parse_dt(a), parse_dt(b)) {
+            (Some(da), Some(db)) => Ok(Value::Bool(da > db)),
+            _ => Err(runtime_error(format!(
+                "cannot compare strings {a:?} and {b:?} with `>`"
+            ))),
+        },
+        (Lte, Value::String(a), Value::String(b)) => match (parse_dt(a), parse_dt(b)) {
+            (Some(da), Some(db)) => Ok(Value::Bool(da <= db)),
+            _ => Err(runtime_error(format!(
+                "cannot compare strings {a:?} and {b:?} with `<=`"
+            ))),
+        },
+        (Gte, Value::String(a), Value::String(b)) => match (parse_dt(a), parse_dt(b)) {
+            (Some(da), Some(db)) => Ok(Value::Bool(da >= db)),
+            _ => Err(runtime_error(format!(
+                "cannot compare strings {a:?} and {b:?} with `>=`"
+            ))),
+        },
         _ => Err(runtime_error(format!(
             "Cannot apply `{:?}` to {} and {}",
             op,
@@ -1882,8 +1971,29 @@ fn is_pascal_case(s: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn chrono_now_iso() -> String {
-    // Deliberately primitive; the Time stdlib namespace will expose
-    // proper datetime types later.
-    format!("{:?}", std::time::SystemTime::now())
+fn parse_dt(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&chrono::Utc));
+    }
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M",
+        "%Y-%m-%d",
+    ] {
+        if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt) {
+            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                ndt,
+                chrono::Utc,
+            ));
+        }
+        if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, fmt) {
+            let ndt = nd.and_hms_opt(0, 0, 0)?;
+            return Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
+                ndt,
+                chrono::Utc,
+            ));
+        }
+    }
+    None
 }

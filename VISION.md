@@ -26,9 +26,9 @@ This is what earns keeping the core small: there is almost nothing that can't be
 
 ### 2. The standard library is the prelude.
 
-Every namespace in the stdlib is auto-imported. Users get keyword-feel ergonomics (`Ai.classify(...)`) without the compiler having to know about `classify`. That means parser, lexer, type checker, and LSP stay free of feature-specific special cases, and stdlib implementations are swappable without leaving the language.
+Every namespace in the stdlib is auto-imported. Users get keyword-feel ergonomics (`Ai.classify(...)`) without the compiler having to know about `classify`. That means parser, lexer, type checker, and LSP stay free of feature-specific special cases. The interface boundary is designed so stdlib implementations can become swappable without leaving the language; v0.1 ships Ollama only.
 
-If `Ai.classify` were a keyword, a user who wanted a different LLM would need a fork, a compile flag, or a monkey patch. With `Ai.classify` as a function behind an `LlmProvider` interface, they install their own implementation at startup. The language doesn't care.
+If `Ai.classify` were a keyword, a user who wanted a different LLM would need a fork, a compile flag, or a monkey patch. With `Ai.classify` as a function behind an `LlmProvider` interface, custom implementation installation can live in the runtime instead of the parser. That registry is planned after v0.1.
 
 ---
 
@@ -55,7 +55,7 @@ run(EmailBot)
 ```
 
 - **22 keywords.** If a word isn't reserved, it's an identifier. Namespaces, duration units, attribute names — all identifiers.
-- **Full type inference.** Every expression has a type. Mismatches are compile errors. Annotations are rarely needed.
+- **Static checking with an inference target.** The design aims for full inference; the current alpha checker catches core mismatches and still has deliberate gaps tracked in the roadmap.
 - **Exhaustive pattern matching.** Missing an enum variant is a compile error, not a runtime surprise.
 - **Nullable safety.** Operations that can fail return nullable types. The caller handles failure explicitly.
 - **Structural concurrency.** `Async.spawn`, `Async.join_all`, `Async.select`. Parent cancels children. Simple and sufficient.

@@ -1,0 +1,31 @@
+agent Timer {
+  @on_start {
+    t = Time.now()
+    Io.show("Now: {t}")
+    ny = Time.now(tz: "America/New_York")
+    Io.show("New York: {ny}")
+    deadline = Time.now() + 3.days
+    Io.show("Deadline: {deadline}")
+    past = Time.now() - 1.hours
+    Io.show("An hour ago: {past}")
+    parsed = Time.parse("2026-05-01T09:00:00Z")
+    Io.show("Parsed: {parsed}")
+    naive = Time.parse("2026-05-01", tz: "UTC")
+    Io.show("Naive+tz: {naive}")
+    bad = Time.parse("2026-05-01")
+    Io.show("Naive without tz: {bad}")
+    today = Time.now().format(as: "%Y-%m-%d")
+    Io.show("Today: {today}")
+    p = parsed.parts()
+    Io.show("Year: {p.year}, Month: {p.month}, TZ: {p.tz}")
+    start = Time.parse("2026-05-01T00:00:00Z")
+    finish = Time.parse("2026-05-02T00:00:00Z")
+    diff = finish - start
+    Io.show("Diff: {diff}")
+    short = 500.ms
+    Io.show("Half second: {short}")
+    stop(self)
+  }
+}
+
+run(Timer)

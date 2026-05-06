@@ -70,11 +70,8 @@ fn lex_cast_and_logic_keywords() {
 
 #[test]
 fn lex_value_literals() {
-    let toks = tokens("true false none now");
-    assert_eq!(
-        toks,
-        vec![Token::True, Token::False, Token::None_, Token::Now]
-    );
+    let toks = tokens("true false none");
+    assert_eq!(toks, vec![Token::True, Token::False, Token::None_]);
 }
 
 #[test]

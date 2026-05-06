@@ -4,13 +4,13 @@
 
 Keel's standard library is auto-imported into every program. You never write `use keel/ai` to get `Ai.classify`. The namespace is already in scope.
 
-This page explains how the prelude works, why it exists, and how to swap in your own implementations.
+This page explains how the prelude works, why it exists, and where custom implementations fit into the design. v0.1 ships Ollama as the only LLM backend; broad runtime swapping is planned.
 
 ## Why a Prelude
 
 - **Small core.** The compiler doesn't know about `classify`, `fetch`, or `every`. Those are library function calls that happen to always be in scope. Parser, lexer, and type checker stay free of domain-specific special cases.
 - **Keyword feel.** You still write `Ai.classify(...)` without ceremony. The namespace qualifier is short; autocomplete does the work.
-- **Swappable implementations.** Every prelude function dispatches through an **interface**. Users install custom LLM providers, memory stores, schedulers, or HTTP clients at startup.
+- **Interface boundary.** Prelude namespaces are designed around interfaces so custom LLM providers, memory stores, schedulers, or HTTP clients can be installed in a later runtime. v0.1 exposes `using:` model aliases for `Ai.*`; it does not yet expose a general provider registry.
 - **No grammatical ambiguity.** Every stdlib call is an ordinary function call. No `fetch X where Y` special parsing.
 
 ## The Namespaces
@@ -34,13 +34,13 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Async` | ✅ | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | ✅ | `retry`, `with_timeout`, `with_deadline` |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
-| `Time` | 🟡 | Time utilities: `now`, `parse`, `format` — registered; raises "planned for v0.2" error (use the `now` keyword for now) |
+| `Time` | ✅ | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
 | `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
 | `Agent` | ✅ | `run`, `stop`, `send`, `delegate`, `broadcast` |
 
 `run` and `stop` are re-exported at the top level so programs can end with `run(MyAgent)` without the namespace prefix.
 
-> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired — calls will either return `none` (stubs) or raise an "unknown method" error (missing namespaces). 🟡 means partial: something works, but not everything. Track the full status in [ROADMAP.md](../../ROADMAP.md).
+> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces
 
@@ -75,7 +75,7 @@ Every prelude namespace dispatches through one or more interfaces:
 
 ## Swapping Implementations
 
-Install a custom implementation at startup:
+The planned custom-provider flow looks like this:
 
 ```keel
 # Use a custom LLM provider for the whole program
@@ -91,7 +91,7 @@ agent Specialist {
 urgency = Ai.classify(body, as: Urgency, using: "smart")
 ```
 
-The language doesn't know what an LLM is. It dispatches through `LlmProvider`. Any value with `complete` and `embed` methods of the right shape works.
+The language doesn't know what an LLM is. The design dispatches through `LlmProvider`; once provider installation is wired, any value with `complete` and `embed` methods of the right shape can satisfy it.
 
 > **Status:** `using:` is wired in v0.1 (resolves via `KEEL_MODEL_*` env vars and Ollama tags). `Ai.install(...)` and `@provider` <span class="badge badge-soon">Coming soon</span> — v0.1 ships with Ollama only.
 

@@ -366,7 +366,7 @@ impl Fmt {
                 self.push(&format!("for {} in ", binding_str(binding)));
                 self.push(&self.expr_str(iter));
                 if let Some(pred) = filter {
-                    self.push(" where ");
+                    self.push(" if ");
                     self.push(&self.expr_str(pred));
                 }
                 self.push(" {");
@@ -513,7 +513,6 @@ impl Fmt {
             }
             Expr::Bool(b) => b.to_string(),
             Expr::None_ => "none".into(),
-            Expr::Now => "now".into(),
             Expr::StringLit(parts) => self.string_lit(parts),
             Expr::Ident(name) => name.clone(),
             Expr::SelfAccess(f) => format!("self.{f}"),
@@ -707,7 +706,7 @@ impl Fmt {
                 s.push_str(&format!("for {} in ", binding_str(binding)));
                 s.push_str(&self.expr_at(iter, indent));
                 if let Some(pred) = filter {
-                    s.push_str(" where ");
+                    s.push_str(" if ");
                     s.push_str(&self.expr_at(pred, indent));
                 }
                 s.push_str(" {\n");

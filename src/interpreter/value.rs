@@ -92,6 +92,7 @@ impl Value {
 
     pub fn duration_seconds(value: i64, unit: DurationUnit) -> f64 {
         match unit {
+            DurationUnit::Milliseconds => value as f64 / 1000.0,
             DurationUnit::Seconds => value as f64,
             DurationUnit::Minutes => value as f64 * 60.0,
             DurationUnit::Hours => value as f64 * 3600.0,

@@ -2,27 +2,27 @@
 
 > **Status:** `keel build` is deferred post-v0.1. The tree-walking interpreter handles every alpha workload, so shipping a bytecode compiler is punted until a concrete motivator (LLVM/WASM backend, embeddable runtime) lands. Tracked in [ROADMAP](../../ROADMAP.md).
 
-Compile a Keel program to bytecode.
+`keel build` is present in the CLI but intentionally returns an error today. Use `keel run` to execute programs and `keel check` to type-check without running.
 
 ```bash
 keel build <file.keel>
 ```
 
-Produces a `.keelc` file (JSON-serialized bytecode) that can be cached for faster loading.
+When the compiler is implemented, this command is expected to produce a `.keelc` bytecode artifact. No `.keelc` output is produced in v0.1.
 
 ## Example
 
 ```bash
-keel build examples/minimal.keel
-# ✓ Compiled examples/minimal.keel → examples/minimal.keelc (28 ops, 2 functions)
+keel build examples/hello_world.keel
+# error: keel build is deferred post-v0.1 — use `keel run`
 ```
 
 ## Bytecode format
 
-The `.keelc` file contains:
+The planned `.keelc` file is expected to contain:
 - **main chunk** — top-level agent code
 - **function chunks** — compiled tasks
 - **string pool** — deduplicated string constants
 - **register count** — per function/chunk
 
-The bytecode is a register-based instruction set with 40+ opcodes covering arithmetic, comparison, control flow, function calls, data structures, and human interaction.
+The VM and bytecode format live in stub modules until the compiler is resumed.

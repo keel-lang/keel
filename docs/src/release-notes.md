@@ -4,6 +4,52 @@
 
 ---
 
+## v0.1.14 — 2026-05-05
+
+### `for` loop `if` guard
+
+`for` loops now accept an inline `if` filter, replacing the previous `where` keyword in that position:
+
+```keel
+for email in emails if email.unread { triage(email) }
+for n in 1..10 if n % 2 == 0 { Io.show(n) }
+```
+
+**Breaking:** `for x in list where cond` no longer parses. Use `if` instead.
+
+### `Time` namespace — full rework
+
+`now` is no longer a keyword. The `Time` namespace now provides timezone-aware datetime handling with method syntax on values.
+
+```keel
+# Factories — namespace style
+now  = Time.now()                          # UTC, millisecond precision
+ny   = Time.now(tz: "America/New_York")    # IANA timezone
+dt   = Time.parse("2026-05-06T09:00:00Z") # datetime? (none on failure)
+dt2  = Time.parse("2026-05-06", tz: "UTC") # coerce naive string with tz:
+
+# Methods on the datetime value
+p    = dt.parts()           # {year, month, day, hour, minute, second, millisecond, tz}
+s    = dt.format(as: "%Y-%m-%d")   # str?
+
+# Operators
+elapsed  = finish - start   # datetime - datetime → duration
+deadline = Time.now() + 3.days
+ok       = deadline > Time.now()
+
+# Millisecond duration
+short = 500.ms              # aliases: millis, millisecond, milliseconds
+```
+
+**Breaking changes from the earlier v0.1.14 Time stub:**
+- `Time.format(dt, as:)` removed → use `dt.format(as:)`
+- `Time.diff(a, b)` removed → use `a - b`
+- `Time.parse()` rejects naive strings without a TZ offset — returns `none` instead of raising. Use `Time.parse(str, tz: name)` to coerce.
+
+Naive strings (no UTC offset in the string) are rejected by design — all datetimes in Keel are timezone-aware.
+
+---
+
 ## v0.1.13 — 2026-05-05
 
 ### Destructuring (§8.4)

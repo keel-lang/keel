@@ -2,7 +2,7 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
-Keel is **statically typed with full inference**. You rarely need to write type annotations — the compiler figures them out — but every expression has a known type, and mismatches are caught before your code runs.
+Keel is **statically typed with full inference as the design target**. In the current alpha, the checker catches core mismatches before your code runs and deliberately leaves some unsupported cases as `Unknown`; [ROADMAP.md](../../ROADMAP.md) tracks current checker coverage.
 
 ## Primitive types
 

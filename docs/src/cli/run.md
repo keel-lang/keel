@@ -31,7 +31,7 @@ These flags apply to every subcommand; `keel run` uses them most.
 KEEL_OLLAMA_MODEL=gemma4 keel run examples/email_agent.keel
 
 # Test without a real LLM
-KEEL_LLM=mock keel run examples/test_ollama.keel
+KEEL_LLM=mock keel run examples/hello_world.keel
 
 # Verbose — show every Ai.* call as it fires
 keel --trace run examples/email_agent.keel

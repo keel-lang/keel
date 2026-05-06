@@ -14,7 +14,7 @@
 
 ---
 
-## Status: Alpha (v0.1.0)
+## Status: Alpha (v0.1)
 
 Keel is in **early design and implementation**. There are **no production users** and no stable API. The language and standard library will change — including in ways that break existing `.keel` files — across upcoming 0.x releases.
 
@@ -71,7 +71,7 @@ Zero imports. The `Ai`, `Io`, `Email`, `Schedule` namespaces are in scope from t
 
 ## Design in One Paragraph
 
-The core language ships **27 keywords** and the actor model. Everything else is a stdlib function call routed through an **interface** that users can swap. LLM providers, memory stores, HTTP clients, schedulers, and loggers are all replaceable without leaving the language. Reserved keyword inflation is the enemy. See [SPEC.md §0–§3](SPEC.md) for the design and [SPEC.md §10](SPEC.md) for the full keyword list.
+The core language has a small reserved keyword set and the actor model. Everything else is a stdlib function call behind a planned **interface** boundary. v0.1 ships that boundary in the design and uses Ollama as the only LLM backend; runtime provider swapping is still planned. Reserved keyword inflation is the enemy. See [SPEC.md §0–§3](SPEC.md) for the design, [ROADMAP.md](ROADMAP.md) for shipped status, and [SPEC.md §10](SPEC.md) for the full keyword list.
 
 ---
 
@@ -92,7 +92,7 @@ cd keel && cargo build --release
 ./target/release/keel --version
 ```
 
-The tap and the installer both pull the latest GitHub release. Before the first release tag ships they'll fail — use the source path until then.
+The tap and the installer both pull the latest GitHub release. The source path is the most direct fallback if a packaged install fails.
 
 ---
 
@@ -104,7 +104,7 @@ ollama pull gemma4
 export KEEL_OLLAMA_MODEL=gemma4
 
 # Run an example
-./target/release/keel run examples/minimal.keel
+./target/release/keel run examples/hello_world.keel
 ```
 
 ---
@@ -117,10 +117,10 @@ export KEEL_OLLAMA_MODEL=gemma4
 | Ask a human | `input()` + manual formatting | `Io.ask("How to respond?")` |
 | Schedule a check | `schedule` library + while loop | `Schedule.every(5.minutes, () => { ... })` |
 | Send email | SMTP config + lettre-style setup | `Email.send(reply, to: addr)` |
-| Type safety | none at compile time | exhaustive match checking, null safety |
+| Type safety | none at compile time | exhaustive match checking, `T?` nullable types |
 | Imports needed | 10+ | 0 |
 
-The zero-import story comes from the **prelude**: stdlib namespaces are auto-imported into every file. The compiler doesn't know what `Ai` is — the runtime installs it. Users can swap any namespace's implementation by installing a different interface implementation at startup.
+The zero-import story comes from the **prelude**: stdlib namespaces are auto-imported into every file. The compiler doesn't know what `Ai` is — the runtime installs it. The interface model is the intended extension point; v0.1 exposes model alias selection through `using:` and `KEEL_MODEL_*`, while custom provider installation is still planned.
 
 ---
 
@@ -129,18 +129,19 @@ The zero-import story comes from the **prelude**: stdlib namespaces are auto-imp
 ```
 keel run agent.keel       Execute a program
 keel check agent.keel     Type-check without running
-keel build agent.keel     Compile to bytecode (.keelc)
 keel fmt agent.keel       Auto-format
 keel init my-project      Scaffold a new project
 keel repl                 Interactive REPL
+keel lint agent.keel      Static analysis; --fix flag
 keel lsp                  Language server (stdin/stdout)
+keel build agent.keel     Deferred: bytecode compiler post-v0.1
 ```
 
 ---
 
 ## LLM Provider
 
-Keel v0.1 ships with a single backend: **Ollama** (local, offline). It implements the `LlmProvider` interface; users can install custom implementations. No silent fallbacks — if a model isn't configured, you get a clear error.
+Keel v0.1 ships with a single backend: **Ollama** (local, offline). It follows the planned `LlmProvider` interface shape, but custom provider installation is not wired yet. No silent fallbacks — if a model isn't configured, you get a clear error.
 
 ```bash
 # Required: Ollama running locally with a pulled model
@@ -192,7 +193,7 @@ Do not write anything you're not willing to rewrite.
 
 ## Contributing
 
-Issues and PRs welcome. The spec ([SPEC.md](SPEC.md)) is the source of truth — if the implementation diverges, the spec wins unless the divergence is better, in which case the spec updates.
+Issues and PRs welcome. Document roles are explicit: [SPEC.md](SPEC.md) describes the language design target, [ROADMAP.md](ROADMAP.md) tracks shipped/partial/planned status, and the README plus mdBook describe current user-facing behavior.
 
 ---
 

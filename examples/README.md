@@ -6,20 +6,19 @@
 
 | File | What it demonstrates |
 |---|---|
-| [`minimal.keel`](minimal.keel) | Simplest agent with state, tasks, notifications |
 | [`hello_world.keel`](hello_world.keel) | Message handler + `Ai.draft` |
-| [`test_scheduling.keel`](test_scheduling.keel) | `Schedule.every` polling |
-| [`test_ollama.keel`](test_ollama.keel) | `Ai.classify`, `Ai.summarize`, `Ai.draft` end-to-end |
 | [`email_agent.keel`](email_agent.keel) | Full email triage + auto-reply agent |
 | [`customer_support.keel`](customer_support.keel) | Ticket classification + escalation |
 | [`code_reviewer.keel`](code_reviewer.keel) | PR risk assessment |
 | [`data_pipeline.keel`](data_pipeline.keel) | Collection operations, lambdas, validation |
 | [`daily_digest.keel`](daily_digest.keel) | Morning briefing from email |
 | [`meeting_prep.keel`](meeting_prep.keel) | Meeting context + briefing notes |
-| [`multi_agent_inbox.keel`](multi_agent_inbox.keel) | Multi-agent collaboration (design preview — `Agent.delegate` / `@team` not yet implemented in v0.1) |
-| [`self_message.keel`](self_message.keel) | Smallest `Agent.send` + `on message(...)` round-trip |
+| [`agent_delegation.keel`](agent_delegation.keel) | Multi-agent collaboration with `Agent.delegate` |
+| [`broadcast_team.keel`](broadcast_team.keel) | Team routing with `@team` and `Agent.broadcast` |
+| [`multi_agent_inbox.keel`](multi_agent_inbox.keel) | Multi-agent inbox orchestration sketch |
 | [`http_demo.keel`](http_demo.keel) | `Http.get` against a public endpoint |
 | [`at_demo.keel`](at_demo.keel) | `Schedule.at` with an ISO 8601 datetime |
+| [`cron_schedule.keel`](cron_schedule.keel) | `Schedule.cron` with 5-field cron expressions |
 | [`rich_enum.keel`](rich_enum.keel) | Rich enum variants: construction + destructuring |
 
 ## Common conventions

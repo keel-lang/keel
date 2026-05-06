@@ -54,9 +54,11 @@ Commands:
   init   Scaffold a new Keel project
   repl   Interactive REPL
   fmt    Format a Keel file
-  build  Compile a Keel file to bytecode
+  build  Stub: bytecode compiler deferred post-v0.1
   help   Print this message or the help of the given subcommand(s)
 ```
+
+`keel build` is listed because the CLI verb is reserved, but v0.1 intentionally returns a deferred-feature error. Use `keel run` or `keel check` for current workflows.
 
 ## LLM setup
 

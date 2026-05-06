@@ -1,8 +1,8 @@
 # Example: Multi-Agent Email System
 
-> **Alpha (v0.1).** Breaking changes expected. `Agent.delegate` is wired as of v0.1.4. `Agent.broadcast` and `@team` routing are <span class="badge badge-soon">Coming soon</span>. The program below is a design preview.
+> **Alpha (v0.1).** Breaking changes expected. `Agent.delegate` is wired as of v0.1.4. `Agent.broadcast` and `@team` routing are wired as of v0.1.6.
 
-A preview showing how multiple agents collaborate via `Agent.delegate` and the `@team` attribute.
+An example showing a multi-agent email workflow shape. For mailbox-specific coordination, use `Agent.delegate`, `Agent.send`, and `Agent.broadcast` as described in [Agent Communication](../guide/agent-communication.md).
 
 ```keel
 type Urgency  = low | medium | high | critical
@@ -50,7 +50,6 @@ agent FollowupScheduler {
 
 agent InboxManager {
   @role "You coordinate the email handling team"
-  @team [Classifier, Responder, FollowupScheduler]
 
   task handle(email: {body: str, from: str, subject: str}) {
     result = Classifier.triage(email) ?? {
@@ -106,8 +105,22 @@ InboxManager (orchestrator)
   └── FollowupScheduler    — manages follow-up reminders
 ```
 
-Each agent has its own role, model, and mailbox. Calling an agent's task from another agent goes through the target agent's mailbox — that's what "delegation" means at runtime. `@team [...]` registers the set of peer agents this agent will delegate to.
+Each agent has its own role, model, and mailbox. `Agent.delegate(target, task, args)` posts a named task event to the target agent's mailbox. `@team [...]` tags a running agent with one or more team names for `Agent.broadcast(team, data, event:)`.
+
+```keel
+agent Classifier {
+  @team ["email"]
+  on refresh(msg: str) { Io.show("Classifier refresh: {msg}") }
+}
+
+agent Coordinator {
+  @on_start {
+    Agent.run(Classifier)
+    Agent.broadcast("email", "new batch", event: "refresh")
+  }
+}
+```
 
 ## Status
 
-Multi-agent collaboration is **not in v0.1**. The `@team` attribute, cross-agent task calls, and `Agent.broadcast` will land in a later release. Use this page as a design reference.
+Multi-agent collaboration is available in v0.1 with in-process mailboxes. `Agent.delegate`, `Agent.send`, `Agent.broadcast`, and `@team` routing are wired. Current limits: delivery is in-process only, broadcast is non-blocking, and agents without a matching handler silently ignore the event.

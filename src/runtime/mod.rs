@@ -2263,14 +2263,59 @@ fn db_namespace() -> Namespace {
 
 fn time_namespace() -> Namespace {
     ns!("Time", {
-        "now" => |_i, _args| Box::pin(async move {
-            Err(miette::miette!("Time is planned for v0.2; use the `now` keyword instead."))
+        // Time.now() → str  — current time as millisecond-precision RFC 3339
+        // Time.now(tz: "America/New_York") → str  — offset-shifted RFC 3339
+        "now" => |_i, args| Box::pin(async move {
+            use chrono::SecondsFormat;
+            if let Some(tz_val) = find_arg(&args, "tz") {
+                let tz_str = tz_val.as_string();
+                let tz: chrono_tz::Tz = tz_str.parse().map_err(|_| {
+                    miette::miette!("Time.now: unknown timezone {tz_str:?}. Use an IANA name like \"America/New_York\".")
+                })?;
+                let now = chrono::Utc::now().with_timezone(&tz);
+                Ok(Value::String(now.to_rfc3339_opts(SecondsFormat::Millis, false)))
+            } else {
+                Ok(Value::String(chrono::Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)))
+            }
         }),
-        "parse" => |_i, _args| Box::pin(async move {
-            Err(miette::miette!("Time is planned for v0.2 and is not available in v0.1."))
-        }),
-        "format" => |_i, _args| Box::pin(async move {
-            Err(miette::miette!("Time is planned for v0.2 and is not available in v0.1."))
+        // Time.parse(str) → datetime?
+        //   Accepts only strings with an explicit timezone offset (RFC 3339).
+        //   Time.parse(str, tz: "UTC") — interprets a naive string in the given timezone.
+        //   Returns none on failure; does not raise.
+        "parse" => |_i, args| Box::pin(async move {
+            use chrono::SecondsFormat;
+            let s = positional(&args, 0)
+                .ok_or_else(|| miette::miette!("Time.parse: missing argument"))?
+                .as_string();
+
+            // Try RFC 3339 first (has explicit tz offset)
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&s) {
+                return Ok(Value::String(dt.to_rfc3339_opts(SecondsFormat::Millis, false)));
+            }
+
+            // Naive string — only valid if tz: is provided
+            if let Some(tz_val) = find_arg(&args, "tz") {
+                let tz_str = tz_val.as_string();
+                let Ok(tz) = tz_str.parse::<chrono_tz::Tz>() else {
+                    return Ok(Value::None);
+                };
+                for fmt in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S",
+                            "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"] {
+                    if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&s, fmt)
+                        && let chrono::LocalResult::Single(dt) = ndt.and_local_timezone(tz)
+                    {
+                        return Ok(Value::String(dt.to_rfc3339_opts(SecondsFormat::Millis, false)));
+                    }
+                    if let Ok(nd) = chrono::NaiveDate::parse_from_str(&s, fmt)
+                        && let Some(ndt) = nd.and_hms_opt(0, 0, 0)
+                        && let chrono::LocalResult::Single(dt) = ndt.and_local_timezone(tz)
+                    {
+                        return Ok(Value::String(dt.to_rfc3339_opts(SecondsFormat::Millis, false)));
+                    }
+                }
+            }
+
+            Ok(Value::None)
         }),
     })
 }

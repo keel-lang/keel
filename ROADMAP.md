@@ -8,7 +8,7 @@
 
 1. **Small core, deep stdlib.** Everything that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime.
 2. **Rust from day one.** Single-binary distribution, async via Tokio, no runtime dependencies on other language ecosystems.
-3. **Prelude-as-stdlib.** Users never write `use keel/ai`. Namespaces like `Ai`, `Io`, `Schedule`, `Http` are auto-imported. Implementation is swappable via interfaces.
+3. **Prelude-as-stdlib.** Users never write `use keel/ai`. Namespaces like `Ai`, `Io`, `Schedule`, `Http` are auto-imported. Implementations are designed to become swappable via interfaces; v0.1 ships Ollama only.
 4. **No silent fallbacks.** Configuration mistakes surface as errors at startup, not as silent mock responses at runtime.
 
 ---
@@ -18,7 +18,7 @@
 **Goal:** a runnable language where agents can be declared, type-checked, and executed end-to-end with a real LLM provider.
 
 ### Design
-- [x] Reserved keyword set: 27 words (see [SPEC.md §10](SPEC.md))
+- [x] Reserved keyword set (see [SPEC.md §10](SPEC.md))
 - [x] Prelude + interfaces + attributes ([SPEC.md](SPEC.md))
 - [x] Documentation: installation, language guide, stdlib namespace pages, examples
 
@@ -92,19 +92,24 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 | `Json` | [x] | `parse`, `stringify` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
-| `Time` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error (use `now` keyword) |
+| `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 
 #### LLM providers
 - [x] Ollama backend wired into every `Ai.*` call
 - [ ] Provider-swapping story (`Ai.install(MyProvider)` / `@provider MyProvider`) — `LlmProvider` interface exists in docs, no pluggable runtime registry yet
 
 #### CLI
-- [x] `keel run` / `keel check` / `keel init`
-- [x] `keel fmt` — idempotent round-trip against the AST
-- [x] `keel repl` — multi-line input, persistent environment
-- [x] `keel lint` — unused vars, uncalled tasks, `Ai.*` outside agent, unread state; `--fix` flag (v0.1.9)
-- [x] `keel lsp` — diagnostics, hover, completion, go-to-definition, rename (v0.1.6–v0.1.8)
-- [ ] `keel build` — bytecode compiler + VM (explicitly deferred post-v0.1)
+
+| Command | Status | Notes |
+|---|---|---|
+| `keel run` | [x] | Execute a .keel program |
+| `keel check` | [x] | Type-check only, no execution |
+| `keel fmt` | [x] | Auto-format; idempotent round-trip against the AST |
+| `keel init` | [x] | Scaffold a new project |
+| `keel repl` | [x] | Interactive REPL; multi-line input, persistent environment |
+| `keel lint` | [x] | Static analysis; `--fix` flag (v0.1.9) |
+| `keel lsp` | [x] | Language server; diagnostics, hover, completion, go-to-definition, rename |
+| `keel build` | [ ] | Bytecode compiler + VM; explicitly deferred post-v0.1 |
 
 #### Dependencies
 - [x] Rust edition 2024 (min rustc 1.85)
@@ -121,8 +126,8 @@ Two tiers — core attributes drive language behavior, stdlib attributes are plu
 
 **Docs ↔ implementation reconciliation (short-term cleanup):**
 - [x] Tag every unimplemented or partial stdlib page in `docs/src/guide/*.md` with a `Coming soon` badge and a `> Status:` callout that links back to this roadmap
-- [x] Mark `Search` / `Db` / `Time` as `⏳` in the `docs/src/guide/prelude.md` namespace table with an explicit v0.1-scope callout
-- [x] Register `Search` / `Db` / `Time` as stub namespaces so calls raise a clear "planned for v0.2" error instead of a generic "unknown method"
+- [x] Mark `Search` / `Db` as partial in the `docs/src/guide/prelude.md` namespace table with an explicit v0.1-scope callout
+- [x] Register `Search` / `Db` as stub namespaces so calls raise a clear "planned for v0.2" error instead of a generic "unknown method"
 
 ### Release
 - [x] Release workflow builds macOS (Apple Silicon) + Linux x86_64 tarballs, computes SHA-256s, and writes `Formula/keel.rb` into the `keel-lang/homebrew-tap` repo. Auth uses a short-lived installation token minted from the `keel-release-bot` GitHub App (installed on both repos; secrets `TAP_APP_ID` + `TAP_APP_PRIVATE_KEY` on this repo). Intel Macs build from source — prebuilt Intel binaries are not shipped.
@@ -456,6 +461,43 @@ Keyword-named fields (`from`, `state`, `in`, etc.) work in all forms.
 - [x] `destruct_keyword_field_from` — `{from, subject} = email` parses correctly
 - [x] `examples_all_parse_includes_destructure` — `keel check destructure.keel` passes
 - [x] `examples_all_parse` — `destructure` added to the smoke list
+
+---
+
+## v0.1.14 — Time & Guards
+
+**Theme:** Implement the `Time` namespace and replace the `where` guard keyword with `if` in `for` loops.
+
+**Status:** shipped.
+
+### Changes
+
+- [x] **`for...if` guard** — `for x in list if cond { ... }` replaces `for x in list where cond { ... }`. Breaking change; no standard examples used the old form. Parser, formatter, type checker, and LSP all updated. `where` remains reserved for `when` arm guards and future type-predicate syntax.
+- [x] **`now` removed as keyword** — `now` was a reserved keyword; replaced by `Time.now()` namespace method.
+- [x] **`Time` namespace — full rework** — timezone-aware datetime handling. `Time.now(tz:)` (IANA names), `Time.parse(str, tz:)` (rejects naive strings without TZ offset, returns `none` on failure), `dt.parts()` → map with `{year, month, day, hour, minute, second, millisecond, tz}`, `dt.format(as: pattern)` → `str?`. `Time.format` and `Time.diff` removed — use `dt.format()` and `a - b`.
+- [x] **`datetime - datetime → duration`** — `a - b` on two datetime strings returns a `duration`. `datetime ± duration` preserves millisecond precision.
+- [x] **Millisecond duration literal** — `500.ms`, `1.millis`, `1.milliseconds`. `Time.now()` emits millisecond-precision RFC 3339.
+- [x] **Keyword count claims removed** — `README.md`, `SPEC.md`, `ROADMAP.md`, `CLAUDE.md` no longer claim a specific keyword count.
+
+### Tests
+
+- [x] `if_guard_for_filters_elements` — even numbers from a list
+- [x] `if_guard_for_range` — range with exclusion
+- [x] `when_arm_where_guard` — guard matches when condition is true
+- [x] `when_arm_where_guard_falls_through` — guard false falls to next arm
+- [x] `time_now_returns_iso_string` — `Time.now()` returns millisecond-precision RFC 3339
+- [x] `time_now_with_tz` — `Time.now(tz: "Europe/Paris")` emits correct offset
+- [x] `time_parse_normalises_date` — `Time.parse` accepts RFC 3339 strings
+- [x] `time_parse_rejects_naive_without_tz` — bare date returns `none`
+- [x] `time_parse_with_tz_coerces_naive` — `Time.parse("2026-05-01", tz: "UTC")` succeeds
+- [x] `time_format_strftime` — `dt.format(as: "%Y-%m-%d")`
+- [x] `time_diff_one_day` — `a - b` returns 1 day duration
+- [x] `time_parts_returns_map` — `dt.parts().year` / `.tz` etc.
+- [x] `time_datetime_arithmetic` — `base + 1.days` = next day
+- [x] `time_datetime_comparison` — `a > b` between datetime strings
+- [x] `millisecond_duration_literal` — `500.ms` = 0.5 seconds
+- [x] `time_now_emits_millisecond_precision` — RFC 3339 contains `.nnn`
+- [x] `examples_all_parse` — `if_guard` and `time_basic` added to smoke list
 
 ---
 

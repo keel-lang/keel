@@ -1,6 +1,6 @@
 # Keel Language Specification — v0.1 (Alpha)
 
-> **Status: Alpha.** Keel is in early design. The language is **not yet stable** and has **no production users**. Expect breaking changes between 0.x releases. This document is the authoritative design for v0.1.
+> **Status: Alpha.** Keel is in early design. The language is **not yet stable** and has **no production users**. Expect breaking changes between 0.x releases. This document is the design target for v0.1; [ROADMAP.md](ROADMAP.md) tracks shipped, partial, and planned implementation status.
 
 ---
 
@@ -16,7 +16,7 @@ Because the prelude is auto-imported, `Ai.classify(...)` reads as if `classify` 
 ### Design principles
 
 1. **Small core, deep stdlib.** Every feature that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime — not through surface syntax convenience.
-2. **Static typing with full inference.** Every expression has a known type. Mismatches are compile errors. Annotations are rarely needed.
+2. **Static typing with full inference as the design target.** The alpha checker already catches core mismatches and deliberately leaves some unsupported cases as `Unknown`; [ROADMAP.md](ROADMAP.md) is the status source for current checker coverage.
 3. **No silent fallbacks.** Operations that can fail return nullable types. The caller handles the failure explicitly with `??`, `fallback:`, or `when`.
 4. **Tooling from day one.** Every feature is designed so the LSP can autocomplete, go-to-def, rename, and surface diagnostics.
 5. **Escape hatches are explicit.** `dynamic`, `extern`, `prompt` exist for real needs but must be opted into visibly.
@@ -28,7 +28,7 @@ Because the prelude is auto-imported, `Ai.classify(...)` reads as if `classify` 
 > - Yes → stdlib.
 > - No → core.
 
-Applied ruthlessly, this test keeps the reserved-keyword list to ~27 words.
+Applied ruthlessly, this test keeps the reserved-keyword list small.
 
 ---
 
@@ -64,7 +64,7 @@ A file may contain, in any order:
 
 ## 2. Type System
 
-Keel uses a **structural type system with full inference**. Every expression is typed. Mismatches are compile errors. Annotations are rarely needed.
+Keel uses a **structural type system with full inference** as its design target. In the current alpha, the checker covers the core language and falls back to `Unknown` in some unsupported cases; those gaps are tracked in [ROADMAP.md](ROADMAP.md).
 
 ### 2.1 Design principles
 
@@ -87,7 +87,7 @@ Keel uses a **structural type system with full inference**. Every expression is 
 | `datetime` | `@2026-04-15`, `@monday_9am` | Time literals |
 | `dynamic` | — | FFI/interop boundary only |
 
-**Built-in constants:** `true`, `false`, `none`, `now`.
+**Built-in constants:** `true`, `false`, `none`.
 
 **`none` semantics.** `none` is both the unit type and the nullable-empty value. `none?` is equivalent to `none`. The tuple unit `()` is equivalent to `none`.
 
@@ -311,7 +311,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Async` | Structured concurrency | `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | Control combinators | `retry`, `with_timeout`, `with_deadline` |
 | `Env` | Environment and config | `get(name)`, `require(name)` |
-| `Time` | Time utilities | `now`, `parse`, `format`, duration math |
+| `Time` | Time utilities | `now()`, `parse`, `format`, `diff`, duration math |
 | `Log` | Structured logging | `info`, `warn`, `error`, `debug` |
 | `Agent` | Agent lifecycle | `run`, `stop`, `delegate`, `broadcast` (also exposed as bare `run`/`stop` at top level) |
 
@@ -511,11 +511,11 @@ interface Tracer {
 - `Memory` in v0.1 is a plain K/V store (JSON file); in v0.2 it will dispatch through a `VectorStore` interface so users can swap backends.
 - `Log.info` needs a sink — users want OTel, Datadog, or plain stdout.
 
-The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and let users swap.
+The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and, once the runtime registry is wired, let users swap implementations.
 
-### 5.3 Installing implementations
+### 5.3 Installing implementations <span class="badge badge-soon">Planned</span>
 
-Implementations are installed at runtime startup, typically in the program's top-level section:
+Custom implementation installation is planned, but not registered in the v0.1 runtime yet. The intended startup shape is:
 
 ```keel
 # At startup — swap the default LLM provider
@@ -665,7 +665,7 @@ when action {
 
 ```keel
 for email in emails { process(email) }
-for email in emails where email.unread { triage(email) }
+for email in emails if email.unread { triage(email) }
 ```
 
 ### 8.4 Destructuring
@@ -757,10 +757,10 @@ if else when where
 for in
 try catch return
 as and or not
-true false none now
+true false none
 ```
 
-That's it. **22 words.**
+That's it.
 
 Namespaces (`Ai`, `Io`, `Http`, `Schedule`, `Async`, …) are identifiers, not keywords. Same for `run`, `stop`, `spawn`, `delegate`, `broadcast` — prelude functions.
 
@@ -878,6 +878,69 @@ Each `Memory.*` operation acquires an advisory `flock` on a sidecar `<agent>.loc
 ### v0.2 note: semantic search
 
 v0.1 `Memory` is a plain K/V store. The planned v0.2 upgrade adds a `VectorStore` interface (see §5.1) that backs `recall` with nearest-neighbour embedding search. The v0.1 API surface is a strict subset — existing programs will keep working when the backend is upgraded.
+
+---
+
+## 12a. Time
+
+The `Time` namespace provides datetime construction and parsing. Datetimes are RFC 3339 strings with an explicit timezone offset — naive strings (no offset) are rejected. Methods `parts()` and `format()` live on the datetime value itself.
+
+```keel
+now      = Time.now()                          # UTC, millisecond precision
+ny       = Time.now(tz: "America/New_York")    # offset-shifted RFC 3339
+parsed   = Time.parse("2026-05-01T09:00:00Z") # datetime? — none if bad/no TZ
+coerced  = Time.parse("2026-05-01", tz: "UTC") # naive + tz: → datetime?
+
+p = parsed.parts()   # {year, month, day, hour, minute, second, millisecond, tz}
+s = parsed.format(as: "%Y-%m-%d")  # str? — none if receiver is not a datetime
+
+elapsed  = finish - start   # datetime - datetime → duration
+deadline = Time.now() + 3.days
+ago      = Time.now() - 1.hour
+```
+
+### Factories (namespace)
+
+| Call | Returns | Notes |
+|---|---|---|
+| `Time.now()` | `datetime` | Current UTC time, millisecond-precision RFC 3339 |
+| `Time.now(tz: name)` | `datetime` | Offset-shifted; IANA name e.g. `"America/New_York"` |
+| `Time.parse(str)` | `datetime?` | Accepts RFC 3339 with explicit TZ offset; returns `none` on failure |
+| `Time.parse(str, tz: name)` | `datetime?` | Coerces a naive string into the given timezone |
+
+### Methods (on value)
+
+| Call | Returns | Notes |
+|---|---|---|
+| `dt.parts()` | map | `{year, month, day, hour, minute, second, millisecond, tz}` |
+| `dt.format(as: pattern)` | `str?` | strftime-style (e.g. `"%Y-%m-%d"`, `"%H:%M"`); `none` if not a datetime |
+
+### Duration literals
+
+| Literal | Aliases |
+|---|---|
+| `500.ms` | `millis`, `millisecond`, `milliseconds` |
+| `5.seconds` | `second`, `sec`, `s` |
+| `2.minutes` | `minute`, `min`, `m` |
+| `1.hour` | `hours`, `hr`, `h` |
+| `3.days` | `day`, `d` |
+| `1.week` | `weeks`, `w` |
+
+### Arithmetic and comparison
+
+```keel
+# datetime ± duration → datetime
+deadline = Time.now() + 7.days
+ago      = Time.now() - 30.minutes
+
+# datetime - datetime → duration
+elapsed  = finish - start
+
+# comparison
+if deadline > Time.now() {
+  Io.show("still time left")
+}
+```
 
 ---
 
@@ -1143,7 +1206,7 @@ Pattern     <- VariantPat / StructPat / TuplePat / IDENT / "_" / Literal
 Stmt        <- ReturnStmt / AssignStmt / SelfAssign / ForStmt / TryStmt / ExprStmt
 AssignStmt  <- AssignTarget (":" Type)? "=" Expr
 SelfAssign  <- "self" "." IDENT "=" Expr
-ForStmt     <- "for" (IDENT / DestructPat) "in" Expr ("where" Expr)? Block
+ForStmt     <- "for" (IDENT / DestructPat) "in" Expr ("if" Expr)? Block
 TryStmt     <- "try" Block CatchClause+
 CatchClause <- "catch" IDENT ":" Type Block
 

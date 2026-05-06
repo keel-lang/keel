@@ -59,7 +59,7 @@ Schedule.at(@2026-04-20_10am, () => {
 })
 ```
 
-## `Schedule.cron` — full cron expressions <span class="badge badge-soon">Coming soon</span>
+## `Schedule.cron` — cron expressions
 
 ```keel
 Schedule.cron("0 */15 9-17 * * MON-FRI", () => {
@@ -67,7 +67,7 @@ Schedule.cron("0 */15 9-17 * * MON-FRI", () => {
 })
 ```
 
-> **Status:** `Schedule.cron` is reserved in the grammar but not registered in v0.1. Tracked in [ROADMAP](../../ROADMAP.md).
+> **Status:** `Schedule.cron` is wired for standard 5-field cron expressions and runs from inside an agent lifecycle or handler context.
 
 ## Inside an agent
 

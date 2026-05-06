@@ -8,6 +8,71 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.14] — 2026-05-05
+
+### `for` loop inline filter with `if`
+
+`for` loops now support an inline filter guard using `if`, replacing the `where` keyword in that position:
+
+```keel
+# Only process unread emails
+for email in emails if email.unread {
+  triage(email)
+}
+
+# Works with destructuring
+for { from, subject } in emails if subject != "" {
+  Io.show("{from}: {subject}")
+}
+
+# Works with ranges
+for n in 1..10 if n % 2 == 0 {
+  Io.show(n)
+}
+```
+
+This is a **breaking change** for any existing `for...where` loops (none existed in the standard library or examples). The `where` keyword is preserved in `when` arm guards and remains reserved for future type-predicate syntax.
+
+### `Time` namespace — full rework
+
+**Breaking changes** from the earlier v0.1.14 Time stub:
+
+- `now` is no longer a keyword. Use `Time.now()`.
+- `Time.format(dt, as:)` is removed. Use `dt.format(as:)`.
+- `Time.diff(a, b)` is removed. Use `a - b`.
+- `Time.parse()` rejects naive strings (no timezone offset) — returns `none`. Supply `tz:` to coerce a naive string.
+
+**New API:**
+
+```keel
+# Factories — namespace style (constructors, no receiver)
+now  = Time.now()                          # UTC, millisecond-precision RFC 3339
+ny   = Time.now(tz: "America/New_York")    # IANA timezone — offset-shifted RFC 3339
+dt   = Time.parse("2026-05-06T09:00:00Z") # datetime? — none on failure or missing TZ
+dt2  = Time.parse("2026-05-06", tz: "UTC") # coerce naive string with tz:
+
+# Methods on datetime values
+p    = dt.parts()                          # {year, month, day, hour, minute, second, millisecond, tz}
+s    = dt.format(as: "%Y-%m-%d")          # str? — none if not a datetime
+
+# Operators
+elapsed  = finish - start                 # datetime - datetime → duration
+deadline = Time.now() + 3.days           # datetime + duration → datetime
+ago      = Time.now() - 30.minutes       # datetime - duration → datetime
+ok       = deadline > Time.now()         # comparison still works
+
+# Millisecond duration literal
+short = 500.ms    # aliases: millis, millisecond, milliseconds
+```
+
+`Time.now()` emits millisecond-precision RFC 3339 (`2026-05-06T07:10:17.355Z`). All `datetime ± duration` results also preserve millisecond precision.
+
+### Keyword count claim removed
+
+The specific keyword count (previously claimed as 22, 27, or 28 words inconsistently across files) has been removed from `README.md`, `SPEC.md`, `ROADMAP.md`, and `CLAUDE.md`. The language is evolving and pinning a count creates incorrect documentation.
+
+---
+
 ## [0.1.13] — 2026-05-05
 
 ### Destructuring (§8.4)
