@@ -8,7 +8,11 @@ All notable changes to Keel.
 
 ---
 
-## [0.1.14] — 2026-05-05
+## [Unreleased]
+
+---
+
+## [0.1.14] — 2026-05-06
 
 ### `for` loop inline filter with `if`
 

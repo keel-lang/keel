@@ -75,10 +75,29 @@ Must exit clean with no errors and no broken links.
 
 ## Step 7 — Spec & Metadata
 
-Verify before committing:
+### Stamp the release date (required — never skip)
+
+`CHANGELOG.md` and `docs/src/release-notes.md` both use an `[Unreleased]` section at the top. Replace it with the version and today's UTC date right now:
+
+```bash
+VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+TODAY=$(date -u +%Y-%m-%d)
+
+# CHANGELOG.md: [Unreleased] → [VERSION] — DATE, then re-add [Unreleased] above
+sed -i "s/^## \[Unreleased\]/## [${VERSION}] — ${TODAY}/" CHANGELOG.md
+sed -i "s/^## \[${VERSION}\]/## [Unreleased]\n\n---\n\n## [${VERSION}]/" CHANGELOG.md
+
+# docs/src/release-notes.md: same pattern
+sed -i "s/^## Unreleased/## v${VERSION} — ${TODAY}/" docs/src/release-notes.md
+sed -i "s/^## v${VERSION}/## Unreleased\n\n---\n\n## v${VERSION}/" docs/src/release-notes.md
+```
+
+The date is always stamped at release time — never written by hand. Do not proceed if `[Unreleased]` is missing from either file; it means unreleased changes were already given a version header, which is a sign something went wrong.
+
+### Verify before committing:
 
 - `SPEC.md` — updated if the language surface changed.
-- `CHANGELOG.md` — new `[x.y.z]` section with `.keel` examples for features, plain-English explanation for bug fixes.
+- `CHANGELOG.md` — `[Unreleased]` stamped to `[VERSION] — DATE`; entries have `.keel` examples for features, plain-English for bug fixes.
 - `ROADMAP.md` — shipped items marked `[x]`, new release row added, no stale `[ ]` markers.
 - `Cargo.toml` — `version` bumped to the new version.
 - `docs/status/features.json` — update any namespace, attribute, or CLI entry whose status or content changed. Field rules:
