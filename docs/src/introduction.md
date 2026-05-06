@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [%%VERSION%%](./release-notes.md)** — nullable safety, return-type matching, struct field checks, list method inference. [See what's new →](./release-notes.md)
+> **Latest: [%%VERSION%%](./release-notes.md)** — `for...if` inline guards, `Time` namespace with timezone-aware datetime, duration literals, and datetime arithmetic. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
@@ -53,7 +53,7 @@ Zero imports. Namespaces like `Ai`, `Io`, `Email`, and `Schedule` are in scope f
 
 ## Design Principles
 
-1. **Small core, deep stdlib.** If a feature can be a library, it is one. The core language has **22 keywords**.
+1. **Small core, deep stdlib.** If a feature can be a library, it is one. The core language has a small reserved keyword set.
 2. **Agents are primitives.** `agent` is the only concurrency model. Per-agent serial mailboxes with isolated mutable state via `self`.
 3. **Prelude-as-stdlib.** The standard library is auto-imported. Users get keyword-feel ergonomics without the compiler having to know about every feature.
 4. **Interfaces everywhere.** LLM providers, memory stores, HTTP clients, loggers — all behind interfaces. Users swap implementations without leaving the language.
