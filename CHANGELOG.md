@@ -10,6 +10,8 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
 ### Typed AI errors and `try/catch` wiring (breaking)
 
 **`fallback:` parameter removed from all `Ai.*` calls.**

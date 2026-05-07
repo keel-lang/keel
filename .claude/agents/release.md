@@ -49,13 +49,14 @@ Every `.keel` file in `examples/` must be listed in `examples_all_parse` and pas
 
 ## Step 5 — Docs Update
 
-Before building, update every affected page:
+### 5a — Guide and example pages
+
+Update every affected page:
 
 - `docs/src/guide/` — must fully describe the feature with syntax and examples.
 - `docs/src/examples/` — update if any example program changed.
 - `docs/src/release-notes.md` — one entry per release at the top.
 - `docs/src/SUMMARY.md` — add a link if a new page was added.
-- `docs/src/introduction.md` — update the `> **Latest: …**` tagline to summarise this release's headline features.
 
 Tag unimplemented features:
 
@@ -75,24 +76,54 @@ Must exit clean with no errors and no broken links.
 
 ## Step 7 — Spec & Metadata
 
-### Stamp the release date (required — never skip)
+### Stamp the release date and tagline (required — never skip)
 
-`CHANGELOG.md` and `docs/src/release-notes.md` both use an `[Unreleased]` section at the top. Replace it with the version and today's UTC date right now:
+`CHANGELOG.md` and `docs/src/release-notes.md` both use an `[Unreleased]` section at the top. `docs/src/introduction.md` uses `%%VERSION%%` and `%%TAGLINE%%` placeholders. Stamp all of them now:
 
 ```bash
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
 TODAY=$(date -u +%Y-%m-%d)
 
-# CHANGELOG.md: [Unreleased] → [VERSION] — DATE, then re-add [Unreleased] above
-sed -i "s/^## \[Unreleased\]/## [${VERSION}] — ${TODAY}/" CHANGELOG.md
-sed -i "s/^## \[${VERSION}\]/## [Unreleased]\n\n---\n\n## [${VERSION}]/" CHANGELOG.md
-
-# docs/src/release-notes.md: same pattern
-sed -i "s/^## Unreleased/## v${VERSION} — ${TODAY}/" docs/src/release-notes.md
-sed -i "s/^## v${VERSION}/## Unreleased\n\n---\n\n## v${VERSION}/" docs/src/release-notes.md
+# Extract the %%TAGLINE%% line from CHANGELOG.md — it must be the line immediately
+# after the blank line following "## [Unreleased]". Read it and verify it is not the
+# placeholder default before continuing.
+TAGLINE=$(grep '^%%TAGLINE%%' CHANGELOG.md | head -1 | sed 's/^%%TAGLINE%% //')
+echo "Tagline: ${TAGLINE}"
 ```
 
-The date is always stamped at release time — never written by hand. Do not proceed if `[Unreleased]` is missing from either file; it means unreleased changes were already given a version header, which is a sign something went wrong.
+**Stop here.** Read the tagline output. If it still says `update this line before releasing — one sentence summary of the release`, update the `%%TAGLINE%%` line in `CHANGELOG.md` to a real one-sentence summary of this release before continuing.
+
+Once the tagline is correct, stamp everything:
+
+```bash
+# Stamp %%TAGLINE%% and %%VERSION%% in introduction.md
+sed -i "s/%%TAGLINE%%/${TAGLINE}/" docs/src/introduction.md
+sed -i "s/%%VERSION%%/${VERSION}/" docs/src/introduction.md
+
+# Remove the %%TAGLINE%% line from CHANGELOG.md (consumed)
+sed -i '/^%%TAGLINE%%/d' CHANGELOG.md
+
+# CHANGELOG.md: [Unreleased] → [VERSION] — DATE, then re-add fresh [Unreleased]
+sed -i "s/^## \[Unreleased\]/## [${VERSION}] — ${TODAY}/" CHANGELOG.md
+sed -i "s/^## \[${VERSION}\]/## [Unreleased]\n\n%%TAGLINE%% update this line before releasing — one sentence summary of the release\n\n---\n\n## [${VERSION}]/" CHANGELOG.md
+
+# docs/src/release-notes.md: same version stamp pattern
+sed -i "s/^## Unreleased/## v${VERSION} — ${TODAY}/" docs/src/release-notes.md
+sed -i "s/^## v${VERSION}/## Unreleased\n\n---\n\n## v${VERSION}/" docs/src/release-notes.md
+
+# Restore %%VERSION%% placeholder in introduction.md for the next release
+sed -i "s/\[${VERSION}\]/[%%VERSION%%]/" docs/src/introduction.md
+```
+
+Verify the result:
+
+```bash
+grep "Latest:" docs/src/introduction.md
+```
+
+The output must show the real tagline text (not `%%TAGLINE%%`) and `%%VERSION%%` restored as a placeholder.
+
+The date is always stamped at release time — never written by hand. Do not proceed if `[Unreleased]` is missing from either file.
 
 ### Verify before committing:
 
