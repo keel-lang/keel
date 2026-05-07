@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [%%VERSION%%](./release-notes.md)** — `for...if` inline guards, `Time` namespace with timezone-aware datetime, duration literals, and datetime arithmetic. [See what's new →](./release-notes.md)
+> **Latest: [%%VERSION%%](./release-notes.md)** — typed AI error handling, `try/catch` wired, `fallback:` replaced by `??`. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
