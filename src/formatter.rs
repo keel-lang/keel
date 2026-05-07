@@ -298,6 +298,9 @@ impl Fmt {
                 self.indent();
                 for f in fields {
                     self.push(&format!("{}: ", f.name));
+                    if f.readonly {
+                        self.push("readonly ");
+                    }
                     self.push(&self.type_expr_str(&f.ty));
                     self.push(" = ");
                     self.push(&self.expr_str(&f.default));

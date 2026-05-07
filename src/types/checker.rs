@@ -91,6 +91,7 @@ struct TaskSig {
 #[derive(Debug, Clone)]
 struct AgentInfo {
     state_fields: HashMap<String, Ty>,
+    readonly_fields: HashSet<String>,
     /// Collected but not yet used in type checks — populated for future
     /// cross-agent call validation.
     #[allow(dead_code)]
@@ -352,6 +353,7 @@ impl Checker {
 
     fn agent_info(&self, a: &AgentDecl) -> AgentInfo {
         let mut state_fields = HashMap::new();
+        let mut readonly_fields = HashSet::new();
         let mut tasks = HashMap::new();
         let mut handlers = HashSet::new();
         for item in &a.items {
@@ -359,6 +361,9 @@ impl Checker {
                 AgentItem::State(fields) => {
                     for f in fields {
                         state_fields.insert(f.name.clone(), self.resolve_type(&f.ty));
+                        if f.readonly {
+                            readonly_fields.insert(f.name.clone());
+                        }
                     }
                 }
                 AgentItem::Task(t) => {
@@ -372,6 +377,7 @@ impl Checker {
         }
         AgentInfo {
             state_fields,
+            readonly_fields,
             tasks,
             handlers,
         }
@@ -636,12 +642,23 @@ impl Checker {
                     self.err(format!("`self.{field}` used outside an agent"));
                     return;
                 };
-                let field_ty = self
+                let (field_exists, is_readonly) = self
                     .agents
                     .get(agent_name)
-                    .and_then(|a| a.state_fields.get(field).cloned());
-                if field_ty.is_none() {
+                    .map(|a| {
+                        (
+                            a.state_fields.contains_key(field),
+                            a.readonly_fields.contains(field),
+                        )
+                    })
+                    .unwrap_or((false, false));
+                if !field_exists {
                     self.err(format!("agent `{agent_name}` has no state field `{field}`"));
+                }
+                if is_readonly {
+                    self.err(format!(
+                        "cannot assign to `self.{field}`: field is declared readonly"
+                    ));
                 }
                 self.infer_expr(value, scope);
             }

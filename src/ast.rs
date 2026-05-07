@@ -204,6 +204,8 @@ pub struct StateField {
     pub name: String,
     pub ty: TypeExpr,
     pub default: Expr,
+    /// If true, assignment via `self.field = ...` is a compile-time error.
+    pub readonly: bool,
 }
 
 #[derive(Debug, Clone)]

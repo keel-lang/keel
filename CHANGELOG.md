@@ -12,6 +12,27 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Readonly state fields
+
+Agent state fields can now be declared `readonly` to prevent the agent from overwriting runtime-provided context:
+
+```keel
+agent SessionBot {
+  state {
+    turns:      int          = 0
+    session_id: readonly str = "default-session"
+  }
+
+  on message(msg: str) {
+    self.turns = self.turns + 1        # ok
+    # self.session_id = "x"           # compile error: field is declared readonly
+    Io.show(self.session_id)           # reading is always allowed
+  }
+}
+```
+
+The `readonly` modifier sits between the colon and the type. The type checker rejects any `self.field = ...` assignment to a readonly field. The runtime enforces the same restriction as a second safety net.
+
 ---
 
 ## [0.1.16] — 2026-05-07

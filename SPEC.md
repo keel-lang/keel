@@ -461,6 +461,31 @@ stop(MyAgent)                # graceful shutdown
 - Different agents run concurrently but share no state.
 - Cross-agent data flows through `Agent.delegate`, `Agent.broadcast`, or `Memory.*`.
 
+#### Readonly state fields
+
+A state field annotated with `readonly` after its colon is **compiler-enforced read-only**: any `self.field = ...` assignment inside the agent is a compile-time error. The default value is still required (it is the field's initial value) but can never be overwritten by the agent itself.
+
+```keel
+agent SessionBot {
+  state {
+    turns:      int          = 0
+    session_id: readonly str = "default-session"
+  }
+
+  on message(msg: str) {
+    self.turns = self.turns + 1          # ok — writable
+    # self.session_id = "x"             # compile error: field is declared readonly
+    Io.show(self.session_id)             # reading is fine
+  }
+}
+```
+
+Readonly fields are useful for:
+- Runtime-provided context (session IDs, request metadata) that the agent must not modify.
+- Invariants that should never change once initialized.
+
+The runtime also enforces the restriction: if a readonly assignment somehow bypasses the type checker (e.g. via dynamic dispatch), a runtime error is raised.
+
 ### 4.6 Composition over monoliths
 
 Top-level tasks are reusable and testable. Prefer small agents that call top-level tasks over large agents with inline logic.
@@ -1171,7 +1196,7 @@ Agent       <- "agent" IDENT "{" (Attribute / StateBlock / TaskDecl / OnHandler)
 Attribute   <- "@" IDENT AttributeBody
 AttributeBody <- STRING / Expr / Block / (IDENT "[" (Expr ",")* "]")   # flexible per handler
 OnHandler   <- "on" IDENT "(" Params? ")" Block
-StateBlock  <- "state" "{" (IDENT ":" Type ("=" Expr)? ","?)* "}"
+StateBlock  <- "state" "{" (IDENT ":" "readonly"? Type ("=" Expr)? ","?)* "}"
 
 TaskDecl    <- "task" IDENT "(" Params? ")" ("->" Type)? Block
 InterfaceDecl <- "interface" IDENT "{" (TaskSig)* "}"

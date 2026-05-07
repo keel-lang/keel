@@ -506,6 +506,42 @@ task t() {
     );
 }
 
+// ─── v0.1.17: readonly state fields ────────────────────────────────────────
+
+#[test]
+fn valid_readonly_field_readable() {
+    type_ok(
+        r#"
+agent Bot {
+  state {
+    turns: int = 0
+    session_id: readonly str = "default"
+  }
+  task check() {
+    Io.notify(self.session_id)
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn error_readonly_field_assigned() {
+    expect_error(
+        r#"
+agent Bot {
+  state {
+    session_id: readonly str = "default"
+  }
+  task reset() {
+    self.session_id = "new"
+  }
+}
+"#,
+        "readonly",
+    );
+}
+
 #[test]
 fn valid_list_filter_preserves_type() {
     type_ok(

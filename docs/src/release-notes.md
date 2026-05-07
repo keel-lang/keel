@@ -6,7 +6,18 @@
 
 ## Unreleased
 
-(New features being developed — check back soon)
+### Readonly state fields
+
+State fields declared with `readonly` between the colon and the type are **compiler-enforced read-only**. Any `self.field = ...` assignment is a compile-time error.
+
+```keel
+state {
+  turns:      int          = 0
+  session_id: readonly str = "default-session"
+}
+```
+
+See the [Agents guide](guide/agents.md#readonly-fields) for full details.
 
 ---
 

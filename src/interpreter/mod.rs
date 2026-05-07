@@ -700,6 +700,18 @@ impl Interpreter {
                 Stmt::SelfAssign { field, value } => {
                     let v = self.eval_expr(value, env).await?;
                     if let Some(agent) = &self.current_agent {
+                        let is_readonly = agent
+                            .lock()
+                            .unwrap()
+                            .def
+                            .state_fields
+                            .iter()
+                            .any(|f| f.name == *field && f.readonly);
+                        if is_readonly {
+                            return Err(runtime_error(format!(
+                                "cannot assign to `self.{field}`: field is declared readonly"
+                            )));
+                        }
                         agent.lock().unwrap().state.insert(field.clone(), v);
                         Ok(StmtOutcome::Normal)
                     } else {

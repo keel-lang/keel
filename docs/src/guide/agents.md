@@ -189,6 +189,27 @@ agent Counter {
 - Different agents run concurrently but share no state.
 - Cross-agent messaging: `Agent.send(Target, data)` (v0.1), `Agent.delegate(Target, task, args)` (v0.1.4), `Agent.broadcast(team, data, event:)` (v0.1.6). See [Agent Communication](./agent-communication.md).
 
+### Readonly fields
+
+Add `readonly` between the colon and the type to make a field **compiler-enforced read-only**. Any `self.field = ...` assignment is a compile-time error; reading is always allowed.
+
+```keel
+agent SessionBot {
+  state {
+    turns:      int          = 0
+    session_id: readonly str = "default-session"
+  }
+
+  on message(msg: str) {
+    self.turns = self.turns + 1          # ok — writable
+    # self.session_id = "x"             # compile error
+    Io.show(self.session_id)             # reading is fine
+  }
+}
+```
+
+Use readonly fields for runtime-provided context (session IDs, request metadata) that the agent must observe but never modify.
+
 ## Lifecycle
 
 ```keel

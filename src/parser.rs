@@ -1194,10 +1194,20 @@ fn agent_item() -> P<AgentItem> {
         .ignore_then(
             ident()
                 .then_ignore(just(Token::Colon))
+                .then(
+                    just(Token::Ident("readonly".to_string()))
+                        .or_not()
+                        .map(|opt| opt.is_some()),
+                )
                 .then(type_expr())
                 .then_ignore(just(Token::Eq))
                 .then(expr_parser())
-                .map(|((name, ty), default)| StateField { name, ty, default })
+                .map(|(((name, readonly), ty), default)| StateField {
+                    name,
+                    ty,
+                    default,
+                    readonly,
+                })
                 .separated_by(sep())
                 .allow_trailing(),
         )

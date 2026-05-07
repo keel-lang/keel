@@ -3752,3 +3752,50 @@ run(A)
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+// ─── v0.1.17: readonly state fields ────────────────────────────────────────
+
+#[test]
+fn readonly_state_check_rejects_assignment() {
+    ensure_binary_built();
+    let src = r#"
+agent Bot {
+  state {
+    session_id: readonly str = "abc"
+  }
+  @on_start {
+    self.session_id = "overwritten"
+  }
+}
+run(Bot)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "assignment to readonly field should fail check");
+    assert!(
+        stderr.contains("readonly"),
+        "error should mention readonly:\n{stderr}"
+    );
+}
+
+#[test]
+fn readonly_state_readable_in_on_start() {
+    ensure_binary_built();
+    let src = r#"
+agent Bot {
+  state {
+    session_id: readonly str = "s42"
+  }
+  @on_start {
+    Io.show(self.session_id)
+    stop(self)
+  }
+}
+run(Bot)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "reading a readonly field should succeed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("s42"), "expected field value in output:\n{stdout}");
+}
