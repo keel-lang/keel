@@ -8,6 +8,54 @@
 
 ---
 
+## v0.1.15 — Error Handling Rework
+
+### Breaking: `fallback:` removed from all `Ai.*` calls
+
+`fallback:` is no longer a valid argument on any `Ai.*` function. Replace every call site with `??` at the expression level:
+
+| Before | After |
+|---|---|
+| `Ai.classify(text, as: T, fallback: T.x)` | `Ai.classify(text, as: T) ?? T.x` |
+| `Ai.summarize(body, in: 3, unit: sentences, fallback: "none")` | `Ai.summarize(body, in: 3, unit: sentences) ?? "none"` |
+
+The type-checker now always infers `T?` for `Ai.classify` regardless of arguments.
+
+### Two-tier failure model
+
+`Ai.*` calls have two distinct failure modes:
+
+| Failure | Result | Handle with |
+|---|---|---|
+| Network failure / mock mode / timeout | Returns `none` | `??` |
+| LLM returned output that doesn't match the schema | Throws `AiSchemaError` | `try/catch` |
+
+### `try/catch` — now wired
+
+`try/catch` was parsed but ignored before this release. Catch clauses now execute and the bound `err` variable carries error fields:
+
+```keel
+try {
+  urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+} catch err: AiSchemaError {
+  Io.notify("Unexpected LLM output: {err.got}")
+  urgency = Urgency.medium
+} catch err: Error {
+  Io.notify("Failed: {err.message}")
+}
+```
+
+**`AiSchemaError` fields:**
+
+| Field | Type | Value |
+|---|---|---|
+| `message` | `str` | Human-readable description |
+| `got` | `str` | The raw LLM output that failed to match |
+
+`Error` is the catch-all for any other runtime error.
+
+---
+
 ## v0.1.14 — 2026-05-06
 
 ### `for` loop `if` guard

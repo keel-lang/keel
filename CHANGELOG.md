@@ -10,6 +10,45 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
+### Typed AI errors and `try/catch` wiring (breaking)
+
+**`fallback:` parameter removed from all `Ai.*` calls.**
+
+Previously `Ai.classify` and `Ai.summarize` accepted a `fallback:` named argument that silently swallowed both call failures and schema mismatches. This violated Keel's "no silent fallbacks" principle.
+
+**Migration:** replace `fallback:` with an explicit `??`:
+
+```keel
+# before
+urgency = Ai.classify(email.body, as: Urgency, fallback: Urgency.medium)
+
+# after
+urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+```
+
+**New error model for `Ai.*` calls:**
+
+| Situation | Behaviour |
+|---|---|
+| Call failure (network, timeout, mock) | Returns `none` — `??` provides the default |
+| LLM output didn't match schema/enum | Throws `AiSchemaError` — `try/catch` to handle |
+| Fatal config error | Propagates as a hard error (same as before) |
+
+`AiSchemaError` carries `message: str` and `got: str` (the raw LLM output). Both are caught by `catch err: Error`.
+
+```keel
+try {
+  urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+} catch err: AiSchemaError {
+  Io.notify("Unexpected LLM output: {err.got}")
+  urgency = Urgency.medium
+} catch err: Error {
+  Io.notify("AI call failed: {err.message}")
+}
+```
+
+**`try/catch` now fully wired.** Catch clauses are matched by type name (`AiSchemaError`, `Error`, any named type). The first matching clause runs; unmatched errors re-propagate. The bound name (e.g. `err`) carries a map with at least `message: str`.
+
 ---
 
 ## [0.1.14] — 2026-05-06

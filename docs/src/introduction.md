@@ -21,7 +21,7 @@ agent EmailAssistant {
   @tools [Email]
 
   on message(msg: Message) {
-    urgency = Ai.classify(msg.body, as: Urgency, fallback: Urgency.medium)
+    urgency = Ai.classify(msg.body, as: Urgency) ?? Urgency.medium
 
     when urgency {
       low, medium => {

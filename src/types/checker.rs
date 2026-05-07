@@ -979,11 +979,7 @@ impl Checker {
                         && self.enum_variants.contains_key(enum_name)
                     {
                         let base = Ty::Enum(enum_name.clone());
-                        return if args.iter().any(|a| a.name.as_deref() == Some("fallback")) {
-                            base
-                        } else {
-                            Ty::Nullable(Box::new(base))
-                        };
+                        return Ty::Nullable(Box::new(base));
                     }
                     if name == "Ai" {
                         match method.as_str() {

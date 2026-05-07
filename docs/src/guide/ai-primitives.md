@@ -7,7 +7,7 @@ The `Ai` namespace bundles LLM-backed operations. It's auto-imported — no `use
 ## `Ai.classify` — categorize into an enum
 
 ```keel
-urgency = Ai.classify(email.body, as: Urgency, fallback: Urgency.medium)
+urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
 
 sentiment = Ai.classify(review, as: Sentiment)   # returns Sentiment? (nullable)
 ```
@@ -20,14 +20,13 @@ urgency = Ai.classify(email.body,
   considering: {
     "mentions a deadline within 24h": Urgency.high,
     "newsletter or automated":        Urgency.low
-  },
-  fallback: Urgency.medium
-)
+  }
+) ?? Urgency.medium
 ```
 
 `considering:` is a **map from hint string to enum variant**. The LLM gets the hints as classification nudges; typos or extra keys are caught by the type checker. *In v0.1 the argument is accepted but not forwarded to the LLM — tracked in [ROADMAP](../../ROADMAP.md).*
 
-**Returns:** `T?` without `fallback:`, `T` with `fallback:` (where `T` is the enum).
+**Returns:** `T?` (where `T` is the enum). Use `?? T.variant` to supply a default inline.
 
 ## `Ai.extract` — pull structured data from text
 
@@ -56,10 +55,10 @@ brief = Ai.summarize(article, in: 3, unit: sentences)
 bullets = Ai.summarize(report, format: bullets)
 tldr = Ai.summarize(thread, in: 1, unit: line)
 capped = Ai.summarize(article, format: bullets, max: 5, unit: sentences)
-safe = Ai.summarize(article, in: 3, unit: sentences, fallback: "No summary")
+safe = Ai.summarize(article, in: 3, unit: sentences) ?? "No summary"
 ```
 
-**Returns:** `str?` without `fallback:`, `str` with.
+**Returns:** `str?`. Use `?? "default"` to supply a fallback inline.
 
 All four arguments (`in:`, `unit:`, `format:`, `max:`) are fully wired as of v0.1.3:
 - `format: bullets` → appends "Format your response as a bulleted list." to the system prompt.

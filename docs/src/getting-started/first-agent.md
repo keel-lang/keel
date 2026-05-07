@@ -36,13 +36,12 @@ task prioritize(t: Task) -> Priority {
       "blocks other people":       Priority.critical,
       "has a deadline this week":  Priority.high,
       "nice to have":              Priority.low
-    },
-    fallback: Priority.medium
-  )
+    }
+  ) ?? Priority.medium
 }
 ```
 
-`Ai.classify` sends `t.description` to the LLM with the hints, parses the response into the enum, and guarantees a non-nullable result via `fallback:`.
+`Ai.classify` sends `t.description` to the LLM with the hints and parses the response into the enum. `?? Priority.medium` supplies a default when the LLM is unavailable or returns nothing parseable.
 
 ## 4. Build the agent
 
@@ -113,7 +112,7 @@ Forget a `when` variant and the compiler stops you:
 | Concept | What it does |
 |---|---|
 | `type Priority = low \| medium \| high \| critical` | Enum — the type checker enforces exhaustive matching |
-| `Ai.classify(x, as: T, fallback: V)` | LLM-powered classification into an enum, with a non-nullable result |
+| `Ai.classify(x, as: T) ?? V` | LLM-powered classification into an enum; `??` supplies a default when the result is absent |
 | `considering: [...]` | Hints to the LLM per variant |
 | `when value { ... }` | Exhaustive pattern matching, checked at compile time |
 | `state { field: T = default }` | Mutable agent state, accessed via `self.field` |

@@ -54,16 +54,20 @@ pub type LlmResult = Result<String, LlmError>;
 #[derive(Debug)]
 pub enum LlmError {
     /// Configuration problem (model not mapped, Ollama unreachable).
-    /// Execution should halt with an actionable message.
     ConfigError(String),
-    /// Runtime call failure (network, parse). `fallback:` may apply.
+    /// Network/HTTP failure calling the LLM provider.
     CallFailed(String),
+    /// LLM output didn't match the expected enum or schema. `got` is the raw output.
+    SchemaValidation { got: String },
 }
 
 impl std::fmt::Display for LlmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LlmError::ConfigError(msg) | LlmError::CallFailed(msg) => write!(f, "{msg}"),
+            LlmError::SchemaValidation { got } => {
+                write!(f, "LLM output did not match expected schema: '{got}'")
+            }
         }
     }
 }
@@ -276,7 +280,7 @@ impl LlmClient {
         variants: &[String],
         criteria: &[(String, String)],
         model: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, LlmError> {
         let variants_str = variants.join(", ");
         if trace() {
             println!(
@@ -320,13 +324,11 @@ impl LlmClient {
                     "⚠".bright_yellow(),
                     cleaned.dimmed()
                 );
-                Ok(None)
+                Err(LlmError::SchemaValidation {
+                    got: response.trim().to_string(),
+                })
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -341,7 +343,7 @@ impl LlmClient {
         max: Option<i64>,
         unit: Option<String>,
         model: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, LlmError> {
         let length_instruction = match &length {
             Some((n, unit)) => format!("in {n} {unit}"),
             None => "briefly".to_string(),
@@ -383,11 +385,7 @@ impl LlmClient {
                 }
                 Ok(Some(response.trim().to_string()))
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -401,7 +399,7 @@ impl LlmClient {
         guidance: Option<&str>,
         max_length: Option<i64>,
         model: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, LlmError> {
         let tone_s = tone.unwrap_or("neutral");
         if trace() {
             println!(
@@ -429,11 +427,7 @@ impl LlmClient {
                 }
                 Ok(Some(response.trim().to_string()))
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -444,7 +438,7 @@ impl LlmClient {
         input: &str,
         schema: &[(String, String)],
         model: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, LlmError> {
         let fields_desc: Vec<String> = schema.iter().map(|(n, t)| format!("{n}: {t}")).collect();
         if trace() {
             println!(
@@ -468,11 +462,7 @@ impl LlmClient {
                 }
                 Ok(Some(response.trim().to_string()))
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -483,7 +473,7 @@ impl LlmClient {
         input: &str,
         target_langs: &[String],
         model: &str,
-    ) -> Result<Option<HashMap<String, String>>, String> {
+    ) -> Result<Option<HashMap<String, String>>, LlmError> {
         let langs = target_langs.join(", ");
         if trace() {
             println!(
@@ -525,11 +515,7 @@ impl LlmClient {
                     Ok(Some(map))
                 }
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -540,7 +526,7 @@ impl LlmClient {
         input: &str,
         options: &[String],
         model: &str,
-    ) -> Result<Option<(String, String)>, String> {
+    ) -> Result<Option<(String, String)>, LlmError> {
         if trace() {
             println!(
                 "  {} Deciding using {}",
@@ -582,11 +568,7 @@ impl LlmClient {
                 }
                 Ok(Some((choice, reason)))
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 
@@ -598,7 +580,7 @@ impl LlmClient {
         user: &str,
         response_format: Option<String>,
         model: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>, LlmError> {
         if trace() {
             println!(
                 "  {} Prompt using {}",
@@ -616,20 +598,14 @@ impl LlmClient {
                 if response_format.as_deref() == Some("json")
                     && serde_json::from_str::<serde_json::Value>(&trimmed).is_err()
                 {
-                    return Err(format!(
-                        "Ai.prompt: response_format: json was set but LLM returned non-JSON: {trimmed}"
-                    ));
+                    return Err(LlmError::SchemaValidation { got: trimmed });
                 }
                 if trace() {
                     println!("  {} Response ready", "✓".bright_green());
                 }
                 Ok(Some(trimmed))
             }
-            Err(LlmError::ConfigError(msg)) => Err(msg),
-            Err(LlmError::CallFailed(msg)) => {
-                println!("  {} {}", "⚠".bright_yellow(), msg.dimmed());
-                Ok(None)
-            }
+            Err(e) => Err(e),
         }
     }
 }

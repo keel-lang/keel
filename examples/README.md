@@ -26,5 +26,5 @@
 - Every file uses the **prelude**: `Ai`, `Io`, `Email`, `Http`, `Schedule`, `Memory` are in scope without imports.
 - Agent metadata uses `@attributes`: `@role`, `@model`, `@tools`, `@memory`, etc.
 - Scheduled work lives inside `@on_start` with a `Schedule.every` / `Schedule.after` call.
-- AI primitives are function calls: `Ai.classify(x, as: T, fallback: V)`.
+- AI primitives are function calls: `Ai.classify(x, as: T) ?? default`.
 - Email, HTTP, and memory are library modules: `Email.fetch`, `Email.send`, `Memory.remember`.

@@ -1,5 +1,5 @@
 task shorten(text: str) -> str {
-  Ai.summarize(text, in: 2, unit: sentences, fallback: "(no summary available)")
+  Ai.summarize(text, in: 2, unit: sentences) ?? "(no summary available)"
 }
 
 agent DailyDigest {

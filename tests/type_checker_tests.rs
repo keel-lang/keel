@@ -270,14 +270,14 @@ task call_it() {
 
 #[test]
 fn valid_classify_inferred_enum() {
-    // `Ai.classify(..., as: Mood, fallback: Mood.neutral)` should bind
-    // the result as Mood so `when` on it is exhaustive.
+    // `Ai.classify(..., as: Mood) ?? Mood.neutral` unwraps the nullable so
+    // the result is Mood and `when` on it is exhaustive.
     type_ok(
         r#"
 type Mood = happy | neutral | sad
 
 task t(text: str) {
-  mood = Ai.classify(text, as: Mood, fallback: Mood.neutral)
+  mood = Ai.classify(text, as: Mood) ?? Mood.neutral
   when mood {
     happy => { return }
     neutral => { return }
@@ -328,7 +328,7 @@ fn error_classify_result_missing_variant() {
 type Mood = happy | neutral | sad
 
 task t(text: str) {
-  mood = Ai.classify(text, as: Mood, fallback: Mood.neutral)
+  mood = Ai.classify(text, as: Mood) ?? Mood.neutral
   when mood {
     happy => { return }
     sad => { return }

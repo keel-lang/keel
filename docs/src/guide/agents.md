@@ -209,7 +209,7 @@ Top-level tasks are reusable and testable. Prefer small agents that call shared 
 ```keel
 # Top-level, testable
 task triage(email: EmailInfo) -> Urgency {
-  Ai.classify(email.body, as: Urgency, fallback: Urgency.medium)
+  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
 # Agent stays focused

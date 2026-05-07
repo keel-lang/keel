@@ -17,8 +17,8 @@ agent Classifier {
   @role "You classify emails by urgency and category"
 
   task triage(email: {body: str}) -> TriageResult {
-    urgency  = Ai.classify(email.body, as: Urgency,  fallback: Urgency.medium)
-    category = Ai.classify(email.body, as: Category, fallback: Category.question)
+    urgency  = Ai.classify(email.body, as: Urgency)  ?? Urgency.medium
+    category = Ai.classify(email.body, as: Category) ?? Category.question
     {urgency: urgency, category: category}
   }
 }
@@ -73,7 +73,7 @@ agent InboxManager {
         FollowupScheduler.plan(email, result.urgency)
       }
       high, critical => {
-        summary = Ai.summarize(email.body, in: 2, unit: sentences, fallback: "(no summary)")
+        summary = Ai.summarize(email.body, in: 2, unit: sentences) ?? "(no summary)"
         Io.notify("{result.urgency} {result.category} from {email.from}")
         Io.show(summary)
         guidance = Io.ask("How should I respond?")

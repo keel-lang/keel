@@ -44,7 +44,7 @@ The lookup order when a call wants model `X`:
 export KEEL_LLM=mock
 ```
 
-All `Ai.*` calls return `CallFailed` and hit their `fallback:` / `??` branch. Used by the integration test suite.
+All `Ai.*` calls return `none` (or throw `AiSchemaError` for schema mismatches). Absence is handled by `??` at the call site. Used by the integration test suite.
 
 ## Troubleshooting
 

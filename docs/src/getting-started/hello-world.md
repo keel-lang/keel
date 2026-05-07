@@ -60,7 +60,7 @@ No imports. The `Schedule`, `Io`, `Ai` namespaces are in scope from the start â€
 type Mood = happy | neutral | sad
 
 task analyze(text: str) -> Mood {
-  Ai.classify(text, as: Mood, fallback: Mood.neutral)
+  Ai.classify(text, as: Mood) ?? Mood.neutral
 }
 
 agent MoodBot {
@@ -77,6 +77,6 @@ agent MoodBot {
 run(MoodBot)
 ```
 
-`Ai.classify` sends the text to the LLM and parses the response into one of the enum variants. `fallback:` guarantees a non-nullable result.
+`Ai.classify` sends the text to the LLM and parses the response into one of the enum variants. `??` supplies a default when the LLM is unavailable or the response doesn't match.
 
 ## Next: [Your First Agent â†’](./first-agent.md)

@@ -1,0 +1,25 @@
+type Urgency = low | medium | high | critical
+
+task safe_classify(text: str) -> Urgency {
+  Ai.classify(text, as: Urgency) ?? Urgency.medium
+}
+
+agent ErrorDemo {
+  @role "You triage support tickets by urgency"
+  @on_start {
+    urgency = safe_classify("server is down!")
+    Io.show("Classified as: {urgency}")
+    try {
+      result = Ai.classify("some ambiguous text", as: Urgency) ?? Urgency.medium
+      Io.show("Result: {result}")
+    } catch err: AiSchemaError {
+      Io.show("LLM gave unexpected output: {err.got}")
+      result = Urgency.medium
+    } catch err: Error {
+      Io.show("Unexpected error: {err.message}")
+    }
+    stop(self)
+  }
+}
+
+run(ErrorDemo)

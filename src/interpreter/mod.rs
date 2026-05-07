@@ -150,6 +150,9 @@ pub struct Interpreter {
     /// Format: `<stem>_<sha256[:12]>` for real files; `__repl__` / `__inline__`
     /// for REPL and inline evaluations. Defaults to `"__inline__"`.
     pub program_name: String,
+    /// Last typed error thrown via `throw_typed_error`. Used by `try/catch` to
+    /// match catch clauses by type name. Cleared at the start of each `try` block.
+    pub last_typed_error: Option<(String, HashMap<String, Value>)>,
 }
 
 impl Interpreter {
@@ -171,6 +174,7 @@ impl Interpreter {
             active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
             program_name: "__inline__".to_string(),
+            last_typed_error: None,
         };
         crate::runtime::install_prelude(&mut interp);
         interp
@@ -799,10 +803,46 @@ impl Interpreter {
                     }
                     Ok(StmtOutcome::Normal)
                 }
-                Stmt::TryCatch { body, catches: _ } => {
-                    // v0.1: catch clauses not fully wired yet. Execute
-                    // body; propagate any error for now.
-                    self.exec_block(body, env).await
+                Stmt::TryCatch { body, catches } => {
+                    self.last_typed_error = None;
+                    match self.exec_block(body, env).await {
+                        Ok(outcome) => Ok(outcome),
+                        Err(err) => {
+                            let typed = self.last_typed_error.take();
+                            for clause in catches {
+                                let clause_type = match &clause.ty {
+                                    crate::ast::TypeExpr::Named(n) => n.as_str(),
+                                    _ => continue,
+                                };
+                                let matches = match &typed {
+                                    Some((type_name, _)) => {
+                                        clause_type == "Error" || clause_type == type_name
+                                    }
+                                    None => clause_type == "Error",
+                                };
+                                if matches {
+                                    let fields = match &typed {
+                                        Some((_, f)) => f.clone(),
+                                        None => {
+                                            let mut m = HashMap::new();
+                                            m.insert(
+                                                "message".to_string(),
+                                                Value::String(err.to_string()),
+                                            );
+                                            m
+                                        }
+                                    };
+                                    let error_val = Value::Map(fields);
+                                    env.push_scope();
+                                    env.define(clause.name.clone(), error_val);
+                                    let outcome = self.exec_block(&clause.body, env).await;
+                                    env.pop_scope();
+                                    return outcome;
+                                }
+                            }
+                            Err(err)
+                        }
+                    }
                 }
             }
         })

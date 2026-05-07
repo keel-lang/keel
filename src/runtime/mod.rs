@@ -126,6 +126,21 @@ macro_rules! ns {
     }};
 }
 
+fn throw_typed_error(
+    interp: &mut crate::interpreter::Interpreter,
+    type_name: &str,
+    message: &str,
+    extra: Option<(&str, String)>,
+) -> miette::Result<Value> {
+    let mut fields = std::collections::HashMap::new();
+    fields.insert("message".to_string(), Value::String(message.to_string()));
+    if let Some((key, val)) = extra {
+        fields.insert(key.to_string(), Value::String(val));
+    }
+    interp.last_typed_error = Some((type_name.to_string(), fields));
+    Err(miette::miette!("{type_name}: {message}"))
+}
+
 fn find_arg<'a>(args: &'a [CallArgValue], name: &str) -> Option<&'a Value> {
     args.iter()
         .find(|a| a.name.as_deref() == Some(name))
@@ -555,8 +570,15 @@ fn ai_namespace() -> Namespace {
             let llm = interp.llm.clone();
             match llm.classify(role.as_deref(), &rules, &input, &variants, &criteria, &model).await {
                 Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant, None)),
-                Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Ok(None) => Ok(Value::None),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::SchemaValidation { got }) => {
+                    throw_typed_error(interp, "AiSchemaError",
+                        &format!("LLM output did not match expected schema: '{got}'"),
+                        Some(("got", got)))
+                }
+                // Network / timeout / mock failures: return none so `??` provides the default.
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
             }
         }),
 
@@ -577,8 +599,10 @@ fn ai_namespace() -> Namespace {
             let llm = interp.llm.clone();
             match llm.summarize(role.as_deref(), &rules, &input, length, format, max, unit_val, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
-                Ok(None) => Ok(find_arg(&args, "fallback").cloned().unwrap_or(Value::None)),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Ok(None) => Ok(Value::None),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
             }
         }),
 
@@ -599,7 +623,9 @@ fn ai_namespace() -> Namespace {
             {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
             }
         }),
 
@@ -639,7 +665,9 @@ fn ai_namespace() -> Namespace {
                     }
                 }
                 Ok(None) => Ok(Value::None),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
             }
         }),
 
@@ -666,7 +694,9 @@ fn ai_namespace() -> Namespace {
                     Ok(Value::Map(out))
                 }
                 Ok(None) => Ok(Value::None),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
             }
         }),
 
@@ -691,7 +721,9 @@ fn ai_namespace() -> Namespace {
                     Ok(Value::Map(m))
                 }
                 Ok(None) => Ok(Value::None),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
             }
         }),
 
@@ -706,7 +738,9 @@ fn ai_namespace() -> Namespace {
             match llm.prompt(role.as_deref(), &rules, &system, &user, response_format, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(msg) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
+                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
             }
         }),
 

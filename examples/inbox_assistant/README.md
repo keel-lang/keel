@@ -16,7 +16,7 @@ it probably doesn't break anything user-visible.
 - Simple enums (`Urgency`, `Tone`) and rich enums with per-variant fields (`Action`)
 - Type aliases (`EmailId`) and nominal struct types (`Sentiment`)
 - Exhaustive `when` with simple-variant and rich-variant destructuring
-- Nullable types with `?.`, `??`, and `fallback:`
+- Nullable types with `?.` and `??`
 - `as T` cast on `Ai.prompt`
 - Triple-quoted strings with interpolation
 - Escaped braces (`\{` / `\}`) in string literals

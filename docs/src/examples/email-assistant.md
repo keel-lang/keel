@@ -16,17 +16,15 @@ task triage(email: {body: str, from: str, subject: str}) -> Urgency {
       "asks a direct question":          Urgency.medium,
       "newsletter or automated message": Urgency.low
     },
-    fallback: Urgency.medium,
     using: "fast"
-  )
+  ) ?? Urgency.medium
 }
 
 task brief(email: {body: str}) -> str {
   Ai.summarize(email.body,
     in: 1, unit: sentence,
-    fallback: "(no summary)",
     using: "fast"
-  )
+  ) ?? "(no summary)"
 }
 
 task compose(email: {body: str, from: str}, guidance: str? = none) -> str {

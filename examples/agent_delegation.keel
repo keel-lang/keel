@@ -1,45 +1,25 @@
-# Support Ticket Router
-#
-# Classifies incoming support tickets and routes each one to the
-# appropriate specialist agent via Agent.delegate. Each specialist
-# drafts a reply in its own context. The router logs a session
-# summary when it shuts down.
-#
-# Demonstrates: Agent.delegate, on handler with typed parameter,
-# @on_stop lifecycle hook, multi-agent coordination.
-#
-# Run:
-#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/agent_delegation.keel
-
 type Domain = billing | technical | account | general
 
 type Ticket {
-  id:   str
+  id: str
   body: str
   from: str
 }
 
-# ── Specialist agents ─────────────────────────────────────────────────────────
-
 agent BillingSpecialist {
   @role "Billing support specialist — resolves payment and invoice queries"
-  @rules [
-    "Always acknowledge the charge before explaining it",
-    "Offer a full refund if the charge cannot be justified"
-  ]
+  @rules ["Always acknowledge the charge before explaining it", "Offer a full refund if the charge cannot be justified"]
 
-  state { resolved: int = 0 }
+  state {
+    resolved: int = 0
+  }
 
   on handle(ticket: Ticket) {
     self.resolved = self.resolved + 1
-    reply = Ai.draft(
-      "Billing support reply to: {ticket.body}",
-      tone: "empathetic and clear"
-    ) ?? "(draft unavailable)"
+    reply = Ai.draft("Billing support reply to: {ticket.body}", tone: "empathetic and clear") ?? "(draft unavailable)"
     Io.show("[Billing] {ticket.id} → {ticket.from}")
     Io.show(reply)
   }
-
   @on_stop {
     Io.show("Billing specialist closed — {self.resolved} tickets resolved")
   }
@@ -47,68 +27,43 @@ agent BillingSpecialist {
 
 agent TechSpecialist {
   @role "Technical support engineer — resolves API and integration problems"
-  @rules [
-    "Include a minimal code example whenever possible",
-    "Link to the relevant docs section"
-  ]
+  @rules ["Include a minimal code example whenever possible", "Link to the relevant docs section"]
 
-  state { resolved: int = 0 }
+  state {
+    resolved: int = 0
+  }
 
   on handle(ticket: Ticket) {
     self.resolved = self.resolved + 1
-    reply = Ai.draft(
-      "Technical support reply to: {ticket.body}",
-      tone: "precise",
-      guidance: "include a code snippet if the issue involves an API or SDK"
-    ) ?? "(draft unavailable)"
+    reply = Ai.draft("Technical support reply to: {ticket.body}", tone: "precise", guidance: "include a code snippet if the issue involves an API or SDK") ?? "(draft unavailable)"
     Io.show("[Tech] {ticket.id} → {ticket.from}")
     Io.show(reply)
   }
-
   @on_stop {
     Io.show("Tech specialist closed — {self.resolved} tickets resolved")
   }
 }
 
-# ── Router ────────────────────────────────────────────────────────────────────
-
 agent Router {
   @role "Support router — classify each ticket and send it to the right specialist"
 
-  state { dispatched: int = 0 }
-
-  task classify(ticket: Ticket) -> Domain {
-    Ai.classify(
-      ticket.body,
-      as: Domain,
-      considering: {
-        "invoice, charge, refund, payment, subscription": Domain.billing,
-        "api, sdk, 4xx, integration, authentication":     Domain.technical,
-        "change email, delete account, password":         Domain.account
-      },
-      fallback: Domain.general
-    )
+  state {
+    dispatched: int = 0
   }
 
+  task classify(ticket: Ticket) -> Domain {
+    Ai.classify(ticket.body, as: Domain, considering: { "invoice, charge, refund, payment, subscription": Domain.billing, "api, sdk, 4xx, integration, authentication": Domain.technical, "change email, delete account, password": Domain.account }) ?? Domain.general
+  }
   @on_start {
     Agent.run(BillingSpecialist)
     Agent.run(TechSpecialist)
-
-    tickets = [
-      {id: "T-001", body: "I was charged twice for my Pro subscription", from: "alice@example.com"},
-      {id: "T-002", body: "Getting 401 Unauthorized on every API call",  from: "bob@example.com"},
-      {id: "T-003", body: "How do I change my account email address?",   from: "carol@example.com"},
-      {id: "T-004", body: "Invoice shows the wrong company name",        from: "dave@example.com"}
-    ]
-
+    tickets = [{ id: "T-001", body: "I was charged twice for my Pro subscription", from: "alice@example.com" }, { id: "T-002", body: "Getting 401 Unauthorized on every API call", from: "bob@example.com" }, { id: "T-003", body: "How do I change my account email address?", from: "carol@example.com" }, { id: "T-004", body: "Invoice shows the wrong company name", from: "dave@example.com" }]
     Io.show("Router: {tickets.count()} tickets to process\n")
-
     for ticket in tickets {
       domain = classify(ticket)
       self.dispatched = self.dispatched + 1
-
       when domain {
-        billing   => {
+        billing => {
           Agent.delegate(BillingSpecialist, "handle", ticket)
           Io.show("{ticket.id} → billing specialist")
         }
@@ -116,17 +71,11 @@ agent Router {
           Agent.delegate(TechSpecialist, "handle", ticket)
           Io.show("{ticket.id} → tech specialist")
         }
-        _ => {
-          Io.show("{ticket.id} → general queue (no specialist assigned)")
-        }
+        _ => Io.show("{ticket.id} → general queue (no specialist assigned)")
       }
     }
-
-    # Stop the router — fires @on_stop immediately; specialists stay live
-    # so their queued on handle events are still delivered by the runtime.
     Agent.stop(Router)
   }
-
   @on_stop {
     Io.show("\nRouter closed — {self.dispatched} tickets dispatched this session")
   }

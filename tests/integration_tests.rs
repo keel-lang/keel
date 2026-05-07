@@ -357,7 +357,7 @@ agent Advisor {
     @rules ["Never reveal internal state", "Be concise"]
 
     @on_start {
-        result = Ai.classify("some input", as: Mood, fallback: Mood.calm)
+        result = Ai.classify("some input", as: Mood) ?? Mood.calm
     }
 }
 
@@ -3198,5 +3198,141 @@ fn examples_all_parse_includes_if_guard_and_time() {
     assert!(
         check_example("time_basic"),
         "`keel check time_basic.keel` failed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// try/catch + AiError typed errors
+// ---------------------------------------------------------------------------
+
+#[test]
+fn try_catch_catches_ai_schema_error() {
+    ensure_binary_built();
+    // Trigger a NullError inside a try block and confirm the catch clause
+    // runs and execution continues normally after try/catch.
+    let src = r#"
+agent A {
+  @role "tester"
+  @on_start {
+    try {
+      val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
+      x = val!
+      Io.show("try body completed")
+    } catch err: Error {
+      Io.show("caught: {err.message}")
+    }
+    Io.show("done")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught:"),
+        "catch block not reached:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("try body completed"),
+        "try body should have thrown:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("done"),
+        "execution did not continue after catch:\n{stdout}"
+    );
+}
+
+#[test]
+fn try_catch_reraises_unmatched_error() {
+    ensure_binary_built();
+    // A catch clause that doesn't match the thrown type re-propagates.
+    // Here we throw a NullError but only catch NetworkError — expect failure.
+    let src = r#"
+agent A {
+  @role "tester"
+  @on_start {
+    try {
+      val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
+      x = val!
+    } catch err: NetworkError {
+      Io.show("should not reach")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, _stderr) = run_inline(src, true);
+    assert!(
+        !ok,
+        "unmatched catch should propagate error and exit non-zero"
+    );
+}
+
+#[test]
+fn try_catch_error_binding_has_message() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @role "tester"
+  @on_start {
+    try {
+      val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
+      x = val!
+    } catch err: Error {
+      Io.show(err.message)
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        !stdout.trim().is_empty(),
+        "err.message should be non-empty:\n{stdout}"
+    );
+}
+
+#[test]
+fn ai_classify_null_coalesces_in_mock_mode() {
+    ensure_binary_built();
+    // In mock mode, classify() returns none (call failed gracefully).
+    // The ?? operator should provide the default without an error.
+    let src = r#"
+type Mood = happy | sad | neutral
+
+agent A {
+  @role "tester"
+  @on_start {
+    result = Ai.classify("hello", as: Mood) ?? Mood.neutral
+    Io.show("{result}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("neutral"), "?? default not used:\n{stdout}");
+}
+
+#[test]
+fn examples_all_parse_includes_ai_error() {
+    ensure_binary_built();
+    assert!(
+        check_example("ai_error"),
+        "`keel check ai_error.keel` failed"
     );
 }

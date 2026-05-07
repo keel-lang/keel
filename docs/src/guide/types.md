@@ -110,11 +110,11 @@ task t() {
 AI operations return nullable types when they can fail:
 
 ```keel
-result = classify text as Urgency     # Urgency? — might be none
-safe = result ?? medium               # Urgency — guaranteed
+result = Ai.classify(text, as: Urgency)   # Urgency? — might be none
+safe = result ?? Urgency.medium            # Urgency — guaranteed
 
-# Or use fallback for non-nullable directly:
-result = classify text as Urgency fallback medium   # Urgency
+# Or supply the default inline:
+safe = Ai.classify(text, as: Urgency) ?? Urgency.medium   # Urgency
 ```
 
 ## Collections

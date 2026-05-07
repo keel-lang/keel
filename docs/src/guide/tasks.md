@@ -33,7 +33,7 @@ task compose(email: str, tone: str = "friendly") -> str {
 
 # Struct parameters (inline type)
 task triage(email: {body: str, from: str}) -> Urgency {
-  classify email.body as Urgency fallback medium
+  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 ```
 
@@ -85,7 +85,7 @@ Tasks defined **outside** agents are reusable and testable. Tasks defined **insi
 ```keel
 # Top-level: shared, testable
 task triage(email: {body: str}) -> Urgency {
-  classify email.body as Urgency fallback medium
+  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
 # Agent-scoped: can access self.state

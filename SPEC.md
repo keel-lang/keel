@@ -17,7 +17,7 @@ Because the prelude is auto-imported, `Ai.classify(...)` reads as if `classify` 
 
 1. **Small core, deep stdlib.** Every feature that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime — not through surface syntax convenience.
 2. **Static typing with full inference as the design target.** The alpha checker already catches core mismatches and deliberately leaves some unsupported cases as `Unknown`; [ROADMAP.md](ROADMAP.md) is the status source for current checker coverage.
-3. **No silent fallbacks.** Operations that can fail return nullable types. The caller handles the failure explicitly with `??`, `fallback:`, or `when`.
+3. **No silent fallbacks.** Operations that can fail return nullable types (`T?`) or throw typed errors. The caller handles absence with `??` or `when`, and catches errors with `try/catch`.
 4. **Tooling from day one.** Every feature is designed so the LSP can autocomplete, go-to-def, rename, and surface diagnostics.
 5. **Escape hatches are explicit.** `dynamic`, `extern`, `prompt` exist for real needs but must be opted into visibly.
 
@@ -171,9 +171,10 @@ type Action =
 **Generic enums:**
 
 ```keel
-type Result[T, E] =
-  | ok { value: T }
-  | err { error: E }
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
 ```
 
 ### 2.6 Type aliases
@@ -197,7 +198,7 @@ subject = email?.subject ?? "(none)"  # str — default via ??
 subject = email!.subject           # str — throws NullError on none (unsafe)
 ```
 
-Stdlib and AI operations return nullable types when they can fail. Use `??`, `fallback:`, or `when` to handle.
+Stdlib and AI operations return nullable types when they can fail. Use `??` or `when` to handle absence. AI call failures throw typed `AiError` variants; use `try/catch` to distinguish causes.
 
 ### 2.8 Tuple types
 
@@ -209,17 +210,7 @@ x = pair.0                        # positional access
 
 Tuples are structural, immutable. Single-element tuples are not a thing (`(str)` is `str`). `()` is `none`.
 
-### 2.9 The `Result` type
-
-```keel
-type Result[T, E] =
-  | ok { value: T }
-  | err { error: E }
-```
-
-Returned by stdlib operations that need to surface rich errors (e.g., `Http.request`). The variants are matched with `when`.
-
-### 2.10 The `dynamic` type (FFI/interop only)
+### 2.9 The `dynamic` type (FFI/interop only)
 
 `dynamic` exists for untyped boundaries: `extern` returns, `prompt as dynamic`, raw SQL rows. It must always be explicitly written — there is no implicit path to `dynamic`.
 
@@ -232,7 +223,7 @@ info: MyStruct = raw as MyStruct      # narrow with runtime check
 
 `dynamic` defeats autocomplete and type checking. Narrow as early as possible. The compiler warns on `dynamic` use outside the explicit escape hatches.
 
-### 2.11 Built-in runtime types
+### 2.10 Built-in runtime types
 
 Provided by the prelude, available without imports:
 
@@ -266,7 +257,7 @@ type Error =
 # All variants implicitly carry message: str, source: str?
 ```
 
-### 2.12 Variable bindings and mutability
+### 2.11 Variable bindings and mutability
 
 Immutable by default. `=` creates a binding. Rebinding in the same scope **shadows** the previous binding (the old value is untouched, the name now points to a new value — Rust-style).
 
@@ -334,7 +325,7 @@ agent EmailBot {
   }
 
   on message(msg: Message) {
-    urgency = Ai.classify(msg.body, as: Urgency, fallback: Urgency.medium)
+    urgency = Ai.classify(msg.body, as: Urgency) ?? Urgency.medium
 
     when urgency {
       low, medium => {
@@ -468,7 +459,7 @@ Top-level tasks are reusable and testable. Prefer small agents that call top-lev
 
 ```keel
 task triage(email: EmailInfo) -> Urgency {
-  Ai.classify(email.body, as: Urgency, fallback: Urgency.medium)
+  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
 agent EmailAssistant {
@@ -550,7 +541,7 @@ The last expression is the implicit return. Explicit `return` is supported for e
 
 ```keel
 task triage(email: {body: str}) -> Urgency {
-  Ai.classify(email.body, as: Urgency, fallback: Urgency.medium)
+  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 ```
 
@@ -657,7 +648,7 @@ when action {
 }
 ```
 
-**Tuple and struct patterns, `where` guards** — see §21 grammar for the full form.
+**Tuple and struct patterns, `where` guards** — see §22 grammar for the full form.
 
 **Non-enum matching (primitives, strings):** wildcard `_` is **required** (the compiler can't prove exhaustiveness on unbounded types).
 
@@ -725,8 +716,8 @@ Concurrent composition is expressed through library functions, not grammar:
 
 ```keel
 [urgency, sentiment] = Async.join_all([
-  Async.spawn(() => Ai.classify(body, as: Urgency, fallback: Urgency.medium)),
-  Async.spawn(() => Ai.classify(body, as: Sentiment, fallback: Sentiment.neutral))
+  Async.spawn(() => Ai.classify(body, as: Urgency) ?? Urgency.medium),
+  Async.spawn(() => Ai.classify(body, as: Sentiment) ?? Sentiment.neutral)
 ])
 ```
 
@@ -750,7 +741,7 @@ Events land in the agent's mailbox. The runtime processes them one at a time. A 
 This is the complete set. If a word is not on this list, it is an identifier.
 
 ```
-agent task interface type extern enum
+agent task interface type extern
 use from
 state on self
 if else when where
@@ -758,6 +749,7 @@ for in
 try catch return
 as and or not
 true false none
+set
 ```
 
 That's it.
@@ -772,25 +764,49 @@ Duration units (`seconds`, `minutes`, `hours`, `days`, `weeks`) are **identifier
 
 ## 11. Error Handling
 
-### 11.1 Error type
+### 11.1 Error types
 
-`Error` is a rich enum (§2.11). All variants carry `message: str` and `source: str?` implicitly. Catch clauses match variants.
+`Error` is the catch-all type. All error values carry `message: str` implicitly. Catch clauses match by type name.
+
+The two-tier model:
+
+| Failure | Result | Handle with |
+|---|---|---|
+| Network failure / mock mode / timeout | Returns `none` | `??` or `when` |
+| LLM output didn't match the expected schema | Throws `AiSchemaError` | `try/catch` |
+
+`AiSchemaError` carries `message: str` and `got: str` (the raw LLM output that failed to match). It is caught by `catch err: AiSchemaError` or the catch-all `catch err: Error`.
 
 ### 11.2 Nullable-aware stdlib
 
-AI and I/O operations that can fail return nullable types. The caller handles:
+`Ai.*` calls return `T?` for genuine absence (e.g. the model returned nothing parseable). Use `??` or `when` for the simple fallback case:
 
 ```keel
-# Option 1: default via ??
+# Simple default via ??
 summary = Ai.summarize(article, in: 3, unit: sentences) ?? "No summary available"
+urgency = Ai.classify(text, as: Urgency) ?? Urgency.medium
 
-# Option 2: fallback parameter (for enum returns)
-urgency = Ai.classify(text, as: Urgency, fallback: Urgency.medium)
-
-# Option 3: explicit when
+# Explicit when
 when Ai.classify(text, as: Urgency) {
   some(u)  => handle(u)
   none     => Io.notify("Could not classify")
+}
+```
+
+When you need to distinguish *why* a call failed, use `try/catch`:
+
+```keel
+try {
+  urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+} catch err: AiSchemaError {
+  Io.notify("Unexpected LLM output: {err.got}")
+  urgency = Urgency.medium
+} catch err: AiError {
+  Control.retry(3, () => {
+    urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  })
+} catch err: Error {
+  Io.notify("Unexpected failure: {err.message}")
 }
 ```
 
@@ -881,7 +897,7 @@ v0.1 `Memory` is a plain K/V store. The planned v0.2 upgrade adds a `VectorStore
 
 ---
 
-## 12a. Time
+## 13. Time
 
 The `Time` namespace provides datetime construction and parsing. Datetimes are RFC 3339 strings with an explicit timezone offset — naive strings (no offset) are rejected. Methods `parts()` and `format()` live on the datetime value itself.
 
@@ -944,9 +960,9 @@ if deadline > Time.now() {
 
 ---
 
-## 13. Escape Hatches
+## 14. Escape Hatches
 
-### 13.1 `Ai.prompt` — raw LLM access
+### 14.1 `Ai.prompt` — raw LLM access
 
 ```keel
 score = Ai.prompt(
@@ -959,7 +975,7 @@ score = Ai.prompt(
 
 `Ai.prompt(...)` **must be followed by `as T`**. A bare `Ai.prompt(...)` that tries to use the result is a compile error. Use `as dynamic` to explicitly opt out of typing.
 
-### 13.2 `Http.request` — raw HTTP
+### 14.2 `Http.request` — raw HTTP
 
 ```keel
 r = Http.request(
@@ -972,7 +988,7 @@ r = Http.request(
 # r: HttpResponse?
 ```
 
-### 13.3 `Db.query` — raw SQL
+### 14.3 `Db.query` — raw SQL
 
 ```keel
 rows = Db.query(
@@ -982,7 +998,7 @@ rows = Db.query(
 # rows: list[dynamic]
 ```
 
-### 13.4 `extern` — call external code
+### 14.4 `extern` — call external code
 
 ```keel
 extern task tokenize(text: str) -> list[str] from "nlp_utils"
@@ -994,9 +1010,9 @@ tokens = tokenize(document.body)
 
 ---
 
-## 14. Environment & Configuration
+## 15. Environment & Configuration
 
-### 14.1 Environment variables
+### 15.1 Environment variables
 
 ```keel
 api_key = Env.require("OPENAI_API_KEY")   # fails at startup if missing
@@ -1005,7 +1021,7 @@ db_url  = Env.get("DATABASE_URL")          # str? — none if missing
 
 `Env` is a prelude namespace backed by the host environment.
 
-### 14.2 Configuration file
+### 15.2 Configuration file
 
 `keel.config` (YAML) is loaded by the runtime at startup and populates default attribute values:
 
@@ -1023,7 +1039,7 @@ log:
 
 ---
 
-## 15. Modules & Imports
+## 16. Modules & Imports
 
 ```keel
 use "./email_utils.keel"               # import a local file
@@ -1035,7 +1051,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 
 ---
 
-## 16. Operators
+## 17. Operators
 
 | Operator | Meaning |
 |---|---|
@@ -1054,7 +1070,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 
 ---
 
-## 17. Execution Model
+## 18. Execution Model
 
 Keel runs on the **Keel Runtime** (Rust, Tokio).
 
@@ -1079,7 +1095,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 
 ---
 
-## 18. Compile-Time Errors
+## 19. Compile-Time Errors
 
 | Error | Severity |
 |---|---|
@@ -1100,7 +1116,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 18a. Lint Rules (`keel lint`)
+## 20. Lint Rules (`keel lint`)
 
 `keel lint` checks for style and best-practice issues that are not type errors. The program may still run; lint warnings indicate dead code or likely misuse patterns.
 
@@ -1115,7 +1131,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 19. IDE Contract
+## 21. IDE Contract
 
 Every feature is designed for tooling.
 
@@ -1137,7 +1153,7 @@ Every feature is designed for tooling.
 
 ---
 
-## 20. Formal Grammar (PEG summary, condensed)
+## 22. Formal Grammar (PEG summary, condensed)
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
@@ -1210,7 +1226,7 @@ ForStmt     <- "for" (IDENT / DestructPat) "in" Expr ("if" Expr)? Block
 TryStmt     <- "try" Block CatchClause+
 CatchClause <- "catch" IDENT ":" Type Block
 
-# --- Terminals, literals, duration as before (§2.2, §9) ---
+# --- Terminals, literals, duration as before (§2.2) ---
 ```
 
 Notably absent: dedicated grammar for `ClassifyExpr`, `ExtractExpr`, `SummarizeExpr`, `DraftExpr`, `TranslateExpr`, `DecideExpr`, `PromptExpr`, `HttpExpr`, `SqlExpr`, `AskExpr`, `ConfirmExpr`, `NotifyStmt`, `ShowStmt`, `FetchExpr`, `SearchExpr`, `SendStmt`, `ArchiveStmt`, `RememberStmt`, `ForgetStmt`, `RecallExpr`, `EveryBlock`, `AfterStmt`, `WaitStmt`, `RetryStmt`, `ParallelExpr`, `RaceExpr`, `DelegateExpr`, `ConnectStmt`, `BroadcastStmt`, `RunStmt`, `RulesBlock`, `ConfigBlock`, `ToolsClause`, `TeamClause`, `RoleClause`, `ModelClause`, `MemoryClause`. All are ordinary function calls in the prelude or stdlib attribute handlers.
@@ -1219,7 +1235,7 @@ That keeps the parser small, type inference uniform (no hard-coded primitive sig
 
 ---
 
-## 21. What's Next
+## 23. What's Next
 
 v0.1 is the initial alpha. `keel run` accepts only the surface described in this document.
 
