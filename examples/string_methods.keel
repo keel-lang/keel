@@ -1,0 +1,56 @@
+# String Methods Demo
+#
+# Demonstrates all string built-in methods: trim variants, repeat, slice,
+# index_of, to_int, to_float, plus the existing core set.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/string_methods.keel
+
+agent StringMethodsDemo {
+  @on_start {
+    s = "  Hello, World!  "
+
+    # Whitespace trimming
+    Io.show("{s.trim()}")
+    Io.show("{s.trim_start()}")
+    Io.show("{s.trim_end()}")
+
+    # Case
+    Io.show("{"hello".upper()}")
+    Io.show("{"HELLO".lower()}")
+
+    # Repeat
+    Io.show("{"ha".repeat(3)}")
+
+    # Slice (character-indexed, exclusive end)
+    Io.show("{"hello world".slice(6, 11)}")
+
+    # Index of (character position, none if absent)
+    pos = "hello world".index_of("world")
+    Io.show("{pos}")
+    missing = "hello world".index_of("xyz")
+    Io.show("{missing}")
+
+    # Parse conversions
+    n = "42".to_int()
+    Io.show("{n}")
+    f = "3.14".to_float()
+    Io.show("{f}")
+    bad = "abc".to_int()
+    Io.show("{bad}")
+
+    # Contains / starts / ends
+    Io.show("{"hello".contains("ell")}")
+    Io.show("{"hello".starts_with("hel")}")
+    Io.show("{"hello".ends_with("lo")}")
+
+    # Split and join round-trip
+    parts = "a,b,c".split(",")
+    Io.show("{parts.join(" | ")}")
+
+    # Replace
+    Io.show("{"hello world".replace("world", "keel")}")
+  }
+}
+
+run(StringMethodsDemo)

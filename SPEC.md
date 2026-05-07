@@ -128,7 +128,7 @@ Rules: `[...]` is a list. `{k: v}` is a map. `set[...]` is a set (the only place
 
 Maps expose `.count`, `.keys`, `.values`. Sets expose `.count`, `.contains(v)`, `.is_empty`.
 
-**String methods:** `.length`, `.is_empty`, `.contains`, `.starts_with`, `.ends_with`, `.trim`, `.upper`, `.lower`, `.split`, `.replace`, `.slice`.
+**String methods:** `.len()` / `.length`, `.is_empty()`, `.contains(s)`, `.starts_with(s)`, `.ends_with(s)`, `.trim()`, `.trim_start()`, `.trim_end()`, `.upper()`, `.lower()`, `.repeat(n)`, `.slice(start, end?)`, `.index_of(needle)` → `int?`, `.split(sep)`, `.replace(old, new)`, `.to_int()` → `int?`, `.to_float()` → `float?`, `.to_str()`.
 
 **Conversions:** `.to_int()`, `.to_float()`, `.to_str()`. Fallible conversions return nullable (`str.to_int() -> int?`).
 

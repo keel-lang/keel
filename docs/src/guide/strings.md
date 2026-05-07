@@ -63,18 +63,24 @@ notify user "Price: \{not interpolated\}"
 
 | Method | Returns | Example |
 |--------|---------|---------|
-| `.length` | `int` | `"hello".length` → `5` |
-| `.is_empty` | `bool` | `"".is_empty` → `true` |
+| `.len()` / `.length` | `int` | `"hello".len()` → `5` |
+| `.is_empty()` | `bool` | `"".is_empty()` → `true` |
 | `.contains(s)` | `bool` | `"hello".contains("ell")` → `true` |
 | `.starts_with(s)` | `bool` | `"hello".starts_with("hel")` → `true` |
 | `.ends_with(s)` | `bool` | `"hello".ends_with("lo")` → `true` |
 | `.trim()` | `str` | `" hi ".trim()` → `"hi"` |
+| `.trim_start()` | `str` | `" hi ".trim_start()` → `"hi "` |
+| `.trim_end()` | `str` | `" hi ".trim_end()` → `" hi"` |
 | `.upper()` | `str` | `"hello".upper()` → `"HELLO"` |
 | `.lower()` | `str` | `"HELLO".lower()` → `"hello"` |
+| `.repeat(n)` | `str` | `"ha".repeat(3)` → `"hahaha"` |
+| `.slice(start, end?)` | `str` | `"hello".slice(1, 3)` → `"el"` |
+| `.index_of(needle)` | `int?` | `"hello world".index_of("world")` → `6` |
 | `.split(sep)` | `list[str]` | `"a,b,c".split(",")` → `["a","b","c"]` |
 | `.replace(old, new)` | `str` | `"hello".replace("l","r")` → `"herro"` |
-| `.to_int()` | `int?` | `"42".to_int()` → `42` |
-| `.to_float()` | `float?` | `"3.14".to_float()` → `3.14` |
+| `.to_int()` | `int?` | `"42".to_int()` → `42`; `"bad".to_int()` → `none` |
+| `.to_float()` | `float?` | `"3.14".to_float()` → `3.14`; `"x".to_float()` → `none` |
+| `.to_str()` | `str` | identity — useful in generic contexts |
 
 ## `Str` namespace — regex & processing
 

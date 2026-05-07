@@ -3525,3 +3525,128 @@ fn examples_all_parse_includes_list_ops() {
         "`keel check list_ops.keel` failed"
     );
 }
+
+// ---------------------------------------------------------------------------
+// String methods — repeat, slice, index_of, trim_start, trim_end,
+//                  to_int, to_float
+// ---------------------------------------------------------------------------
+
+#[test]
+fn string_repeat_produces_n_copies() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Io.show("{"ha".repeat(3)}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("hahaha"), "repeat: {stdout}");
+}
+
+#[test]
+fn string_slice_extracts_chars() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Io.show("{"hello world".slice(6, 11)}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("world"), "slice: {stdout}");
+}
+
+#[test]
+fn string_index_of_returns_position_or_none() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Io.show("{"hello world".index_of("world")}")
+    Io.show("{"hello world".index_of("xyz")}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("6"), "index_of found: {stdout}");
+    assert!(stdout.contains("none"), "index_of miss: {stdout}");
+}
+
+#[test]
+fn string_trim_start_and_trim_end() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    s = "  hi  "
+    Io.show("{s.trim_start()}")
+    Io.show("{s.trim_end()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("hi  "), "trim_start: {stdout}");
+    assert!(stdout.contains("  hi"), "trim_end: {stdout}");
+}
+
+#[test]
+fn string_to_int_parses_or_returns_none() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Io.show("{"42".to_int()}")
+    Io.show("{"bad".to_int()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("42"), "to_int parse: {stdout}");
+    assert!(stdout.contains("none"), "to_int fail: {stdout}");
+}
+
+#[test]
+fn string_to_float_parses_or_returns_none() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    Io.show("{"3.14".to_float()}")
+    Io.show("{"nope".to_float()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("3.14"), "to_float parse: {stdout}");
+    assert!(stdout.contains("none"), "to_float fail: {stdout}");
+}
+
+#[test]
+fn examples_all_parse_includes_string_methods() {
+    ensure_binary_built();
+    assert!(
+        check_example("string_methods"),
+        "`keel check string_methods.keel` failed"
+    );
+}

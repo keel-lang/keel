@@ -1514,6 +1514,57 @@ impl Interpreter {
                     .collect();
                 Ok(Value::List(parts))
             }
+            (Value::String(s), "to_int") => Ok(s
+                .trim()
+                .parse::<i64>()
+                .map(Value::Integer)
+                .unwrap_or(Value::None)),
+            (Value::String(s), "to_float") => Ok(s
+                .trim()
+                .parse::<f64>()
+                .map(Value::Float)
+                .unwrap_or(Value::None)),
+            (Value::String(s), "repeat") => {
+                let n = args
+                    .first()
+                    .and_then(|a| a.value.as_int())
+                    .unwrap_or(0)
+                    .max(0) as usize;
+                Ok(Value::String(s.repeat(n)))
+            }
+            (Value::String(s), "slice") => {
+                let chars: Vec<char> = s.chars().collect();
+                let len = chars.len() as i64;
+                let start = args
+                    .first()
+                    .and_then(|a| a.value.as_int())
+                    .unwrap_or(0);
+                let end = args
+                    .get(1)
+                    .and_then(|a| a.value.as_int())
+                    .unwrap_or(len);
+                let start = start.clamp(0, len) as usize;
+                let end = end.clamp(0, len) as usize;
+                let end = end.max(start);
+                Ok(Value::String(chars[start..end].iter().collect()))
+            }
+            (Value::String(s), "index_of") => {
+                let needle = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
+                Ok(s.find(needle.as_str())
+                    .map(|byte_pos| {
+                        Value::Integer(s[..byte_pos].chars().count() as i64)
+                    })
+                    .unwrap_or(Value::None))
+            }
+            (Value::String(s), "trim_start") => {
+                Ok(Value::String(s.trim_start().to_string()))
+            }
+            (Value::String(s), "trim_end") => {
+                Ok(Value::String(s.trim_end().to_string()))
+            }
             (Value::Range(lo, hi), "count" | "len") => {
                 Ok(Value::Integer(if lo <= hi { hi - lo + 1 } else { 0 }))
             }

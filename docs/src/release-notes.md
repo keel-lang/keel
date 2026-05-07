@@ -10,6 +10,10 @@
 
 `list[T]` gains thirteen new methods: `any`, `all`, `find`, `reduce`, `sum`, `min`, `max`, `join`, `sort`, `reverse`, `flatten`, `take`, `skip`. See the [Collections guide](guide/collections.md) for full reference.
 
+### New string methods
+
+Seven new string methods added: `trim_start`, `trim_end`, `repeat`, `slice`, `index_of`, `to_int`, `to_float`. See the [String Interpolation guide](guide/strings.md) for the full method table.
+
 ---
 
 ## v0.1.15 — Error Handling Rework

@@ -50,6 +50,32 @@ scores.skip(2).join(", ")            # "95, 8, 73"
 ["a", "b", "c"].join(" | ")          # "a | b | c"
 ```
 
+### New string methods
+
+Seven new methods on `str`, plus the previously documented-but-unimplemented `to_int` and `to_float` are now wired:
+
+| Method | Returns | Notes |
+|---|---|---|
+| `.trim_start()` | `str` | strips leading whitespace |
+| `.trim_end()` | `str` | strips trailing whitespace |
+| `.repeat(n)` | `str` | repeats string `n` times |
+| `.slice(start, end?)` | `str` | char-indexed substring; exclusive end |
+| `.index_of(needle)` | `int?` | char position of first match, or `none` |
+| `.to_int()` | `int?` | parse as integer; `none` on failure |
+| `.to_float()` | `float?` | parse as float; `none` on failure |
+
+```keel
+"  hello  ".trim_start()          # "hello  "
+"  hello  ".trim_end()            # "  hello"
+"ha".repeat(3)                    # "hahaha"
+"hello world".slice(6, 11)        # "world"
+"hello world".index_of("world")   # 6
+"hello world".index_of("xyz")     # none
+"42".to_int()                     # 42
+"3.14".to_float()                 # 3.14
+"bad".to_int()                    # none
+```
+
 ---
 
 ## [0.1.15] — 2026-05-06
