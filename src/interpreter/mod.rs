@@ -1535,14 +1535,8 @@ impl Interpreter {
             (Value::String(s), "slice") => {
                 let chars: Vec<char> = s.chars().collect();
                 let len = chars.len() as i64;
-                let start = args
-                    .first()
-                    .and_then(|a| a.value.as_int())
-                    .unwrap_or(0);
-                let end = args
-                    .get(1)
-                    .and_then(|a| a.value.as_int())
-                    .unwrap_or(len);
+                let start = args.first().and_then(|a| a.value.as_int()).unwrap_or(0);
+                let end = args.get(1).and_then(|a| a.value.as_int()).unwrap_or(len);
                 let start = start.clamp(0, len) as usize;
                 let end = end.clamp(0, len) as usize;
                 let end = end.max(start);
@@ -1554,17 +1548,11 @@ impl Interpreter {
                     .map(|a| a.value.as_string())
                     .unwrap_or_default();
                 Ok(s.find(needle.as_str())
-                    .map(|byte_pos| {
-                        Value::Integer(s[..byte_pos].chars().count() as i64)
-                    })
+                    .map(|byte_pos| Value::Integer(s[..byte_pos].chars().count() as i64))
                     .unwrap_or(Value::None))
             }
-            (Value::String(s), "trim_start") => {
-                Ok(Value::String(s.trim_start().to_string()))
-            }
-            (Value::String(s), "trim_end") => {
-                Ok(Value::String(s.trim_end().to_string()))
-            }
+            (Value::String(s), "trim_start") => Ok(Value::String(s.trim_start().to_string())),
+            (Value::String(s), "trim_end") => Ok(Value::String(s.trim_end().to_string())),
             (Value::Range(lo, hi), "count" | "len") => {
                 Ok(Value::Integer(if lo <= hi { hi - lo + 1 } else { 0 }))
             }
@@ -1797,10 +1785,7 @@ impl Interpreter {
                     Value::Closure(p, b) => (p, b),
                     _ => return Err(runtime_error("reduce: first argument must be a function")),
                 };
-                let mut acc = args
-                    .get(1)
-                    .map(|a| a.value.clone())
-                    .unwrap_or(Value::None);
+                let mut acc = args.get(1).map(|a| a.value.clone()).unwrap_or(Value::None);
                 for item in items.clone() {
                     acc = self
                         .call_closure(

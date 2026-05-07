@@ -1,6 +1,6 @@
 [package]
 name = "keel-lang"
-version = "0.1.15"
+version = "0.1.16"
 edition = "2024"
 description = "Keel — a programming language where AI agents are first-class citizens"
 license = "MIT"

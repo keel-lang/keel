@@ -12,6 +12,12 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.16] — 2026-05-07
+
+Thirteen new list operations, seven new string methods, and `keel check --strict` for unknown-type binding detection.
+
 ### Extended list operations
 
 `list[T]` gains thirteen new built-in methods:

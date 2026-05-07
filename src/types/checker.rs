@@ -1053,7 +1053,11 @@ impl Checker {
                     (Ty::List(_), "reduce" | "sum" | "min" | "max") => Ty::Unknown,
                     (Ty::List(_), "join") => Ty::Str,
                     (Ty::Str, "len" | "count" | "length") => Ty::Int,
-                    (Ty::Str, "upper" | "lower" | "trim" | "strip" | "trim_start" | "trim_end" | "repeat" | "slice" | "replace" | "to_str") => Ty::Str,
+                    (
+                        Ty::Str,
+                        "upper" | "lower" | "trim" | "strip" | "trim_start" | "trim_end" | "repeat"
+                        | "slice" | "replace" | "to_str",
+                    ) => Ty::Str,
                     (Ty::Str, "split") => Ty::List(Box::new(Ty::Str)),
                     (Ty::Str, "contains" | "starts_with" | "ends_with" | "is_empty") => Ty::Bool,
                     (Ty::Str, "to_int") => Ty::Nullable(Box::new(Ty::Int)),
