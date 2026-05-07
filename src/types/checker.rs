@@ -120,6 +120,9 @@ struct Checker {
     /// `check_stmt` so every `err()` call within a statement — including
     /// errors raised by `infer_expr` — automatically gets a location.
     current_span: Option<Span>,
+    /// When true, emit an error for any binding whose type the checker
+    /// cannot resolve (falls back to `Ty::Unknown`).
+    strict: bool,
 }
 
 /// Chained lexical scope: newer scopes on the back of the vec.
@@ -162,6 +165,17 @@ impl Scope {
 
 pub fn check(program: &Program) -> Vec<TypeError> {
     let mut c = Checker::new();
+    c.collect(program);
+    c.check(program);
+    c.errors
+}
+
+/// Like `check`, but also emits errors for any binding whose type the
+/// checker cannot resolve.  Use `keel check --strict` to surface gaps
+/// in type coverage that the normal checker accepts silently.
+pub fn check_strict(program: &Program) -> Vec<TypeError> {
+    let mut c = Checker::new();
+    c.strict = true;
     c.collect(program);
     c.check(program);
     c.errors
@@ -250,6 +264,7 @@ impl Checker {
             current_return_ty: None,
             prelude,
             current_span: None,
+            strict: false,
         }
     }
 
@@ -602,7 +617,17 @@ impl Checker {
                         }
                         declared
                     }
-                    None => inferred,
+                    None => {
+                        if self.strict
+                            && matches!(inferred, Ty::Unknown)
+                            && let Binding::Ident(name) = binding
+                        {
+                            self.err(format!(
+                                "cannot infer type of `{name}`; consider adding a type annotation"
+                            ));
+                        }
+                        inferred
+                    }
                 };
                 self.bind_to_scope(binding, &bound, scope);
             }

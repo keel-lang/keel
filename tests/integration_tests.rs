@@ -3650,3 +3650,105 @@ fn examples_all_parse_includes_string_methods() {
         "`keel check string_methods.keel` failed"
     );
 }
+
+// ---------------------------------------------------------------------------
+// keel check --strict
+// ---------------------------------------------------------------------------
+
+#[test]
+fn strict_mode_passes_fully_typed_program() {
+    use std::io::Write;
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    n: int = 42
+    s: str = "hello"
+    Io.show("{n} {s}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let output = Command::new(keel_binary())
+        .args(["check", "--strict", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run keel check --strict");
+    assert!(
+        output.status.success(),
+        "strict check failed on typed program\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn strict_mode_rejects_unknown_typed_binding() {
+    use std::io::Write;
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    data = Json.parse("{}")
+    Io.show("{data}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let output = Command::new(keel_binary())
+        .args(["check", "--strict", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run keel check --strict");
+    assert!(
+        !output.status.success(),
+        "strict check should fail on Unknown-typed binding"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot infer type of `data`"),
+        "expected strict diagnostic:\n{stderr}"
+    );
+}
+
+#[test]
+fn normal_check_accepts_json_parse_without_annotation() {
+    use std::io::Write;
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    data = Json.parse("{}")
+    Io.show("{data}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let output = Command::new(keel_binary())
+        .args(["check", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run keel check");
+    assert!(
+        output.status.success(),
+        "normal check should accept unannotated Json.parse\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

@@ -38,6 +38,9 @@ enum Commands {
     Check {
         /// Path to the .keel file
         file: PathBuf,
+        /// Reject bindings whose type the checker cannot resolve (Ty::Unknown)
+        #[arg(long)]
+        strict: bool,
     },
     /// Scaffold a new Keel project
     Init {
@@ -112,7 +115,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Run { file } => run_file(&file).await,
-        Commands::Check { file } => check_file(&file),
+        Commands::Check { file, strict } => check_file(&file, strict),
         Commands::Init { name } => init_project(name),
         Commands::Repl => repl::start().await,
         Commands::Fmt { file } => fmt_file(&file),
@@ -185,7 +188,7 @@ async fn run_file(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn check_file(path: &PathBuf) -> Result<()> {
+fn check_file(path: &PathBuf, strict: bool) -> Result<()> {
     let source = fs::read_to_string(path)
         .into_diagnostic()
         .map_err(|e| miette::miette!("Could not read '{}': {}", path.display(), e))?;
@@ -204,7 +207,11 @@ fn check_file(path: &PathBuf) -> Result<()> {
     let program = parser::parse(tokens, source.len(), &named_src)?;
 
     // Type check
-    let errors = types::checker::check(&program);
+    let errors = if strict {
+        types::checker::check_strict(&program)
+    } else {
+        types::checker::check(&program)
+    };
     if !errors.is_empty() {
         for err in &errors {
             if let Some(span) = &err.span {

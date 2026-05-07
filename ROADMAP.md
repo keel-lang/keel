@@ -84,7 +84,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Command | Status | Notes |
 |---|---|---|
 | `keel run` | [x] | Execute a .keel program |
-| `keel check` | [x] | Type-check only, no execution |
+| `keel check` | [x] | Type-check only, no execution; `--strict` rejects unknown-typed bindings |
 | `keel fmt` | [x] | Auto-format; idempotent round-trip against the AST |
 | `keel init` | [x] | Scaffold a new project |
 | `keel repl` | [x] | Interactive REPL; multi-line input, persistent environment |

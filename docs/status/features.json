@@ -216,7 +216,7 @@
     {
       "name": "keel check",
       "status": "shipped",
-      "notes": "Type-check only, no execution"
+      "notes": "Type-check only, no execution; `--strict` rejects unknown-typed bindings"
     },
     {
       "name": "keel fmt",

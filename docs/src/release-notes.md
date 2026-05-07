@@ -14,6 +14,10 @@
 
 Seven new string methods added: `trim_start`, `trim_end`, `repeat`, `slice`, `index_of`, `to_int`, `to_float`. See the [String Interpolation guide](guide/strings.md) for the full method table.
 
+### `keel check --strict`
+
+`keel check --strict <file>` now rejects bindings whose type the checker cannot infer. Normal `keel check` still accepts them silently. Use `--strict` to verify that type annotations are complete. See [`keel check`](../cli/check.md) for details.
+
 ---
 
 ## v0.1.15 — Error Handling Rework

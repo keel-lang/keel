@@ -76,6 +76,19 @@ Seven new methods on `str`, plus the previously documented-but-unimplemented `to
 "bad".to_int()                    # none
 ```
 
+### `keel check --strict`
+
+A new `--strict` flag for `keel check` surfaces bindings whose type the checker cannot resolve. In normal mode, these are silently accepted as `Unknown`; `--strict` turns them into errors.
+
+```bash
+keel check file.keel           # normal — Unknown bindings are silent
+keel check --strict file.keel  # strict — Unknown bindings are errors
+```
+
+Example: `data = Json.parse(raw)` produces `cannot infer type of 'data'; consider adding a type annotation` in strict mode. Fix it with an explicit cast: `data = Json.parse(raw) as MyType`.
+
+Strict mode is opt-in — existing programs continue to pass under `keel check`.
+
 ---
 
 ## [0.1.15] — 2026-05-06
