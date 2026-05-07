@@ -1659,6 +1659,231 @@ impl Interpreter {
                 }
                 Ok(Value::List(result))
             }
+            (Value::List(items), "any") => {
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("any expects a function argument"))?;
+                let (params, body) = match closure {
+                    Value::Closure(p, b) => (p, b),
+                    _ => return Err(runtime_error("any: argument must be a function")),
+                };
+                for item in items.clone() {
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: item,
+                            }],
+                        )
+                        .await?;
+                    if res.is_truthy() {
+                        return Ok(Value::Bool(true));
+                    }
+                }
+                Ok(Value::Bool(false))
+            }
+            (Value::List(items), "all") => {
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("all expects a function argument"))?;
+                let (params, body) = match closure {
+                    Value::Closure(p, b) => (p, b),
+                    _ => return Err(runtime_error("all: argument must be a function")),
+                };
+                for item in items.clone() {
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: item,
+                            }],
+                        )
+                        .await?;
+                    if !res.is_truthy() {
+                        return Ok(Value::Bool(false));
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
+            (Value::List(items), "find") => {
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("find expects a function argument"))?;
+                let (params, body) = match closure {
+                    Value::Closure(p, b) => (p, b),
+                    _ => return Err(runtime_error("find: argument must be a function")),
+                };
+                for item in items.clone() {
+                    let res = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![CallArgValue {
+                                name: None,
+                                value: item.clone(),
+                            }],
+                        )
+                        .await?;
+                    if res.is_truthy() {
+                        return Ok(item);
+                    }
+                }
+                Ok(Value::None)
+            }
+            (Value::List(items), "reduce") => {
+                let closure = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("reduce expects a function as first argument"))?;
+                let (params, body) = match closure {
+                    Value::Closure(p, b) => (p, b),
+                    _ => return Err(runtime_error("reduce: first argument must be a function")),
+                };
+                let mut acc = args
+                    .get(1)
+                    .map(|a| a.value.clone())
+                    .unwrap_or(Value::None);
+                for item in items.clone() {
+                    acc = self
+                        .call_closure(
+                            &params,
+                            &body,
+                            vec![
+                                CallArgValue {
+                                    name: None,
+                                    value: acc,
+                                },
+                                CallArgValue {
+                                    name: None,
+                                    value: item,
+                                },
+                            ],
+                        )
+                        .await?;
+                }
+                Ok(acc)
+            }
+            (Value::List(items), "sum") => {
+                let mut int_sum: i64 = 0;
+                let mut float_sum: f64 = 0.0;
+                let mut is_float = false;
+                for item in items {
+                    match item {
+                        Value::Integer(n) => {
+                            int_sum += n;
+                            float_sum += *n as f64;
+                        }
+                        Value::Float(f) => {
+                            float_sum += f;
+                            is_float = true;
+                        }
+                        _ => return Err(runtime_error("sum: list must contain only numbers")),
+                    }
+                }
+                if is_float {
+                    Ok(Value::Float(float_sum))
+                } else {
+                    Ok(Value::Integer(int_sum))
+                }
+            }
+            (Value::List(items), "min") => {
+                if items.is_empty() {
+                    return Ok(Value::None);
+                }
+                let mut result = items[0].clone();
+                for item in &items[1..] {
+                    let less = match (&result, item) {
+                        (Value::Integer(a), Value::Integer(b)) => b < a,
+                        (Value::Float(a), Value::Float(b)) => b < a,
+                        (Value::Integer(a), Value::Float(b)) => b < &(*a as f64),
+                        (Value::Float(a), Value::Integer(b)) => &(*b as f64) < a,
+                        (Value::String(a), Value::String(b)) => b < a,
+                        _ => false,
+                    };
+                    if less {
+                        result = item.clone();
+                    }
+                }
+                Ok(result)
+            }
+            (Value::List(items), "max") => {
+                if items.is_empty() {
+                    return Ok(Value::None);
+                }
+                let mut result = items[0].clone();
+                for item in &items[1..] {
+                    let greater = match (&result, item) {
+                        (Value::Integer(a), Value::Integer(b)) => b > a,
+                        (Value::Float(a), Value::Float(b)) => b > a,
+                        (Value::Integer(a), Value::Float(b)) => b > &(*a as f64),
+                        (Value::Float(a), Value::Integer(b)) => &(*b as f64) > a,
+                        (Value::String(a), Value::String(b)) => b > a,
+                        _ => false,
+                    };
+                    if greater {
+                        result = item.clone();
+                    }
+                }
+                Ok(result)
+            }
+            (Value::List(items), "join") => {
+                let sep = args
+                    .first()
+                    .map(|a| a.value.as_string())
+                    .unwrap_or_default();
+                let parts: Vec<String> = items.iter().map(|v| v.as_string()).collect();
+                Ok(Value::String(parts.join(&sep)))
+            }
+            (Value::List(items), "sort") => {
+                let mut sorted = items.clone();
+                sorted.sort_by(|a, b| match (a, b) {
+                    (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
+                    (Value::Float(x), Value::Float(y)) => {
+                        x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
+                    }
+                    (Value::String(x), Value::String(y)) => x.cmp(y),
+                    _ => std::cmp::Ordering::Equal,
+                });
+                Ok(Value::List(sorted))
+            }
+            (Value::List(items), "reverse") => {
+                let mut reversed = items.clone();
+                reversed.reverse();
+                Ok(Value::List(reversed))
+            }
+            (Value::List(items), "flatten") => {
+                let mut flat = Vec::new();
+                for item in items {
+                    match item {
+                        Value::List(inner) => flat.extend(inner.clone()),
+                        other => flat.push(other.clone()),
+                    }
+                }
+                Ok(Value::List(flat))
+            }
+            (Value::List(items), "take") => {
+                let n = args
+                    .first()
+                    .and_then(|a| a.value.as_int())
+                    .unwrap_or(0)
+                    .max(0) as usize;
+                Ok(Value::List(items.iter().take(n).cloned().collect()))
+            }
+            (Value::List(items), "skip") => {
+                let n = args
+                    .first()
+                    .and_then(|a| a.value.as_int())
+                    .unwrap_or(0)
+                    .max(0) as usize;
+                Ok(Value::List(items.iter().skip(n).cloned().collect()))
+            }
             (Value::Map(m), "keys") => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort();

@@ -105,18 +105,26 @@ Rules: `[...]` is a list. `{k: v}` is a map. `set[...]` is a set (the only place
 
 **Built-in collection operations** (methods, enabled by lambdas):
 
-| Method | Signature |
-|---|---|
-| `.count` | `int` |
-| `.first`, `.last` | `T?` |
-| `.is_empty` | `bool` |
-| `.map(fn)` | `list[T].(T -> U) -> list[U]` |
-| `.filter(fn)` | `list[T].(T -> bool) -> list[T]` |
-| `.find(fn)` | `list[T].(T -> bool) -> T?` |
-| `.any(fn)`, `.all(fn)` | `list[T].(T -> bool) -> bool` |
-| `.sort_by(fn)` | `list[T].(T -> U) -> list[T]` |
-| `.group_by(fn)` | `list[T].(T -> U) -> map[U, list[T]]` |
-| `.flat_map(fn)` | `list[T].(T -> list[U]) -> list[U]` |
+| Method | Signature | Notes |
+|---|---|---|
+| `.len()` / `.count()` | `int` | |
+| `.first()`, `.last()` | `T?` | |
+| `.is_empty()` | `bool` | |
+| `.push(v)` | `list[T]` | returns new list |
+| `.map(fn)` | `list[T].(T → U) → list[U]` | |
+| `.filter(fn)` | `list[T].(T → bool) → list[T]` | |
+| `.find(fn)` | `list[T].(T → bool) → T?` | first match or `none` |
+| `.any(fn)`, `.all(fn)` | `list[T].(T → bool) → bool` | |
+| `.reduce(fn, init)` | `list[T].((U, T) → U, U) → U` | `fn` receives `(acc, elem)` |
+| `.sum()` | `int\|float` | numeric lists only |
+| `.min()`, `.max()` | `T?` | `none` on empty |
+| `.join(sep)` | `str` | `list[str]` preferred |
+| `.sort()` | `list[T]` | natural order (int, float, str) |
+| `.reverse()` | `list[T]` | |
+| `.flatten()` | `list[T]` | unwraps one nesting level |
+| `.take(n)` | `list[T]` | first `n` elements |
+| `.skip(n)` | `list[T]` | all but first `n` |
+| `.contains(v)` | `bool` | |
 
 Maps expose `.count`, `.keys`, `.values`. Sets expose `.count`, `.contains(v)`, `.is_empty`.
 

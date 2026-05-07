@@ -1016,12 +1016,17 @@ impl Checker {
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
-                    (Ty::List(elem), "push" | "filter") => Ty::List(elem.clone()),
+                    (Ty::List(elem), "push" | "filter" | "sort" | "reverse" | "take" | "skip") => {
+                        Ty::List(elem.clone())
+                    }
+                    (Ty::List(_), "flatten") => Ty::List(Box::new(Ty::Unknown)),
                     (Ty::List(_), "len" | "count") => Ty::Int,
                     (Ty::List(_), "is_empty") => Ty::Bool,
-                    (Ty::List(_), "contains") => Ty::Bool,
-                    (Ty::List(elem), "first" | "last") => Ty::Nullable(elem.clone()),
+                    (Ty::List(_), "contains" | "any" | "all") => Ty::Bool,
+                    (Ty::List(elem), "first" | "last" | "find") => Ty::Nullable(elem.clone()),
                     (Ty::List(_), "map") => Ty::List(Box::new(Ty::Unknown)),
+                    (Ty::List(_), "reduce" | "sum" | "min" | "max") => Ty::Unknown,
+                    (Ty::List(_), "join") => Ty::Str,
                     (Ty::Str, "len" | "count" | "length") => Ty::Int,
                     (Ty::Str, "upper" | "lower" | "trim" | "strip") => Ty::Str,
                     (Ty::Str, "split") => Ty::List(Box::new(Ty::Str)),

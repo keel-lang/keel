@@ -12,6 +12,48 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Extended list operations
+
+`list[T]` gains thirteen new built-in methods:
+
+| Method | Returns | Notes |
+|---|---|---|
+| `list.any(predicate)` | `bool` | `true` if any element matches |
+| `list.all(predicate)` | `bool` | `true` if every element matches |
+| `list.find(predicate)` | `T?` | first match or `none` |
+| `list.reduce(fn, init)` | any | fold; `fn` receives `(acc, elem)` |
+| `list.sum()` | `int\|float` | numeric lists only; runtime error on non-numeric |
+| `list.min()` | `T?` | `none` on empty list |
+| `list.max()` | `T?` | `none` on empty list |
+| `list.join(sep)` | `str` | concatenates with separator |
+| `list.sort()` | `list[T]` | natural order (int, float, str) |
+| `list.reverse()` | `list[T]` | reverses in place (returns new list) |
+| `list.flatten()` | `list[T]` | unwraps one level of nesting |
+| `list.take(n)` | `list[T]` | first `n` elements |
+| `list.skip(n)` | `list[T]` | all but the first `n` elements |
+
+```keel
+scores = [42, 17, 95, 8, 73]
+
+scores.sum()                          # 235
+scores.min()                          # 8
+scores.max()                          # 95
+scores.any(s => s > 80)              # true
+scores.all(s => s > 5)               # true
+scores.find(s => s > 60)             # 95
+scores.reduce((acc, x) => acc + x, 0) # 235
+scores.sort()                         # [8, 17, 42, 73, 95]
+scores.sort().reverse().take(3)       # [95, 73, 42]
+scores.skip(2).join(", ")            # "95, 8, 73"
+
+[[1, 2], [3, 4]].flatten()           # [1, 2, 3, 4]
+["a", "b", "c"].join(" | ")          # "a | b | c"
+```
+
+---
+
+## [0.1.15] — 2026-05-06
+
 ### Typed AI errors and `try/catch` wiring (breaking)
 
 **`fallback:` parameter removed from all `Ai.*` calls.**

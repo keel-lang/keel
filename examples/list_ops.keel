@@ -1,0 +1,52 @@
+# List Operations Demo
+#
+# Demonstrates the full set of list methods: any, all, find, reduce,
+# sum, min, max, join, sort, reverse, flatten, take, skip.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/list_ops.keel
+
+agent ListOpsDemo {
+  @on_start {
+    scores = [42, 17, 95, 8, 73, 61]
+
+    # Aggregation
+    Io.show("sum:     {scores.sum()}")
+    Io.show("min:     {scores.min()}")
+    Io.show("max:     {scores.max()}")
+
+    total = scores.reduce((acc, x) => acc + x, 0)
+    Io.show("reduce:  {total}")
+
+    # Predicates
+    Io.show("any >80: {scores.any(s => s > 80)}")
+    Io.show("all >5:  {scores.all(s => s > 5)}")
+
+    first_high = scores.find(s => s > 60)
+    Io.show("find >60: {first_high}")
+
+    # Ordering and slicing
+    sorted = scores.sort()
+    Io.show("sort:    {sorted.join(", ")}")
+
+    rev = scores.reverse()
+    Io.show("reverse: {rev.take(3).join(", ")} ...")
+
+    top3 = scores.sort().reverse().take(3)
+    Io.show("top 3:   {top3.join(", ")}")
+
+    rest = scores.sort().skip(4)
+    Io.show("skip 4:  {rest.join(", ")}")
+
+    # Flatten
+    nested = [[1, 2], [3, 4], [5]]
+    flat = nested.flatten()
+    Io.show("flatten: {flat.join(", ")}")
+
+    # String join
+    tags = ["urgent", "customer", "billing"]
+    Io.show("tags:    {tags.join(" | ")}")
+  }
+}
+
+run(ListOpsDemo)

@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+### Extended list operations
+
+`list[T]` gains thirteen new methods: `any`, `all`, `find`, `reduce`, `sum`, `min`, `max`, `join`, `sort`, `reverse`, `flatten`, `take`, `skip`. See the [Collections guide](guide/collections.md) for full reference.
+
 ---
 
 ## v0.1.15 — Error Handling Rework

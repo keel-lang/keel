@@ -3336,3 +3336,192 @@ fn examples_all_parse_includes_ai_error() {
         "`keel check ai_error.keel` failed"
     );
 }
+
+// ---------------------------------------------------------------------------
+// List operations — any, all, find, reduce, sum, min, max, join, sort,
+//                   reverse, flatten, take, skip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_any_returns_true_when_predicate_matches() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [1, 5, 10, 15]
+    Io.show("{nums.any(n => n > 8)}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("true"), "any: {stdout}");
+}
+
+#[test]
+fn list_all_returns_false_when_one_fails() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [1, 5, 10, 15]
+    Io.show("{nums.all(n => n > 8)}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("false"), "all: {stdout}");
+}
+
+#[test]
+fn list_find_returns_first_match_or_none() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [3, 7, 12, 20]
+    found = nums.find(n => n > 10)
+    Io.show("{found}")
+    missing = nums.find(n => n > 100)
+    Io.show("{missing}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("12"), "find match: {stdout}");
+    assert!(stdout.contains("none"), "find none: {stdout}");
+}
+
+#[test]
+fn list_reduce_sums_with_accumulator() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [1, 2, 3, 4, 5]
+    total = nums.reduce((acc, x) => acc + x, 0)
+    Io.show("{total}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("15"), "reduce: {stdout}");
+}
+
+#[test]
+fn list_sum_min_max_on_integers() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [4, 1, 9, 2, 7]
+    Io.show("{nums.sum()}")
+    Io.show("{nums.min()}")
+    Io.show("{nums.max()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("23"), "sum: {stdout}");
+    assert!(stdout.contains("1"), "min: {stdout}");
+    assert!(stdout.contains("9"), "max: {stdout}");
+}
+
+#[test]
+fn list_join_produces_delimited_string() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    tags = ["a", "b", "c"]
+    Io.show("{tags.join(", ")}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("a, b, c"), "join: {stdout}");
+}
+
+#[test]
+fn list_sort_and_reverse() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [3, 1, 4, 1, 5]
+    Io.show("{nums.sort().join(" ")}")
+    Io.show("{nums.sort().reverse().first()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("1 1 3 4 5"), "sort: {stdout}");
+    assert!(stdout.contains("5"), "reverse first: {stdout}");
+}
+
+#[test]
+fn list_flatten_merges_nested_lists() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nested = [[1, 2], [3], [4, 5]]
+    Io.show("{nested.flatten().join(" ")}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("1 2 3 4 5"), "flatten: {stdout}");
+}
+
+#[test]
+fn list_take_and_skip() {
+    ensure_binary_built();
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [10, 20, 30, 40, 50]
+    Io.show("{nums.take(3).join(" ")}")
+    Io.show("{nums.skip(3).join(" ")}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("10 20 30"), "take: {stdout}");
+    assert!(stdout.contains("40 50"), "skip: {stdout}");
+}
+
+#[test]
+fn examples_all_parse_includes_list_ops() {
+    ensure_binary_built();
+    assert!(
+        check_example("list_ops"),
+        "`keel check list_ops.keel` failed"
+    );
+}

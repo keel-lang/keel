@@ -83,17 +83,60 @@ has_urgent = emails.any(e => e.urgency == critical)    # true/false
 all_done = tasks.all(t => t.status == "complete")
 ```
 
-### sort_by — sort by derived key
+### reduce — fold to a single value
+
+The first argument is the combining function `(accumulator, element) => ...`; the second is the initial accumulator value.
 
 ```keel
-sorted = items.sort_by(item => item.name)
-by_age = people.sort_by(p => p.age)
+total = [1, 2, 3, 4, 5].reduce((acc, x) => acc + x, 0)   # 15
+joined = words.reduce((acc, w) => acc + " " + w, "")
 ```
 
-### flat_map — map and flatten
+### sum / min / max — numeric aggregation
 
 ```keel
-all_tags = posts.flat_map(p => p.tags)       # flattens nested lists
+prices = [9.99, 4.50, 14.00]
+prices.sum()   # 28.49
+prices.min()   # 4.50
+prices.max()   # 14.00
+```
+
+`min()` and `max()` return `none` on an empty list. `sum()` requires a numeric list; calling it on non-numeric elements is a runtime error.
+
+### join — concatenate to string
+
+```keel
+["a", "b", "c"].join(", ")   # "a, b, c"
+tags.join(" | ")
+```
+
+### sort — natural ordering
+
+Returns a new sorted list. Integers, floats, and strings are compared by value; all other element types are left in place relative to each other.
+
+```keel
+[3, 1, 4, 1, 5].sort()            # [1, 1, 3, 4, 5]
+["cherry", "apple", "banana"].sort()  # ["apple", "banana", "cherry"]
+```
+
+### reverse — flip order
+
+```keel
+[1, 2, 3].reverse()    # [3, 2, 1]
+top3 = scores.sort().reverse().take(3)
+```
+
+### flatten — unwrap one level of nesting
+
+```keel
+[[1, 2], [3], [4, 5]].flatten()   # [1, 2, 3, 4, 5]
+```
+
+### take / skip — slice by count
+
+```keel
+[10, 20, 30, 40, 50].take(3)   # [10, 20, 30]
+[10, 20, 30, 40, 50].skip(3)   # [40, 50]
 ```
 
 ## Lambda syntax
