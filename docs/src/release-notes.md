@@ -6,6 +6,30 @@
 
 ## Unreleased
 
+### Conditional `@tools` guards
+
+`@tools` entries now support a `when` guard — a boolean expression evaluated at the start of each handler turn. Tools whose guard is false are blocked for that turn. Guards can access `self.*` state and call tasks that return `bool`.
+
+Entries can gate a whole namespace or a specific method:
+
+```keel
+agent SupportBot {
+  state { confirmed: bool = false, admin: bool = false }
+
+  @tools [
+    Email.fetch,                           # always allowed
+    Email.send when self.confirmed,        # only after confirmation
+    Db.query,                              # always allowed
+    Db.exec   when self.admin,             # admin only
+    Http,                                  # whole namespace, always
+  ]
+}
+```
+
+Calling a blocked method raises a `CapabilityError` at runtime.
+
+See the [Agents guide](guide/agents.md#tools--capability-list) for full details.
+
 ### Readonly state fields
 
 State fields declared with `readonly` between the colon and the type are **compiler-enforced read-only**. Any `self.field = ...` assignment is a compile-time error.

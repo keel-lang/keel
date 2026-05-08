@@ -10,7 +10,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% Agent capability gating with conditional guards & readonly state fields
 
 ### Conditional `@tools` guards
 

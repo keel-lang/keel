@@ -46,7 +46,7 @@
       "name": "@tools [...]",
       "tier": "stdlib",
       "status": "shipped",
-      "notes": "Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7)"
+      "notes": "Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17)"
     },
     {
       "name": "@memory persistent\\|session\\|none",

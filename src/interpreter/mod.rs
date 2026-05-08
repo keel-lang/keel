@@ -80,9 +80,9 @@ impl AllowedTools {
     /// Returns true if `ns.method` is covered by any entry.
     /// An entry with `method = None` grants the whole namespace.
     fn allows(&self, ns: &str, method: &str) -> bool {
-        self.0.iter().any(|(n, m)| {
-            n == ns && m.as_deref().map_or(true, |m| m == method)
-        })
+        self.0
+            .iter()
+            .any(|(n, m)| n == ns && m.as_deref().is_none_or(|m| m == method))
     }
 }
 
@@ -1394,7 +1394,12 @@ impl Interpreter {
     ) -> Result<Value> {
         // Check @tools capability gating if we're in an agent context.
         if let Some(agent_mutex) = &self.current_agent {
-            let allowed = agent_mutex.lock().unwrap().allowed_tools.as_ref().map(|a| a.allows(ns_name, method));
+            let allowed = agent_mutex
+                .lock()
+                .unwrap()
+                .allowed_tools
+                .as_ref()
+                .map(|a| a.allows(ns_name, method));
             if allowed == Some(false) {
                 return Err(runtime_error(format!(
                     "CapabilityError: `{ns_name}.{method}` is not allowed by @tools"
@@ -1426,11 +1431,11 @@ impl Interpreter {
             };
             let mut found = None;
             for attr in &agent.def.attributes {
-                if attr.name == "tools" {
-                    if let AttributeBody::Tools(e) = &attr.body {
-                        found = Some(e.clone());
-                        break;
-                    }
+                if attr.name == "tools"
+                    && let AttributeBody::Tools(e) = &attr.body
+                {
+                    found = Some(e.clone());
+                    break;
                 }
             }
             found

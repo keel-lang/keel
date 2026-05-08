@@ -1236,7 +1236,10 @@ run(GuardedBot)
 Agent.send(GuardedBot, "confirm")
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("confirmed"), "expected output:\n{stdout}");
 }
 
@@ -3853,5 +3856,8 @@ run(Bot)
         ok,
         "reading a readonly field should succeed\nstdout: {stdout}\nstderr: {stderr}"
     );
-    assert!(stdout.contains("s42"), "expected field value in output:\n{stdout}");
+    assert!(
+        stdout.contains("s42"),
+        "expected field value in output:\n{stdout}"
+    );
 }

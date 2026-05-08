@@ -50,7 +50,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt |
 | `@on_start { ... }` | stdlib | [x] | Block runs once when the agent starts |
 | `@on_stop { ... }` | stdlib | [x] | Block runs once when the agent stops (v0.1.4) |
-| `@tools [...]` | stdlib | [x] | Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7) |
+| `@tools [...]` | stdlib | [x] | Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17) |
 | `@memory persistent\|session\|none` | stdlib | [x] | Selects memory scope; enforced at runtime (v0.1.10) |
 | `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `Ai.*` call (v0.1.3) |
 | `@limits { ... }` | stdlib | [~] | `timeout` enforced via `Control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level |
