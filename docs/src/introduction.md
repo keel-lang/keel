@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.16](./release-notes.md)** — Thirteen new list operations, seven new string methods, and `keel check --strict` for unknown-type binding detection. [See what's new →](./release-notes.md)
+> **Latest: [v0.1.17](./release-notes.md)** — Agent capability gating with conditional guards & readonly state fields. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

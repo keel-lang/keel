@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.17 — 2026-05-08
+
 ### Conditional `@tools` guards
 
 `@tools` entries now support a `when` guard — a boolean expression evaluated at the start of each handler turn. Tools whose guard is false are blocked for that turn. Guards can access `self.*` state and call tasks that return `bool`.
