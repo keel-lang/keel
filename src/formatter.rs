@@ -278,6 +278,27 @@ impl Fmt {
                         self.push(&self.expr_str(e));
                         self.newline();
                     }
+                    AttributeBody::Tools(entries) => {
+                        self.push("[");
+                        let parts: Vec<String> = entries
+                            .iter()
+                            .map(|e| {
+                                let mut s = e.namespace.clone();
+                                if let Some(m) = &e.method {
+                                    s.push('.');
+                                    s.push_str(m);
+                                }
+                                if let Some(cond) = &e.condition {
+                                    s.push_str(" when ");
+                                    s.push_str(&self.expr_str(cond));
+                                }
+                                s
+                            })
+                            .collect();
+                        self.push(&parts.join(", "));
+                        self.push("]");
+                        self.newline();
+                    }
                     AttributeBody::Block(body) => {
                         self.push("{");
                         self.newline();

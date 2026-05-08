@@ -594,6 +594,20 @@ impl Checker {
                 let mut scope = self.fresh_scope();
                 self.infer_expr(e, &mut scope);
             }
+            AttributeBody::Tools(entries) => {
+                let mut scope = self.fresh_scope();
+                for entry in entries {
+                    if let Some(cond) = &entry.condition {
+                        let ty = self.infer_expr(cond, &mut scope);
+                        if !matches!(ty, Ty::Bool | Ty::Unknown) {
+                            self.err(format!(
+                                "`when` guard on `{}` must be a bool expression",
+                                entry.namespace
+                            ));
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -1,0 +1,36 @@
+agent SupportBot {
+  @role "Customer support — handles order inquiries and refunds"
+
+  state {
+    confirmed: bool = false
+    admin:     bool = false
+  }
+
+  @tools [
+    Email.fetch,                        # always can read inbox
+    Email.send  when self.confirmed,    # send only after user confirms
+    Db.query,                           # always can query
+    Db.exec     when self.admin,        # writes require admin flag
+    Log,
+  ]
+
+  on message(msg: str) {
+    when msg {
+      "confirm" => {
+        self.confirmed = true
+        Log.info("user confirmed — Email.send now available")
+      }
+      "admin"   => {
+        self.admin = true
+        Log.info("admin mode — Db.exec now available")
+      }
+      _ => {
+        Log.info("received: {msg}")
+      }
+    }
+  }
+}
+
+run(SupportBot)
+Agent.send(SupportBot, "confirm")
+Agent.send(SupportBot, "admin")

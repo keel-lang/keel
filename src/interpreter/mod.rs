@@ -71,10 +71,27 @@ pub struct AgentDef {
     pub handlers: Vec<OnHandler>,
 }
 
+/// Precomputed per-turn tool allowlist derived from `@tools` after evaluating
+/// any `when` guards. `None` on `AgentInstance` means no `@tools` attribute
+/// was present — all namespaces are allowed.
+struct AllowedTools(Vec<(String, Option<String>)>);
+
+impl AllowedTools {
+    /// Returns true if `ns.method` is covered by any entry.
+    /// An entry with `method = None` grants the whole namespace.
+    fn allows(&self, ns: &str, method: &str) -> bool {
+        self.0.iter().any(|(n, m)| {
+            n == ns && m.as_deref().map_or(true, |m| m == method)
+        })
+    }
+}
+
 /// Live agent instance — state + a reference to its declaration.
 pub struct AgentInstance {
     pub def: AgentDef,
     pub state: HashMap<String, Value>,
+    /// Evaluated once per handler dispatch from `@tools`. See `evaluate_tools_for_turn`.
+    allowed_tools: Option<AllowedTools>,
 }
 
 // ---------------------------------------------------------------------------
@@ -243,6 +260,7 @@ impl Interpreter {
 
         let prev = self.current_agent.take();
         self.current_agent = Some(agent_inst);
+        self.evaluate_tools_for_turn().await?;
         let mut env = Environment::new();
         if let Some(p) = &handler.param {
             bind_value(&p.name, data, &mut env)?;
@@ -1374,12 +1392,12 @@ impl Interpreter {
         method: &str,
         args: Vec<CallArgValue>,
     ) -> Result<Value> {
-        // Check @tools capability gating if we're in an agent context
+        // Check @tools capability gating if we're in an agent context.
         if let Some(agent_mutex) = &self.current_agent {
-            let agent = agent_mutex.lock().unwrap();
-            if !self.is_namespace_allowed(&agent.def, ns_name) {
+            let allowed = agent_mutex.lock().unwrap().allowed_tools.as_ref().map(|a| a.allows(ns_name, method));
+            if allowed == Some(false) {
                 return Err(runtime_error(format!(
-                    "CapabilityError: namespace `{ns_name}` is not allowed by the @tools attribute"
+                    "CapabilityError: `{ns_name}.{method}` is not allowed by @tools"
                 )));
             }
         }
@@ -1396,29 +1414,54 @@ impl Interpreter {
         f(self, args).await
     }
 
-    /// Check if a namespace is allowed for the given agent.
-    /// If the agent has no @tools attribute, all namespaces are allowed.
-    /// If @tools is specified, only those namespaces are allowed.
-    fn is_namespace_allowed(&self, agent: &AgentDef, ns_name: &str) -> bool {
-        for attr in &agent.attributes {
-            if attr.name == "tools"
-                && let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body
-            {
-                let allowed_namespaces: Vec<String> = items
-                    .iter()
-                    .filter_map(|e| {
-                        if let Expr::Ident(name) = e {
-                            Some(name.clone())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                return allowed_namespaces.contains(&ns_name.to_string());
+    /// Evaluate `@tools` guards for the current agent turn.
+    /// Reads the `@tools [...]` entries, runs any `when` conditions, and stores
+    /// the resulting `AllowedTools` on the agent instance.
+    /// Must be called after `self.current_agent` is set.
+    async fn evaluate_tools_for_turn(&mut self) -> Result<()> {
+        let entries = {
+            let agent = match &self.current_agent {
+                Some(a) => a.lock().unwrap(),
+                None => return Ok(()),
+            };
+            let mut found = None;
+            for attr in &agent.def.attributes {
+                if attr.name == "tools" {
+                    if let AttributeBody::Tools(e) = &attr.body {
+                        found = Some(e.clone());
+                        break;
+                    }
+                }
+            }
+            found
+        };
+
+        let Some(entries) = entries else {
+            // No @tools — clear any stale restriction from a previous turn.
+            if let Some(a) = &self.current_agent {
+                a.lock().unwrap().allowed_tools = None;
+            }
+            return Ok(());
+        };
+
+        let mut allowed = Vec::new();
+        let mut env = Environment::new();
+        for entry in &entries {
+            let included = match &entry.condition {
+                None => true,
+                Some(cond) => {
+                    matches!(self.eval_expr(cond, &mut env).await?, Value::Bool(true))
+                }
+            };
+            if included {
+                allowed.push((entry.namespace.clone(), entry.method.clone()));
             }
         }
-        // No @tools attribute means all namespaces are allowed
-        true
+
+        if let Some(a) = &self.current_agent {
+            a.lock().unwrap().allowed_tools = Some(AllowedTools(allowed));
+        }
+        Ok(())
     }
 
     /// Extract @limits from an agent's attributes.
@@ -2052,6 +2095,7 @@ impl Interpreter {
         let inst = Arc::new(Mutex::new(AgentInstance {
             def: def.clone(),
             state,
+            allowed_tools: None,
         }));
         self.live_agents
             .lock()

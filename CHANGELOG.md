@@ -12,6 +12,32 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Conditional `@tools` guards
+
+`@tools` entries now support a `when` guard — a boolean expression evaluated at the start of each
+handler turn. Tools whose guard is false are blocked for that turn. Guards can access `self.*` state
+and call tasks that return `bool`.
+
+Entries can gate a whole namespace or a specific method:
+
+```keel
+agent SupportBot {
+  state { confirmed: bool = false, admin: bool = false }
+
+  @tools [
+    Email.fetch,                           # always allowed
+    Email.send when self.confirmed,        # only after confirmation
+    Db.query,                              # always allowed
+    Db.exec   when self.admin,             # admin only
+    Http,                                  # whole namespace, always
+  ]
+}
+```
+
+Calling a blocked method raises a `CapabilityError` at runtime.
+
+---
+
 ### Readonly state fields
 
 Agent state fields can now be declared `readonly` to prevent the agent from overwriting runtime-provided context:

@@ -189,10 +189,23 @@ pub struct AttributeDecl {
 
 #[derive(Debug, Clone)]
 pub enum AttributeBody {
-    /// `@role "..."`, `@tools [...]`, `@memory persistent`, `@limits { ... }`, etc.
+    /// `@role "..."`, `@memory persistent`, `@limits { ... }`, etc.
     Expr(Expr),
     /// `@on_start { ... }` — block of statements executed in the agent context.
     Block(Block),
+    /// `@tools [Email, Email.send when self.confirmed, Http]`
+    Tools(Vec<ToolEntry>),
+}
+
+/// One entry inside `@tools [...]`.
+#[derive(Debug, Clone)]
+pub struct ToolEntry {
+    /// Namespace name, e.g. `"Email"`.
+    pub namespace: String,
+    /// Optional method name. `None` = gate the whole namespace.
+    pub method: Option<String>,
+    /// Optional guard expression. `None` = always allowed.
+    pub condition: Option<Expr>,
 }
 
 /// Names of attributes whose body is a block of statements (not an expression).

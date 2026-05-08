@@ -391,7 +391,9 @@ agent AgentName {
   # --- Attributes (stdlib-defined metadata) ---
   @role "Natural language description"
   @model "smart"                      # LLM binding for Ai.* inside this agent
-  @tools [Email, Calendar]           # capability bindings
+  @tools [Email, Calendar]           # whole-namespace capability bindings
+  # or with method-level guards:
+  # @tools [Email.fetch, Email.send when self.confirmed, Http]
   @memory persistent                 # stdlib memory binding (none | session | persistent)
   @rules [
     "Never reveal internal pricing",
@@ -441,6 +443,29 @@ Attributes are identifier-prefixed metadata clauses inside an agent body. The co
 | `@model` | Yes | The model name string, overrides the global default for this agent's `Ai.*` calls. |
 
 Everything else (`@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, custom attributes) is **stdlib-defined**: libraries register attribute handlers at startup, and the runtime invokes them during agent initialization to wire up capabilities.
+
+**`@tools` — capability gating**
+
+`@tools` restricts which namespace methods the agent may call. Each entry is one of:
+
+```
+Ns                          # whole namespace, always allowed
+Ns.method                   # specific method, always allowed
+Ns when expr                # whole namespace, allowed when expr is true
+Ns.method when expr         # specific method, allowed when expr is true
+```
+
+`expr` is any boolean expression evaluated at the start of each handler turn. `self.*` state and task calls returning `bool` are both valid. Calling a blocked method raises `CapabilityError`.
+
+```keel
+@tools [
+  Email.fetch,                      # always can read
+  Email.send when self.confirmed,   # send only after confirmation
+  Db.query,
+  Db.exec   when self.admin,
+  Http,                             # whole namespace, always
+]
+```
 
 **Why attributes and not keywords?** A keyword requires a grammar rule and couples the compiler to a specific feature. An attribute is just a name. Adding `@my_custom_attr` requires no language change — only a handler in the library that provides it. The user's file parses identically regardless of which libraries are loaded.
 

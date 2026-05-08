@@ -191,10 +191,9 @@ agent Hello {
 }
 
 #[test]
-fn parse_agent_with_list_attribute() {
+fn parse_agent_tools_plain() {
     let src = r#"
 agent Bot {
-  @role "..."
   @tools [Email, Calendar]
 }
 "#;
@@ -210,10 +209,55 @@ agent Bot {
                 })
                 .expect("expected @tools");
             match &tools.body {
-                AttributeBody::Expr(Expr::ListLit(items)) => {
-                    assert_eq!(items.len(), 2);
+                AttributeBody::Tools(entries) => {
+                    assert_eq!(entries.len(), 2);
+                    assert_eq!(entries[0].namespace, "Email");
+                    assert!(entries[0].method.is_none());
+                    assert!(entries[0].condition.is_none());
                 }
-                other => panic!("expected ListLit, got {:?}", other),
+                other => panic!("expected Tools, got {:?}", other),
+            }
+        }
+        other => panic!("expected Agent, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_agent_tools_with_method_and_guard() {
+    let src = r#"
+agent Bot {
+  state { confirmed: bool = false }
+  @tools [Email.fetch, Email.send when self.confirmed, Http]
+}
+"#;
+    let prog = parse_ok(src);
+    match first_decl(&prog) {
+        Decl::Agent(a) => {
+            let tools = a
+                .items
+                .iter()
+                .find_map(|it| match it {
+                    AgentItem::Attribute(attr) if attr.name == "tools" => Some(attr),
+                    _ => None,
+                })
+                .expect("expected @tools");
+            match &tools.body {
+                AttributeBody::Tools(entries) => {
+                    assert_eq!(entries.len(), 3);
+                    // Email.fetch — method, no guard
+                    assert_eq!(entries[0].namespace, "Email");
+                    assert_eq!(entries[0].method.as_deref(), Some("fetch"));
+                    assert!(entries[0].condition.is_none());
+                    // Email.send when self.confirmed — method + guard
+                    assert_eq!(entries[1].namespace, "Email");
+                    assert_eq!(entries[1].method.as_deref(), Some("send"));
+                    assert!(entries[1].condition.is_some());
+                    // Http — whole namespace, no guard
+                    assert_eq!(entries[2].namespace, "Http");
+                    assert!(entries[2].method.is_none());
+                    assert!(entries[2].condition.is_none());
+                }
+                other => panic!("expected Tools, got {:?}", other),
             }
         }
         other => panic!("expected Agent, got {:?}", other),

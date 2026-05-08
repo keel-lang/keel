@@ -1177,6 +1177,31 @@ fn agent_item() -> P<AgentItem> {
         })
         .boxed();
 
+    // `@tools [Ns | Ns.method | Ns when expr | Ns.method when expr, ...]`
+    let tool_entry = ident()
+        .then(just(Token::Dot).ignore_then(ident()).or_not())
+        .then(just(Token::When).ignore_then(expr_parser()).or_not())
+        .map(|((namespace, method), condition)| ToolEntry {
+            namespace,
+            method,
+            condition,
+        });
+
+    let tools_attr = just(Token::AtSign)
+        .ignore_then(just(Token::Ident("tools".to_string())))
+        .ignore_then(just(Token::LBracket))
+        .ignore_then(newlines())
+        .ignore_then(tool_entry.separated_by(field_sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RBracket))
+        .map(|entries| {
+            AgentItem::Attribute(AttributeDecl {
+                name: "tools".to_string(),
+                body: AttributeBody::Tools(entries),
+            })
+        })
+        .boxed();
+
     let expr_attr = just(Token::AtSign)
         .ignore_then(ident())
         .then(expr_parser())
@@ -1243,7 +1268,7 @@ fn agent_item() -> P<AgentItem> {
         .map(|((event, param), body)| AgentItem::On(OnHandler { event, param, body }))
         .boxed();
 
-    choice((block_attr, expr_attr, state, task, on_handler)).boxed()
+    choice((block_attr, tools_attr, expr_attr, state, task, on_handler)).boxed()
 }
 
 fn agent_decl() -> P<Decl> {

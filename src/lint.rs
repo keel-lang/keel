@@ -317,6 +317,13 @@ fn all_ident_reads(program: &Program) -> HashSet<String> {
                         AgentItem::Attribute(attr) => match &attr.body {
                             AttributeBody::Block(b) => ident_reads_in_block_acc(b, &mut reads),
                             AttributeBody::Expr(e) => ident_reads_in_expr(e, &mut reads),
+                            AttributeBody::Tools(entries) => {
+                                for entry in entries {
+                                    if let Some(cond) = &entry.condition {
+                                        ident_reads_in_expr(cond, &mut reads);
+                                    }
+                                }
+                            }
                         },
                         AgentItem::State(_) => {}
                     }
