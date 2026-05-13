@@ -77,6 +77,10 @@ Agent.send(Processor, payload, event: "process")
 
 Both are non-blocking. Choose `delegate` when the receiver's task name is the event name; use `send` when you want more explicit control over the `event:` label.
 
+Direct cross-agent calls such as `Worker.process(...)` are not part of the
+agent model. Inside an agent, call agent-owned helpers as `self.task(...)`.
+Across agents, use mailbox APIs so delivery remains explicit and asynchronous.
+
 ## Agent.send vs Ai.*
 
 These are two completely separate communication paths.

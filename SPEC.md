@@ -312,7 +312,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Env` | Environment and config | `get(name)`, `require(name)` |
 | `Time` | Time utilities | `now()`, `parse`, `format`, `diff`, duration math |
 | `Log` | Structured logging | `info`, `warn`, `error`, `debug` |
-| `Agent` | Agent lifecycle | `run`, `stop`, `delegate`, `broadcast` (also exposed as bare `run`/`stop` at top level) |
+| `Agent` | Agent lifecycle | `run`, `stop`, `send(target, message)`, `delegate`, `broadcast` (also exposed as bare `run`/`stop` at top level) |
 
 ### 3.3 Prelude surface is identifiers, not keywords
 
@@ -361,7 +361,7 @@ agent EmailBot {
     Schedule.every(5.minutes, () => {
       for email in Email.fetch(unread: true) {
         # deliver to this agent's message handler
-        self.dispatch(message: email.as_message())
+        Agent.send(self, email.as_message())
       }
     })
   }
@@ -400,10 +400,11 @@ agent AgentName {
     "Always disclaim medical advice"
   ]
   @limits {
-    max_cost_per_request: 0.50
-    max_tokens_per_request: 4096
-    timeout: 30.seconds
-    require_confirmation: [Email.send, Db.exec]
+    timeout: 30.seconds       # enforced — wraps task execution in a deadline
+    max_tokens: 4096          # enforced — caps tokens sent to the LLM per call
+    max_cost: 0.50            # enforced — caps estimated USD cost per call
+    # max_cost_per_request and require_confirmation are planned but not yet
+    # implemented; using them raises a compile-time error in v0.1.
   }
 
   # --- State (mutable via self.) ---
@@ -419,7 +420,7 @@ agent AgentName {
 
   # --- Event handlers ---
   on message(msg: Message) {
-    response = greet(msg.from)
+    response = self.greet(msg.from)
     Email.send(response, to: msg)
     self.processed = self.processed + 1
   }
@@ -455,7 +456,7 @@ Ns when expr                # whole namespace, allowed when expr is true
 Ns.method when expr         # specific method, allowed when expr is true
 ```
 
-`expr` is any boolean expression evaluated at the start of each handler turn. `self.*` state and task calls returning `bool` are both valid. Calling a blocked method raises `CapabilityError`.
+`expr` is any boolean expression evaluated at the start of each handler turn. `self.*` state, `self.task(...)`, and top-level task calls returning `bool` are valid. Calling a blocked method raises `CapabilityError`.
 
 ```keel
 @tools [
@@ -628,6 +629,28 @@ task triage(e: EmailInfo) -> Urgency { ... }      # annotated
 task compose(e: EmailInfo, tone: str = "pro") {...}  # default params
 task quick(d: {body: str}) -> str { d.body }      # structural param
 ```
+
+### 6.5 Agent-local task calls
+
+Tasks declared inside an agent are methods of the current agent. Invoke them
+with `self.task(...)`:
+
+```keel
+agent Mailbox {
+  task summarize(subject: str) -> str {
+    "Subject: {subject}"
+  }
+
+  on message(msg: Message) {
+    Io.show(self.summarize(msg.subject))
+  }
+}
+```
+
+Inside an agent, an unqualified `task(...)` call resolves only through lexical
+and top-level scope. Agent-local tasks are not injected into bare-name lookup.
+`MyAgent.task(...)` is not a cross-agent call form; use `Agent.send`,
+`Agent.delegate`, or `Agent.broadcast` for mailbox-based coordination.
 
 ---
 
@@ -1262,18 +1285,18 @@ Arg         <- (IDENT ":")? Expr                                         # named
 
 PrimaryExpr <- Literal / SelfExpr / IDENT / Lambda
              / TupleLit / ListLit / MapLit / SetLit
-             / IfExpr / WhenExpr / TryExpr
+             / IfExpr / TryExpr
              / "(" Expr ")"
 
 SelfExpr    <- "self" "." IDENT                                          # field access → value of that state field
-             / "self"                                                     # bare self → AgentRef for the current agent
+             / "self"                                                     # bare self → AgentRef for the current agent and task-call receiver
 
 Lambda      <- IDENT "=>" (Expr / Block)
              / "(" LambdaParams? ")" "=>" (Expr / Block)
 
 IfExpr      <- "if" Expr Block ("else" (IfExpr / Block))?
-WhenExpr    <- "when" Expr "{" WhenArm+ "}"
 WhenArm     <- Pattern ("," Pattern)* ("where" Expr)? "=>" (Expr / Block)
+# Note: `when` as an expression form is reserved for post-v0.1; today only the statement form is supported.
 Pattern     <- VariantPat / StructPat / TuplePat / IDENT / "_" / Literal
 
 # --- Statements ---

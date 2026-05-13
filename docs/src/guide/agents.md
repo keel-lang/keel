@@ -46,7 +46,7 @@ agent EmailBot {
 
   # --- Event handlers ---
   on message(msg: Message) {
-    response = greet(msg.from)
+    response = self.greet(msg.from)
     Email.send(response, to: msg)
     self.processed = self.processed + 1
   }
@@ -268,3 +268,6 @@ agent EmailAssistant {
 ```
 
 Tasks defined *inside* an agent are scoped to that agent and can access `self`. Use them only when you genuinely need agent state access.
+Invoke them as `self.task(...)`; bare `task(...)` remains a lexical/top-level call.
+`MyAgent.task(...)` is not the cross-agent composition model — use
+`Agent.send`, `Agent.delegate`, or `Agent.broadcast` instead.

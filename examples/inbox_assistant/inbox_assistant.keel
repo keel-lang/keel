@@ -111,7 +111,7 @@ agent InboxAssistant {
     }
     Io.notify("Triaging {emails.count} new emails")
     for email in emails {
-      handle(email)
+      self.handle(email)
     }
   }
 
@@ -148,14 +148,14 @@ agent InboxAssistant {
   @on_start {
     Log.info("InboxAssistant booting")
     Schedule.every(5.minutes, () => {
-      poll_inbox()
+      self.poll_inbox()
     })
     Schedule.after(3.seconds, () => {
       Io.notify("Assistant ready — watching inbox every 5 minutes")
     })
     digest_when = Env.get("DIGEST_AT") ?? "2026-12-31T23:59:59Z"
     Schedule.at(digest_when, () => {
-      send_daily_digest()
+      self.send_daily_digest()
     })
     priorities = [Urgency.low, Urgency.medium, Urgency.high]
     counts = { total: 0, archived: 0 }

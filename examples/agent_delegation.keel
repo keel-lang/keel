@@ -60,7 +60,7 @@ agent Router {
     tickets = [{ id: "T-001", body: "I was charged twice for my Pro subscription", from: "alice@example.com" }, { id: "T-002", body: "Getting 401 Unauthorized on every API call", from: "bob@example.com" }, { id: "T-003", body: "How do I change my account email address?", from: "carol@example.com" }, { id: "T-004", body: "Invoice shows the wrong company name", from: "dave@example.com" }]
     Io.show("Router: {tickets.count()} tickets to process\n")
     for ticket in tickets {
-      domain = classify(ticket)
+      domain = self.classify(ticket)
       self.dispatched = self.dispatched + 1
       when domain {
         billing => {

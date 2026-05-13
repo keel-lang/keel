@@ -38,6 +38,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `@on_start` / `@on_stop` blocks | [x] | |
 | Per-agent serial mailbox + `on <event>` | [x] | |
 | `self.` state read/write | [x] | |
+| `self.task(...)` agent-local task calls | [x] | Bare `task(...)` stays lexical/global; cross-agent work uses mailbox APIs |
 | `readonly` state field modifier | [x] | Compiler + runtime enforcement; assignment to readonly field is an error |
 | `Agent.send` / `Agent.delegate` | [x] | |
 | `Agent.broadcast(team, data)` | [x] | Fans out to every live agent in the named `@team` |

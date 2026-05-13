@@ -55,7 +55,7 @@ agent SupportBot {
   @on_start {
     Schedule.every(2.minutes, () => {
       for ticket in Email.fetch(unread: true) {
-        handle(ticket)
+        self.handle(ticket)
       }
     })
   }

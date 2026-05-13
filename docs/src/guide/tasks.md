@@ -98,7 +98,26 @@ agent Bot {
 }
 ```
 
-Prefer top-level tasks for any logic that doesn't need agent state.
+Agent-owned tasks are explicit methods of the current agent:
+
+```keel
+agent Bot {
+  state { count: int = 0 }
+
+  task increment() {
+    self.count = self.count + 1
+  }
+
+  task run() {
+    self.increment()
+  }
+}
+```
+
+Inside an agent, bare `increment()` does **not** search agent-owned tasks; it
+resolves lexical and top-level scope only. Use `self.increment()` for
+agent-local work. Prefer top-level tasks for any logic that doesn't need agent
+state.
 
 ## Pipeline composition
 

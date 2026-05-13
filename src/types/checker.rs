@@ -92,11 +92,12 @@ struct TaskSig {
 struct AgentInfo {
     state_fields: HashMap<String, Ty>,
     readonly_fields: HashSet<String>,
-    /// Collected but not yet used in type checks — populated for future
-    /// cross-agent call validation.
-    #[allow(dead_code)]
+    /// Task signatures exposed through explicit `self.task(...)` calls.
     tasks: HashMap<String, TaskSig>,
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "collected for planned cross-agent event handler validation"
+    )]
     handlers: HashSet<String>,
 }
 
@@ -164,6 +165,7 @@ impl Scope {
 // Entry point
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn check(program: &Program) -> Vec<TypeError> {
     let mut c = Checker::new();
     c.collect(program);
@@ -174,6 +176,7 @@ pub fn check(program: &Program) -> Vec<TypeError> {
 /// Like `check`, but also emits errors for any binding whose type the
 /// checker cannot resolve.  Use `keel check --strict` to surface gaps
 /// in type coverage that the normal checker accepts silently.
+#[must_use]
 pub fn check_strict(program: &Program) -> Vec<TypeError> {
     let mut c = Checker::new();
     c.strict = true;
@@ -279,7 +282,10 @@ impl Checker {
         self.errors.push(e);
     }
 
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "kept for diagnostics that need explicit source spans"
+    )]
     fn err_at(&mut self, msg: impl Into<String>, span: Span) {
         self.errors.push(TypeError::new(msg).at(span));
     }
@@ -466,25 +472,11 @@ impl Checker {
         }
     }
 
-    /// New lexical scope pre-populated with agent-scoped tasks when
-    /// `current_agent` is set. Agent tasks are callable by bare name
-    /// from anywhere inside the agent body.
+    /// New lexical scope for a task, handler, or attribute body.
+    /// Agent-owned tasks are explicit `self.task(...)` calls rather than
+    /// bare names injected into lexical scope.
     fn fresh_scope(&self) -> Scope {
-        let mut scope = Scope::new();
-        if let Some(agent_name) = &self.current_agent
-            && let Some(info) = self.agents.get(agent_name)
-        {
-            for (name, sig) in &info.tasks {
-                scope.define(
-                    name.clone(),
-                    Ty::Func(
-                        sig.params.iter().map(|(_, t)| t.clone()).collect(),
-                        Box::new(sig.return_type.clone()),
-                    ),
-                );
-            }
-        }
-        scope
+        Scope::new()
     }
 
     /// Bind `binding` to `ty` in `scope`, expanding destructure patterns field by field.
@@ -994,6 +986,36 @@ impl Checker {
                 for a in args {
                     self.infer_expr(&a.value, scope);
                 }
+                if let Expr::SelfAccess(task_name) = callee.as_ref() {
+                    let Some(agent_name) = self.current_agent.clone() else {
+                        self.err(format!("`self.{task_name}(...)` used outside an agent"));
+                        return Ty::Unknown;
+                    };
+                    let Some(sig) = self
+                        .agents
+                        .get(&agent_name)
+                        .and_then(|agent| agent.tasks.get(task_name))
+                        .cloned()
+                    else {
+                        self.err(format!("agent `{agent_name}` has no task `{task_name}`"));
+                        return Ty::Unknown;
+                    };
+                    let expected = sig.params.len();
+                    let positional = args.iter().filter(|arg| arg.name.is_none()).count();
+                    if positional > expected {
+                        let param_names: Vec<&str> =
+                            sig.params.iter().map(|(name, _)| name.as_str()).collect();
+                        let hint = if param_names.is_empty() {
+                            "task takes no arguments".to_string()
+                        } else {
+                            format!("expected: {}", param_names.join(", "))
+                        };
+                        self.err(format!(
+                            "task `{agent_name}.{task_name}` takes {expected} argument(s), got {positional} — {hint}"
+                        ));
+                    }
+                    return sig.return_type;
+                }
                 if let Expr::Ident(name) = callee.as_ref()
                     && let Some(sig) = self.top_tasks.get(name).cloned()
                 {
@@ -1026,8 +1048,44 @@ impl Checker {
                 for a in args {
                     self.infer_expr(&a.value, scope);
                 }
+                if matches!(object.as_ref(), Expr::SelfRef) {
+                    let Some(agent_name) = self.current_agent.clone() else {
+                        self.err(format!("`self.{method}(...)` used outside an agent"));
+                        return Ty::Unknown;
+                    };
+                    let Some(sig) = self
+                        .agents
+                        .get(&agent_name)
+                        .and_then(|agent| agent.tasks.get(method))
+                        .cloned()
+                    else {
+                        self.err(format!("agent `{agent_name}` has no task `{method}`"));
+                        return Ty::Unknown;
+                    };
+                    let expected = sig.params.len();
+                    let positional = args.iter().filter(|arg| arg.name.is_none()).count();
+                    if positional > expected {
+                        let param_names: Vec<&str> =
+                            sig.params.iter().map(|(name, _)| name.as_str()).collect();
+                        let hint = if param_names.is_empty() {
+                            "task takes no arguments".to_string()
+                        } else {
+                            format!("expected: {}", param_names.join(", "))
+                        };
+                        self.err(format!(
+                            "task `{agent_name}.{method}` takes {expected} argument(s), got {positional} — {hint}"
+                        ));
+                    }
+                    return sig.return_type;
+                }
                 // Special cases for inferring Ai.classify → Enum(T)
                 if let Expr::Ident(name) = object.as_ref() {
+                    if self.agents.contains_key(name) {
+                        self.err(format!(
+                            "direct agent task calls like `{name}.{method}(...)` are unsupported; use `self.{method}(...)` inside that agent or mailbox APIs such as `Agent.send(...)` / `Agent.delegate(...)`"
+                        ));
+                        return Ty::Unknown;
+                    }
                     if name == "Ai"
                         && method == "classify"
                         && let Some(as_arg) = args.iter().find(|a| a.name.as_deref() == Some("as"))
@@ -1121,15 +1179,6 @@ impl Checker {
                 let then_ty = self.block_type(then_body, scope);
                 let _ = self.block_type(else_body, scope);
                 then_ty
-            }
-
-            Expr::WhenExpr { subject, arms } => {
-                let subject_ty = self.infer_expr(subject, scope);
-                // Use a dummy span for when-expressions; the statement-level span
-                // (already set in current_span) is used for any errors.
-                let span = self.current_span.clone().unwrap_or(0..0);
-                self.check_when_arms(&subject_ty, arms, scope, span);
-                Ty::Unknown
             }
 
             Expr::Lambda { params, body } => {

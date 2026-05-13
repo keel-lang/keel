@@ -75,7 +75,7 @@ agent Prioritizer {
         {title: "Update README",  description: "Nice to have, not urgent"},
         {title: "Deploy v2.0",    description: "Release deadline is Friday"}
       ]
-      run_batch(tasks)
+      self.run_batch(tasks)
     })
   }
 }

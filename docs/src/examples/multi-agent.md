@@ -2,7 +2,10 @@
 
 > **Alpha (v0.1).** Breaking changes expected. `Agent.delegate` is wired as of v0.1.4. `Agent.broadcast` and `@team` routing are wired as of v0.1.6.
 
-An example showing a multi-agent email workflow shape. For mailbox-specific coordination, use `Agent.delegate`, `Agent.send`, and `Agent.broadcast` as described in [Agent Communication](../guide/agent-communication.md).
+This first runnable workflow keeps synchronous return-value helpers as top-level
+tasks. For mailbox-specific coordination between live agents, use
+`Agent.delegate`, `Agent.send`, and `Agent.broadcast` as described in
+[Agent Communication](../guide/agent-communication.md).
 
 ```keel
 type Urgency  = low | medium | high | critical
@@ -13,38 +16,26 @@ type TriageResult {
   category: Category
 }
 
-agent Classifier {
-  @role "You classify emails by urgency and category"
-
-  task triage(email: {body: str}) -> TriageResult {
-    urgency  = Ai.classify(email.body, as: Urgency)  ?? Urgency.medium
-    category = Ai.classify(email.body, as: Category) ?? Category.question
-    {urgency: urgency, category: category}
-  }
+task triage_email(email: {body: str}) -> TriageResult {
+  urgency  = Ai.classify(email.body, as: Urgency)  ?? Urgency.medium
+  category = Ai.classify(email.body, as: Category) ?? Category.question
+  {urgency: urgency, category: category}
 }
 
-agent Responder {
-  @role "You draft professional, helpful email replies"
-
-  task reply_to(email: {body: str, from: str}, guidance: str? = none) -> str {
-    Ai.draft("response to {email.body}",
-      tone: "professional",
-      guidance: guidance,
-      max_length: 200
-    ) ?? "(draft failed)"
-  }
+task draft_reply(email: {body: str, from: str}, guidance: str? = none) -> str {
+  Ai.draft("response to {email.body}",
+    tone: "professional",
+    guidance: guidance,
+    max_length: 200
+  ) ?? "(draft failed)"
 }
 
-agent FollowupScheduler {
-  @role "You manage follow-ups and reminders"
-
-  task plan(email: {subject: str}, urgency: Urgency) {
-    when urgency {
-      critical => Schedule.after(2.hours, () => { Io.notify("Follow up on: {email.subject}") })
-      high     => Schedule.after(24.hours, () => { Io.notify("Check status: {email.subject}") })
-      medium   => Schedule.after(3.days, () => { Io.notify("Pending reply: {email.subject}") })
-      low      => { }
-    }
+task plan_followup(email: {subject: str}, urgency: Urgency) {
+  when urgency {
+    critical => Schedule.after(2.hours, () => { Io.notify("Follow up on: {email.subject}") })
+    high     => Schedule.after(24.hours, () => { Io.notify("Check status: {email.subject}") })
+    medium   => Schedule.after(3.days, () => { Io.notify("Pending reply: {email.subject}") })
+    low      => { }
   }
 }
 
@@ -52,7 +43,7 @@ agent InboxManager {
   @role "You coordinate the email handling team"
 
   task handle(email: {body: str, from: str, subject: str}) {
-    result = Classifier.triage(email) ?? {
+    result = triage_email(email) ?? {
       urgency: Urgency.medium,
       category: Category.question
     }
@@ -62,24 +53,24 @@ agent InboxManager {
         when result.category {
           spam, info => Email.archive(email)
           _ => {
-            reply = Responder.reply_to(email) ?? "(could not draft)"
+            reply = draft_reply(email) ?? "(could not draft)"
             if Io.confirm(reply) { Email.send(reply, to: email.from) }
           }
         }
       }
       medium => {
-        reply = Responder.reply_to(email) ?? "(could not draft)"
+        reply = draft_reply(email) ?? "(could not draft)"
         if Io.confirm(reply) { Email.send(reply, to: email.from) }
-        FollowupScheduler.plan(email, result.urgency)
+        plan_followup(email, result.urgency)
       }
       high, critical => {
         summary = Ai.summarize(email.body, in: 2, unit: sentences) ?? "(no summary)"
         Io.notify("{result.urgency} {result.category} from {email.from}")
         Io.show(summary)
         guidance = Io.ask("How should I respond?")
-        reply = Responder.reply_to(email, guidance) ?? "(could not draft)"
+        reply = draft_reply(email, guidance) ?? "(could not draft)"
         if Io.confirm(reply) { Email.send(reply, to: email.from) }
-        FollowupScheduler.plan(email, result.urgency)
+        plan_followup(email, result.urgency)
       }
     }
   }
@@ -87,7 +78,7 @@ agent InboxManager {
   @on_start {
     Schedule.every(5.minutes, () => {
       for email in Email.fetch(unread: true) {
-        handle(email)
+        self.handle(email)
       }
     })
   }
@@ -99,13 +90,17 @@ run(InboxManager)
 ## Architecture
 
 ```
-InboxManager (orchestrator)
-  ├── Classifier           — fast model, triages urgency + category
-  ├── Responder            — capable model, drafts quality replies
-  └── FollowupScheduler    — manages follow-up reminders
+InboxManager (orchestrator agent)
+  ├── triage_email(...)    — synchronous classifier helper
+  ├── draft_reply(...)     — synchronous response helper
+  └── plan_followup(...)   — synchronous scheduler helper
 ```
 
-Each agent has its own role, model, and mailbox. `Agent.delegate(target, task, args)` posts a named task event to the target agent's mailbox. `@team [...]` tags a running agent with one or more team names for `Agent.broadcast(team, data, event:)`.
+Use top-level tasks when the caller needs a return value immediately. Use
+agents with mailboxes when work should cross a live actor boundary.
+`Agent.delegate(target, task, args)` posts a named task event to the target
+agent's mailbox. `@team [...]` tags a running agent with one or more team names
+for `Agent.broadcast(team, data, event:)`.
 
 ```keel
 agent Classifier {

@@ -53,7 +53,7 @@ agent EmailAssistant {
       emails = Email.fetch(unread: true)
       Io.notify("{emails.count} new emails")
       for email in emails {
-        handle(email)
+        self.handle(email)
       }
     })
   }

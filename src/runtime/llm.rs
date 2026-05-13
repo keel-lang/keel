@@ -5,9 +5,13 @@
 //! to fix it. `KEEL_LLM=mock` short-circuits all calls for tests.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
+
+use super::context::EnvProvider;
 
 #[derive(Debug, Clone)]
 enum Provider {
@@ -24,6 +28,7 @@ pub struct LlmClient {
     provider: Provider,
     model_map: HashMap<String, String>,
     ollama_default: String,
+    trace: Arc<AtomicBool>,
 }
 
 #[derive(Serialize)]
@@ -51,33 +56,17 @@ struct ChatMessage {
 
 pub type LlmResult = Result<String, LlmError>;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum LlmError {
     /// Configuration problem (model not mapped, Ollama unreachable).
+    #[error("{0}")]
     ConfigError(String),
     /// Network/HTTP failure calling the LLM provider.
+    #[error("{0}")]
     CallFailed(String),
     /// LLM output didn't match the expected enum or schema. `got` is the raw output.
+    #[error("LLM output did not match expected schema: '{got}'")]
     SchemaValidation { got: String },
-}
-
-impl std::fmt::Display for LlmError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LlmError::ConfigError(msg) | LlmError::CallFailed(msg) => write!(f, "{msg}"),
-            LlmError::SchemaValidation { got } => {
-                write!(f, "LLM output did not match expected schema: '{got}'")
-            }
-        }
-    }
-}
-
-/// Whether `--trace` / `KEEL_TRACE=1` is on. Every per-call LLM
-/// narration (what we're doing, input preview, the result) is gated
-/// behind this; real warnings (unrecognised classifier output, call
-/// failures) print unconditionally.
-fn trace() -> bool {
-    super::trace_enabled()
 }
 
 impl Default for LlmClient {
@@ -88,17 +77,27 @@ impl Default for LlmClient {
 
 impl LlmClient {
     pub fn new() -> Self {
-        if std::env::var("KEEL_LLM").as_deref() == Ok("mock") {
-            return Self::mock();
+        Self::from_env(&super::context::NativeEnv)
+    }
+
+    pub fn from_env(env: &dyn EnvProvider) -> Self {
+        let trace = env.var("KEEL_TRACE").as_deref() == Some("1");
+        Self::from_env_with_trace(env, Arc::new(AtomicBool::new(trace)))
+    }
+
+    pub fn from_env_with_trace(env: &dyn EnvProvider, trace: Arc<AtomicBool>) -> Self {
+        if env.var("KEEL_LLM").as_deref() == Some("mock") {
+            return Self::mock_with_trace(trace);
         }
 
         let client = reqwest::Client::new();
-        let model_map = Self::load_model_map();
-        let ollama_host =
-            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
-        let ollama_default = std::env::var("KEEL_OLLAMA_MODEL").unwrap_or_default();
+        let model_map = Self::load_model_map(env);
+        let ollama_host = env
+            .var("OLLAMA_HOST")
+            .unwrap_or_else(|| "http://localhost:11434".to_string());
+        let ollama_default = env.var("KEEL_OLLAMA_MODEL").unwrap_or_default();
 
-        if trace() {
+        if trace.load(Ordering::Relaxed) {
             println!(
                 "  {} LLM provider: {} ({})",
                 "→".dimmed(),
@@ -124,25 +123,31 @@ impl LlmClient {
             },
             model_map,
             ollama_default,
+            trace,
         }
     }
 
     pub fn mock() -> Self {
+        Self::mock_with_trace(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn mock_with_trace(trace: Arc<AtomicBool>) -> Self {
         LlmClient {
             client: reqwest::Client::new(),
             provider: Provider::Mock,
             model_map: HashMap::new(),
             ollama_default: String::new(),
+            trace,
         }
     }
 
-    fn load_model_map() -> HashMap<String, String> {
+    fn load_model_map(env: &dyn EnvProvider) -> HashMap<String, String> {
         // `KEEL_MODEL_<NAME>=<ollama_model>` maps a Keel-side model
         // alias to an Ollama tag, e.g.:
         //   KEEL_MODEL_FAST=gemma4
         //   KEEL_MODEL_SMART=mistral:7b-instruct
         let mut map = HashMap::new();
-        for (key, val) in std::env::vars() {
+        for (key, val) in env.vars() {
             if let Some(suffix) = key.strip_prefix("KEEL_MODEL_")
                 && !val.is_empty()
             {
@@ -202,7 +207,7 @@ impl LlmClient {
         }
         full_system.push_str(system);
 
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             if !rules.is_empty() {
                 println!("  {} Rules injected: {}", "→".dimmed(), rules.len());
             }
@@ -282,7 +287,7 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<String>, LlmError> {
         let variants_str = variants.join(", ");
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Classifying as [{}] using {}",
                 "→".dimmed(),
@@ -309,7 +314,7 @@ impl LlmClient {
                 for variant in variants {
                     let lv = variant.to_lowercase();
                     if cleaned == lv || cleaned.contains(&lv) {
-                        if trace() {
+                        if self.trace.load(Ordering::Relaxed) {
                             println!(
                                 "  {} Result: {}",
                                 "✓".bright_green(),
@@ -332,7 +337,10 @@ impl LlmClient {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn summarize(
         &self,
         role: Option<&str>,
@@ -348,7 +356,7 @@ impl LlmClient {
             Some((n, unit)) => format!("in {n} {unit}"),
             None => "briefly".to_string(),
         };
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Summarizing {} using {}",
                 "→".dimmed(),
@@ -380,7 +388,7 @@ impl LlmClient {
         }
         match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
-                if trace() {
+                if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Summary ready", "✓".bright_green());
                 }
                 Ok(Some(response.trim().to_string()))
@@ -389,7 +397,10 @@ impl LlmClient {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn draft(
         &self,
         role: Option<&str>,
@@ -401,7 +412,7 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<String>, LlmError> {
         let tone_s = tone.unwrap_or("neutral");
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Drafting ({}) using {}",
                 "→".dimmed(),
@@ -422,7 +433,7 @@ impl LlmClient {
 
         match self.call(role, rules, &system, description, model).await {
             Ok(response) => {
-                if trace() {
+                if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Draft ready", "✓".bright_green());
                 }
                 Ok(Some(response.trim().to_string()))
@@ -440,7 +451,7 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<String>, LlmError> {
         let fields_desc: Vec<String> = schema.iter().map(|(n, t)| format!("{n}: {t}")).collect();
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Extracting {{{}}} using {}",
                 "→".dimmed(),
@@ -457,7 +468,7 @@ impl LlmClient {
         );
         match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
-                if trace() {
+                if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Extracted", "✓".bright_green());
                 }
                 Ok(Some(response.trim().to_string()))
@@ -475,7 +486,7 @@ impl LlmClient {
         model: &str,
     ) -> Result<Option<HashMap<String, String>>, LlmError> {
         let langs = target_langs.join(", ");
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Translating to [{}] using {}",
                 "→".dimmed(),
@@ -499,7 +510,7 @@ impl LlmClient {
         match self.call(role, rules, &system, input, model).await {
             Ok(response) => {
                 let trimmed = response.trim().to_string();
-                if trace() {
+                if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Translated", "✓".bright_green());
                 }
                 if target_langs.len() == 1 {
@@ -527,7 +538,7 @@ impl LlmClient {
         options: &[String],
         model: &str,
     ) -> Result<Option<(String, String)>, LlmError> {
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Deciding using {}",
                 "→".dimmed(),
@@ -559,7 +570,7 @@ impl LlmClient {
                 if choice.is_empty() {
                     choice = trimmed.to_string();
                 }
-                if trace() {
+                if self.trace.load(Ordering::Relaxed) {
                     println!(
                         "  {} Decision: {}",
                         "✓".bright_green(),
@@ -572,6 +583,14 @@ impl LlmClient {
         }
     }
 
+    /// Returns a clone of the internal `Arc<AtomicBool>` so callers can verify
+    /// the trace flag is the same allocation shared with `RuntimeContext`.
+    #[cfg(any(test, feature = "test-util"))]
+    #[allow(dead_code)]
+    pub(crate) fn trace_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.trace)
+    }
+
     pub async fn prompt(
         &self,
         role: Option<&str>,
@@ -581,7 +600,7 @@ impl LlmClient {
         response_format: Option<String>,
         model: &str,
     ) -> Result<Option<String>, LlmError> {
-        if trace() {
+        if self.trace.load(Ordering::Relaxed) {
             println!(
                 "  {} Prompt using {}",
                 "→".dimmed(),
@@ -600,7 +619,7 @@ impl LlmClient {
                 {
                     return Err(LlmError::SchemaValidation { got: trimmed });
                 }
-                if trace() {
+                if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Response ready", "✓".bright_green());
                 }
                 Ok(Some(trimmed))

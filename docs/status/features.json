@@ -141,7 +141,7 @@
       "status": "shipped",
       "implemented_ops": "`remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON)",
       "gaps": "Vector-store backend (semantic search) is v0.2",
-      "purpose": "Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\\|persistent\\|none` (default: session). Persistent mode writes `~/.keel/memory/<agent>.json`."
+      "purpose": "Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\\|persistent\\|none` (default: session). Persistent mode writes `~/.keel/memory/<stem>_<hash12>/<agent>.json`."
     },
     {
       "name": "Control",

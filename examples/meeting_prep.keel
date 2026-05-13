@@ -28,7 +28,7 @@ agent MeetingPrep {
     Schedule.every(30.minutes, () => {
       meetings = [{ title: "Sprint Planning", attendees: ["alice", "bob", "charlie"], time: "10:00 AM" }, { title: "1:1 with Manager", attendees: ["you", "manager"], time: "2:00 PM" }]
       for meeting in meetings {
-        prepare(meeting)
+        self.prepare(meeting)
       }
       Io.notify("Prepped {self.meetings_prepped} meetings total")
     })

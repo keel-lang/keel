@@ -62,12 +62,12 @@ Schedule.at(@2026-04-20_10am, () => {
 ## `Schedule.cron` — cron expressions
 
 ```keel
-Schedule.cron("0 */15 9-17 * * MON-FRI", () => {
+Schedule.cron("0 9-17 * * 1-5", () => {
   poll_status()
 })
 ```
 
-> **Status:** `Schedule.cron` is wired for standard 5-field cron expressions and runs from inside an agent lifecycle or handler context.
+> **Status:** `Schedule.cron` is wired for standard 5-field cron expressions with numeric fields and runs from inside an agent lifecycle or handler context.
 
 ## Inside an agent
 

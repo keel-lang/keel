@@ -40,7 +40,7 @@ agent EmailAssistant {
   @on_start {
     Schedule.every(5.minutes, () => {
       for email in Email.fetch(unread: true) {
-        self.dispatch(message: email.as_message())
+        Agent.send(self, email.as_message())
       }
     })
   }

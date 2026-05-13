@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+### Explicit agent task calls
+
+Agent-owned tasks are now invoked as `self.task(...)`. Inside an agent body,
+bare `task(...)` resolves only through lexical and top-level scope, while
+cross-agent work stays on mailbox APIs such as `Agent.send(...)` and
+`Agent.delegate(...)`.
+
 ---
 
 ## v0.1.17 — 2026-05-08
@@ -243,7 +250,7 @@ See the [Agents guide](./guide/agents.md#memory--agent-memory-scope) for the upd
 The `@memory` attribute selects the scope:
 
 - **`session`** (default) — in-process, cleared on restart.
-- **`persistent`** — file-backed JSON at `~/.keel/memory/<agent-name>.json`, survives restarts.
+- **`persistent`** — file-backed JSON at `~/.keel/memory/<stem>_<hash12>/<agent>.json`, survives restarts. (Path format updated in v0.1.11; the directory includes a SHA-256 hash of the source file path to avoid cross-program collisions.)
 - **`none`** — `Memory.*` calls raise `CapabilityError`.
 
 ```keel

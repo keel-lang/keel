@@ -12,6 +12,68 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- Added repo-local Rust audit tooling and agent guidance, including `scripts/rust_audit.sh`,
+  coverage helpers, Rust formatting defaults, and the `ms-rust` skill files.
+- Added broad runtime and pipeline test coverage across namespace dispatch, LLM behavior,
+  pipeline errors, AST walking, runtime configuration isolation, and prelude namespaces.
+
+### Changed
+
+- Split the AST and CLI into focused modules while preserving the public AST visitor alias and
+  existing command behavior.
+- Made agent-owned task invocation explicit: `self.task(...)` is the local agent form, bare
+  `task(...)` resolves through lexical/global scope only, and `MyAgent.task(...)` is no longer a
+  cross-agent dispatch surface.
+- Split the runtime prelude into namespace modules and introduced shared namespace helpers so
+  `src/runtime/mod.rs` no longer owns every prelude implementation.
+- Moved runtime-owned services into `RuntimeContext`, including clocks, file systems, memory
+  stores, caches, LLM clients, trace/log settings, and async task handles.
+- Migrated short-lived internal runtime locks to `parking_lot` and exposed test-only runtime
+  helpers through the `test-util` feature.
+- Replaced integration-test binary rebuilds in the example parse smoke test with direct pipeline
+  checks to avoid stale `CARGO_BIN_EXE_keel` races.
+
+### Fixed
+
+- Fixed integer modulo by zero panicking at runtime; it now returns a `RuntimeError` consistent
+  with integer division by zero.
+- Fixed `return` inside an expression-position `if`/`when` body being silently swallowed instead
+  of propagating out of the enclosing task or closure. The interpreter now correctly propagates
+  early-return signals through expression evaluators until they reach a call boundary.
+- Fixed `Async.spawn` spawning closures in a bare interpreter that had no access to user-defined
+  tasks, enum types, struct types, or registered closures. Spawned tasks now receive a snapshot
+  of the parent interpreter's symbol tables and share `live_agents`.
+- Fixed `apply_lint_fixes` potentially panicking when two fixable-warning spans overlapped;
+  overlapping ranges are now merged before applying replacements.
+- Named arguments (e.g. `foo(b: 20)`) are now respected when calling user-defined tasks.
+  Previously all args were bound positionally regardless of label; now named args bind by
+  parameter name and the remainder fill positional slots in order.
+- Using unimplemented `@limits` fields (`max_cost_per_request`, `require_confirmation`) now
+  produces a clear error at startup instead of being silently ignored.
+- HTTP handler closure errors are now logged to stderr before falling back to a 500 response,
+  making failures visible instead of silently discarded.
+- Removed `now` from the LSP keyword completion list; it is a prelude identifier (`Time.now()`),
+  not a reserved keyword.
+- Added `Agent.send(target, message)` to the SPEC prelude table (§3.2) where it was missing
+  despite being fully implemented.
+- Isolated runtime-affecting state per Keel runtime context. `--trace`, `--log-level`,
+  `Log.set_level`, LLM tracing, and `Async.spawn` handle IDs no longer use process-global
+  mutable state that can leak between scripts or embedded program instances.
+- Tightened lint/type-checker override handling by using explicit `expect` messages instead of
+  silent fallbacks.
+- Corrected stale docs and CI gates around deferred `.keelc` bytecode behavior, keyword counts,
+  and release/test checks.
+- Kept static CLI commands such as `keel check` from constructing the runtime/LLM client, so
+  `KEEL_TRACE=1 keel check file.keel` no longer prints runtime provider banners.
+- Made `Async.join_all` and `Async.select` await real spawned task handles, return closure results,
+  preserve agent context for `self`, and propagate spawned task errors instead of returning raw handles.
+- Fixed `Schedule.cron` weekday matching so `1-5` means Monday through Friday with standard
+  numeric cron fields.
+- Prevented shared persistent-memory reads from renaming corrupt JSON files while other readers may
+  still be using the file.
+
 ---
 
 ## [0.1.17] — 2026-05-08
