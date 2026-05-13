@@ -1,6 +1,6 @@
 use keel_lang::lexer::lex;
 use keel_lang::parser::parse;
-use keel_lang::types::checker::check;
+use keel_lang::types::checker::{self, check};
 use miette::NamedSource;
 
 fn type_errors(source: &str) -> Vec<String> {
@@ -82,8 +82,27 @@ agent Counter {
 }
 
 #[test]
-fn valid_agent_task_calls_sibling() {
+fn valid_agent_task_calls_sibling_via_self() {
     type_ok(
+        r#"
+agent Bot {
+  @role "x"
+
+  task step() {
+    self.other()
+  }
+
+  task other() {
+    Io.notify("hi")
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn error_bare_agent_task_call_is_not_in_scope() {
+    expect_error(
         r#"
 agent Bot {
   @role "x"
@@ -97,6 +116,27 @@ agent Bot {
   }
 }
 "#,
+        "undefined: `other`",
+    );
+}
+
+#[test]
+fn error_direct_agent_task_call_is_rejected() {
+    expect_error(
+        r#"
+agent Worker {
+  @role "x"
+
+  task run() {
+    Io.notify("work")
+  }
+}
+
+task invoke() {
+  Worker.run()
+}
+"#,
+        "direct agent task calls",
     );
 }
 
@@ -555,4 +595,100 @@ task t() {
 }
 "#,
     );
+}
+
+#[test]
+fn valid_complex_type_expressions_resolve() {
+    type_ok(
+        r#"
+type Pair = (str, int)
+type Bag = dynamic
+
+task t(pair: Pair, bag: Bag) {
+  same_pair: Pair = pair
+  same_bag: Bag = bag
+}
+"#,
+    );
+}
+
+#[test]
+fn error_struct_destructure_from_non_struct() {
+    expect_error(
+        r#"
+task t() {
+  {name} = 42
+  Io.notify(name)
+}
+"#,
+        "cannot destructure int as a struct",
+    );
+}
+
+#[test]
+fn error_tuple_destructure_from_non_tuple() {
+    expect_error(
+        r#"
+task t() {
+  (name, count) = {name: "a", count: 1}
+  Io.notify(name)
+}
+"#,
+        "cannot destructure struct as a tuple",
+    );
+}
+
+#[test]
+fn type_at_reports_destructured_and_nested_bindings() {
+    let source = r#"
+type Item = {name: str, score: int}
+
+agent Bot {
+  state { session_id: readonly str = "s1" }
+
+  on scored({name: item_name, score: item_score}: Item) {
+    for loop_score in [1] {
+      try {
+        copied_name = "literal"
+      } catch caught_error: Error {
+        recovered = "fallback"
+      }
+    }
+  }
+}
+"#;
+
+    let cases = [
+        ("item_name", "str"),
+        ("item_score", "int"),
+        ("session_id", "str"),
+        ("loop_score", "int"),
+        ("copied_name", "str"),
+        ("caught_error", "unknown"),
+        ("recovered", "str"),
+    ];
+
+    for (needle, expected) in cases {
+        let offset = source
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing {needle} in source"))
+            + 1;
+        let actual = checker::type_at(source, offset)
+            .unwrap_or_else(|| panic!("expected type for {needle}"));
+        assert!(
+            actual.contains(expected),
+            "expected {needle} to contain {expected:?}, got {actual:?}"
+        );
+    }
+}
+
+#[test]
+fn ident_helpers_decline_non_identifier_offsets() {
+    let source = "task greet() -> str { \"hello\" }\n";
+    let quote = source.find('"').expect("string literal quote");
+
+    assert_eq!(checker::ident_at_offset(source, quote), None);
+    assert_eq!(checker::ident_span_at_offset(source, quote), None);
+    assert_eq!(checker::definition_of(source, quote), None);
+    assert_eq!(checker::type_at("task t( {", 2), None);
 }

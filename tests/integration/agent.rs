@@ -1,0 +1,293 @@
+use crate::common::*;
+use std::io::Write;
+use std::process::Command;
+
+// ---------------------------------------------------------------------------
+// Feature-specific examples
+// ---------------------------------------------------------------------------
+
+#[test]
+fn data_pipeline_runs_through_all_records() {
+    let (ok, stdout, _stderr) = run_example("data_pipeline");
+    assert!(ok);
+    assert!(stdout.contains("Processing 5 records"));
+    assert!(stdout.contains("Stats: 2/5 valid"));
+}
+
+#[test]
+fn email_fetch_without_config_is_empty_list() {
+    let (ok, stdout, _stderr) = run_example("daily_digest");
+    assert!(ok, "daily_digest exited non-zero");
+    assert!(
+        stdout.contains("No unread emails"),
+        "expected graceful empty-inbox branch, stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn rich_enum_variants_construct_and_destructure() {
+    let (ok, stdout, _stderr) = run_example("rich_enum");
+    assert!(ok);
+    assert!(stdout.contains("reply to alice@example.com (friendly)"));
+    assert!(stdout.contains("forward to ops@example.com"));
+    assert!(stdout.contains("archive"));
+}
+
+// ---------------------------------------------------------------------------
+// REPL
+// ---------------------------------------------------------------------------
+
+#[test]
+fn repl_evaluates_let_and_expression() {
+    let bin = keel_binary();
+    let mut child = Command::new(&bin)
+        .arg("repl")
+        .env("KEEL_LLM", "mock")
+        .env("KEEL_REPL", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn keel repl");
+
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"x = 1 + 2\nx * 10\n").unwrap();
+    drop(stdin);
+
+    let out = child.wait_with_output().expect("wait repl");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        stdout.contains("30"),
+        "expected REPL to compute 30, got:\n{stdout}"
+    );
+}
+
+#[test]
+fn io_ask_reads_from_stdin_and_returns_trimmed_answer() {
+    let src = r#"
+agent A {
+  @on_start {
+    answer = Io.ask("Name?")
+    Io.show("answer={answer}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_stdin(src, "Keel\n");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("answer=Keel"),
+        "Io.ask should return trimmed stdin answer:\n{stdout}"
+    );
+}
+
+#[test]
+fn io_confirm_accepts_yes_and_rejects_no() {
+    let src = r#"
+agent A {
+  @on_start {
+    first = Io.confirm("Ship?")
+    second = Io.confirm("Rollback?")
+    Io.show("first={first}, second={second}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_stdin(src, "yes\nn\n");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("first=true, second=false"),
+        "Io.confirm should parse yes/no answers:\n{stdout}"
+    );
+}
+
+#[test]
+fn on_stop_block_fires_before_agent_removed() {
+    let src = r#"
+agent A {
+    @on_stop {
+        Io.show("A stopped")
+    }
+    @on_start {
+        Agent.stop(A)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("A stopped"),
+        "expected @on_stop output before removal:\nstdout: {stdout}"
+    );
+}
+
+#[test]
+fn agent_delegate_dispatches_to_handler() {
+    let src = r#"
+agent Worker {
+    on process(data: str) {
+        Io.show("processed")
+    }
+}
+
+agent Boss {
+    @on_start {
+        Agent.run(Worker)
+        Agent.delegate(Worker, "process", "payload")
+    }
+}
+
+run(Boss)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("processed"),
+        "expected Worker handler to fire:\nstdout: {stdout}"
+    );
+}
+
+#[test]
+fn agent_broadcast_dispatches_to_team_members() {
+    let src = r#"
+agent Alpha {
+    @team ["frontline"]
+    on alert(msg: str) {
+        Io.show("Alpha got {msg}")
+    }
+}
+
+agent Beta {
+    @team ["frontline"]
+    on alert(msg: str) {
+        Io.show("Beta got {msg}")
+    }
+}
+
+agent Gamma {
+    @team ["backoffice"]
+    on alert(msg: str) {
+        Io.show("Gamma got {msg}")
+    }
+}
+
+agent Coordinator {
+    @on_start {
+        Agent.run(Alpha)
+        Agent.run(Beta)
+        Agent.run(Gamma)
+        Agent.broadcast("frontline", "incident", event: "alert")
+    }
+}
+
+run(Coordinator)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("Alpha got incident"),
+        "Alpha should fire:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Beta got incident"),
+        "Beta should fire:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("Gamma got"),
+        "Gamma must not fire (different team):\n{stdout}"
+    );
+}
+
+#[test]
+fn agent_send_accepts_startup_burst_above_bounded_queue_size() {
+    let src = r#"
+agent BurstBot {
+    state { count: int = 0 }
+
+    @on_start {
+        for i in 1..4097 {
+            Agent.send(BurstBot, i)
+        }
+    }
+
+    on message(n: int) {
+        self.count = self.count + 1
+        if self.count == 4097 {
+            Io.show("received={self.count}")
+        }
+    }
+}
+run(BurstBot)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("received=4097"),
+        "expected all burst events to be delivered\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}
+
+#[test]
+fn stop_self_exits_cleanly() {
+    let src = r#"
+agent Greeter {
+  @on_start {
+    Io.show("hi")
+    stop(self)
+  }
+}
+run(Greeter)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("hi"), "expected output:\n{stdout}");
+}
+
+#[test]
+fn stop_self_resolves_to_current_agent() {
+    let src = r#"
+agent A {
+  @on_start {
+    Agent.run(B)
+    stop(self)
+  }
+}
+agent B {
+  @on_start {
+    Io.show("B ran")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("B ran"), "B should have run:\n{stdout}");
+}

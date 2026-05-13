@@ -296,8 +296,8 @@ agent Counter {
   }
 
   every 1.day {
-    increment()
-    increment()
+    self.increment()
+    self.increment()
     notify user "count: {self.count}"
   }
 }

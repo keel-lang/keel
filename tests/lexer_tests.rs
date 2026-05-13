@@ -329,31 +329,31 @@ fn newline_as_separator() {
 #[test]
 fn newline_suppressed_after_opening_brace() {
     let toks = tokens_with_newlines("{\nx");
-    assert!(!toks.iter().any(|t| *t == Token::Newline));
+    assert!(!toks.contains(&Token::Newline));
 }
 
 #[test]
 fn newline_suppressed_before_closing_brace() {
     let toks = tokens_with_newlines("x\n}");
-    assert!(!toks.iter().any(|t| *t == Token::Newline));
+    assert!(!toks.contains(&Token::Newline));
 }
 
 #[test]
 fn newline_suppressed_after_comma() {
     let toks = tokens_with_newlines("a,\nb");
-    assert!(!toks.iter().any(|t| *t == Token::Newline));
+    assert!(!toks.contains(&Token::Newline));
 }
 
 #[test]
 fn newline_suppressed_after_equals() {
     let toks = tokens_with_newlines("x =\n42");
-    assert!(!toks.iter().any(|t| *t == Token::Newline));
+    assert!(!toks.contains(&Token::Newline));
 }
 
 #[test]
 fn newline_suppressed_before_null_coalesce() {
     let toks = tokens_with_newlines("x\n?? y");
-    assert!(!toks.iter().any(|t| *t == Token::Newline));
+    assert!(!toks.contains(&Token::Newline));
 }
 
 #[test]
@@ -361,7 +361,7 @@ fn newline_suppressed_after_attribute_marker() {
     // `@role\n"foo"` should not separate — attribute bodies continue
     // onto the next line.
     let toks = tokens_with_newlines("@\nrole");
-    assert!(!toks.iter().any(|t| *t == Token::Newline));
+    assert!(!toks.contains(&Token::Newline));
 }
 
 #[test]

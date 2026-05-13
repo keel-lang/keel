@@ -1,0 +1,83 @@
+use crate::common::*;
+
+#[test]
+fn tools_capability_gating_parses() {
+    let src = r#"
+agent RestrictedAgent {
+    @tools [Io, Schedule]
+
+    @on_start {
+        Io.show("allowed")
+    }
+}
+run(RestrictedAgent)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("allowed"),
+        "@tools attribute should parse:\n{stdout}"
+    );
+}
+
+#[test]
+fn tools_when_guard_blocks_unconfirmed() {
+    let src = r#"
+agent GuardedBot {
+    state { confirmed: bool = false }
+
+    @tools [
+        Log,
+        Io.show when self.confirmed,
+    ]
+
+    on message(msg: str) {
+        if msg == "confirm" {
+            self.confirmed = true
+        } else {
+            Io.show(msg)
+        }
+    }
+}
+run(GuardedBot)
+Agent.send(GuardedBot, "hello")
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected CapabilityError but program succeeded");
+    assert!(
+        stderr.contains("CapabilityError"),
+        "expected CapabilityError in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn tools_when_guard_allows_after_state_change() {
+    let src = r#"
+agent GuardedBot {
+    state { confirmed: bool = false }
+
+    @tools [
+        Log,
+        Io,
+    ]
+
+    on message(msg: str) {
+        if msg == "confirm" {
+            self.confirmed = true
+            Io.show("confirmed")
+        }
+    }
+}
+run(GuardedBot)
+Agent.send(GuardedBot, "confirm")
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("confirmed"), "expected output:\n{stdout}");
+}
