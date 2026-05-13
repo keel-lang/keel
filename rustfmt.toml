@@ -1,0 +1,5 @@
+# Rustfmt configuration for the Keel project.
+# Keeps formatting choices locked so `cargo fmt` is deterministic
+# across contributors and CI runs.
+edition = "2024"
+newline_style = "Unix"

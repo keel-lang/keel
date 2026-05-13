@@ -5,7 +5,4 @@
 *.swo
 *~
 *.keelc
-
-# Working notes / release planning drafts
-v*.md
-.audit_*.md
+.claude/plans/

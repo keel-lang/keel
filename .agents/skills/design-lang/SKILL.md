@@ -4,7 +4,7 @@ description: This skill should be used when adding or modifying any Keel languag
 tags: typescript, language-design, type-system, c#, turbo-pascal, delphi, generics, ide, tooling, developer-experience
 ---
 
-# Anders Hejlsberg Style Guide⁠‍⁠​‌​‌​​‌‌‍​‌​​‌​‌‌‍​​‌‌​​​‌‍​‌​​‌‌​​‍​​​​​​​‌‍‌​​‌‌​‌​‍‌​​​​​​​‍‌‌​​‌‌‌‌‍‌‌​​​‌​​‍‌‌‌‌‌‌​‌‍‌‌​‌​​​​‍​‌​‌‌‌‌‌‍​‌​​‌​‌‌‍​‌‌​‌​​‌‍‌​‌​‌‌‌​‍​​‌​‌​​​‍‌‌‌​‌​‌‌‍‌‌​​‌​​​‍​‌​‌​‌‌‌‍‌​​‌‌‌‌​‍​​‌‌​​​‌‍​​​​‌​‌​‍​‌​‌‌​​​⁠‍⁠
+# Anders Hejlsberg Style Guide
 
 ## Overview
 
@@ -90,7 +90,7 @@ distance(a, b);  // Works! Both match Point's shape
 
 ```typescript
 // Unions: represent values that could be multiple types
-type Result<T> = 
+type Result<T> =
     | { success: true; value: T }
     | { success: false; error: string };
 
@@ -107,7 +107,7 @@ function process<T>(result: Result<T>): T | null {
 }
 
 // Discriminated unions for state machines
-type State = 
+type State =
     | { status: "idle" }
     | { status: "loading" }
     | { status: "success"; data: string }
@@ -170,19 +170,19 @@ public async Task<User> GetUserWithOrdersAsync(int userId)
 {
     // Each await yields control, resumes when ready
     var user = await _userRepository.GetByIdAsync(userId);
-    
+
     if (user == null)
         return null;
-    
+
     // Parallel async operations
     var ordersTask = _orderRepository.GetByUserAsync(userId);
     var preferencesTask = _preferenceRepository.GetAsync(userId);
-    
+
     await Task.WhenAll(ordersTask, preferencesTask);
-    
+
     user.Orders = ordersTask.Result;
     user.Preferences = preferencesTask.Result;
-    
+
     return user;
 }
 
@@ -209,7 +209,7 @@ var results = users
 
 // Works with any data source
 var dbResults = from order in db.Orders
-                join customer in db.Customers 
+                join customer in db.Customers
                     on order.CustomerId equals customer.Id
                 where order.Total > 1000
                 select new { customer.Name, order.Total };
@@ -233,26 +233,26 @@ public class UserService
     {
         return user.Name;  // user cannot be null
     }
-    
+
     // Nullable: explicitly might be null
     public User? FindUser(string email)
     {
         return _repository.FindByEmail(email);
     }
-    
+
     // Compiler tracks null state
     public void ProcessUser(string email)
     {
         var user = FindUser(email);
-        
+
         // user.Name;  // Warning: possible null reference
-        
+
         if (user != null)
         {
             // Compiler knows user is not null here
             Console.WriteLine(user.Name);  // OK
         }
-        
+
         // Null-coalescing operators
         var name = user?.Name ?? "Unknown";
     }
