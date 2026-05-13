@@ -281,13 +281,13 @@ pub fn apply_lint_fixes(source: &str, warnings: &[lint::LintWarning]) -> String 
     // be replaced safely in descending order without index shifting.
     let mut merged: Vec<(usize, usize)> = vec![];
     for (s, e) in ranges {
-        if let Some(last) = merged.last_mut() {
-            if e > last.0 {
-                // Ranges overlap: extend the merged entry in both directions.
-                last.0 = last.0.min(s);
-                last.1 = last.1.max(e);
-                continue;
-            }
+        if let Some(last) = merged.last_mut()
+            && e > last.0
+        {
+            // Ranges overlap: extend the merged entry in both directions.
+            last.0 = last.0.min(s);
+            last.1 = last.1.max(e);
+            continue;
         }
         merged.push((s, e));
     }

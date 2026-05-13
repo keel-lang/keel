@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.18 — 2026-05-13
+
 ### Explicit agent task calls
 
 Agent-owned tasks are now invoked as `self.task(...)`. Inside an agent body,

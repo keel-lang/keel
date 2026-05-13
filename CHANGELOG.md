@@ -12,6 +12,12 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.18] — 2026-05-13
+
+Explicit self for agent task calls with fixes for named args, early return, and Async.spawn scope
+
 ### Added
 
 - Added repo-local Rust audit tooling and agent guidance, including `scripts/rust_audit.sh`,

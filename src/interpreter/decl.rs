@@ -80,17 +80,17 @@ impl Interpreter {
                 };
                 // Validate @limits fields — unimplemented ones are an error.
                 for attr in &def.attributes {
-                    if attr.name == "limits" {
-                        if let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body {
-                            for (key, _) in fields {
-                                match key.as_str() {
-                                    "timeout" | "max_tokens" | "max_cost" => {}
-                                    other => {
-                                        return Err(runtime_error(format!(
-                                            "@limits: `{other}` is not supported in v0.1 — \
-                                             supported fields: `timeout`, `max_tokens`, `max_cost`"
-                                        )));
-                                    }
+                    if attr.name == "limits"
+                        && let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body
+                    {
+                        for (key, _) in fields {
+                            match key.as_str() {
+                                "timeout" | "max_tokens" | "max_cost" => {}
+                                other => {
+                                    return Err(runtime_error(format!(
+                                        "@limits: `{other}` is not supported in v0.1 — \
+                                         supported fields: `timeout`, `max_tokens`, `max_cost`"
+                                    )));
                                 }
                             }
                         }

@@ -24,7 +24,11 @@ impl Interpreter {
         match body {
             LambdaBody::Expr(e) => {
                 let v = self.eval_expr(e, &mut env).await?;
-                if let Value::EarlyReturn(inner) = v { Ok(*inner) } else { Ok(v) }
+                if let Value::EarlyReturn(inner) = v {
+                    Ok(*inner)
+                } else {
+                    Ok(v)
+                }
             }
             LambdaBody::Block(block) => match self.exec_block(block, &mut env).await? {
                 StmtOutcome::Value(v) | StmtOutcome::Return(v) => Ok(v),

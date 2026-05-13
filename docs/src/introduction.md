@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.17](./release-notes.md)** — Agent capability gating with conditional guards & readonly state fields. [See what's new →](./release-notes.md)
+> **Latest: [v0.1.18](./release-notes.md)** — Explicit self for agent task calls with fixes for named args, early return, and Async.spawn scope. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
