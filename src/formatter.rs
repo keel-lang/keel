@@ -890,10 +890,7 @@ impl Fmt {
         s
     }
 
-    #[expect(
-        clippy::only_used_in_recursion,
-        reason = "type expressions are formatted through the formatter to keep call sites consistent"
-    )]
+    #[allow(clippy::only_used_in_recursion)]
     fn type_expr_str(&self, ty: &TypeExpr) -> String {
         match ty {
             TypeExpr::Named(n) => n.clone(),

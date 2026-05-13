@@ -4,6 +4,7 @@
 //! the macOS linker crash caused by deeply nested chumsky type parameters.
 //! Newlines serve as statement separators — the grammar is newline-sensitive
 //! rather than semicolon-delimited.
+#![allow(clippy::result_large_err)]
 
 use chumsky::Stream;
 use chumsky::prelude::*;

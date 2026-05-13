@@ -224,7 +224,7 @@ fn parse_cron_field(field: &str, min: u32, max: u32) -> Option<Vec<u32>> {
             };
 
             for v in range_vals {
-                if (v - min) % step_val == 0 {
+                if (v - min).is_multiple_of(step_val) {
                     values.push(v);
                 }
             }

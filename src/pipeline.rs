@@ -273,7 +273,7 @@ pub fn apply_lint_fixes(source: &str, warnings: &[lint::LintWarning]) -> String 
         return source.to_owned();
     }
 
-    ranges.sort_by(|a, b| b.0.cmp(&a.0));
+    ranges.sort_by_key(|b| std::cmp::Reverse(b.0));
 
     // Merge overlapping ranges. Sorted descending by start, so a new range
     // overlaps the last merged one when its end extends past the last merged
