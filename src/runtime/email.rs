@@ -22,10 +22,10 @@ impl EmailConnection {
 
         for (key, val) in config {
             match key.as_str() {
-                "host" => imap_host = val.as_string(),
-                "smtp_host" => smtp_host = val.as_string(),
-                "user" => user = val.as_string(),
-                "pass" | "password" => pass = val.as_string(),
+                "host" => imap_host = val.to_display_string(),
+                "smtp_host" => smtp_host = val.to_display_string(),
+                "user" => user = val.to_display_string(),
+                "pass" | "password" => pass = val.to_display_string(),
                 _ => {}
             }
         }
@@ -233,4 +233,125 @@ fn parse_email(raw: &[u8], uid: Option<u32>) -> Value {
         map.insert("uid".to_string(), Value::Integer(u as i64));
     }
     Value::Map(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn field<'a>(value: &'a Value, key: &str) -> &'a Value {
+        match value {
+            Value::Map(map) => map.get(key).expect("field exists"),
+            other => panic!("expected email map, got {}", other.type_name()),
+        }
+    }
+
+    #[test]
+    fn connection_from_config_requires_host_user_and_password() {
+        let config = vec![
+            (
+                "host".to_string(),
+                Value::String("imap.example.test".into()),
+            ),
+            ("user".to_string(), Value::String("bot@example.test".into())),
+        ];
+
+        let err = EmailConnection::from_config(&config).expect_err("missing password");
+        assert_eq!(err, "Email connection requires host, user, and pass fields");
+    }
+
+    #[test]
+    fn connection_from_config_derives_smtp_host() {
+        let config = vec![
+            (
+                "host".to_string(),
+                Value::String("imap.example.test".into()),
+            ),
+            ("user".to_string(), Value::String("bot@example.test".into())),
+            ("pass".to_string(), Value::String("secret".into())),
+        ];
+
+        let conn = EmailConnection::from_config(&config).expect("connection config");
+        assert_eq!(conn.imap_host, "imap.example.test");
+        assert_eq!(conn.smtp_host, "smtp.example.test");
+        assert_eq!(conn.user, "bot@example.test");
+        assert_eq!(conn.pass, "secret");
+    }
+
+    #[test]
+    fn connection_from_config_accepts_explicit_smtp_host_and_password_alias() {
+        let config = vec![
+            (
+                "host".to_string(),
+                Value::String("mail.example.test".into()),
+            ),
+            (
+                "smtp_host".to_string(),
+                Value::String("smtp-relay.example.test".into()),
+            ),
+            ("user".to_string(), Value::String("bot@example.test".into())),
+            ("password".to_string(), Value::String("secret".into())),
+        ];
+
+        let conn = EmailConnection::from_config(&config).expect("connection config");
+        assert_eq!(conn.smtp_host, "smtp-relay.example.test");
+        assert_eq!(conn.pass, "secret");
+    }
+
+    #[test]
+    fn parse_email_extracts_headers_body_and_uid() {
+        let raw = b"From: Ada <ada@example.test>\r\nSubject: Notes\r\nDate: today\r\n\r\nLine one\r\nLine two";
+        let parsed = parse_email(raw, Some(42));
+
+        assert_eq!(
+            field(&parsed, "from"),
+            &Value::String("Ada <ada@example.test>".into())
+        );
+        assert_eq!(field(&parsed, "subject"), &Value::String("Notes".into()));
+        assert_eq!(
+            field(&parsed, "body"),
+            &Value::String("Line one\nLine two".into())
+        );
+        assert_eq!(field(&parsed, "unread"), &Value::Bool(true));
+        assert_eq!(field(&parsed, "uid"), &Value::Integer(42));
+    }
+
+    #[test]
+    fn parse_email_without_uid_omits_uid_field() {
+        let parsed = parse_email(b"From: a@example.test\nSubject: Hi\n\nBody", None);
+        let Value::Map(map) = parsed else {
+            panic!("expected email map");
+        };
+
+        assert!(!map.contains_key("uid"));
+        assert_eq!(map.get("body"), Some(&Value::String("Body".into())));
+    }
+
+    #[test]
+    fn send_email_rejects_invalid_from_address_before_smtp() {
+        let conn = EmailConnection {
+            imap_host: "imap.example.test".into(),
+            smtp_host: "smtp.example.test".into(),
+            user: "not an email".into(),
+            pass: "secret".into(),
+        };
+
+        let err = send_email(&conn, "ops@example.test", "subject", "body")
+            .expect_err("invalid from address");
+        assert!(err.contains("Invalid from address"), "{err}");
+    }
+
+    #[test]
+    fn send_email_rejects_invalid_to_address_before_smtp() {
+        let conn = EmailConnection {
+            imap_host: "imap.example.test".into(),
+            smtp_host: "smtp.example.test".into(),
+            user: "bot@example.test".into(),
+            pass: "secret".into(),
+        };
+
+        let err =
+            send_email(&conn, "not an email", "subject", "body").expect_err("invalid to address");
+        assert!(err.contains("Invalid to address"), "{err}");
+    }
 }

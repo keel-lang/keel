@@ -1,3 +1,10 @@
+//! Parser for the Keel language.
+//!
+//! Built on [`chumsky`] 0.9. All sub-parsers return [`BoxedParser`] to avoid
+//! the macOS linker crash caused by deeply nested chumsky type parameters.
+//! Newlines serve as statement separators — the grammar is newline-sensitive
+//! rather than semicolon-delimited.
+
 use chumsky::Stream;
 use chumsky::prelude::*;
 use miette::NamedSource;
@@ -11,6 +18,12 @@ type P<T> = BoxedParser<'static, Token, T, Simple<Token>>;
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Parse a complete Keel program from a token stream.
+///
+/// # Errors
+///
+/// Returns a miette error with source-span labels if the token stream does not
+/// form a valid Keel program.
 pub fn parse(
     tokens: Vec<(Token, Span)>,
     source_len: usize,
@@ -35,6 +48,10 @@ pub fn parse(
 }
 
 /// Parse a sequence of statements (REPL mode).
+///
+/// # Errors
+///
+/// Returns a miette error if the token stream does not form valid statements.
 pub fn parse_stmts(
     tokens: Vec<(Token, Span)>,
     source_len: usize,
@@ -210,7 +227,12 @@ fn plain_string() -> P<String> {
 }
 
 fn integer_lit() -> P<i64> {
-    select! { Token::Integer(s) => s.parse::<i64>().unwrap() }.boxed()
+    select! { Token::Integer(s) => s }
+        .try_map(|s, span| {
+            s.parse::<i64>()
+                .map_err(|_| Simple::custom(span, format!("integer literal `{s}` overflows i64")))
+        })
+        .boxed()
 }
 
 // ---------------------------------------------------------------------------
@@ -253,15 +275,27 @@ fn type_expr() -> P<TypeExpr> {
             .map(|((base, generic_args), nullable)| {
                 let resolved = match (&base, generic_args) {
                     (TypeExpr::Named(n), Some(args)) if n == "list" && args.len() == 1 => {
-                        TypeExpr::List(Box::new(args.into_iter().next().unwrap()))
+                        TypeExpr::List(Box::new(
+                            args.into_iter()
+                                .next()
+                                .expect("list[T] parser branch guarantees one type argument"),
+                        ))
                     }
                     (TypeExpr::Named(n), Some(mut args)) if n == "map" && args.len() == 2 => {
-                        let v = args.pop().unwrap();
-                        let k = args.pop().unwrap();
+                        let v = args
+                            .pop()
+                            .expect("map[K, V] parser branch guarantees value type");
+                        let k = args
+                            .pop()
+                            .expect("map[K, V] parser branch guarantees key type");
                         TypeExpr::Map(Box::new(k), Box::new(v))
                     }
                     (TypeExpr::Named(n), Some(args)) if n == "set" && args.len() == 1 => {
-                        TypeExpr::Set(Box::new(args.into_iter().next().unwrap()))
+                        TypeExpr::Set(Box::new(
+                            args.into_iter()
+                                .next()
+                                .expect("set[T] parser branch guarantees one type argument"),
+                        ))
                     }
                     (TypeExpr::Named(n), Some(args)) => TypeExpr::Generic(n.clone(), args),
                     _ => base,
@@ -298,8 +332,12 @@ fn expr_parser() -> P<Expr> {
             .boxed();
 
         // ── Literals ─────────────────────────────────────────────
-        let int_lit = select! { Token::Integer(s) => Expr::Integer(s.parse::<i64>().unwrap()) };
-        let float_lit = select! { Token::Float(s) => Expr::Float(s.parse::<f64>().unwrap()) };
+        let int_lit = select! { Token::Integer(s) => s }.try_map(|s, span| {
+            s.parse::<i64>()
+                .map(Expr::Integer)
+                .map_err(|_| Simple::custom(span, format!("integer literal `{s}` overflows i64")))
+        });
+        let float_lit = select! { Token::Float(s) => Expr::Float(s.parse::<f64>().expect("lexer regex guarantees valid f64 literal")) };
         let str_expr = string_lit().map(|s| Expr::StringLit(parse_interpolation(&s)));
         let bool_lit = just(Token::True)
             .to(Expr::Bool(true))
@@ -1317,7 +1355,7 @@ fn program_parser() -> P<Program> {
 
 fn parse_interpolation(raw: &str) -> Vec<StringPart> {
     let mut parts = Vec::new();
-    let mut current = String::new();
+    let mut current = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
 
     while let Some(ch) = chars.next() {

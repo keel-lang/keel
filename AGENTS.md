@@ -10,7 +10,7 @@
 src/
   lexer.rs          # Token definitions (logos)
   parser.rs         # Grammar (chumsky 0.9, BoxedParser)
-  ast.rs            # AST node types
+  ast/              # AST node types
   types/            # Type checker (enum exhaustiveness, arg arity, scope;
                     #   full nullable-safety enforcement is WIP — see ROADMAP)
   interpreter/      # Tree-walking async interpreter

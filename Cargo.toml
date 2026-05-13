@@ -37,6 +37,7 @@ regex = "1"
 axum = "0.8"
 sha2 = "0.10"
 fs2 = "0.4"
+parking_lot = "0.12"
 
 
 [dev-dependencies]
@@ -44,4 +45,10 @@ tempfile = "3"
 
 [profile.release]
 opt-level = 3
-lto = true
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[features]
+test-util = []

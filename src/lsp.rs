@@ -6,9 +6,9 @@
 //! pending a follow-up.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
 
 use miette::NamedSource;
+use parking_lot::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
@@ -27,10 +27,10 @@ pub async fn start() {
     Server::new(stdin, stdout, socket).serve(service).await;
 }
 
-struct Backend {
-    client: Client,
+pub(crate) struct Backend {
+    pub(crate) client: Client,
     /// In-memory snapshot of open documents: URI → current text.
-    docs: Mutex<HashMap<Url, String>>,
+    pub(crate) docs: Mutex<HashMap<Url, String>>,
 }
 
 #[tower_lsp::async_trait]
@@ -74,7 +74,7 @@ impl LanguageServer for Backend {
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri.clone();
         let text = params.text_document.text;
-        self.docs.lock().unwrap().insert(uri.clone(), text.clone());
+        self.docs.lock().insert(uri.clone(), text.clone());
         self.publish(&uri, &text).await;
     }
 
@@ -82,16 +82,13 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri.clone();
         // FULL sync mode: the last content change holds the new full text.
         if let Some(change) = params.content_changes.pop() {
-            self.docs
-                .lock()
-                .unwrap()
-                .insert(uri.clone(), change.text.clone());
+            self.docs.lock().insert(uri.clone(), change.text.clone());
             self.publish(&uri, &change.text).await;
         }
     }
 
     async fn did_close(&self, params: DidCloseTextDocumentParams) {
-        self.docs.lock().unwrap().remove(&params.text_document.uri);
+        self.docs.lock().remove(&params.text_document.uri);
         // Clear diagnostics for the closed file.
         self.client
             .publish_diagnostics(params.text_document.uri, vec![], None)
@@ -101,7 +98,7 @@ impl LanguageServer for Backend {
     async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+        let text = match self.docs.lock().get(&uri).cloned() {
             Some(t) => t,
             None => return Ok(None),
         };
@@ -224,7 +221,6 @@ impl LanguageServer for Backend {
             "true",
             "false",
             "none",
-            "now",
             "set",
         ];
 
@@ -249,7 +245,7 @@ impl LanguageServer for Backend {
     ) -> Result<Option<GotoDefinitionResponse>> {
         let uri = params.text_document_position_params.text_document.uri;
         let pos = params.text_document_position_params.position;
-        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+        let text = match self.docs.lock().get(&uri).cloned() {
             Some(t) => t,
             None => return Ok(None),
         };
@@ -268,7 +264,7 @@ impl LanguageServer for Backend {
         params: TextDocumentPositionParams,
     ) -> Result<Option<PrepareRenameResponse>> {
         let uri = params.text_document.uri;
-        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+        let text = match self.docs.lock().get(&uri).cloned() {
             Some(t) => t,
             None => return Ok(None),
         };
@@ -328,7 +324,7 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
         let uri = params.text_document_position.text_document.uri;
         let pos = params.text_document_position.position;
-        let text = match self.docs.lock().unwrap().get(&uri).cloned() {
+        let text = match self.docs.lock().get(&uri).cloned() {
             Some(t) => t,
             None => return Ok(None),
         };
@@ -367,7 +363,7 @@ impl LanguageServer for Backend {
 
 /// Convert an LSP `Position` (0-based line + UTF-8 column approximation)
 /// into a UTF-8 byte offset into `text`.
-fn position_to_offset(text: &str, pos: Position) -> usize {
+pub(crate) fn position_to_offset(text: &str, pos: Position) -> usize {
     let mut line: u32 = 0;
     let mut col: u32 = 0;
     let mut offset: usize = 0;
@@ -431,7 +427,7 @@ pub fn analyze(text: &str) -> Vec<Diagnostic> {
 
 /// Extract `(label, span)` pairs from a miette::Report. Keel's lexer
 /// and parser both emit LabeledSpans attached to their errors.
-fn spans_from_report(report: &miette::Report) -> Vec<(String, Span)> {
+pub(crate) fn spans_from_report(report: &miette::Report) -> Vec<(String, Span)> {
     let mut out = Vec::new();
     if let Some(labels) = report.labels() {
         for label in labels {
@@ -450,7 +446,12 @@ fn spans_from_report(report: &miette::Report) -> Vec<(String, Span)> {
     out
 }
 
-fn diag(text: &str, span: Span, message: String, severity: DiagnosticSeverity) -> Diagnostic {
+pub(crate) fn diag(
+    text: &str,
+    span: Span,
+    message: String,
+    severity: DiagnosticSeverity,
+) -> Diagnostic {
     Diagnostic {
         range: byte_range_to_lsp(text, &span),
         severity: Some(severity),
@@ -464,14 +465,14 @@ fn diag(text: &str, span: Span, message: String, severity: DiagnosticSeverity) -
 /// column). v0.1 approximates column as UTF-8 character count — fine
 /// for ASCII sources; a follow-up can add true UTF-16 code-unit
 /// counting for emoji-dense files.
-fn byte_range_to_lsp(text: &str, span: &Span) -> Range {
+pub(crate) fn byte_range_to_lsp(text: &str, span: &Span) -> Range {
     Range {
         start: offset_to_position(text, span.start),
         end: offset_to_position(text, span.end),
     }
 }
 
-fn offset_to_position(text: &str, offset: usize) -> Position {
+pub(crate) fn offset_to_position(text: &str, offset: usize) -> Position {
     let mut line: u32 = 0;
     let mut col: u32 = 0;
     let mut i = 0;
@@ -490,5 +491,682 @@ fn offset_to_position(text: &str, offset: usize) -> Position {
     Position {
         line,
         character: col,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tower_lsp::LanguageServer;
+
+    // ── position_to_offset ──────────────────────────────────────────
+
+    #[test]
+    fn position_to_offset_start_of_text() {
+        let text = "hello world";
+        let pos = Position {
+            line: 0,
+            character: 0,
+        };
+        assert_eq!(position_to_offset(text, pos), 0);
+    }
+
+    #[test]
+    fn position_to_offset_middle_of_line() {
+        let text = "hello world";
+        let pos = Position {
+            line: 0,
+            character: 6,
+        };
+        assert_eq!(position_to_offset(text, pos), 6);
+    }
+
+    #[test]
+    fn position_to_offset_second_line() {
+        let text = "first\nsecond\nthird";
+        // "second" starts at byte offset 6 (f,i,r,s,t,\n = 6)
+        let pos = Position {
+            line: 1,
+            character: 3,
+        };
+        // "sec" → bytes: s=6, e=7, c=8 → offset 9
+        assert_eq!(position_to_offset(text, pos), 9);
+    }
+
+    #[test]
+    fn position_to_offset_past_end_returns_text_length() {
+        let text = "abc";
+        let pos = Position {
+            line: 0,
+            character: 100,
+        };
+        assert_eq!(position_to_offset(text, pos), 3);
+    }
+
+    #[test]
+    fn position_to_offset_past_end_line() {
+        let text = "abc\ndef";
+        let pos = Position {
+            line: 10,
+            character: 0,
+        };
+        assert_eq!(position_to_offset(text, pos), 7); // "abc\ndef" = 7 bytes
+    }
+
+    #[test]
+    fn position_to_offset_at_newline() {
+        let text = "abc\ndef";
+        // Position at line 0, character 3 is right after "abc" at the \n
+        // But position_to_offset iterates chars; after 'c' char, col=3, then \n resets col to 0
+        // So position (0, 3) resolves to byte offset 3 (the \n)
+        let pos = Position {
+            line: 0,
+            character: 3,
+        };
+        assert_eq!(position_to_offset(text, pos), 3);
+    }
+
+    #[test]
+    fn position_to_offset_unicode_multibyte() {
+        let text = "héllo";
+        // 'h' = 1 byte, 'é' = 2 bytes, 'l' = 1 byte
+        // character 0: h (offset 0)
+        // character 1: é (offset 1, 2 bytes)
+        // character 2: l (offset 3)
+        let pos = Position {
+            line: 0,
+            character: 2,
+        };
+        assert_eq!(position_to_offset(text, pos), 3);
+    }
+
+    // ── offset_to_position ──────────────────────────────────────────
+
+    #[test]
+    fn offset_to_position_zero() {
+        let pos = offset_to_position("hello", 0);
+        assert_eq!(pos.line, 0);
+        assert_eq!(pos.character, 0);
+    }
+
+    #[test]
+    fn offset_to_position_middle() {
+        let pos = offset_to_position("hello", 3);
+        assert_eq!(pos.line, 0);
+        assert_eq!(pos.character, 3);
+    }
+
+    #[test]
+    fn offset_to_position_second_line() {
+        let text = "abc\ndef";
+        // offset 4 = 'd' (line 1, col 0)
+        let pos = offset_to_position(text, 4);
+        assert_eq!(pos.line, 1);
+        assert_eq!(pos.character, 0);
+    }
+
+    #[test]
+    fn offset_to_position_second_line_middle() {
+        let text = "abc\ndef";
+        // offset 5 = 'e', offset 6 = 'f'
+        let pos = offset_to_position(text, 5);
+        assert_eq!(pos.line, 1);
+        assert_eq!(pos.character, 1);
+    }
+
+    #[test]
+    fn offset_to_position_past_end() {
+        let pos = offset_to_position("abc", 100);
+        assert_eq!(pos.line, 0);
+        assert_eq!(pos.character, 3);
+    }
+
+    #[test]
+    fn offset_to_position_at_newline_byte() {
+        // "abc\ndef" → offset 3 is the \n byte
+        // The loop increments i after processing \n; at offset 3, i starts at 3
+        // First char processed: \n (i=0+1=1), then e,f → no break because i was checked
+        // Actually: i=0, ch='a', i+=1 → i=1. ch='b', i=2. ch='c', i=3.
+        // Next: ch='\n', i=3 >= offset=3, break!
+        // So line=0, col=3 (the \n itself)
+        let pos = offset_to_position("abc\ndef", 3);
+        assert_eq!(pos.line, 0);
+        assert_eq!(pos.character, 3);
+    }
+
+    // ── byte_range_to_lsp ───────────────────────────────────────────
+
+    #[test]
+    fn byte_range_to_lsp_simple() {
+        let range = byte_range_to_lsp("hello world", &(0..5));
+        assert_eq!(
+            range.start,
+            Position {
+                line: 0,
+                character: 0
+            }
+        );
+        assert_eq!(
+            range.end,
+            Position {
+                line: 0,
+                character: 5
+            }
+        );
+    }
+
+    #[test]
+    fn byte_range_to_lsp_multiline() {
+        let text = "line1\nline2\nline3";
+        // "line2" is at offset 6..11
+        let range = byte_range_to_lsp(text, &(6..11));
+        assert_eq!(
+            range.start,
+            Position {
+                line: 1,
+                character: 0
+            }
+        );
+        assert_eq!(
+            range.end,
+            Position {
+                line: 1,
+                character: 5
+            }
+        );
+    }
+
+    // ── diag ────────────────────────────────────────────────────────
+
+    #[test]
+    fn diag_has_correct_severity_and_source() {
+        let d = diag(
+            "test",
+            0..4,
+            "something wrong".into(),
+            DiagnosticSeverity::ERROR,
+        );
+        assert_eq!(d.severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(d.source.as_deref(), Some("keel"));
+        assert_eq!(d.message, "something wrong");
+        assert_eq!(
+            d.range.start,
+            Position {
+                line: 0,
+                character: 0
+            }
+        );
+        assert_eq!(
+            d.range.end,
+            Position {
+                line: 0,
+                character: 4
+            }
+        );
+    }
+
+    #[test]
+    fn diag_warning_severity() {
+        let d = diag("test", 0..0, "hint".into(), DiagnosticSeverity::WARNING);
+        assert_eq!(d.severity, Some(DiagnosticSeverity::WARNING));
+    }
+
+    // ── spans_from_report ──────────────────────────────────────────
+
+    #[test]
+    fn spans_from_report_parser_error() {
+        use miette::NamedSource;
+        let src = NamedSource::new("test.keel", "task t() {\n  x =\n}".to_string());
+        let tokens = crate::lexer::lex("task t() {\n  x =\n}", &src).expect("lex should pass");
+        let err = crate::parser::parse(tokens, "task t() {\n  x =\n}".len(), &src).unwrap_err();
+        let spans = spans_from_report(&err);
+        assert!(!spans.is_empty(), "expected at least one span");
+    }
+
+    #[test]
+    fn spans_from_report_empty_fallback() {
+        // Create a miette report without labels
+        let report: miette::Report = miette::miette!("bare error without labels");
+        let spans = spans_from_report(&report);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].0, "bare error without labels");
+        assert_eq!(spans[0].1, 0..0);
+    }
+
+    // ── analyze ─────────────────────────────────────────────────────
+
+    #[test]
+    fn analyze_empty_string() {
+        let diags = analyze("");
+        // An empty string has no tokens and should be clean
+        assert!(
+            diags.is_empty(),
+            "empty string should produce no diagnostics, got: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn analyze_blank_lines() {
+        let diags = analyze("\n\n\n");
+        // Blank lines only — should be clean
+        assert!(
+            diags.is_empty(),
+            "blank lines should produce no diagnostics, got: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn analyze_lexer_error() {
+        let diags = analyze("@invalid");
+        assert!(!diags.is_empty(), "expected lexer error diagnostic");
+        assert_eq!(diags[0].severity, Some(DiagnosticSeverity::ERROR));
+    }
+
+    #[test]
+    fn analyze_multiple_type_errors() {
+        let diags = analyze(
+            r#"
+task t() {
+  a = unknown1
+  b = unknown2
+}
+"#,
+        );
+        let count = diags
+            .iter()
+            .filter(|d| d.message.contains("undefined"))
+            .count();
+        assert!(
+            count >= 2,
+            "expected at least 2 undefined errors, got {count}: {diags:?}"
+        );
+    }
+
+    #[test]
+    fn analyze_type_error_has_source() {
+        let diags = analyze("task t() { x = bogus }");
+        assert!(!diags.is_empty());
+        for d in &diags {
+            assert_eq!(d.source.as_deref(), Some("keel"));
+        }
+    }
+
+    // ── Backend non-client methods ──────────────────────────────────
+
+    #[tokio::test]
+    async fn backend_initialize() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let result = backend
+            .initialize(InitializeParams::default())
+            .await
+            .expect("initialize should succeed");
+        assert_eq!(result.server_info.as_ref().unwrap().name, "keel-lsp");
+        // Verify key capabilities are present
+        let caps = result.capabilities;
+        assert!(caps.hover_provider.is_some());
+        assert!(caps.completion_provider.is_some());
+        assert!(caps.definition_provider.is_some());
+    }
+
+    #[tokio::test]
+    async fn backend_shutdown() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let result = backend.shutdown().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn backend_completion_returns_items() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let result = backend
+            .completion(CompletionParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier {
+                        uri: Url::parse("file:///test.keel").unwrap(),
+                    },
+                    position: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            })
+            .await
+            .expect("completion should succeed");
+        assert!(result.is_some(), "completion should return items");
+        let items = match result.unwrap() {
+            CompletionResponse::Array(arr) => arr,
+            _ => panic!("expected array response"),
+        };
+        assert!(!items.is_empty(), "completions should not be empty");
+        // Check for some expected items
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert!(labels.contains(&"Ai"), "should contain namespace Ai");
+        assert!(labels.contains(&"agent"), "should contain keyword agent");
+        assert!(
+            labels.contains(&"classify"),
+            "should contain method classify"
+        );
+        // Regression (D1): `now` is a prelude identifier, not a reserved keyword.
+        assert!(
+            !labels.contains(&"now"),
+            "`now` must not appear in keyword completions:\n{labels:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn backend_hover_resolves_type() {
+        let src = "agent A {\n    @on_start {\n        items = [1, 2, 3]\n    }\n}\n";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        // Simulate did_open to populate docs
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        let offset = src.find("items").unwrap() + 1; // cursor inside "items"
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .hover(HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: pos,
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .expect("hover should succeed");
+        assert!(result.is_some(), "hover should return a result on `items`");
+        if let Some(hover) = result {
+            match hover.contents {
+                HoverContents::Scalar(MarkedString::String(label)) => {
+                    assert!(label.contains("list"), "expected list type, got: {label}");
+                }
+                _ => panic!("expected scalar markdown hover"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn backend_hover_unknown_returns_none() {
+        let src = "task t() { return }";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        // Hover on whitespace (offset 0)
+        let result = backend
+            .hover(HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .expect("hover should succeed");
+        assert!(result.is_none(), "hover on unknown should return None");
+    }
+
+    #[tokio::test]
+    async fn backend_hover_no_doc_returns_none() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///nonexistent.keel").unwrap();
+        let result = backend
+            .hover(HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: Position {
+                        line: 0,
+                        character: 0,
+                    },
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .expect("hover should succeed");
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn backend_goto_definition_finds_task() {
+        let src = "task greet() -> str {\n    \"hello\"\n}\nagent A {\n    @on_start {\n        r = greet()\n    }\n}\n";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        let offset = src.find("greet()").unwrap() + 1;
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .goto_definition(GotoDefinitionParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: pos,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await
+            .expect("goto_definition should succeed");
+        assert!(result.is_some(), "should find definition of greet");
+    }
+
+    #[tokio::test]
+    async fn backend_goto_definition_not_found() {
+        let src = "task t() { return }";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        // Hover on "return" — not a declaration
+        let offset = src.find("return").unwrap() + 1;
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .goto_definition(GotoDefinitionParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: pos,
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await
+            .expect("goto_definition should succeed");
+        assert!(result.is_none(), "return is not a declaration");
+    }
+
+    #[tokio::test]
+    async fn backend_prepare_rename_task_name() {
+        let src = "task greet() -> str { \"hello\" }\n";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        let offset = src.find("greet").unwrap() + 1;
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .prepare_rename(TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: pos,
+            })
+            .await
+            .expect("prepare_rename should succeed");
+        assert!(result.is_some(), "should allow renaming task name `greet`");
+    }
+
+    #[tokio::test]
+    async fn backend_prepare_rename_prelude_blocked() {
+        let src = "agent A { @on_start { Io.show(\"x\") } }\n";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        let offset = src.find("Io").unwrap() + 1;
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .prepare_rename(TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: pos,
+            })
+            .await
+            .expect("prepare_rename should succeed");
+        assert!(result.is_none(), "should block renaming prelude Io");
+    }
+
+    #[tokio::test]
+    async fn backend_rename_task() {
+        let src = "task orig() -> str { \"x\" }\nagent A { @on_start { r = orig() } }\n";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        let offset = src.find("orig").unwrap() + 1;
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .rename(RenameParams {
+                text_document_position: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri: uri.clone() },
+                    position: pos,
+                },
+                new_name: "renamed".to_string(),
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .expect("rename should succeed");
+        assert!(result.is_some(), "should produce workspace edit");
+        let edit = result.unwrap();
+        let changes = edit.changes.expect("should have changes");
+        let edits = changes.get(&uri).expect("should have edits for uri");
+        assert!(
+            edits.len() >= 2,
+            "expected at least 2 edits (decl + call), got {}",
+            edits.len()
+        );
+        for e in edits {
+            assert_eq!(e.new_text, "renamed");
+        }
+    }
+
+    // ── Doc management ──────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn did_open_stores_document() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        // Instead of calling did_open (which calls publish_diagnostics),
+        // we directly test the docs map
+        backend
+            .docs
+            .lock()
+            .insert(uri.clone(), "task t() {}".to_string());
+        assert!(backend.docs.lock().contains_key(&uri));
+        assert_eq!(backend.docs.lock().get(&uri).unwrap(), "task t() {}");
+    }
+
+    #[tokio::test]
+    async fn did_change_updates_document() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), "old".to_string());
+        // Update the doc
+        backend.docs.lock().insert(uri.clone(), "new".to_string());
+        assert_eq!(backend.docs.lock().get(&uri).unwrap(), "new");
+    }
+
+    #[tokio::test]
+    async fn did_close_removes_document() {
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        backend.docs.lock().insert(uri.clone(), "data".to_string());
+        assert!(backend.docs.lock().contains_key(&uri));
+        backend.docs.lock().remove(&uri);
+        assert!(!backend.docs.lock().contains_key(&uri));
+    }
+
+    #[tokio::test]
+    async fn did_open_then_hover_works() {
+        let src = "agent A {\n    @on_start {\n        x = 42\n    }\n}\n";
+        let (service, _socket) = LspService::new(|client| Backend {
+            client,
+            docs: Mutex::new(HashMap::new()),
+        });
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.keel").unwrap();
+        // Populate docs as if did_open was called
+        backend.docs.lock().insert(uri.clone(), src.to_string());
+
+        // Now hover on `x`
+        let offset = src.find("x =").unwrap() + 1;
+        let pos = offset_to_position(src, offset);
+        let result = backend
+            .hover(HoverParams {
+                text_document_position_params: TextDocumentPositionParams {
+                    text_document: TextDocumentIdentifier { uri },
+                    position: pos,
+                },
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .expect("hover should succeed");
+        assert!(result.is_some(), "hover should work after did_open");
     }
 }

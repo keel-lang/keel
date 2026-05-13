@@ -3,6 +3,7 @@ use std::io::{self, Write};
 use colored::Colorize;
 
 use crate::interpreter::value::Value;
+use crate::runtime::context::EnvProvider;
 
 /// Display a notification to the user (non-blocking).
 pub fn notify(message: &str) {
@@ -11,8 +12,16 @@ pub fn notify(message: &str) {
 
 /// Show structured data to the user with formatted output.
 pub fn show(value: &Value) {
+    let repl_mode = crate::runtime::context::NativeEnv
+        .var("KEEL_REPL")
+        .as_deref()
+        == Some("1");
+    show_with_repl(value, repl_mode);
+}
+
+pub fn show_with_repl(value: &Value, repl_mode: bool) {
     // In REPL mode, suppress none output (from statements that don't return values)
-    if matches!(value, Value::None) && std::env::var("KEEL_REPL").as_deref() == Ok("1") {
+    if matches!(value, Value::None) && repl_mode {
         return;
     }
     match value {
@@ -81,7 +90,10 @@ fn show_table(items: &[Value]) {
     for item in items {
         if let Value::Map(fields) = item {
             for (i, col) in columns.iter().enumerate() {
-                let val_len = fields.get(col).map(|v| v.as_string().len()).unwrap_or(0);
+                let val_len = fields
+                    .get(col)
+                    .map(|v| v.to_display_string().len())
+                    .unwrap_or(0);
                 if val_len > widths[i] {
                     widths[i] = val_len;
                 }
@@ -114,7 +126,10 @@ fn show_table(items: &[Value]) {
                 .iter()
                 .enumerate()
                 .map(|(i, col)| {
-                    let val = fields.get(col).map(|v| v.as_string()).unwrap_or_default();
+                    let val = fields
+                        .get(col)
+                        .map(|v| v.to_display_string())
+                        .unwrap_or_default();
                     let truncated = if val.len() > widths[i] {
                         format!("{}…", &val[..widths[i] - 1])
                     } else {
@@ -153,22 +168,22 @@ fn format_display_value(val: &Value) -> String {
 }
 
 /// Ask the user a question and wait for their response.
-pub fn ask(prompt: &str) -> String {
+pub fn ask(prompt: &str) -> io::Result<String> {
     println!();
     print!(
         "  {} {} ",
         "?".bright_yellow().bold(),
         prompt.bright_white()
     );
-    io::stdout().flush().unwrap();
+    io::stdout().flush()?;
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    input.trim().to_string()
+    io::stdin().read_line(&mut input)?;
+    Ok(input.trim().to_string())
 }
 
 /// Ask the user for yes/no confirmation.
-pub fn confirm(message: &str) -> bool {
+pub fn confirm(message: &str) -> io::Result<bool> {
     println!();
     println!("  {}", message.dimmed());
     print!(
@@ -176,10 +191,97 @@ pub fn confirm(message: &str) -> bool {
         "?".bright_yellow().bold(),
         "Confirm? (y/n)".bright_white()
     );
-    io::stdout().flush().unwrap();
+    io::stdout().flush()?;
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
-    let answer = input.trim().to_lowercase();
-    answer == "y" || answer == "yes"
+    io::stdin().read_line(&mut input)?;
+    Ok(parse_confirmation(&input))
+}
+
+fn parse_confirmation(input: &str) -> bool {
+    matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn strip_ansi(input: &str) -> String {
+        let mut out = String::new();
+        let mut chars = input.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+                let _ = chars.next();
+                for code in chars.by_ref() {
+                    if code.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn parse_confirmation_accepts_yes_answers() {
+        assert!(parse_confirmation("y\n"));
+        assert!(parse_confirmation("yes"));
+        assert!(parse_confirmation(" YES "));
+    }
+
+    #[test]
+    fn parse_confirmation_rejects_other_answers() {
+        assert!(!parse_confirmation("n"));
+        assert!(!parse_confirmation("no"));
+        assert!(!parse_confirmation(""));
+        assert!(!parse_confirmation("yep"));
+    }
+
+    #[test]
+    fn format_display_value_formats_scalars() {
+        assert_eq!(
+            strip_ansi(&format_display_value(&Value::String("hi".into()))),
+            "hi"
+        );
+        assert_eq!(strip_ansi(&format_display_value(&Value::Integer(42))), "42");
+        assert_eq!(strip_ansi(&format_display_value(&Value::Float(3.5))), "3.5");
+        assert_eq!(
+            strip_ansi(&format_display_value(&Value::Bool(true))),
+            "true"
+        );
+        assert_eq!(strip_ansi(&format_display_value(&Value::None)), "none");
+    }
+
+    #[test]
+    fn format_display_value_formats_structured_values() {
+        let mut map = HashMap::new();
+        map.insert("name".to_string(), Value::String("Ada".into()));
+        map.insert("age".to_string(), Value::Integer(42));
+
+        let list = Value::List(vec![
+            Value::String("x".into()),
+            Value::Range(1, 3),
+            Value::Map(map),
+        ]);
+        let rendered = strip_ansi(&format_display_value(&list));
+
+        assert!(rendered.starts_with("[x, 1..3, {"));
+        assert!(rendered.contains("name: Ada"));
+        assert!(rendered.contains("age: 42"));
+    }
+
+    #[test]
+    fn format_display_value_formats_enum_variants() {
+        let rendered = strip_ansi(&format_display_value(&Value::EnumVariant(
+            "Status".into(),
+            "open".into(),
+            None,
+        )));
+
+        assert_eq!(rendered, "Status.open");
+    }
 }

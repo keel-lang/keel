@@ -27,6 +27,7 @@ fn binding_str(b: &Binding) -> String {
     }
 }
 
+#[must_use]
 pub fn format_program(program: &Program) -> String {
     let mut f = Fmt::new();
     for (i, (decl, _)) in program.declarations.iter().enumerate() {
@@ -54,8 +55,10 @@ struct Fmt {
 
 impl Fmt {
     fn new() -> Self {
+        // 4 KiB is a reasonable starting buffer for most .keel files;
+        // avoids small-string reallocations during formatting.
         Fmt {
-            buf: String::new(),
+            buf: String::with_capacity(4096),
             indent: 0,
             at_line_start: true,
         }
@@ -629,16 +632,6 @@ impl Fmt {
                     self.block_inline(else_body),
                 )
             }
-            Expr::WhenExpr { subject, arms } => {
-                // Multi-arm when as expr — fall back to the same shape
-                // as the statement form but inlined.
-                let arms_str: Vec<String> = arms.iter().map(|a| self.arm_inline(a)).collect();
-                format!(
-                    "when {} {{ {} }}",
-                    self.expr_str(subject),
-                    arms_str.join("; ")
-                )
-            }
             Expr::Lambda { params, body } => {
                 let params_str = if params.len() == 1 && params[0].ty.is_none() {
                     params[0].name.clone()
@@ -868,17 +861,6 @@ impl Fmt {
         }
     }
 
-    fn arm_inline(&self, arm: &WhenArm) -> String {
-        let pats: Vec<String> = arm.patterns.iter().map(|p| self.pattern_str(p)).collect();
-        let body = self.block_inline(&arm.body);
-        let guard = arm
-            .guard
-            .as_ref()
-            .map(|g| format!(" where {}", self.expr_str(g)))
-            .unwrap_or_default();
-        format!("{}{guard} => {body}", pats.join(", "))
-    }
-
     fn string_lit(&self, parts: &[StringPart]) -> String {
         let mut s = String::from("\"");
         for p in parts {
@@ -908,7 +890,10 @@ impl Fmt {
         s
     }
 
-    #[allow(clippy::only_used_in_recursion)]
+    #[expect(
+        clippy::only_used_in_recursion,
+        reason = "type expressions are formatted through the formatter to keep call sites consistent"
+    )]
     fn type_expr_str(&self, ty: &TypeExpr) -> String {
         match ty {
             TypeExpr::Named(n) => n.clone(),
@@ -955,7 +940,8 @@ fn map_key_form(k: &str) -> String {
     if is_ident {
         k.to_string()
     } else {
-        let mut s = String::from("\"");
+        let mut s = String::with_capacity(k.len() + 2);
+        s.push('"');
         for ch in k.chars() {
             match ch {
                 '\\' => s.push_str("\\\\"),

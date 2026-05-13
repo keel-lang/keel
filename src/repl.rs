@@ -8,17 +8,23 @@
 use miette::{NamedSource, Result};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
+use std::sync::Arc;
 
 use crate::ast::{Decl, Stmt};
 use crate::interpreter::Interpreter;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::Value;
+use crate::runtime::context::RuntimeContext;
 use crate::{lexer, parser};
 
 const PROMPT: &str = "keel> ";
 const CONT_PROMPT: &str = "  ... ";
 
 pub async fn start() -> Result<()> {
+    start_with_runtime(RuntimeContext::native()).await
+}
+
+pub async fn start_with_runtime(runtime: Arc<RuntimeContext>) -> Result<()> {
     println!("Keel REPL — v0.1 (alpha). Ctrl-D to exit.");
 
     let mut rl = DefaultEditor::new().map_err(|e| miette::miette!("readline init failed: {e}"))?;
@@ -27,7 +33,7 @@ pub async fn start() -> Result<()> {
         let _ = rl.load_history(path);
     }
 
-    let mut interp = Interpreter::new();
+    let mut interp = Interpreter::with_runtime(runtime);
     let mut env = Environment::new();
     let mut pending = String::new();
 
@@ -138,7 +144,7 @@ async fn eval_source(
                     last = Some(eval_stmt(interp, env, stmt).await?);
                 }
                 _ => {
-                    interp_register(interp, decl)?;
+                    interp.register_decl(decl)?;
                     last = None;
                 }
             }
@@ -161,73 +167,6 @@ async fn eval_stmt(interp: &mut Interpreter, env: &mut Environment, stmt: &Stmt)
         crate::interpreter::StmtOutcome::Return(v) => Ok(v),
         crate::interpreter::StmtOutcome::Normal => Ok(Value::None),
     }
-}
-
-/// Register a declaration (type / task / agent / interface / extern /
-/// use) in the REPL's persistent interpreter.
-fn interp_register(interp: &mut Interpreter, decl: &Decl) -> Result<()> {
-    use crate::ast::{AgentItem, AttributeBody, AttributeDecl};
-    match decl {
-        Decl::Type(t) => {
-            interp
-                .globals
-                .insert(t.name.clone(), Value::Namespace(t.name.clone()));
-            if let crate::ast::TypeDef::SimpleEnum(variants) = &t.def {
-                interp.enum_types.insert(t.name.clone(), variants.clone());
-            }
-        }
-        Decl::Task(t) => {
-            interp
-                .globals
-                .insert(t.name.clone(), Value::Task(t.name.clone(), t.clone()));
-        }
-        Decl::Agent(a) => {
-            let def = crate::interpreter::AgentDef {
-                name: a.name.clone(),
-                attributes: a
-                    .items
-                    .iter()
-                    .filter_map(|it| match it {
-                        AgentItem::Attribute(attr @ AttributeDecl { .. }) => Some(attr.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-                state_fields: a
-                    .items
-                    .iter()
-                    .filter_map(|it| match it {
-                        AgentItem::State(fields) => Some(fields.clone()),
-                        _ => None,
-                    })
-                    .flatten()
-                    .collect(),
-                tasks: a
-                    .items
-                    .iter()
-                    .filter_map(|it| match it {
-                        AgentItem::Task(t) => Some(t.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-                handlers: a
-                    .items
-                    .iter()
-                    .filter_map(|it| match it {
-                        AgentItem::On(h) => Some(h.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-            };
-            interp
-                .globals
-                .insert(a.name.clone(), Value::AgentRef(a.name.clone()));
-            interp.agents.insert(a.name.clone(), def);
-            // Silence unused-import warning.
-            let _: Option<AttributeBody> = None;
-        }
-        _ => {} // interface / extern / use — registered at program scope, not runtime
-    }
-    Ok(())
 }
 
 fn dirs_history_path() -> Option<std::path::PathBuf> {

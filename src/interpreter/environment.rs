@@ -18,13 +18,13 @@ impl Default for Environment {
 impl Environment {
     pub fn new() -> Self {
         Environment {
-            scopes: vec![HashMap::new()],
+            scopes: vec![HashMap::with_capacity(8)],
         }
     }
 
     /// Push a new scope (entering a block/task/agent).
     pub fn push_scope(&mut self) {
-        self.scopes.push(HashMap::new());
+        self.scopes.push(HashMap::with_capacity(8));
     }
 
     /// Pop the current scope (leaving a block/task/agent).
@@ -70,5 +70,64 @@ impl Environment {
             .first()
             .map(|s| s.keys().cloned().collect())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn define_and_get_in_single_scope() {
+        let mut env = Environment::new();
+        env.define("x".to_string(), Value::Integer(42));
+        assert_eq!(env.get("x"), Some(&Value::Integer(42)));
+        assert_eq!(env.get("y"), None);
+    }
+
+    #[test]
+    fn inner_scope_shadows_outer() {
+        let mut env = Environment::new();
+        env.define("x".to_string(), Value::Integer(1));
+        env.push_scope();
+        env.define("x".to_string(), Value::Integer(2));
+        assert_eq!(env.get("x"), Some(&Value::Integer(2)));
+        env.pop_scope();
+        assert_eq!(env.get("x"), Some(&Value::Integer(1)));
+    }
+
+    #[test]
+    fn set_updates_nearest_scope() {
+        let mut env = Environment::new();
+        env.define("x".to_string(), Value::Integer(1));
+        env.push_scope();
+        assert!(env.set("x", Value::Integer(99)));
+        env.pop_scope();
+        assert_eq!(env.get("x"), Some(&Value::Integer(99)));
+    }
+
+    #[test]
+    fn set_returns_false_for_undefined() {
+        let mut env = Environment::new();
+        assert!(!env.set("missing", Value::Bool(true)));
+    }
+
+    #[test]
+    fn pop_scope_never_removes_root() {
+        let mut env = Environment::new();
+        env.pop_scope();
+        env.define("x".to_string(), Value::Integer(7));
+        assert_eq!(env.get("x"), Some(&Value::Integer(7)));
+    }
+
+    #[test]
+    fn top_scope_names_lists_root_bindings() {
+        let mut env = Environment::new();
+        env.define("a".to_string(), Value::Bool(true));
+        env.push_scope();
+        env.define("b".to_string(), Value::Bool(false));
+        let names = env.top_scope_names();
+        assert!(names.contains(&"a".to_string()));
+        assert!(!names.contains(&"b".to_string()));
     }
 }

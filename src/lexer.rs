@@ -1,3 +1,10 @@
+//! Lexer for the Keel language.
+//!
+//! Tokenises source text using [`logos`]. Newlines are normalised to a single
+//! `Token::Newline` variant and used as statement separators by the parser.
+//! The [`Span`] type alias (`Range<usize>`) is the shared source-position
+//! currency across the whole pipeline.
+
 use logos::Logos;
 use miette::NamedSource;
 use std::fmt;
@@ -201,10 +208,16 @@ fn lex_string(lex: &mut logos::Lexer<Token>) -> Option<String> {
 /// Recursively scan a string body up to the closing `"` (not included
 /// in `content`, but included in `consumed`). Returns `None` if the
 /// string is unterminated.
+///
+/// # Errors
+///
+/// Returns `None` for unterminated strings (missing closing `"` or unbalanced
+/// interpolation braces).
 fn scan_string_body(rest: &str) -> Option<(String, usize)> {
     let bytes = rest.as_bytes();
     let mut i = 0;
-    let mut content = String::new();
+    // Estimate: most string bodies fit in the remaining bytes.
+    let mut content = String::with_capacity(rest.len());
 
     while i < bytes.len() {
         let b = bytes[i];
@@ -218,7 +231,7 @@ fn scan_string_body(rest: &str) -> Option<(String, usize)> {
         } else if b == b'{' {
             content.push('{');
             i += 1;
-            let mut depth: i32 = 1;
+            let mut depth: u32 = 1;
             while i < bytes.len() && depth > 0 {
                 let bb = bytes[i];
                 if bb == b'\\' && i + 1 < bytes.len() {
@@ -353,6 +366,12 @@ impl fmt::Display for Token {
 // Lexer entry point
 // ---------------------------------------------------------------------------
 
+/// Lex the source string into a vector of spanned tokens with normalised newlines.
+///
+/// # Errors
+///
+/// Returns a miette error with source-span labels if any unexpected character
+/// is encountered that doesn't match a valid token pattern.
 pub fn lex(source: &str, named_src: &NamedSource<String>) -> miette::Result<Vec<Spanned<Token>>> {
     let lexer = Token::lexer(source);
     let mut raw_tokens: Vec<Spanned<Token>> = Vec::new();

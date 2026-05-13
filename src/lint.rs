@@ -16,6 +16,7 @@
 
 use std::collections::HashSet;
 
+use crate::ast::visit::{self, Visitor};
 use crate::ast::*;
 use crate::lexer::Span;
 
@@ -36,6 +37,7 @@ pub struct LintWarning {
 // Entry point
 // ---------------------------------------------------------------------------
 
+#[must_use]
 pub fn lint(program: &Program) -> Vec<LintWarning> {
     let mut l = Linter::new();
     l.run(program);
@@ -250,9 +252,7 @@ impl Linter {
                 AgentItem::Task(t) => self_accesses(&t.body, &mut reads, &mut written),
                 AgentItem::On(h) => self_accesses(&h.body, &mut reads, &mut written),
                 AgentItem::Attribute(attr) => {
-                    if let AttributeBody::Block(block) = &attr.body {
-                        self_accesses(block, &mut reads, &mut written);
-                    }
+                    self_accesses_in_attribute(&attr.body, &mut reads, &mut written);
                 }
                 AgentItem::State(_) => {}
             }
@@ -308,19 +308,19 @@ fn all_ident_reads(program: &Program) -> HashSet<String> {
     let mut reads = HashSet::new();
     for (decl, _) in &program.declarations {
         match decl {
-            Decl::Task(t) => ident_reads_in_block_acc(&t.body, &mut reads),
+            Decl::Task(t) => collect_ident_reads_in_block(&t.body, &mut reads),
             Decl::Agent(a) => {
                 for item in &a.items {
                     match item {
-                        AgentItem::Task(t) => ident_reads_in_block_acc(&t.body, &mut reads),
-                        AgentItem::On(h) => ident_reads_in_block_acc(&h.body, &mut reads),
+                        AgentItem::Task(t) => collect_ident_reads_in_block(&t.body, &mut reads),
+                        AgentItem::On(h) => collect_ident_reads_in_block(&h.body, &mut reads),
                         AgentItem::Attribute(attr) => match &attr.body {
-                            AttributeBody::Block(b) => ident_reads_in_block_acc(b, &mut reads),
-                            AttributeBody::Expr(e) => ident_reads_in_expr(e, &mut reads),
+                            AttributeBody::Block(b) => collect_ident_reads_in_block(b, &mut reads),
+                            AttributeBody::Expr(e) => collect_ident_reads_in_expr(e, &mut reads),
                             AttributeBody::Tools(entries) => {
                                 for entry in entries {
                                     if let Some(cond) = &entry.condition {
-                                        ident_reads_in_expr(cond, &mut reads);
+                                        collect_ident_reads_in_expr(cond, &mut reads);
                                     }
                                 }
                             }
@@ -329,7 +329,7 @@ fn all_ident_reads(program: &Program) -> HashSet<String> {
                     }
                 }
             }
-            Decl::Stmt((stmt, _)) => ident_reads_in_stmt(stmt, &mut reads),
+            Decl::Stmt((stmt, span)) => collect_ident_reads_in_stmt(stmt, span, &mut reads),
             _ => {}
         }
     }
@@ -342,144 +342,45 @@ fn all_ident_reads(program: &Program) -> HashSet<String> {
 
 fn ident_reads_in_block(block: &Block) -> HashSet<String> {
     let mut out = HashSet::new();
-    ident_reads_in_block_acc(block, &mut out);
+    collect_ident_reads_in_block(block, &mut out);
     out
 }
 
-fn ident_reads_in_block_acc(block: &Block, out: &mut HashSet<String>) {
-    for (stmt, _) in block {
-        ident_reads_in_stmt(stmt, out);
-    }
+fn collect_ident_reads_in_block(block: &Block, out: &mut HashSet<String>) {
+    let mut visitor = IdentReads { reads: out };
+    visitor.visit_block(block);
 }
 
-fn ident_reads_in_stmt(stmt: &Stmt, out: &mut HashSet<String>) {
-    match stmt {
-        Stmt::Let { value, .. } => ident_reads_in_expr(value, out),
-        Stmt::SelfAssign { value, .. } => ident_reads_in_expr(value, out),
-        Stmt::Return(Some(e)) => ident_reads_in_expr(e, out),
-        Stmt::Return(None) => {}
-        Stmt::For {
-            iter, filter, body, ..
-        } => {
-            ident_reads_in_expr(iter, out);
-            if let Some(f) = filter {
-                ident_reads_in_expr(f, out);
-            }
-            ident_reads_in_block_acc(body, out);
-        }
-        Stmt::If {
-            cond,
-            then_body,
-            else_body,
-        } => {
-            ident_reads_in_expr(cond, out);
-            ident_reads_in_block_acc(then_body, out);
-            if let Some(eb) = else_body {
-                ident_reads_in_block_acc(eb, out);
-            }
-        }
-        Stmt::When { subject, arms } => {
-            ident_reads_in_expr(subject, out);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    ident_reads_in_expr(g, out);
-                }
-                ident_reads_in_block_acc(&arm.body, out);
-            }
-        }
-        Stmt::TryCatch { body, catches } => {
-            ident_reads_in_block_acc(body, out);
-            for c in catches {
-                ident_reads_in_block_acc(&c.body, out);
-            }
-        }
-        Stmt::Expr(e) => ident_reads_in_expr(e, out),
-    }
+fn collect_ident_reads_in_stmt(stmt: &Stmt, span: &Span, out: &mut HashSet<String>) {
+    let mut visitor = IdentReads { reads: out };
+    visitor.visit_stmt(stmt, span);
 }
 
-fn ident_reads_in_expr(expr: &Expr, out: &mut HashSet<String>) {
-    match expr {
-        Expr::Ident(name) => {
-            out.insert(name.clone());
+fn collect_ident_reads_in_expr(expr: &Expr, out: &mut HashSet<String>) {
+    let mut visitor = IdentReads { reads: out };
+    visitor.visit_expr(expr);
+}
+
+struct IdentReads<'a> {
+    reads: &'a mut HashSet<String>,
+}
+
+impl Visitor for IdentReads<'_> {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::Ident(name) = expr {
+            self.reads.insert(name.clone());
         }
-        Expr::StringLit(parts) => {
-            for p in parts {
-                if let StringPart::Interpolation(e) = p {
-                    ident_reads_in_expr(e, out);
-                }
-            }
+        if let Expr::MethodCall { object, method, .. } = expr
+            && matches!(object.as_ref(), Expr::SelfRef)
+        {
+            self.reads.insert(method.clone());
         }
-        Expr::BinaryOp { left, right, .. } => {
-            ident_reads_in_expr(left, out);
-            ident_reads_in_expr(right, out);
+        if let Expr::Call { callee, .. } = expr
+            && let Expr::SelfAccess(method) = callee.as_ref()
+        {
+            self.reads.insert(method.clone());
         }
-        Expr::UnaryOp { expr: inner, .. } => ident_reads_in_expr(inner, out),
-        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) | Expr::Range(l, r) => {
-            ident_reads_in_expr(l, out);
-            ident_reads_in_expr(r, out);
-        }
-        Expr::NullAssert(e) => ident_reads_in_expr(e, out),
-        Expr::Cast { expr: e, .. } => ident_reads_in_expr(e, out),
-        Expr::Call { callee, args } => {
-            ident_reads_in_expr(callee, out);
-            for a in args {
-                ident_reads_in_expr(&a.value, out);
-            }
-        }
-        Expr::MethodCall { object, args, .. } => {
-            ident_reads_in_expr(object, out);
-            for a in args {
-                ident_reads_in_expr(&a.value, out);
-            }
-        }
-        Expr::FieldAccess(obj, _) | Expr::NullFieldAccess(obj, _) => {
-            ident_reads_in_expr(obj, out);
-        }
-        Expr::StructLit(fields) => {
-            for (_, v) in fields {
-                ident_reads_in_expr(v, out);
-            }
-        }
-        Expr::ListLit(items) | Expr::SetLit(items) | Expr::TupleLit(items) => {
-            for e in items {
-                ident_reads_in_expr(e, out);
-            }
-        }
-        Expr::IfExpr {
-            cond,
-            then_body,
-            else_body,
-        } => {
-            ident_reads_in_expr(cond, out);
-            ident_reads_in_block_acc(then_body, out);
-            ident_reads_in_block_acc(else_body, out);
-        }
-        Expr::WhenExpr { subject, arms } => {
-            ident_reads_in_expr(subject, out);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    ident_reads_in_expr(g, out);
-                }
-                ident_reads_in_block_acc(&arm.body, out);
-            }
-        }
-        Expr::Lambda { body, .. } => match body {
-            LambdaBody::Expr(e) => ident_reads_in_expr(e, out),
-            LambdaBody::Block(b) => ident_reads_in_block_acc(b, out),
-        },
-        Expr::Duration { value, .. } => ident_reads_in_expr(value, out),
-        Expr::EnumVariant { fields, .. } => {
-            for (_, v) in fields {
-                ident_reads_in_expr(v, out);
-            }
-        }
-        // Leaf nodes — no sub-expressions to walk
-        Expr::Integer(_)
-        | Expr::Float(_)
-        | Expr::Bool(_)
-        | Expr::None_
-        | Expr::SelfAccess(_)
-        | Expr::SelfRef => {}
+        visit::walk_expr(self, expr);
     }
 }
 
@@ -488,170 +389,26 @@ fn ident_reads_in_expr(expr: &Expr, out: &mut HashSet<String>) {
 // ---------------------------------------------------------------------------
 
 fn ai_methods_in_stmt(stmt: &Stmt) -> Vec<String> {
-    let mut out = Vec::new();
-    ai_methods_in_stmt_acc(stmt, &mut out);
-    out
+    let mut visitor = AiCalls {
+        methods: Vec::new(),
+    };
+    visitor.visit_stmt(stmt, &(0..0));
+    visitor.methods
 }
 
-fn ai_methods_in_stmt_acc(stmt: &Stmt, out: &mut Vec<String>) {
-    match stmt {
-        Stmt::Let { value, .. } | Stmt::SelfAssign { value, .. } | Stmt::Expr(value) => {
-            ai_methods_in_expr(value, out);
-        }
-        Stmt::Return(Some(e)) => ai_methods_in_expr(e, out),
-        Stmt::Return(None) => {}
-        Stmt::For {
-            iter, filter, body, ..
-        } => {
-            ai_methods_in_expr(iter, out);
-            if let Some(f) = filter {
-                ai_methods_in_expr(f, out);
-            }
-            for (s, _) in body {
-                ai_methods_in_stmt_acc(s, out);
-            }
-        }
-        Stmt::If {
-            cond,
-            then_body,
-            else_body,
-            ..
-        } => {
-            ai_methods_in_expr(cond, out);
-            for (s, _) in then_body {
-                ai_methods_in_stmt_acc(s, out);
-            }
-            if let Some(eb) = else_body {
-                for (s, _) in eb {
-                    ai_methods_in_stmt_acc(s, out);
-                }
-            }
-        }
-        Stmt::When { subject, arms } => {
-            ai_methods_in_expr(subject, out);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    ai_methods_in_expr(g, out);
-                }
-                for (s, _) in &arm.body {
-                    ai_methods_in_stmt_acc(s, out);
-                }
-            }
-        }
-        Stmt::TryCatch { body, catches } => {
-            for (s, _) in body {
-                ai_methods_in_stmt_acc(s, out);
-            }
-            for c in catches {
-                for (s, _) in &c.body {
-                    ai_methods_in_stmt_acc(s, out);
-                }
-            }
-        }
-    }
+struct AiCalls {
+    methods: Vec<String>,
 }
 
-fn ai_methods_in_expr(expr: &Expr, out: &mut Vec<String>) {
-    match expr {
-        Expr::MethodCall {
-            object,
-            method,
-            args,
-        } => {
-            if let Expr::Ident(name) = object.as_ref()
-                && name == "Ai"
-            {
-                out.push(method.clone());
-            }
-            ai_methods_in_expr(object, out);
-            for a in args {
-                ai_methods_in_expr(&a.value, out);
-            }
+impl Visitor for AiCalls {
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::MethodCall { object, method, .. } = expr
+            && let Expr::Ident(name) = object.as_ref()
+            && name == "Ai"
+        {
+            self.methods.push(method.clone());
         }
-        Expr::Call { callee, args } => {
-            ai_methods_in_expr(callee, out);
-            for a in args {
-                ai_methods_in_expr(&a.value, out);
-            }
-        }
-        Expr::BinaryOp { left, right, .. } => {
-            ai_methods_in_expr(left, out);
-            ai_methods_in_expr(right, out);
-        }
-        Expr::UnaryOp { expr: inner, .. }
-        | Expr::NullAssert(inner)
-        | Expr::Cast { expr: inner, .. } => {
-            ai_methods_in_expr(inner, out);
-        }
-        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) | Expr::Range(l, r) => {
-            ai_methods_in_expr(l, out);
-            ai_methods_in_expr(r, out);
-        }
-        Expr::FieldAccess(obj, _) | Expr::NullFieldAccess(obj, _) => {
-            ai_methods_in_expr(obj, out);
-        }
-        Expr::StructLit(fields) => {
-            for (_, v) in fields {
-                ai_methods_in_expr(v, out);
-            }
-        }
-        Expr::ListLit(items) | Expr::SetLit(items) | Expr::TupleLit(items) => {
-            for e in items {
-                ai_methods_in_expr(e, out);
-            }
-        }
-        Expr::IfExpr {
-            cond,
-            then_body,
-            else_body,
-        } => {
-            ai_methods_in_expr(cond, out);
-            for (s, _) in then_body {
-                ai_methods_in_stmt_acc(s, out);
-            }
-            for (s, _) in else_body {
-                ai_methods_in_stmt_acc(s, out);
-            }
-        }
-        Expr::WhenExpr { subject, arms } => {
-            ai_methods_in_expr(subject, out);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    ai_methods_in_expr(g, out);
-                }
-                for (s, _) in &arm.body {
-                    ai_methods_in_stmt_acc(s, out);
-                }
-            }
-        }
-        Expr::Lambda { body, .. } => match body {
-            LambdaBody::Expr(e) => ai_methods_in_expr(e, out),
-            LambdaBody::Block(b) => {
-                for (s, _) in b {
-                    ai_methods_in_stmt_acc(s, out);
-                }
-            }
-        },
-        Expr::Duration { value, .. } => ai_methods_in_expr(value, out),
-        Expr::EnumVariant { fields, .. } => {
-            for (_, v) in fields {
-                ai_methods_in_expr(v, out);
-            }
-        }
-        Expr::StringLit(parts) => {
-            for p in parts {
-                if let StringPart::Interpolation(e) = p {
-                    ai_methods_in_expr(e, out);
-                }
-            }
-        }
-        Expr::Integer(_)
-        | Expr::Float(_)
-        | Expr::Bool(_)
-        | Expr::None_
-        | Expr::Ident(_)
-        | Expr::SelfAccess(_)
-        | Expr::SelfRef => {}
+        visit::walk_expr(self, expr);
     }
 }
 
@@ -660,144 +417,251 @@ fn ai_methods_in_expr(expr: &Expr, out: &mut Vec<String>) {
 // ---------------------------------------------------------------------------
 
 fn self_accesses(block: &Block, reads: &mut HashSet<String>, written: &mut HashSet<String>) {
-    for (stmt, _) in block {
-        self_in_stmt(stmt, reads, written);
+    let mut visitor = SelfAccesses { reads, written };
+    visitor.visit_block(block);
+}
+
+fn self_accesses_in_attribute(
+    body: &AttributeBody,
+    reads: &mut HashSet<String>,
+    written: &mut HashSet<String>,
+) {
+    let mut visitor = SelfAccesses { reads, written };
+    visitor.visit_attribute_body(body);
+}
+
+struct SelfAccesses<'a> {
+    reads: &'a mut HashSet<String>,
+    written: &'a mut HashSet<String>,
+}
+
+impl Visitor for SelfAccesses<'_> {
+    fn visit_stmt(&mut self, stmt: &Stmt, span: &Span) {
+        if let Stmt::SelfAssign { field, .. } = stmt {
+            self.written.insert(field.clone());
+        }
+        visit::walk_stmt(self, stmt, span);
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if let Expr::SelfAccess(field) = expr {
+            self.reads.insert(field.clone());
+        }
+        visit::walk_expr(self, expr);
     }
 }
 
-fn self_in_stmt(stmt: &Stmt, reads: &mut HashSet<String>, written: &mut HashSet<String>) {
-    match stmt {
-        Stmt::SelfAssign { field, value } => {
-            written.insert(field.clone());
-            self_in_expr(value, reads, written);
-        }
-        Stmt::Let { value, .. } | Stmt::Expr(value) => {
-            self_in_expr(value, reads, written);
-        }
-        Stmt::Return(Some(e)) => self_in_expr(e, reads, written),
-        Stmt::Return(None) => {}
-        Stmt::For {
-            iter, filter, body, ..
-        } => {
-            self_in_expr(iter, reads, written);
-            if let Some(f) = filter {
-                self_in_expr(f, reads, written);
-            }
-            self_accesses(body, reads, written);
-        }
-        Stmt::If {
-            cond,
-            then_body,
-            else_body,
-            ..
-        } => {
-            self_in_expr(cond, reads, written);
-            self_accesses(then_body, reads, written);
-            if let Some(eb) = else_body {
-                self_accesses(eb, reads, written);
-            }
-        }
-        Stmt::When { subject, arms } => {
-            self_in_expr(subject, reads, written);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    self_in_expr(g, reads, written);
-                }
-                self_accesses(&arm.body, reads, written);
-            }
-        }
-        Stmt::TryCatch { body, catches } => {
-            self_accesses(body, reads, written);
-            for c in catches {
-                self_accesses(&c.body, reads, written);
-            }
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{lexer, parser};
+    use miette::NamedSource;
+
+    fn warnings_for(source: &str) -> Vec<String> {
+        let named = NamedSource::new("t.keel", source.to_string());
+        let tokens = lexer::lex(source, &named).expect("lex failed");
+        let program = parser::parse(tokens, source.len(), &named).expect("parse failed");
+        lint(&program).into_iter().map(|w| w.message).collect()
     }
+
+    fn assert_clean(source: &str) {
+        let w = warnings_for(source);
+        assert!(w.is_empty(), "unexpected warnings: {w:?}");
+    }
+
+    fn assert_warns(source: &str, needle: &str) {
+        let w = warnings_for(source);
+        assert!(
+            w.iter().any(|m| m.contains(needle)),
+            "expected warning containing {needle:?}, got: {w:?}"
+        );
+    }
+
+    #[test]
+    fn clean_agent_no_warnings() {
+        assert_clean(
+            r#"
+agent Greeter {
+  @role "greeter"
+  @on_start {
+    Io.show("hi")
+    stop(self)
+  }
+}
+run(Greeter)
+"#,
+        );
+    }
+
+    #[test]
+    fn unused_let_binding_warns() {
+        assert_warns(
+            r#"
+task greet() {
+  x = 42
+  Io.show("done")
+}
+greet()
+"#,
+            "unused variable `x`",
+        );
+    }
+
+    #[test]
+    fn used_let_binding_no_warning() {
+        assert_clean(
+            r#"
+task greet() {
+  x = 42
+  Io.show(x)
+}
+greet()
+"#,
+        );
+    }
+
+    #[test]
+    fn undeclared_task_warns() {
+        assert_warns(
+            r#"
+agent Bot {
+  @role "bot"
+  task unused_task() {
+    Io.show("never called")
+  }
+  @on_start {
+    stop(self)
+  }
+}
+run(Bot)
+"#,
+            "task `unused_task` is declared but never called",
+        );
+    }
+
+    #[test]
+    fn task_call_inside_interpolation_counts_as_read() {
+        assert_clean(
+            r#"
+task helper() -> str {
+  "ok"
 }
 
-fn self_in_expr(expr: &Expr, reads: &mut HashSet<String>, written: &mut HashSet<String>) {
-    match expr {
-        Expr::SelfAccess(field) => {
-            reads.insert(field.clone());
-        }
-        Expr::BinaryOp { left, right, .. } => {
-            self_in_expr(left, reads, written);
-            self_in_expr(right, reads, written);
-        }
-        Expr::UnaryOp { expr: inner, .. }
-        | Expr::NullAssert(inner)
-        | Expr::Cast { expr: inner, .. } => {
-            self_in_expr(inner, reads, written);
-        }
-        Expr::NullCoalesce(l, r) | Expr::Pipeline(l, r) | Expr::Range(l, r) => {
-            self_in_expr(l, reads, written);
-            self_in_expr(r, reads, written);
-        }
-        Expr::Call { callee, args } => {
-            self_in_expr(callee, reads, written);
-            for a in args {
-                self_in_expr(&a.value, reads, written);
-            }
-        }
-        Expr::MethodCall { object, args, .. } => {
-            self_in_expr(object, reads, written);
-            for a in args {
-                self_in_expr(&a.value, reads, written);
-            }
-        }
-        Expr::FieldAccess(obj, _) | Expr::NullFieldAccess(obj, _) => {
-            self_in_expr(obj, reads, written);
-        }
-        Expr::StructLit(fields) => {
-            for (_, v) in fields {
-                self_in_expr(v, reads, written);
-            }
-        }
-        Expr::ListLit(items) | Expr::SetLit(items) | Expr::TupleLit(items) => {
-            for e in items {
-                self_in_expr(e, reads, written);
-            }
-        }
-        Expr::IfExpr {
-            cond,
-            then_body,
-            else_body,
-        } => {
-            self_in_expr(cond, reads, written);
-            self_accesses(then_body, reads, written);
-            self_accesses(else_body, reads, written);
-        }
-        Expr::WhenExpr { subject, arms } => {
-            self_in_expr(subject, reads, written);
-            for arm in arms {
-                if let Some(g) = &arm.guard {
-                    self_in_expr(g, reads, written);
-                }
-                self_accesses(&arm.body, reads, written);
-            }
-        }
-        Expr::Lambda { body, .. } => match body {
-            LambdaBody::Expr(e) => self_in_expr(e, reads, written),
-            LambdaBody::Block(b) => self_accesses(b, reads, written),
-        },
-        Expr::Duration { value, .. } => self_in_expr(value, reads, written),
-        Expr::EnumVariant { fields, .. } => {
-            for (_, v) in fields {
-                self_in_expr(v, reads, written);
-            }
-        }
-        Expr::StringLit(parts) => {
-            for p in parts {
-                if let StringPart::Interpolation(e) = p {
-                    self_in_expr(e, reads, written);
-                }
-            }
-        }
-        Expr::Integer(_)
-        | Expr::Float(_)
-        | Expr::Bool(_)
-        | Expr::None_
-        | Expr::Ident(_)
-        | Expr::SelfRef => {}
+task main() {
+  msg = "value: {helper()}"
+  Io.show(msg)
+}
+
+main()
+"#,
+        );
+    }
+
+    #[test]
+    fn self_task_call_counts_as_read() {
+        assert_clean(
+            r#"
+agent Bot {
+  @role "bot"
+  task helper() {
+    Io.show("ok")
+  }
+  @on_start {
+    self.helper()
+    stop(self)
+  }
+}
+run(Bot)
+"#,
+        );
+    }
+
+    #[test]
+    fn ai_call_inside_lambda_outside_agent_warns() {
+        assert_warns(
+            r#"
+task main() {
+  f = () => Ai.prompt("hello")
+  f()
+}
+
+main()
+"#,
+            "`Ai.prompt` called outside an agent",
+        );
+    }
+
+    #[test]
+    fn ai_call_inside_string_interpolation_outside_agent_warns() {
+        assert_warns(
+            r#"
+task main() {
+  msg = "answer: {Ai.prompt("hello")}"
+  Io.show(msg)
+}
+
+main()
+"#,
+            "`Ai.prompt` called outside an agent",
+        );
+    }
+
+    #[test]
+    fn state_read_inside_string_interpolation_counts_as_read() {
+        assert_clean(
+            r#"
+agent Bot {
+  @role "bot"
+  state { ready: bool = false }
+  @on_start {
+    self.ready = true
+    Io.show("ready: {self.ready}")
+    stop(self)
+  }
+}
+
+run(Bot)
+"#,
+        );
+    }
+
+    #[test]
+    fn state_read_inside_tool_guard_counts_as_read() {
+        assert_clean(
+            r#"
+agent Bot {
+  @role "bot"
+  state { confirmed: bool = false }
+  @tools [Email.send when self.confirmed]
+  @on_start {
+    self.confirmed = true
+    stop(self)
+  }
+}
+
+run(Bot)
+"#,
+        );
+    }
+
+    #[test]
+    fn nested_state_write_without_read_warns() {
+        assert_warns(
+            r#"
+agent Bot {
+  @role "bot"
+  state { ready: bool = false }
+  @on_start {
+    if true {
+      self.ready = true
+    }
+    stop(self)
+  }
+}
+
+run(Bot)
+"#,
+            "state field `self.ready`",
+        );
     }
 }

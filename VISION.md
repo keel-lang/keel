@@ -54,7 +54,7 @@ agent EmailBot {
 run(EmailBot)
 ```
 
-- **22 keywords.** If a word isn't reserved, it's an identifier. Namespaces, duration units, attribute names — all identifiers.
+- **27 keywords.** If a word isn't reserved, it's an identifier. Namespaces, duration units, attribute names — all identifiers.
 - **Static checking with an inference target.** The design aims for full inference; the current alpha checker catches core mismatches and still has deliberate gaps tracked in the roadmap.
 - **Exhaustive pattern matching.** Missing an enum variant is a compile error, not a runtime surprise.
 - **Nullable safety.** Operations that can fail return nullable types. The caller handles failure explicitly.
@@ -84,7 +84,7 @@ run(EmailBot)
 
 At v1.0:
 
-- The keyword list is still 22 words.
+- The keyword list is still 27 words.
 - A new LLM provider is a 200-line PR against a stdlib crate, not a language change.
 - A new memory backend is the same.
 - The `.keel` file for a three-agent workflow fits on one screen.

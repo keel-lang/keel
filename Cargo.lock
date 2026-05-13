@@ -1153,6 +1153,7 @@ dependencies = [
  "logos",
  "miette",
  "native-tls",
+ "parking_lot",
  "regex",
  "reqwest",
  "rustyline",
