@@ -92,8 +92,21 @@ type Pair[A, B] =
   | only_second { value: B }
 ```
 
-Variant names are registered for exhaustiveness checking. Field types inside
-generic enum variants are not yet deeply checked (planned for a future release).
+Variant names are registered for exhaustiveness checking. When you destructure a
+variant binding, the field type is resolved using the substituted type arguments:
+
+```keel
+task t(p: Pair[str, int]) {
+  when p {
+    both { first, second } => {
+      f: str = first    # type-checked as str
+      s: int = second   # type-checked as int
+    }
+    only_first { value } => { Io.show(value) }
+    only_second { value } => { Io.show("{value}") }
+  }
+}
+```
 
 ## Structs
 

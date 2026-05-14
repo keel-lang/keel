@@ -46,6 +46,29 @@ task t(h: Handler) {
 
 Zero-parameter and multi-parameter forms both work. Tuple syntax `(T1, T2)` without `->` continues to produce a tuple type.
 
+### Generic enum variant field types
+
+Bindings destructured from a generic enum variant now resolve to the substituted
+field type instead of `unknown`.
+
+```keel
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both { first, second } => {
+      f: str = first    # type-checked as str
+      s: int = second   # type-checked as int
+    }
+    only_first { value } => { Io.show(value) }
+    only_second { value } => { Io.show("{value}") }
+  }
+}
+```
+
 ---
 
 ## v0.1.19 — 2026-05-14

@@ -46,6 +46,22 @@ All notable changes to Keel.
   correctly.
 - Example: `examples/generic_types.keel` demonstrates generic structs, multi-parameter generics,
   and generic aliases.
+- Type checker: generic enum variant field types are now deeply checked. Bindings
+  destructured from a generic enum variant resolve to the substituted field type instead
+  of `Unknown`. `Ty::Enum` now carries the resolved type arguments for generic instantiations.
+  ```keel
+  type Pair[A, B] =
+    | both { first: A, second: B }
+
+  task t(p: Pair[str, int]) {
+    when p {
+      both { first, second } => {
+        f: str = first   # checked: str
+        s: int = second  # checked: int
+      }
+    }
+  }
+  ```
 - Parser: function type literals `(T1, T2) -> Ret` are now parsed as `TypeExpr::Func`.
   Zero-parameter `() -> Ret` and single-parameter `(T) -> Ret` both work. The tuple parser
   is unified with the function-type parser — `(T1, T2)` (no `->`) still produces a tuple.

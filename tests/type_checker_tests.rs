@@ -990,3 +990,78 @@ task t(pred: Predicate[str]) {
 "#,
     );
 }
+
+// ─── v0.1.20: generic enum variant field types ──────────────────────────────
+
+#[test]
+fn valid_generic_enum_variant_fields_typed() {
+    // Variant bindings resolve to substituted field types, not Unknown.
+    type_ok(
+        r#"
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both { first, second } => {
+      f: str = first
+      s: int = second
+    }
+    only_first { value } => {
+      v: str = value
+    }
+    only_second { value } => {
+      v: int = value
+    }
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_enum_variant_nested_type() {
+    // Field type itself is a generic instantiation.
+    type_ok(
+        r#"
+type Box[T] {
+  value: T
+}
+
+type Wrapped[T] =
+  | some { inner: Box[T] }
+  | none_val
+
+task t(w: Wrapped[str]) {
+  when w {
+    some { inner } => {
+      b: Box[str] = inner
+    }
+    none_val => { Io.notify("empty") }
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn error_generic_enum_variant_field_wrong_type() {
+    // Assigning a variant field binding to the wrong type must be caught.
+    expect_error(
+        r#"
+type Pair[A, B] =
+  | both { first: A, second: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both { first, second } => {
+      wrong: int = first
+    }
+  }
+}
+"#,
+        "expected int, got str",
+    );
+}

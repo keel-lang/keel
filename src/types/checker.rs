@@ -62,7 +62,10 @@ pub enum Ty {
     Struct(Vec<(String, Ty)>),
     Tuple(Vec<Ty>),
     Func(Vec<Ty>, Box<Ty>),
-    Enum(String),
+    /// Enum type. The second field carries the resolved type arguments for
+    /// generic enums (e.g. `Pair[str, int]` → `Enum("Pair", [Str, Int])`).
+    /// For non-generic enums the vec is empty.
+    Enum(String, Vec<Ty>),
     /// Unresolved or unsupported — skip further checks.
     Unknown,
     Nullable(Box<Ty>),
@@ -436,7 +439,7 @@ impl Checker {
                     "duration" => Ty::Duration,
                     _ => {
                         if self.enum_variants.contains_key(n) {
-                            Ty::Enum(n.clone())
+                            Ty::Enum(n.clone(), vec![])
                         } else if let Some(fields) = self.structs.get(n) {
                             Ty::Struct(fields.clone())
                         } else if let Some(t) = self.aliases.get(n) {
@@ -484,9 +487,11 @@ impl Checker {
                 // Look up the generic declaration and substitute.
                 if let Some((type_params, type_def)) = self.generic_decls.get(name).cloned() {
                     if type_params.len() == resolved_args.len() {
+                        // Build substitution map — iterate by ref so resolved_args stays owned.
                         let inner_env: HashMap<String, Ty> = type_params
-                            .into_iter()
-                            .zip(resolved_args)
+                            .iter()
+                            .cloned()
+                            .zip(resolved_args.iter().cloned())
                             .collect();
                         return match &type_def {
                             TypeDef::Struct(fields) => Ty::Struct(
@@ -498,10 +503,10 @@ impl Checker {
                                     .collect(),
                             ),
                             TypeDef::Alias(ty) => self.resolve_type_with_env(ty, &inner_env),
-                            // Generic enums: variant names are registered; field types
-                            // inside variants are not yet deeply checked.
+                            // Carry type args so variant field types can be resolved in
+                            // pattern-matching arms.
                             TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => {
-                                Ty::Enum(name.clone())
+                                Ty::Enum(name.clone(), resolved_args)
                             }
                         };
                     }
@@ -848,11 +853,15 @@ impl Checker {
             }
             scope.push();
             for p in &arm.patterns {
-                if let Pattern::Variant { bindings, .. } = p {
-                    for b in bindings {
-                        if b != "_" {
-                            scope.define(b.clone(), Ty::Unknown);
+                if let Pattern::Variant { name: variant_name, bindings } = p {
+                    for (idx, b) in bindings.iter().enumerate() {
+                        if b == "_" {
+                            continue;
                         }
+                        let field_ty = self.resolve_variant_field(
+                            subject_ty, variant_name, b, idx,
+                        );
+                        scope.define(b.clone(), field_ty);
                     }
                 }
             }
@@ -872,7 +881,7 @@ impl Checker {
 
         // Exhaustiveness
         match subject_ty.strip_nullable() {
-            Ty::Enum(name) => {
+            Ty::Enum(name, _) => {
                 if has_wildcard {
                     return;
                 }
@@ -900,6 +909,52 @@ impl Checker {
                 }
             }
         }
+    }
+
+    /// Resolve the type of a single variant binding, given the subject enum
+    /// type, the variant name, the binding name, and its positional index.
+    ///
+    /// For generic enums (`Ty::Enum(name, type_args)` where `type_args` is
+    /// non-empty) the field type is looked up in `generic_decls` and the type
+    /// arguments are substituted. For all other cases `Ty::Unknown` is returned
+    /// so that existing behaviour is preserved.
+    fn resolve_variant_field(
+        &self,
+        subject_ty: &Ty,
+        variant_name: &str,
+        binding: &str,
+        _idx: usize,
+    ) -> Ty {
+        let Ty::Enum(enum_name, type_args) = subject_ty.strip_nullable() else {
+            return Ty::Unknown;
+        };
+        if type_args.is_empty() {
+            return Ty::Unknown;
+        }
+        let Some((type_params, type_def)) = self.generic_decls.get(enum_name) else {
+            return Ty::Unknown;
+        };
+        let TypeDef::RichEnum(variants) = type_def else {
+            return Ty::Unknown;
+        };
+        let Some(variant) = variants.iter().find(|v| v.name == variant_name) else {
+            return Ty::Unknown;
+        };
+        let Some(fields) = &variant.fields else {
+            return Ty::Unknown;
+        };
+        let Some(field) = fields.iter().find(|f| f.name == binding) else {
+            return Ty::Unknown;
+        };
+        if type_params.len() != type_args.len() {
+            return Ty::Unknown;
+        }
+        let env: HashMap<String, Ty> = type_params
+            .iter()
+            .cloned()
+            .zip(type_args.iter().cloned())
+            .collect();
+        self.resolve_type_with_env(&field.ty, &env)
     }
 
     // -----------------------------------------------------------------
@@ -971,7 +1026,7 @@ impl Checker {
                         if !variants.contains(field) {
                             self.err(format!("enum `{name}` has no variant `{field}`"));
                         }
-                        return Ty::Enum(name.clone());
+                        return Ty::Enum(name.clone(), vec![]);
                     }
                     if self.prelude.contains(name) {
                         return Ty::Unknown;
@@ -1205,7 +1260,7 @@ impl Checker {
                         && let Expr::Ident(enum_name) = &as_arg.value
                         && self.enum_variants.contains_key(enum_name)
                     {
-                        let base = Ty::Enum(enum_name.clone());
+                        let base = Ty::Enum(enum_name.clone(), vec![]);
                         return Ty::Nullable(Box::new(base));
                     }
                     if name == "Ai" {
@@ -1385,7 +1440,7 @@ impl Checker {
                 for (_, v) in fields {
                     self.infer_expr(v, scope);
                 }
-                Ty::Enum(name.clone())
+                Ty::Enum(name.clone(), vec![])
             }
         }
     }
@@ -1774,7 +1829,7 @@ fn describe_ty(ty: &Ty) -> String {
             format!("({})", s.join(", "))
         }
         Ty::Func(_, _) => "function".into(),
-        Ty::Enum(name) => name.clone(),
+        Ty::Enum(name, _) => name.clone(),
         Ty::Unknown => "unknown".into(),
         Ty::Nullable(inner) => format!("{}?", describe_ty(inner)),
         Ty::Dynamic => "dynamic".into(),
