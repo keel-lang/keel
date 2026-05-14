@@ -726,7 +726,9 @@ An `if` without `else` used as an expression is a compile error.
 
 ### 8.2 `when` (pattern matching)
 
-Exhaustive. All enum variants must be covered, or a wildcard `_` must be present.
+`when` works as both a **statement** and an **expression**.
+
+**Statement form** — branches execute side effects:
 
 ```keel
 when urgency {
@@ -735,6 +737,18 @@ when urgency {
   critical    => escalate(email)
 }
 ```
+
+**Expression form** — evaluates to the matched arm's value:
+
+```keel
+label = when urgency {
+  low    => "low priority"
+  medium => "medium priority"
+  high   => "high priority"
+}
+```
+
+All arms must produce the same type. The expression form is valid anywhere an expression is expected (assignment RHS, argument, return value).
 
 **Rich variant matching:**
 
@@ -752,6 +766,8 @@ when action {
 **Tuple and struct patterns, `where` guards** — see §22 grammar for the full form.
 
 **Non-enum matching (primitives, strings):** wildcard `_` is **required** (the compiler can't prove exhaustiveness on unbounded types).
+
+**Exhaustiveness:** All enum variants must be covered (or `_` present) in both statement and expression forms.
 
 ### 8.3 `for` loops
 

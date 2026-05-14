@@ -100,7 +100,8 @@ impl Visitor for Counts {
             | Expr::UnaryOp { .. }
             | Expr::NullCoalesce(_, _)
             | Expr::Call { .. }
-            | Expr::MethodCall { .. } => {}
+            | Expr::MethodCall { .. }
+            | Expr::WhenExpr { .. } => {}
         }
         visit::walk_expr(self, expr);
     }

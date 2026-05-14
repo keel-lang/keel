@@ -1,0 +1,30 @@
+type Priority =
+  | low
+  | medium
+  | high
+
+task label(p: Priority) -> str {
+  when p {
+    low => "low priority"
+    medium => "medium priority"
+    high => "high priority"
+  }
+}
+
+task grade(score: str) -> str {
+  result = when score {
+    "A" => "excellent"
+    "B" => "good"
+    "C" => "fair"
+    _ => "needs work"
+  }
+  result
+}
+
+Io.show(label(Priority.low))
+
+Io.show(label(Priority.high))
+
+Io.show(grade("A"))
+
+Io.show(grade("D"))

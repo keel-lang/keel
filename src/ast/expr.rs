@@ -80,6 +80,11 @@ pub enum Expr {
         then_body: Block,
         else_body: Block,
     },
+    /// `when subject { pattern => expr ... }` (expression form — evaluates to the matched arm's value)
+    WhenExpr {
+        subject: Box<Expr>,
+        arms: Vec<super::WhenArm>,
+    },
     // ── Lambda ───────────────────────────────────────────────────────
     /// `(params) => expr` or `x => expr` or `(params) => { block }`
     Lambda {

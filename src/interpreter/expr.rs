@@ -320,6 +320,35 @@ impl Interpreter {
                     }
                 }
 
+                Expr::WhenExpr { subject, arms } => {
+                    let s = self.eval_expr(subject, env).await?;
+                    if let Value::EarlyReturn(inner) = s {
+                        return Ok(Value::EarlyReturn(inner));
+                    }
+                    for arm in arms {
+                        if let Some(bindings) = self.match_patterns(&arm.patterns, &s) {
+                            env.push_scope();
+                            for (k, v) in bindings {
+                                env.define(k, v);
+                            }
+                            if let Some(guard) = &arm.guard
+                                && !self.eval_expr(guard, env).await?.is_truthy()
+                            {
+                                env.pop_scope();
+                                continue;
+                            }
+                            let result = match self.exec_block(&arm.body, env).await? {
+                                StmtOutcome::Return(v) => Value::EarlyReturn(Box::new(v)),
+                                StmtOutcome::Value(v) => v,
+                                StmtOutcome::Normal => Value::None,
+                            };
+                            env.pop_scope();
+                            return Ok(result);
+                        }
+                    }
+                    Ok(Value::None)
+                }
+
                 Expr::Lambda { params, body } => {
                     Ok(Value::Closure(params.clone(), Box::new(body.clone())))
                 }

@@ -1244,3 +1244,50 @@ run(Bot)
         "supported @limits fields should not error:\nstderr: {stderr}"
     );
 }
+
+// ── when as expression ────────────────────────────────────────────────────────
+
+#[test]
+fn when_expr_evaluates_to_matched_arm_value() {
+    let src = r#"
+task grade(score: str) -> str {
+  when score {
+    "A" => "excellent"
+    "B" => "good"
+    _   => "needs work"
+  }
+}
+
+Io.show(grade("A"))
+Io.show(grade("B"))
+Io.show(grade("C"))
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("excellent"), "stdout: {stdout}");
+    assert!(stdout.contains("good"), "stdout: {stdout}");
+    assert!(stdout.contains("needs work"), "stdout: {stdout}");
+}
+
+#[test]
+fn when_expr_result_assigned_to_variable() {
+    let src = r#"
+task label(n: int) -> str {
+  result = when n {
+    0 => "zero"
+    1 => "one"
+    _ => "many"
+  }
+  result
+}
+
+Io.show(label(0))
+Io.show(label(1))
+Io.show(label(5))
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("zero"), "stdout: {stdout}");
+    assert!(stdout.contains("one"), "stdout: {stdout}");
+    assert!(stdout.contains("many"), "stdout: {stdout}");
+}

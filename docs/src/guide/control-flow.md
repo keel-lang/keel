@@ -31,9 +31,13 @@ reply = if has_guidance {
 
 `when` is an exhaustive pattern match. The compiler **requires all cases to be handled**.
 
+`when` works as both a **statement** (branches execute side effects) and an **expression** (produces a value).
+
+### Statement form
+
 ```keel
 when urgency {
-  low      => archive email
+  low      => archive(email)
   medium   => auto_reply(email)
   high     => flag_and_draft(email)
   critical => escalate(email)
@@ -45,6 +49,31 @@ Missing a case is a compile error:
 ```
 Non-exhaustive match on Urgency: missing critical
 ```
+
+### Expression form
+
+Use `when` anywhere a value is expected — assignment, return, argument. All arms must produce the same type.
+
+```keel
+label = when urgency {
+  low      => "low priority"
+  medium   => "medium priority"
+  high     => "high priority"
+  critical => "critical"
+}
+```
+
+```keel
+task describe(score: str) -> str {
+  when score {
+    "A" => "excellent"
+    "B" => "good"
+    _   => "needs work"
+  }
+}
+```
+
+### Wildcard and multiple patterns
 
 Use `_` as a wildcard:
 

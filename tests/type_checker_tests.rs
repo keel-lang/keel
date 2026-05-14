@@ -1190,3 +1190,85 @@ task main() {
         "expected int, got str",
     );
 }
+
+// ─── when as expression ─────────────────────────────────────────────────────
+
+#[test]
+fn valid_when_expr_string_arms() {
+    type_ok(
+        r#"
+task grade(score: str) -> str {
+  result: str = when score {
+    "A" => "excellent"
+    "B" => "good"
+    _   => "needs work"
+  }
+  result
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_when_expr_enum_subject() {
+    type_ok(
+        r#"
+type Priority = | low | medium | high
+
+task label(p: Priority) -> str {
+  when p {
+    low    => "low"
+    medium => "med"
+    high   => "high"
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_when_expr_int_arms() {
+    type_ok(
+        r#"
+task classify(n: int) -> str {
+  when n {
+    0 => "zero"
+    1 => "one"
+    _ => "many"
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn error_when_expr_mismatched_arm_types() {
+    expect_error(
+        r#"
+task t(x: str) -> str {
+  result = when x {
+    "a" => "ok"
+    _   => 42
+  }
+  result
+}
+"#,
+        "`when` expression arms must all have the same type",
+    );
+}
+
+#[test]
+fn valid_when_expr_as_return_value() {
+    type_ok(
+        r#"
+type Mood = | happy | sad
+
+task describe(m: Mood) -> str {
+  when m {
+    happy => "great"
+    sad   => "meh"
+  }
+}
+"#,
+    );
+}

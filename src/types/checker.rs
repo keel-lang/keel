@@ -1527,6 +1527,42 @@ impl Checker {
                 }
             }
 
+            Expr::WhenExpr { subject, arms } => {
+                let subject_ty = self.infer_expr(subject, scope);
+                let when_span = self.current_span.clone().unwrap_or_default();
+                // Reuse exhaustiveness checking from the statement path.
+                self.check_when_arms(&subject_ty, arms, scope, when_span);
+                // Unify arm result types.
+                let mut result_ty = Ty::None_;
+                for arm in arms {
+                    scope.push();
+                    for p in &arm.patterns {
+                        if let Pattern::Variant { name: variant_name, bindings } = p {
+                            for (idx, b) in bindings.iter().enumerate() {
+                                if b == "_" { continue; }
+                                let field_ty = self.resolve_variant_field(&subject_ty, variant_name, b, idx);
+                                scope.define(b.clone(), field_ty);
+                            }
+                        }
+                    }
+                    let arm_ty = self.block_type(&arm.body, scope);
+                    scope.pop();
+                    match (&result_ty, &arm_ty) {
+                        (Ty::None_, _) => result_ty = arm_ty,
+                        (_, Ty::None_ | Ty::Unknown | Ty::Dynamic) => {}
+                        _ if matches!(result_ty, Ty::Unknown | Ty::Dynamic) => {}
+                        _ => {
+                            self.expect(
+                                &arm_ty,
+                                &result_ty,
+                                "`when` expression arms must all have the same type",
+                            );
+                        }
+                    }
+                }
+                result_ty
+            }
+
             Expr::Lambda { params, body } => {
                 scope.push();
                 for p in params {

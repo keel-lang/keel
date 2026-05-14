@@ -10,7 +10,23 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% `when` now works as an expression — pattern-match and produce a value in one step.
+
+### Added
+
+- Language: `when` is now also an **expression** — use it anywhere a value is expected.
+  The matched arm's value becomes the result of the expression. All arms must produce
+  the same type; a type mismatch is a compile error.
+  ```keel
+  label = when score {
+    "A" => "excellent"
+    "B" => "good"
+    _   => "needs work"
+  }
+  ```
+  The statement form (`when x { ... }` standing alone) is unchanged. The expression form
+  is valid as an assignment RHS, a return value, a function argument, or any other
+  expression position. Exhaustiveness rules are identical to the statement form.
 
 ---
 

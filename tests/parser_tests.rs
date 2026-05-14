@@ -713,3 +713,27 @@ fn parse_error_on_unexpected_token() {
     let err = parse_err("type = invalid");
     assert!(!err.is_empty());
 }
+
+#[test]
+fn parse_when_expr_produces_expr_when_node() {
+    use keel_lang::ast::{Expr, Stmt};
+    let prog = parse_ok(r#"
+task t(x: str) {
+  result = when x {
+    "a" => "alpha"
+    _   => "other"
+  }
+}
+"#);
+    // The task body should contain a let/assign whose RHS is a WhenExpr.
+    match first_decl(&prog) {
+        Decl::Task(t) => {
+            // find the statement with a WhenExpr on the rhs
+            let has_when_expr = t.body.iter().any(|(stmt, _)| {
+                matches!(stmt, Stmt::Let { value: Expr::WhenExpr { .. }, .. })
+            });
+            assert!(has_when_expr, "expected a let binding with a WhenExpr RHS");
+        }
+        other => panic!("expected Task, got {:?}", other),
+    }
+}

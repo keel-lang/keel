@@ -503,9 +503,60 @@ fn expr_parser() -> P<Expr> {
         })
         .boxed();
 
+        let we_pattern = just(Token::Ident("_".to_string()))
+            .to(Pattern::Wildcard)
+            .or(ident()
+                .then(
+                    just(Token::LBrace)
+                        .ignore_then(
+                            ident()
+                                .or(just(Token::Ident("_".to_string())).to("_".to_string()))
+                                .separated_by(just(Token::Comma))
+                                .allow_trailing(),
+                        )
+                        .then_ignore(just(Token::RBrace))
+                        .or_not(),
+                )
+                .map(|(name, bindings)| match bindings {
+                    Some(b) => Pattern::Variant { name, bindings: b },
+                    None => Pattern::Ident(name),
+                }))
+            .or(plain_string()
+                .map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
+            .or(integer_lit().map(|n| Pattern::Literal(Expr::Integer(n))))
+            .boxed();
+
+        let we_arm_body = inner_block
+            .clone()
+            .or(expr.clone().map(|e| vec![(Stmt::Expr(e), 0..0)]))
+            .boxed();
+
+        let we_arm = we_pattern
+            .separated_by(just(Token::Comma))
+            .at_least(1)
+            .then(just(Token::Where).ignore_then(expr.clone()).or_not())
+            .then_ignore(just(Token::FatArrow))
+            .then(we_arm_body)
+            .map(|((patterns, guard), body)| WhenArm { patterns, guard, body })
+            .boxed();
+
+        let when_expr = just(Token::When)
+            .ignore_then(expr.clone())
+            .then_ignore(just(Token::LBrace))
+            .then_ignore(newlines())
+            .then(we_arm.separated_by(newlines()).allow_trailing())
+            .then_ignore(newlines())
+            .then_ignore(just(Token::RBrace))
+            .map(|(subject, arms)| Expr::WhenExpr {
+                subject: Box::new(subject),
+                arms,
+            })
+            .boxed();
+
         // ── Primary ──────────────────────────────────────────────
         let primary = choice((
             if_expr,
+            when_expr,
             rich_enum_variant,
             self_access,
             self_ref,

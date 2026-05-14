@@ -660,6 +660,20 @@ impl Fmt {
                     LambdaBody::Block(b) => self.lambda_block(&params_str, b, indent),
                 }
             }
+            Expr::WhenExpr { subject, arms } => {
+                let mut s = format!("when {} {{\n", self.expr_at(subject, indent));
+                for arm in arms {
+                    for _ in 0..=indent {
+                        s.push_str(INDENT);
+                    }
+                    self.write_when_arm(&mut s, arm, indent + 1);
+                }
+                for _ in 0..indent {
+                    s.push_str(INDENT);
+                }
+                s.push('}');
+                s
+            }
             Expr::Duration { value, unit } => {
                 format!("{}.{}", self.expr_str(value), unit.canonical_name())
             }

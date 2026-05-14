@@ -233,6 +233,10 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
             v.visit_block(then_body);
             v.visit_block(else_body);
         }
+        Expr::WhenExpr { subject, arms } => {
+            v.visit_expr(subject);
+            walk_when_arms(v, arms);
+        }
         Expr::Lambda { params, body } => {
             for param in params {
                 if let Some(ty) = &param.ty {

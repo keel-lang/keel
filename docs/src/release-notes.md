@@ -6,6 +6,21 @@
 
 ## Unreleased
 
+### `when` as an expression
+
+`when` now works in expression position — the matched arm's value becomes the result.
+
+```keel
+label = when score {
+  "A" => "excellent"
+  "B" => "good"
+  _   => "needs work"
+}
+```
+
+All arms must produce the same type; a mismatch is a compile error. Exhaustiveness
+rules are identical to the statement form. See the [control flow guide](guide/control-flow.md).
+
 ---
 
 ## v0.1.21 — 2026-05-14
