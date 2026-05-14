@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.20](./release-notes.md)** — Full generic type support — types, enums, tasks, and function types. [See what's new →](./release-notes.md)
+> **Latest: [v0.1.21](./release-notes.md)** — Nullable safety enforced at task call sites. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

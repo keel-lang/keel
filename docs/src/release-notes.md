@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.21 — 2026-05-14
+
 ### Nullable safety enforced at task call sites
 
 The type checker now rejects nullable arguments passed to non-nullable parameters

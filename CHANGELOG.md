@@ -12,6 +12,12 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.21] — 2026-05-14
+
+Nullable safety enforced at task call sites.
+
 ### Added
 
 - Type checker: nullable safety is now enforced at task call sites. Passing a

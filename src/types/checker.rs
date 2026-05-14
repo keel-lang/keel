@@ -1243,8 +1243,10 @@ impl Checker {
 
             Expr::Call { callee, args } => {
                 // Infer all arg types once; reuse for both arity and type checks.
-                let arg_tys: Vec<Ty> =
-                    args.iter().map(|a| self.infer_expr(&a.value, scope)).collect();
+                let arg_tys: Vec<Ty> = args
+                    .iter()
+                    .map(|a| self.infer_expr(&a.value, scope))
+                    .collect();
                 if let Expr::SelfAccess(task_name) = callee.as_ref() {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{task_name}(...)` used outside an agent"));
@@ -1348,8 +1350,10 @@ impl Checker {
                 args,
             } => {
                 // Infer all arg types once; reuse for both arity and type checks.
-                let arg_tys: Vec<Ty> =
-                    args.iter().map(|a| self.infer_expr(&a.value, scope)).collect();
+                let arg_tys: Vec<Ty> = args
+                    .iter()
+                    .map(|a| self.infer_expr(&a.value, scope))
+                    .collect();
                 if matches!(object.as_ref(), Expr::SelfRef) {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{method}(...)` used outside an agent"));
