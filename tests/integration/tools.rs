@@ -31,7 +31,7 @@ agent GuardedBot {
 
     @tools [
         Log,
-        Io.show when self.confirmed,
+        Io.show if self.confirmed,
     ]
 
     on message(msg: str) {

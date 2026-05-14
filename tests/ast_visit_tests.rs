@@ -192,7 +192,7 @@ agent Bot {
     ready: bool = false
     last: str? = none
   }
-  @tools [Email.fetch, Email.send when self.ready, Io]
+  @tools [Email.fetch, Email.send if self.ready, Io]
   @on_start {
     self.ready = true
     Agent.stop(self)

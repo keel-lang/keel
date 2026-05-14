@@ -1297,10 +1297,10 @@ fn agent_item() -> P<AgentItem> {
         })
         .boxed();
 
-    // `@tools [Ns | Ns.method | Ns when expr | Ns.method when expr, ...]`
+    // `@tools [Ns | Ns.method | Ns if expr | Ns.method if expr, ...]`
     let tool_entry = ident()
         .then(just(Token::Dot).ignore_then(ident()).or_not())
-        .then(just(Token::When).ignore_then(expr_parser()).or_not())
+        .then(just(Token::If).ignore_then(expr_parser()).or_not())
         .map(|((namespace, method), condition)| ToolEntry {
             namespace,
             method,

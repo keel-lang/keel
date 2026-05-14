@@ -12,6 +12,17 @@ All notable changes to Keel.
 
 %%TAGLINE%% `when` now works as an expression — pattern-match and produce a value in one step.
 
+### Changed
+
+- Language: `@tools` conditional guards now use `if` instead of `when`.
+  `Db.exec if self.admin` replaces the old `Db.exec when self.admin`.
+  ```keel
+  @tools [
+    Email.send  if self.confirmed,
+    Db.exec     if self.admin,
+  ]
+  ```
+
 ### Added
 
 - Language: `when` is now also an **expression** — use it anywhere a value is expected.

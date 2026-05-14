@@ -632,7 +632,7 @@ run(Bot)
 agent Bot {
   @role "bot"
   state { confirmed: bool = false }
-  @tools [Email.send when self.confirmed]
+  @tools [Email.send if self.confirmed]
   @on_start {
     self.confirmed = true
     stop(self)

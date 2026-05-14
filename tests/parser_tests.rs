@@ -227,7 +227,7 @@ fn parse_agent_tools_with_method_and_guard() {
     let src = r#"
 agent Bot {
   state { confirmed: bool = false }
-  @tools [Email.fetch, Email.send when self.confirmed, Http]
+  @tools [Email.fetch, Email.send if self.confirmed, Http]
 }
 "#;
     let prog = parse_ok(src);
@@ -248,7 +248,7 @@ agent Bot {
                     assert_eq!(entries[0].namespace, "Email");
                     assert_eq!(entries[0].method.as_deref(), Some("fetch"));
                     assert!(entries[0].condition.is_none());
-                    // Email.send when self.confirmed — method + guard
+                    // Email.send if self.confirmed — method + guard
                     assert_eq!(entries[1].namespace, "Email");
                     assert_eq!(entries[1].method.as_deref(), Some("send"));
                     assert!(entries[1].condition.is_some());

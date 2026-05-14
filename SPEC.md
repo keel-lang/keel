@@ -393,7 +393,7 @@ agent AgentName {
   @model "smart"                      # LLM binding for Ai.* inside this agent
   @tools [Email, Calendar]           # whole-namespace capability bindings
   # or with method-level guards:
-  # @tools [Email.fetch, Email.send when self.confirmed, Http]
+  # @tools [Email.fetch, Email.send if self.confirmed, Http]
   @memory persistent                 # stdlib memory binding (none | session | persistent)
   @rules [
     "Never reveal internal pricing",
@@ -452,8 +452,8 @@ Everything else (`@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_sto
 ```
 Ns                          # whole namespace, always allowed
 Ns.method                   # specific method, always allowed
-Ns when expr                # whole namespace, allowed when expr is true
-Ns.method when expr         # specific method, allowed when expr is true
+Ns if expr                  # whole namespace, allowed when expr is true
+Ns.method if expr           # specific method, allowed when expr is true
 ```
 
 `expr` is any boolean expression evaluated at the start of each handler turn. `self.*` state, `self.task(...)`, and top-level task calls returning `bool` are valid. Calling a blocked method raises `CapabilityError`.
@@ -461,9 +461,9 @@ Ns.method when expr         # specific method, allowed when expr is true
 ```keel
 @tools [
   Email.fetch,                      # always can read
-  Email.send when self.confirmed,   # send only after confirmation
+  Email.send if self.confirmed,      # send only after confirmation
   Db.query,
-  Db.exec   when self.admin,
+  Db.exec   if self.admin,
   Http,                             # whole namespace, always
 ]
 ```

@@ -8,9 +8,9 @@ agent SupportBot {
 
   @tools [
     Email.fetch,                        # always can read inbox
-    Email.send  when self.confirmed,    # send only after user confirms
+    Email.send  if self.confirmed,       # send only after user confirms
     Db.query,                           # always can query
-    Db.exec     when self.admin,        # writes require admin flag
+    Db.exec     if self.admin,           # writes require admin flag
     Log,
   ]
 

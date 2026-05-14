@@ -87,9 +87,9 @@ Binds stdlib modules as the agent's declared capabilities. The runtime uses this
 
 > **Status:** capability gating is enforced. If `@tools` is omitted, all namespaces are allowed. If it is present, calls to unlisted namespaces raise `CapabilityError`.
 
-#### Conditional guards with `when`
+#### Conditional guards with `if`
 
-Entries can include a `when` guard — a boolean expression evaluated at the start of each handler turn. Guards can access `self.*` state and call tasks that return `bool`:
+Entries can include an `if` guard — a boolean expression evaluated at the start of each handler turn. Guards can access `self.*` state and call tasks that return `bool`:
 
 ```keel
 agent SupportBot {
@@ -100,9 +100,9 @@ agent SupportBot {
 
   @tools [
     Email.fetch,                           # always allowed
-    Email.send when self.confirmed,        # only after confirmation
+    Email.send if self.confirmed,           # only after confirmation
     Db.query,                              # always allowed
-    Db.exec   when self.admin,             # admin only
+    Db.exec   if self.admin,                # admin only
     Http,                                  # whole namespace, always
   ]
 }

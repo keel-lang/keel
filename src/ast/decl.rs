@@ -106,7 +106,7 @@ pub enum AttributeBody {
     Expr(Expr),
     /// `@on_start { ... }` — block of statements executed in the agent context.
     Block(Block),
-    /// `@tools [Email, Email.send when self.confirmed, Http]`
+    /// `@tools [Email, Email.send if self.confirmed, Http]`
     Tools(Vec<ToolEntry>),
 }
 

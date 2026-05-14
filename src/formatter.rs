@@ -302,7 +302,7 @@ impl Fmt {
                                     s.push_str(m);
                                 }
                                 if let Some(cond) = &e.condition {
-                                    s.push_str(" when ");
+                                    s.push_str(" if ");
                                     s.push_str(&self.expr_str(cond));
                                 }
                                 s
