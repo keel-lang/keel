@@ -29,6 +29,23 @@ The type checker resolves generic instantiations to concrete types.
 `Paginated[str].items` is now checked as `list[str]` rather than `unknown`.
 Generic enums register variant names for exhaustiveness checking.
 
+### Function type literals
+
+Function types can now be written inline and used as type aliases or parameter types.
+
+```keel
+type Handler      = (str) -> bool
+type Reducer      = (str, int) -> str
+type Thunk        = () -> none
+type Predicate[T] = (T) -> bool
+
+task t(h: Handler) {
+  ok: bool = h("hello")
+}
+```
+
+Zero-parameter and multi-parameter forms both work. Tuple syntax `(T1, T2)` without `->` continues to produce a tuple type.
+
 ---
 
 ## v0.1.19 — 2026-05-14

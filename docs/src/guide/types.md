@@ -189,6 +189,23 @@ info = {name: "Zied", role: "builder"}   # map[str, str]
 | `.last` | `T?` | Last element or none |
 | `.is_empty` | `bool` | True if count == 0 |
 
+## Function types
+
+Function types describe callable values. Write the parameter types in parentheses followed by `->` and the return type:
+
+```keel
+type Handler      = (str) -> bool
+type Reducer      = (str, int) -> str
+type Thunk        = () -> none
+type Predicate[T] = (T) -> bool   # generic function type
+
+task t(pred: Predicate[str]) {
+  ok: bool = pred("hello")
+}
+```
+
+Tuples and function types share the `(...)` syntax — if `->` follows the closing paren it is a function type; otherwise it is a tuple.
+
 ## Type conversions
 
 ```keel

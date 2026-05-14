@@ -592,6 +592,80 @@ fn parse_non_generic_type_has_empty_params() {
     }
 }
 
+// ─── Function type syntax ────────────────────────────────────────────────────
+
+#[test]
+fn parse_func_type_single_param() {
+    let prog = parse_ok("type Handler = (str) -> bool");
+    match first_decl(&prog) {
+        Decl::Type(td) => match &td.def {
+            TypeDef::Alias(TypeExpr::Func(params, ret)) => {
+                assert_eq!(params.len(), 1);
+                assert!(matches!(&params[0], TypeExpr::Named(n) if n == "str"));
+                assert!(matches!(ret.as_ref(), TypeExpr::Named(n) if n == "bool"));
+            }
+            other => panic!("expected Func alias, got {:?}", other),
+        },
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_func_type_multi_param() {
+    let prog = parse_ok("type Reducer = (str, int) -> str");
+    match first_decl(&prog) {
+        Decl::Type(td) => match &td.def {
+            TypeDef::Alias(TypeExpr::Func(params, ret)) => {
+                assert_eq!(params.len(), 2);
+                assert!(matches!(ret.as_ref(), TypeExpr::Named(n) if n == "str"));
+            }
+            other => panic!("expected Func alias, got {:?}", other),
+        },
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_func_type_no_params() {
+    let prog = parse_ok("type Thunk = () -> str");
+    match first_decl(&prog) {
+        Decl::Type(td) => match &td.def {
+            TypeDef::Alias(TypeExpr::Func(params, _)) => {
+                assert!(params.is_empty());
+            }
+            other => panic!("expected Func alias, got {:?}", other),
+        },
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_tuple_type_still_works() {
+    let prog = parse_ok("type Coord = (str, int)");
+    match first_decl(&prog) {
+        Decl::Type(td) => match &td.def {
+            TypeDef::Alias(TypeExpr::Tuple(elems)) => {
+                assert_eq!(elems.len(), 2);
+            }
+            other => panic!("expected Tuple alias, got {:?}", other),
+        },
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_func_type_alias() {
+    // type Predicate[T] = (T) -> bool  — from SPEC §2.6
+    let prog = parse_ok("type Predicate[T] = (T) -> bool");
+    match first_decl(&prog) {
+        Decl::Type(td) => {
+            assert_eq!(td.type_params, vec!["T"]);
+            assert!(matches!(&td.def, TypeDef::Alias(TypeExpr::Func(_, _))));
+        }
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
 // ─── Error cases ────────────────────────────────────────────────────────────
 
 #[test]

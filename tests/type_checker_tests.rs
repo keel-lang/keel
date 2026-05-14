@@ -948,3 +948,45 @@ task t(p: Pair[str, int]) {
 "#,
     );
 }
+
+// ─── v0.1.20: function type syntax ─────────────────────────────────────────
+
+#[test]
+fn valid_func_type_alias_used_as_param() {
+    type_ok(
+        r#"
+type Handler = (str) -> bool
+
+task t(h: Handler) {
+  ok: bool = h("hello")
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_func_type_multi_param() {
+    type_ok(
+        r#"
+type Reducer = (str, int) -> str
+
+task t(r: Reducer) {
+  result: str = r("x", 1)
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_func_type_alias() {
+    // type Predicate[T] = (T) -> bool — from SPEC §2.6
+    type_ok(
+        r#"
+type Predicate[T] = (T) -> bool
+
+task t(pred: Predicate[str]) {
+  ok: bool = pred("hello")
+}
+"#,
+    );
+}

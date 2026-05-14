@@ -260,12 +260,19 @@ fn type_expr() -> P<TypeExpr> {
             .then_ignore(just(Token::RBrace))
             .map(TypeExpr::Struct);
 
-        let tuple_ty = just(Token::LParen)
-            .ignore_then(ty.clone().separated_by(just(Token::Comma)).at_least(2))
+        // Parenthesised types: `(T1, T2)` → Tuple, `(T1, T2) -> Ret` → Func.
+        // Parsed as a single branch to avoid backtracking: consume the param
+        // list once, then branch on whether `->` follows.
+        let paren_ty = just(Token::LParen)
+            .ignore_then(ty.clone().separated_by(just(Token::Comma)))
             .then_ignore(just(Token::RParen))
-            .map(TypeExpr::Tuple);
+            .then(just(Token::Arrow).ignore_then(ty.clone()).or_not())
+            .map(|(params, ret)| match ret {
+                Some(ret_ty) => TypeExpr::Func(params, Box::new(ret_ty)),
+                None => TypeExpr::Tuple(params),
+            });
 
-        choice((dynamic_ty, named, struct_ty, tuple_ty))
+        choice((dynamic_ty, named, struct_ty, paren_ty))
             .then(
                 just(Token::LBracket)
                     .ignore_then(ty.separated_by(just(Token::Comma)).at_least(1))

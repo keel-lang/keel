@@ -46,6 +46,15 @@ All notable changes to Keel.
   correctly.
 - Example: `examples/generic_types.keel` demonstrates generic structs, multi-parameter generics,
   and generic aliases.
+- Parser: function type literals `(T1, T2) -> Ret` are now parsed as `TypeExpr::Func`.
+  Zero-parameter `() -> Ret` and single-parameter `(T) -> Ret` both work. The tuple parser
+  is unified with the function-type parser — `(T1, T2)` (no `->`) still produces a tuple.
+  ```keel
+  type Handler = (str) -> bool
+  type Reducer = (str, int) -> str
+  type Thunk   = () -> none
+  type Predicate[T] = (T) -> bool   # generic + function type
+  ```
 
 ---
 
