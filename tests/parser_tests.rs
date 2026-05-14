@@ -528,6 +528,70 @@ fn former_keyword_classify_is_ident() {
     }
 }
 
+// ─── Generic type declarations ──────────────────────────────────────────────
+
+#[test]
+fn parse_generic_struct_single_param() {
+    let prog = parse_ok("type Paginated[T] { items: list[T]\npage: int\nhas_more: bool }");
+    match first_decl(&prog) {
+        Decl::Type(td) => {
+            assert_eq!(td.name, "Paginated");
+            assert_eq!(td.type_params, vec!["T"]);
+            assert!(matches!(&td.def, TypeDef::Struct(_)));
+        }
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_struct_multi_param() {
+    let prog = parse_ok("type Pair[A, B] { first: A\nsecond: B }");
+    match first_decl(&prog) {
+        Decl::Type(td) => {
+            assert_eq!(td.name, "Pair");
+            assert_eq!(td.type_params, vec!["A", "B"]);
+        }
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_alias() {
+    let prog = parse_ok("type Bag[T] = list[T]");
+    match first_decl(&prog) {
+        Decl::Type(td) => {
+            assert_eq!(td.name, "Bag");
+            assert_eq!(td.type_params, vec!["T"]);
+            assert!(matches!(&td.def, TypeDef::Alias(TypeExpr::List(_))));
+        }
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_rich_enum() {
+    let prog = parse_ok("type Pair[A, B] =\n  | both { first: A, second: B }\n  | neither");
+    match first_decl(&prog) {
+        Decl::Type(td) => {
+            assert_eq!(td.name, "Pair");
+            assert_eq!(td.type_params, vec!["A", "B"]);
+            assert!(matches!(&td.def, TypeDef::RichEnum(_)));
+        }
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_non_generic_type_has_empty_params() {
+    let prog = parse_ok("type Urgency = low | medium | high");
+    match first_decl(&prog) {
+        Decl::Type(td) => {
+            assert!(td.type_params.is_empty());
+        }
+        other => panic!("expected Type, got {:?}", other),
+    }
+}
+
 // ─── Error cases ────────────────────────────────────────────────────────────
 
 #[test]

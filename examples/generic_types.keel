@@ -1,0 +1,57 @@
+# Generic Types
+#
+# Generic type declarations let you write types that are parameterised
+# over one or more type variables.  The type checker substitutes the
+# concrete arguments at each use site.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/generic_types.keel
+
+# Generic struct — T is substituted at each use site.
+type Paginated[T] {
+  items: list[T]
+  page: int
+  has_more: bool
+}
+
+# Multi-parameter generic struct.
+type Pair[A, B] {
+  first: A
+  second: B
+}
+
+# Generic alias — expands to a concrete type at each use site.
+type Bag[T] = list[T]
+
+# Generic enum — variant names register for exhaustiveness checks.
+type Outcome[T] =
+  | ok { value: T }
+  | err { message: str }
+
+task summarise_page(page: Paginated[str]) -> str {
+  total = page.items.len()
+  "{total} item(s) on page {page.page}"
+}
+
+agent Demo {
+  @role "Demonstrates generic types"
+
+  @on_start {
+    page: Paginated[str] = {
+      items: ["alpha", "beta", "gamma"],
+      page: 1,
+      has_more: false
+    }
+
+    summary = summarise_page(page)
+    Io.show(summary)
+
+    coords: Pair[str, int] = { first: "x", second: 42 }
+    Io.show("first={coords.first}, second={coords.second}")
+
+    tags: Bag[str] = ["rust", "keel", "generic"]
+    Io.show("{tags.len()} tag(s)")
+  }
+}
+
+run(Demo)

@@ -175,6 +175,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "Urgency".into(),
+            type_params: vec![],
             def: TypeDef::SimpleEnum(vec!["low".into(), "medium".into(), "high".into()]),
         });
         interp.register_decl(&decl).unwrap();
@@ -195,6 +196,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "EmailInfo".into(),
+            type_params: vec![],
             def: TypeDef::Struct(vec![
                 Field {
                     name: "sender".into(),
@@ -228,6 +230,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "Timestamp".into(),
+            type_params: vec![],
             def: TypeDef::Alias(named_ty("datetime")),
         });
         interp.register_decl(&decl).unwrap();
@@ -246,6 +249,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "Action".into(),
+            type_params: vec![],
             def: TypeDef::RichEnum(vec![]), // empty rich enum
         });
         interp.register_decl(&decl).unwrap();

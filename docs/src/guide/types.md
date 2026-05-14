@@ -40,6 +40,61 @@ c = bug                     # Category.bug
 label = Urgency.high        # explicit qualified access
 ```
 
+## Generic types
+
+Type declarations can be parameterised over one or more type variables.
+The type checker substitutes the concrete arguments at each use site.
+
+**Generic structs:**
+
+```keel
+type Paginated[T] {
+  items: list[T]
+  page: int
+  has_more: bool
+}
+
+task show_page(p: Paginated[str]) {
+  Io.show("{p.items.len()} item(s) on page {p.page}")
+}
+```
+
+**Multi-parameter generics:**
+
+```keel
+type Pair[A, B] {
+  first: A
+  second: B
+}
+
+task t(p: Pair[str, int]) {
+  a: str = p.first    # type-checked as str
+  b: int = p.second   # type-checked as int
+}
+```
+
+**Generic aliases:**
+
+```keel
+type Bag[T] = list[T]
+
+task t(tags: Bag[str]) {
+  n: int = tags.len()
+}
+```
+
+**Generic enums:**
+
+```keel
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
+```
+
+Variant names are registered for exhaustiveness checking. Field types inside
+generic enum variants are not yet deeply checked (planned for a future release).
+
 ## Structs
 
 Structs are structural types — any value with matching fields satisfies the type.

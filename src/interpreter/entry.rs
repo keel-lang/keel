@@ -183,6 +183,7 @@ mod tests {
                 (
                     Decl::Type(TypeDecl {
                         name: "Color".into(),
+                        type_params: vec![],
                         def: TypeDef::SimpleEnum(vec!["red".into(), "green".into()]),
                     }),
                     0..0,
@@ -190,6 +191,7 @@ mod tests {
                 (
                     Decl::Type(TypeDecl {
                         name: "Point".into(),
+                        type_params: vec![],
                         def: TypeDef::Struct(vec![
                             crate::ast::Field {
                                 name: "x".into(),
@@ -232,6 +234,7 @@ mod tests {
                 (
                     Decl::Type(TypeDecl {
                         name: "Status".into(),
+                        type_params: vec![],
                         def: TypeDef::SimpleEnum(vec!["ok".into()]),
                     }),
                     0..0,
@@ -280,6 +283,7 @@ mod tests {
             declarations: vec![(
                 Decl::Type(TypeDecl {
                     name: "T".into(),
+                    type_params: vec![],
                     def: TypeDef::SimpleEnum(vec!["a".into()]),
                 }),
                 0..0,

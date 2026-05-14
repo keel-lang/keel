@@ -123,14 +123,19 @@ impl Fmt {
     }
 
     fn type_decl(&mut self, t: &TypeDecl) {
+        let header = if t.type_params.is_empty() {
+            t.name.clone()
+        } else {
+            format!("{}[{}]", t.name, t.type_params.join(", "))
+        };
         match &t.def {
             TypeDef::SimpleEnum(variants) => {
-                self.push(&format!("type {} = ", t.name));
+                self.push(&format!("type {} = ", header));
                 self.push(&variants.join(" | "));
                 self.newline();
             }
             TypeDef::RichEnum(variants) => {
-                self.push(&format!("type {} =", t.name));
+                self.push(&format!("type {} =", header));
                 self.newline();
                 self.indent();
                 for v in variants {
@@ -152,7 +157,7 @@ impl Fmt {
                 self.dedent();
             }
             TypeDef::Struct(fields) => {
-                self.push(&format!("type {} {{", t.name));
+                self.push(&format!("type {} {{", header));
                 self.newline();
                 self.indent();
                 for f in fields {
@@ -165,7 +170,7 @@ impl Fmt {
                 self.newline();
             }
             TypeDef::Alias(ty) => {
-                self.push(&format!("type {} = ", t.name));
+                self.push(&format!("type {} = ", header));
                 self.push(&self.type_expr_str(ty));
                 self.newline();
             }

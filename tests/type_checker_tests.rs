@@ -861,3 +861,90 @@ task classify(n: int) -> str {
 "#,
     );
 }
+
+// ─── v0.1.20: generic type declarations ────────────────────────────────────
+
+#[test]
+fn valid_generic_struct_instantiation() {
+    type_ok(
+        r#"
+type Paginated[T] {
+  items: list[T]
+  page: int
+  has_more: bool
+}
+
+task t(p: Paginated[str]) {
+  items: list[str] = p.items
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_struct_nested_params() {
+    // T flows through nested list inside a generic struct.
+    type_ok(
+        r#"
+type Wrapper[T] {
+  value: T
+}
+
+task t(w: Wrapper[int]) {
+  v: int = w.value
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_alias() {
+    // Generic alias that expands to a concrete list type.
+    type_ok(
+        r#"
+type Bag[T] = list[T]
+
+task t(items: Bag[str]) {
+  n: int = items.len()
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_enum_variant_exhaustive() {
+    // Generic enums register variant names; exhaustiveness check still works.
+    type_ok(
+        r#"
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both => { Io.notify("both") }
+    only_first => { Io.notify("first") }
+    only_second => { Io.notify("second") }
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_struct_multi_param() {
+    type_ok(
+        r#"
+type Pair[A, B] {
+  first: A
+  second: B
+}
+
+task t(p: Pair[str, int]) {
+  a: str = p.first
+  b: int = p.second
+}
+"#,
+    );
+}

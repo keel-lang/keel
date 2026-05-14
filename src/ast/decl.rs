@@ -17,6 +17,8 @@ pub enum Decl {
 #[derive(Debug, Clone)]
 pub struct TypeDecl {
     pub name: String,
+    /// Type parameter names for generic types, e.g. `["T"]` for `type Paginated[T]`.
+    pub type_params: Vec<String>,
     pub def: TypeDef,
 }
 

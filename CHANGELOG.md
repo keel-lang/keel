@@ -12,6 +12,41 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- Parser + AST: generic type declarations (`type Foo[T]`, `type Pair[A, B]`) are now parsed
+  and stored as `TypeDecl.type_params`. The `type_params` field is empty for non-generic types,
+  so all existing declarations are unaffected.
+  ```keel
+  type Paginated[T] {
+    items: list[T]
+    page: int
+    has_more: bool
+  }
+
+  type Bag[T] = list[T]
+
+  type Pair[A, B] =
+    | both { first: A, second: B }
+    | only_first { value: A }
+    | only_second { value: B }
+  ```
+- Type checker: `TypeExpr::Generic(name, args)` now resolves to a concrete `Ty` instead of
+  `Ty::Unknown`. Generic struct instantiations resolve to `Ty::Struct` with type parameters
+  substituted; generic aliases resolve to the expanded alias type. Generic enums register their
+  variant names so exhaustiveness checking still works.
+  ```keel
+  type Paginated[T] { items: list[T]\npage: int\nhas_more: bool }
+
+  task t(p: Paginated[str]) {
+    items: list[str] = p.items   # type-checked: list[str] not Unknown
+  }
+  ```
+- Formatter: `keel fmt` now round-trips generic type declarations, emitting `type Name[T, U]`
+  correctly.
+- Example: `examples/generic_types.keel` demonstrates generic structs, multi-parameter generics,
+  and generic aliases.
+
 ---
 
 ## [0.1.19] — 2026-05-14

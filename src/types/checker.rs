@@ -110,6 +110,9 @@ struct Checker {
     enum_variants: HashMap<String, Vec<String>>,
     structs: HashMap<String, Vec<(String, Ty)>>,
     aliases: HashMap<String, Ty>,
+    /// Generic type declarations stored as `name → (type_params, body)` for
+    /// deferred instantiation when a concrete `Foo[str]` application appears.
+    generic_decls: HashMap<String, (Vec<String>, TypeDef)>,
     top_tasks: HashMap<String, TaskSig>,
     agents: HashMap<String, AgentInfo>,
     current_agent: Option<String>,
@@ -262,6 +265,7 @@ impl Checker {
             enum_variants: HashMap::new(),
             structs: HashMap::new(),
             aliases: HashMap::new(),
+            generic_decls: HashMap::new(),
             top_tasks: HashMap::new(),
             agents: HashMap::new(),
             current_agent: None,
@@ -312,6 +316,23 @@ impl Checker {
     }
 
     fn collect_type_decl(&mut self, t: &TypeDecl) {
+        if !t.type_params.is_empty() {
+            // Generic type — defer body resolution until instantiation.
+            // For enum types, still register variant names for exhaustiveness checking.
+            match &t.def {
+                TypeDef::SimpleEnum(vs) => {
+                    self.enum_variants.insert(t.name.clone(), vs.clone());
+                }
+                TypeDef::RichEnum(vs) => {
+                    self.enum_variants
+                        .insert(t.name.clone(), vs.iter().map(|v| v.name.clone()).collect());
+                }
+                _ => {}
+            }
+            self.generic_decls
+                .insert(t.name.clone(), (t.type_params.clone(), t.def.clone()));
+            return;
+        }
         match &t.def {
             TypeDef::SimpleEnum(vs) => {
                 self.enum_variants.insert(t.name.clone(), vs.clone());
@@ -394,48 +415,99 @@ impl Checker {
     // -----------------------------------------------------------------
 
     fn resolve_type(&self, ty: &TypeExpr) -> Ty {
+        self.resolve_type_with_env(ty, &HashMap::new())
+    }
+
+    /// Resolve a type expression, substituting any names found in `env` (type
+    /// parameter bindings) before falling back to the normal resolution logic.
+    fn resolve_type_with_env(&self, ty: &TypeExpr, env: &HashMap<String, Ty>) -> Ty {
         match ty {
-            TypeExpr::Named(n) => match n.as_str() {
-                "int" => Ty::Int,
-                "float" => Ty::Float,
-                "str" => Ty::Str,
-                "bool" => Ty::Bool,
-                "none" => Ty::None_,
-                "datetime" => Ty::Datetime,
-                "duration" => Ty::Duration,
-                _ => {
-                    if self.enum_variants.contains_key(n) {
-                        Ty::Enum(n.clone())
-                    } else if let Some(fields) = self.structs.get(n) {
-                        Ty::Struct(fields.clone())
-                    } else if let Some(t) = self.aliases.get(n) {
-                        t.clone()
-                    } else {
-                        Ty::Unknown
+            TypeExpr::Named(n) => {
+                if let Some(bound) = env.get(n) {
+                    return bound.clone();
+                }
+                match n.as_str() {
+                    "int" => Ty::Int,
+                    "float" => Ty::Float,
+                    "str" => Ty::Str,
+                    "bool" => Ty::Bool,
+                    "none" => Ty::None_,
+                    "datetime" => Ty::Datetime,
+                    "duration" => Ty::Duration,
+                    _ => {
+                        if self.enum_variants.contains_key(n) {
+                            Ty::Enum(n.clone())
+                        } else if let Some(fields) = self.structs.get(n) {
+                            Ty::Struct(fields.clone())
+                        } else if let Some(t) = self.aliases.get(n) {
+                            t.clone()
+                        } else {
+                            Ty::Unknown
+                        }
                     }
                 }
-            },
-            TypeExpr::Nullable(inner) => Ty::Nullable(Box::new(self.resolve_type(inner))),
-            TypeExpr::List(inner) => Ty::List(Box::new(self.resolve_type(inner))),
+            }
+            TypeExpr::Nullable(inner) => {
+                Ty::Nullable(Box::new(self.resolve_type_with_env(inner, env)))
+            }
+            TypeExpr::List(inner) => Ty::List(Box::new(self.resolve_type_with_env(inner, env))),
             TypeExpr::Map(k, v) => Ty::Map(
-                Box::new(self.resolve_type(k)),
-                Box::new(self.resolve_type(v)),
+                Box::new(self.resolve_type_with_env(k, env)),
+                Box::new(self.resolve_type_with_env(v, env)),
             ),
-            TypeExpr::Set(inner) => Ty::Set(Box::new(self.resolve_type(inner))),
+            TypeExpr::Set(inner) => Ty::Set(Box::new(self.resolve_type_with_env(inner, env))),
             TypeExpr::Struct(fields) => Ty::Struct(
                 fields
                     .iter()
-                    .map(|f| (f.name.clone(), self.resolve_type(&f.ty)))
+                    .map(|f| (f.name.clone(), self.resolve_type_with_env(&f.ty, env)))
                     .collect(),
             ),
-            TypeExpr::Tuple(items) => {
-                Ty::Tuple(items.iter().map(|t| self.resolve_type(t)).collect())
-            }
-            TypeExpr::Func(params, ret) => Ty::Func(
-                params.iter().map(|t| self.resolve_type(t)).collect(),
-                Box::new(self.resolve_type(ret)),
+            TypeExpr::Tuple(items) => Ty::Tuple(
+                items
+                    .iter()
+                    .map(|t| self.resolve_type_with_env(t, env))
+                    .collect(),
             ),
-            TypeExpr::Generic(_, _) => Ty::Unknown,
+            TypeExpr::Func(params, ret) => Ty::Func(
+                params
+                    .iter()
+                    .map(|t| self.resolve_type_with_env(t, env))
+                    .collect(),
+                Box::new(self.resolve_type_with_env(ret, env)),
+            ),
+            TypeExpr::Generic(name, args) => {
+                // Resolve each type argument in the current env.
+                let resolved_args: Vec<Ty> = args
+                    .iter()
+                    .map(|a| self.resolve_type_with_env(a, env))
+                    .collect();
+                // Look up the generic declaration and substitute.
+                if let Some((type_params, type_def)) = self.generic_decls.get(name).cloned() {
+                    if type_params.len() == resolved_args.len() {
+                        let inner_env: HashMap<String, Ty> = type_params
+                            .into_iter()
+                            .zip(resolved_args)
+                            .collect();
+                        return match &type_def {
+                            TypeDef::Struct(fields) => Ty::Struct(
+                                fields
+                                    .iter()
+                                    .map(|f| {
+                                        (f.name.clone(), self.resolve_type_with_env(&f.ty, &inner_env))
+                                    })
+                                    .collect(),
+                            ),
+                            TypeDef::Alias(ty) => self.resolve_type_with_env(ty, &inner_env),
+                            // Generic enums: variant names are registered; field types
+                            // inside variants are not yet deeply checked.
+                            TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => {
+                                Ty::Enum(name.clone())
+                            }
+                        };
+                    }
+                }
+                Ty::Unknown
+            }
             TypeExpr::Dynamic => Ty::Dynamic,
         }
     }

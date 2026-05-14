@@ -1057,10 +1057,17 @@ fn type_decl() -> P<Decl> {
 
     let after_eq = choice((rich_enum, simple_enum, alias));
 
+    let type_params = just(Token::LBracket)
+        .ignore_then(ident().separated_by(just(Token::Comma)).at_least(1))
+        .then_ignore(just(Token::RBracket))
+        .or_not()
+        .map(|p| p.unwrap_or_default());
+
     just(Token::Type)
         .ignore_then(ident())
+        .then(type_params)
         .then(just(Token::Eq).ignore_then(after_eq).or(struct_def))
-        .map(|(name, def)| Decl::Type(TypeDecl { name, def }))
+        .map(|((name, type_params), def)| Decl::Type(TypeDecl { name, type_params, def }))
         .boxed()
 }
 

@@ -6,6 +6,29 @@
 
 ## Unreleased
 
+### Generic type declarations
+
+Type declarations can now be parameterised over one or more type variables.
+
+```keel
+type Paginated[T] {
+  items: list[T]
+  page: int
+  has_more: bool
+}
+
+type Pair[A, B] {
+  first: A
+  second: B
+}
+
+type Bag[T] = list[T]
+```
+
+The type checker resolves generic instantiations to concrete types.
+`Paginated[str].items` is now checked as `list[str]` rather than `unknown`.
+Generic enums register variant names for exhaustiveness checking.
+
 ---
 
 ## v0.1.19 — 2026-05-14
