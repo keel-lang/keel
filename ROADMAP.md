@@ -27,7 +27,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Parser | [x] | Attributes, interfaces, named args, `as T`, rich enums, triple-quoted strings, duration literals, destructuring |
 | Interpreter | [x] | Namespace dispatch, agent lifecycle, pattern matching, closures, async, `try/catch` |
 | Formatter (`keel fmt`) | [x] | Idempotent round-trip against AST |
-| Type checker | [~] | Scope, arity, enum exhaustiveness, nullable safety, return-type matching, struct subtyping, generics; full nullable inference is WIP |
+| Type checker | [~] | Scope, arity, enum exhaustiveness, nullable safety, return-type matching, struct subtyping; `?.` nullable propagation, `??` unwrapping, `Ai.extract`/`Ai.decide` `as:` inference, lambda block body return types, `set[]` literal typing, implicit return checking, `if`-expr branch unification — all shipped in v0.1.19. Generics blocked on parser+AST support for `type Foo[T]` declarations. |
 | Bytecode compiler (`keel build`) | [ ] | Deferred post-v0.1 — tree-walking interpreter covers all alpha workloads |
 
 ### Agent model
@@ -102,7 +102,6 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Homebrew tap (`keel-lang/tap/keel`) | [x] | |
 | `install.sh` one-liner | [x] | Served at `https://keel-lang.dev/install.sh` |
 | Manual-trigger release workflows | [x] | `release-patch.yml` and `release-minor.yml` in `.github/workflows/` |
-| Intel Mac prebuilt binary | [ ] | Build from source |
 | End-to-end install validation | [ ] | Tarballs, Homebrew, one-liner all verified post-release |
 
 ### Deferred post-v0.1

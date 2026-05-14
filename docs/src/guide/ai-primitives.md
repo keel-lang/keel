@@ -46,7 +46,7 @@ result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
 
 Both forms are fully wired as of v0.1.3:
 - `schema: { field: "type" }` — inline map of field names to type strings.
-- `as: T` — derives the schema from a declared `type T { ... }` struct; raises a runtime error if `T` is not a known struct type.
+- `as: T` — derives the schema from a declared `type T { ... }` struct; raises a runtime error if `T` is not a known struct type. As of v0.1.19 the type checker resolves `T` from the `as:` argument, so field accesses on the result are statically checked.
 
 ## `Ai.summarize` — condense content
 

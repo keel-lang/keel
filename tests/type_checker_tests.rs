@@ -692,3 +692,172 @@ fn ident_helpers_decline_non_identifier_offsets() {
     assert_eq!(checker::definition_of(source, quote), None);
     assert_eq!(checker::type_at("task t( {", 2), None);
 }
+
+// ─── v0.1.19 additive checker fixes ─────────────────────────────────────────
+
+#[test]
+fn valid_set_literal_typed_as_set() {
+    // set[] literal — checker must not error; inferred as set[int]
+    type_ok(
+        r#"
+task go() {
+  s = set[1, 2, 3]
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_null_field_access_propagates_nullable() {
+    type_ok(
+        r#"
+type Info = { name: str, score: int }
+
+task go(x: Info?) {
+  n = x?.name
+  s = x?.score
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_null_coalesce_unwraps_nullable() {
+    type_ok(
+        r#"
+task go(x: str?) {
+  result: str = x ?? "default"
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_lambda_block_body_return_type_inferred() {
+    type_ok(
+        r#"
+task go() {
+  items = [1, 2, 3]
+  doubled = items.map(x => {
+    x * 2
+  })
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_ai_extract_as_resolves_struct_type() {
+    type_ok(
+        r#"
+type Contact = { name: str, email: str }
+
+task go(text: str) {
+  result = Ai.extract(text, as: Contact)
+  name = result?.name
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_ai_decide_as_resolves_enum_type() {
+    type_ok(
+        r#"
+type Priority = low | medium | high
+
+task go(text: str) {
+  p = Ai.decide(text, as: Priority)
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_implicit_return_expression_matches_declared() {
+    type_ok(
+        r#"
+task double(n: int) -> int {
+  n * 2
+}
+"#,
+    );
+}
+
+#[test]
+fn error_implicit_return_type_mismatch() {
+    expect_error(
+        r#"
+task greet() -> int {
+  "hello"
+}
+"#,
+        "implicit return",
+    );
+}
+
+#[test]
+fn valid_implicit_return_skipped_for_return_stmt() {
+    // A task ending in `return` must not trigger the implicit-return check.
+    type_ok(
+        r#"
+task greet() -> str {
+  return "hello"
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_implicit_return_skipped_for_when_stmt() {
+    // A task ending in `when` must not trigger the implicit-return check.
+    type_ok(
+        r#"
+type Color = red | green | blue
+
+task name(c: Color) -> str {
+  when c {
+    red => { return "red" }
+    green => { return "green" }
+    blue => { return "blue" }
+  }
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_if_expr_branches_same_type() {
+    type_ok(
+        r#"
+task go(x: int) -> int {
+  if x > 0 { x } else { 0 }
+}
+"#,
+    );
+}
+
+#[test]
+fn error_if_expr_branches_type_mismatch() {
+    expect_error(
+        r#"
+task go(flag: bool) {
+  result = if flag { 1 } else { "oops" }
+}
+"#,
+        "branches must have the same type",
+    );
+}
+
+#[test]
+fn valid_if_expr_return_branch_propagates_other_type() {
+    // When one branch exits via `return`, the if-expr takes the other branch's type.
+    type_ok(
+        r#"
+task classify(n: int) -> str {
+  label = if n > 0 { return "positive" } else { "other" }
+  label
+}
+"#,
+    );
+}

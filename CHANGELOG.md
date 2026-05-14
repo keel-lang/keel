@@ -14,6 +14,48 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.19] — 2026-05-14
+
+
+### Added
+
+- Type checker: `?.` (null-safe field access) now propagates `T?` — field lookups on nullable
+  structs return `Nullable(field_type)` instead of `Unknown`.
+- Type checker: `??` (null coalesce) now unwraps the left-hand nullable and returns its inner
+  type, so `x ?? fallback` is typed as the unwrapped `T` rather than the fallback's type.
+  ```keel
+  task greet(name: str?) {
+    label: str = name ?? "guest"   # str? unwrapped to str
+  }
+  ```
+- Type checker: `Ai.extract(text, as: T)` and `Ai.decide(text, as: T)` now resolve the `as:`
+  argument and return `T?` instead of `unknown?`, enabling downstream field access checks.
+  ```keel
+  type Contact = { name: str, email: str }
+  task go(text: str) {
+    c = Ai.extract(text, as: Contact)
+    n = c?.name   # typed str?
+  }
+  ```
+- Type checker: lambda block bodies (`x => { ... }`) now infer their return type from the last
+  expression in the block, matching the behaviour of expression-body lambdas.
+- Type checker: `set[...]` literals now infer as `set[T]` instead of `list[T]`.
+- Type checker: implicit return — when a task's last statement is an expression,
+  its type is now checked against the declared return type.
+  ```keel
+  task double(n: int) -> int {
+    n * 2   # checked: must be int
+  }
+  ```
+- Type checker: `if`-expression branches are now unified — both must produce the
+  same concrete type. When one branch exits via `return`, the other branch's type
+  is propagated as the expression type.
+  ```keel
+  result = if flag { 1 } else { "oops" }   # error: branches must have the same type
+  ```
+
+---
+
 ## [0.1.18] — 2026-05-13
 
 Explicit self for agent task calls with fixes for named args, early return, and Async.spawn scope

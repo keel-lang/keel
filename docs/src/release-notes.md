@@ -8,6 +8,22 @@
 
 ---
 
+## v0.1.19 — 2026-05-14
+
+### Type checker improvements (additive)
+
+Seven type checker gaps closed — no existing programs break.
+
+- **`?.` propagates nullable** — `x?.field` on a nullable struct now types as `FieldType?` instead of `unknown`.
+- **`??` unwraps nullable** — `x ?? fallback` now returns the inner type of `x`, not the fallback's type.
+- **`Ai.extract` / `Ai.decide` with `as:`** — when an `as: T` argument is present, the return type is inferred as `T?` rather than `unknown?`. Downstream field accesses on the result are now checked.
+- **Lambda block bodies** — `x => { ... }` now infers its return type from the last expression, matching expression-body lambdas.
+- **`set[]` literal type** — `set[1, 2, 3]` now infers as `set[int]` instead of `list[int]`.
+- **Implicit return checking** — when a task's last statement is an expression, its type is checked against the declared return type. Control-flow statements (`return`, `when`, `for`) are excluded to avoid false positives.
+- **`if`-expression branch unification** — both branches of an `if` expression must produce the same concrete type. When one branch exits via `return`, the other branch's type is used.
+
+---
+
 ## v0.1.18 — 2026-05-13
 
 ### Explicit agent task calls

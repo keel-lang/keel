@@ -562,7 +562,22 @@ impl Checker {
             let param_ty = self.resolve_type(&p.ty);
             self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
-        self.check_block(&t.body, &mut scope);
+
+        // Only check implicit return when the last statement is an expression.
+        // Control-flow statements (return, when, if, for, try/catch) manage
+        // their own return paths; checking them here produces false positives.
+        let last_is_expr = t
+            .body
+            .last()
+            .map(|(s, _)| matches!(s, Stmt::Expr(_)))
+            .unwrap_or(false);
+        let implicit_ty = self.block_type(&t.body, &mut scope);
+        if last_is_expr
+            && let Some(expected) = &self.current_return_ty.clone()
+            && !matches!(expected, Ty::None_ | Ty::Unknown | Ty::Dynamic)
+        {
+            self.expect(&implicit_ty, expected, "implicit return");
+        }
 
         self.current_return_ty = prev_return_ty;
     }
@@ -901,9 +916,17 @@ impl Checker {
                 }
             }
 
-            Expr::NullFieldAccess(obj, _) => {
-                let _ = self.infer_expr(obj, scope);
-                Ty::Unknown
+            Expr::NullFieldAccess(obj, field) => {
+                let obj_ty = self.infer_expr(obj, scope);
+                let field_ty = match obj_ty.strip_nullable() {
+                    Ty::Struct(fields) => fields
+                        .iter()
+                        .find(|(n, _)| n == field)
+                        .map(|(_, t)| t.clone())
+                        .unwrap_or(Ty::Unknown),
+                    _ => Ty::Unknown,
+                };
+                Ty::Nullable(Box::new(field_ty))
             }
 
             Expr::NullAssert(e) => {
@@ -923,7 +946,7 @@ impl Checker {
                 Ty::Struct(inferred)
             }
 
-            Expr::ListLit(items) | Expr::SetLit(items) => {
+            Expr::ListLit(items) => {
                 let mut element_ty = Ty::Unknown;
                 for (i, e) in items.iter().enumerate() {
                     let ty = self.infer_expr(e, scope);
@@ -932,6 +955,17 @@ impl Checker {
                     }
                 }
                 Ty::List(Box::new(element_ty))
+            }
+
+            Expr::SetLit(items) => {
+                let mut element_ty = Ty::Unknown;
+                for (i, e) in items.iter().enumerate() {
+                    let ty = self.infer_expr(e, scope);
+                    if i == 0 {
+                        element_ty = ty;
+                    }
+                }
+                Ty::Set(Box::new(element_ty))
             }
 
             Expr::TupleLit(items) => {
@@ -961,8 +995,15 @@ impl Checker {
             }
 
             Expr::NullCoalesce(l, r) => {
-                let _ = self.infer_expr(l, scope);
-                self.infer_expr(r, scope)
+                let l_ty = self.infer_expr(l, scope);
+                let r_ty = self.infer_expr(r, scope);
+                // `x ?? fallback` unwraps x's nullable wrapper; result is the
+                // inner type of x (or fallback's type when x is Unknown).
+                match l_ty {
+                    Ty::Nullable(inner) => *inner,
+                    Ty::Unknown | Ty::Dynamic => r_ty,
+                    other => other,
+                }
             }
 
             Expr::Range(start, end) => {
@@ -1100,8 +1141,20 @@ impl Checker {
                             "draft" | "summarize" | "translate" | "prompt" => {
                                 return Ty::Nullable(Box::new(Ty::Str));
                             }
-                            "extract" => return Ty::Nullable(Box::new(Ty::Unknown)),
-                            "decide" => return Ty::Nullable(Box::new(Ty::Unknown)),
+                            "extract" | "decide" => {
+                                let inner = args
+                                    .iter()
+                                    .find(|a| a.name.as_deref() == Some("as"))
+                                    .map(|a| {
+                                        if let Expr::Ident(type_name) = &a.value {
+                                            self.resolve_type(&TypeExpr::Named(type_name.clone()))
+                                        } else {
+                                            Ty::Unknown
+                                        }
+                                    })
+                                    .unwrap_or(Ty::Unknown);
+                                return Ty::Nullable(Box::new(inner));
+                            }
                             _ => {}
                         }
                     }
@@ -1177,8 +1230,30 @@ impl Checker {
                 let c = self.infer_expr(cond, scope);
                 self.expect(&c, &Ty::Bool, "`if` condition");
                 let then_ty = self.block_type(then_body, scope);
-                let _ = self.block_type(else_body, scope);
-                then_ty
+                let else_ty = self.block_type(else_body, scope);
+                // When one branch exits via `return` its block_type is None_.
+                // In that case propagate the other branch's type. When both
+                // are concrete, verify they match.
+                match (&then_ty, &else_ty) {
+                    (Ty::None_, other)
+                        if !matches!(other, Ty::None_ | Ty::Unknown | Ty::Dynamic) =>
+                    {
+                        other.clone()
+                    }
+                    (_, Ty::None_) => then_ty,
+                    _ => {
+                        if !matches!(then_ty, Ty::Unknown | Ty::Dynamic | Ty::None_)
+                            && !matches!(else_ty, Ty::Unknown | Ty::Dynamic | Ty::None_)
+                        {
+                            self.expect(
+                                &else_ty,
+                                &then_ty,
+                                "`if` branches must have the same type",
+                            );
+                        }
+                        then_ty
+                    }
+                }
             }
 
             Expr::Lambda { params, body } => {
@@ -1193,10 +1268,17 @@ impl Checker {
                 let ret = match body {
                     LambdaBody::Expr(e) => self.infer_expr(e, scope),
                     LambdaBody::Block(b) => {
+                        let mut last = Ty::Unknown;
                         for (s, s_span) in b {
-                            self.check_stmt(s, s_span.clone(), scope);
+                            last = match s {
+                                Stmt::Expr(e) => self.infer_expr(e, scope),
+                                other => {
+                                    self.check_stmt(other, s_span.clone(), scope);
+                                    Ty::Unknown
+                                }
+                            };
                         }
-                        Ty::Unknown
+                        last
                     }
                 };
                 scope.pop();

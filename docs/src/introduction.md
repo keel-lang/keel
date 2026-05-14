@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.18](./release-notes.md)** — Explicit self for agent task calls with fixes for named args, early return, and Async.spawn scope. [See what's new →](./release-notes.md)
+> **Latest: [v0.1.19](./release-notes.md)** — 7 type checker fixes closing nullable propagation, unwrapping, inference, and branch unification gaps. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
