@@ -1537,10 +1537,17 @@ impl Checker {
                 for arm in arms {
                     scope.push();
                     for p in &arm.patterns {
-                        if let Pattern::Variant { name: variant_name, bindings } = p {
+                        if let Pattern::Variant {
+                            name: variant_name,
+                            bindings,
+                        } = p
+                        {
                             for (idx, b) in bindings.iter().enumerate() {
-                                if b == "_" { continue; }
-                                let field_ty = self.resolve_variant_field(&subject_ty, variant_name, b, idx);
+                                if b == "_" {
+                                    continue;
+                                }
+                                let field_ty =
+                                    self.resolve_variant_field(&subject_ty, variant_name, b, idx);
                                 scope.define(b.clone(), field_ty);
                             }
                         }

@@ -10,7 +10,13 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% `when` now works as an expression — pattern-match and produce a value in one step.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.22] — 2026-05-14
+
+`when` now works as an expression — pattern-match and produce a value in one step.
 
 ### Changed
 

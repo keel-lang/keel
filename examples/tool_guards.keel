@@ -3,16 +3,9 @@ agent SupportBot {
 
   state {
     confirmed: bool = false
-    admin:     bool = false
+    admin: bool = false
   }
-
-  @tools [
-    Email.fetch,                        # always can read inbox
-    Email.send  if self.confirmed,       # send only after user confirms
-    Db.query,                           # always can query
-    Db.exec     if self.admin,           # writes require admin flag
-    Log,
-  ]
+  @tools [Email.fetch, Email.send if self.confirmed, Db.query, Db.exec if self.admin, Log]
 
   on message(msg: str) {
     when msg {
@@ -20,17 +13,17 @@ agent SupportBot {
         self.confirmed = true
         Log.info("user confirmed — Email.send now available")
       }
-      "admin"   => {
+      "admin" => {
         self.admin = true
         Log.info("admin mode — Db.exec now available")
       }
-      _ => {
-        Log.info("received: {msg}")
-      }
+      _ => Log.info("received: {msg}")
     }
   }
 }
 
 run(SupportBot)
+
 Agent.send(SupportBot, "confirm")
+
 Agent.send(SupportBot, "admin")

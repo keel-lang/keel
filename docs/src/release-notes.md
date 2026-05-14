@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.22 — 2026-05-14
+
 ### `when` as an expression
 
 `when` now works in expression position — the matched arm's value becomes the result.
