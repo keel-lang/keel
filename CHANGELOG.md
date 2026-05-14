@@ -12,6 +12,13 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.20] — 2026-05-14
+
+Full generic type support — types, enums, tasks, and function types.
+
+
 ### Added
 
 - Parser + AST: generic type declarations (`type Foo[T]`, `type Pair[A, B]`) are now parsed

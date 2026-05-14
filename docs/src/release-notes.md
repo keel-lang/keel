@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.20 — 2026-05-14
+
 ### Generic type declarations
 
 Type declarations can now be parameterised over one or more type variables.

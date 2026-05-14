@@ -492,31 +492,34 @@ impl Checker {
                     .map(|a| self.resolve_type_with_env(a, env))
                     .collect();
                 // Look up the generic declaration and substitute.
-                if let Some((type_params, type_def)) = self.generic_decls.get(name).cloned() {
-                    if type_params.len() == resolved_args.len() {
-                        // Build substitution map — iterate by ref so resolved_args stays owned.
-                        let inner_env: HashMap<String, Ty> = type_params
-                            .iter()
-                            .cloned()
-                            .zip(resolved_args.iter().cloned())
-                            .collect();
-                        return match &type_def {
-                            TypeDef::Struct(fields) => Ty::Struct(
-                                fields
-                                    .iter()
-                                    .map(|f| {
-                                        (f.name.clone(), self.resolve_type_with_env(&f.ty, &inner_env))
-                                    })
-                                    .collect(),
-                            ),
-                            TypeDef::Alias(ty) => self.resolve_type_with_env(ty, &inner_env),
-                            // Carry type args so variant field types can be resolved in
-                            // pattern-matching arms.
-                            TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => {
-                                Ty::Enum(name.clone(), resolved_args)
-                            }
-                        };
-                    }
+                if let Some((type_params, type_def)) = self.generic_decls.get(name).cloned()
+                    && type_params.len() == resolved_args.len()
+                {
+                    // Build substitution map — iterate by ref so resolved_args stays owned.
+                    let inner_env: HashMap<String, Ty> = type_params
+                        .iter()
+                        .cloned()
+                        .zip(resolved_args.iter().cloned())
+                        .collect();
+                    return match &type_def {
+                        TypeDef::Struct(fields) => Ty::Struct(
+                            fields
+                                .iter()
+                                .map(|f| {
+                                    (
+                                        f.name.clone(),
+                                        self.resolve_type_with_env(&f.ty, &inner_env),
+                                    )
+                                })
+                                .collect(),
+                        ),
+                        TypeDef::Alias(ty) => self.resolve_type_with_env(ty, &inner_env),
+                        // Carry type args so variant field types can be resolved in
+                        // pattern-matching arms.
+                        TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => {
+                            Ty::Enum(name.clone(), resolved_args)
+                        }
+                    };
                 }
                 Ty::Unknown
             }
@@ -860,14 +863,16 @@ impl Checker {
             }
             scope.push();
             for p in &arm.patterns {
-                if let Pattern::Variant { name: variant_name, bindings } = p {
+                if let Pattern::Variant {
+                    name: variant_name,
+                    bindings,
+                } = p
+                {
                     for (idx, b) in bindings.iter().enumerate() {
                         if b == "_" {
                             continue;
                         }
-                        let field_ty = self.resolve_variant_field(
-                            subject_ty, variant_name, b, idx,
-                        );
+                        let field_ty = self.resolve_variant_field(subject_ty, variant_name, b, idx);
                         scope.define(b.clone(), field_ty);
                     }
                 }
@@ -972,7 +977,12 @@ impl Checker {
                                 if let Some((_, concrete_ty)) =
                                     concrete_fields.iter().find(|(n, _)| *n == gfield.name)
                                 {
-                                    bind_type_params(&gfield.ty, concrete_ty, &inner_params, &mut inner_env);
+                                    bind_type_params(
+                                        &gfield.ty,
+                                        concrete_ty,
+                                        &inner_params,
+                                        &mut inner_env,
+                                    );
                                 }
                             }
                             // Unify each arg expr against its resolved concrete type.
@@ -1927,7 +1937,9 @@ fn bind_type_params(
         (TypeExpr::Named(n), _) if type_params.contains(n) => {
             env.entry(n.clone()).or_insert_with(|| ty.clone());
         }
-        (TypeExpr::Nullable(inner), Ty::Nullable(t)) => bind_type_params(inner, t, type_params, env),
+        (TypeExpr::Nullable(inner), Ty::Nullable(t)) => {
+            bind_type_params(inner, t, type_params, env)
+        }
         (TypeExpr::List(inner), Ty::List(t)) => bind_type_params(inner, t, type_params, env),
         (TypeExpr::Set(inner), Ty::Set(t)) => bind_type_params(inner, t, type_params, env),
         _ => {}

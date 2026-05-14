@@ -1074,7 +1074,13 @@ fn type_decl() -> P<Decl> {
         .ignore_then(ident())
         .then(type_params)
         .then(just(Token::Eq).ignore_then(after_eq).or(struct_def))
-        .map(|((name, type_params), def)| Decl::Type(TypeDecl { name, type_params, def }))
+        .map(|((name, type_params), def)| {
+            Decl::Type(TypeDecl {
+                name,
+                type_params,
+                def,
+            })
+        })
         .boxed()
 }
 
@@ -1206,13 +1212,15 @@ fn task_decl() -> P<TaskDecl> {
         )
         .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
         .then(block_toplevel())
-        .map(|((((name, type_params), params), return_type), body)| TaskDecl {
-            name,
-            type_params,
-            params,
-            return_type,
-            body,
-        })
+        .map(
+            |((((name, type_params), params), return_type), body)| TaskDecl {
+                name,
+                type_params,
+                params,
+                return_type,
+                body,
+            },
+        )
         .boxed()
 }
 
