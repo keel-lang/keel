@@ -426,6 +426,75 @@ task t() {
     );
 }
 
+// ─── nullable safety at call sites ───────────────────────────────────────────
+
+#[test]
+fn error_nullable_arg_at_top_level_task_call() {
+    expect_error(
+        r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(val)
+}
+"#,
+        "use `!` to assert non-null",
+    );
+}
+
+#[test]
+fn valid_nullable_arg_unwrapped_at_call_site() {
+    type_ok(
+        r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(val!)
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_nullable_arg_coalesced_at_call_site() {
+    type_ok(
+        r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(val ?? "default")
+}
+"#,
+    );
+}
+
+#[test]
+fn error_nullable_named_arg_at_task_call() {
+    expect_error(
+        r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(x: val)
+}
+"#,
+        "use `!` to assert non-null",
+    );
+}
+
+#[test]
+fn error_wrong_type_arg_at_task_call() {
+    expect_error(
+        r#"
+task process(x: str) {}
+task t() {
+  process(42)
+}
+"#,
+        "expected str, got int",
+    );
+}
+
 // ─── v0.1.5: return-type matching ──────────────────────────────────────────
 
 #[test]

@@ -1242,9 +1242,9 @@ impl Checker {
             }
 
             Expr::Call { callee, args } => {
-                for a in args {
-                    self.infer_expr(&a.value, scope);
-                }
+                // Infer all arg types once; reuse for both arity and type checks.
+                let arg_tys: Vec<Ty> =
+                    args.iter().map(|a| self.infer_expr(&a.value, scope)).collect();
                 if let Expr::SelfAccess(task_name) = callee.as_ref() {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{task_name}(...)` used outside an agent"));
@@ -1273,6 +1273,12 @@ impl Checker {
                             "task `{agent_name}.{task_name}` takes {expected} argument(s), got {positional} — {hint}"
                         ));
                     }
+                    self.check_call_args(
+                        &sig.params,
+                        args,
+                        &arg_tys,
+                        &format!("task `{agent_name}.{task_name}`"),
+                    );
                     return sig.return_type;
                 }
                 if let Expr::Ident(name) = callee.as_ref()
@@ -1293,13 +1299,9 @@ impl Checker {
                             "task `{name}` takes {expected} argument(s), got {positional} — {hint}"
                         ));
                     }
-                    // For generic tasks, infer type params from argument types and
-                    // substitute into the return type.
+                    // For generic tasks, infer type params from argument types,
+                    // substitute into param types, then check each arg.
                     if let Some(td) = self.generic_task_decls.get(name).cloned() {
-                        let arg_tys: Vec<Ty> = args
-                            .iter()
-                            .map(|a| self.infer_expr(&a.value, scope))
-                            .collect();
                         let mut type_env: HashMap<String, Ty> = HashMap::new();
                         for (param, arg_ty) in td.params.iter().zip(arg_tys.iter()) {
                             self.unify_type_params(
@@ -1309,11 +1311,31 @@ impl Checker {
                                 &mut type_env,
                             );
                         }
+                        let resolved_params: Vec<(String, Ty)> = td
+                            .params
+                            .iter()
+                            .map(|p| {
+                                (
+                                    match &p.name {
+                                        crate::ast::Binding::Ident(s) => s.clone(),
+                                        _ => String::new(),
+                                    },
+                                    self.resolve_type_with_env(&p.ty, &type_env),
+                                )
+                            })
+                            .collect();
+                        self.check_call_args(
+                            &resolved_params,
+                            args,
+                            &arg_tys,
+                            &format!("task `{name}`"),
+                        );
                         if let Some(ret_expr) = &td.return_type {
                             return self.resolve_type_with_env(ret_expr, &type_env);
                         }
                         return Ty::None_;
                     }
+                    self.check_call_args(&sig.params, args, &arg_tys, &format!("task `{name}`"));
                     return sig.return_type.clone();
                 }
                 let _ = self.infer_expr(callee, scope);
@@ -1325,9 +1347,9 @@ impl Checker {
                 method,
                 args,
             } => {
-                for a in args {
-                    self.infer_expr(&a.value, scope);
-                }
+                // Infer all arg types once; reuse for both arity and type checks.
+                let arg_tys: Vec<Ty> =
+                    args.iter().map(|a| self.infer_expr(&a.value, scope)).collect();
                 if matches!(object.as_ref(), Expr::SelfRef) {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{method}(...)` used outside an agent"));
@@ -1356,6 +1378,12 @@ impl Checker {
                             "task `{agent_name}.{method}` takes {expected} argument(s), got {positional} — {hint}"
                         ));
                     }
+                    self.check_call_args(
+                        &sig.params,
+                        args,
+                        &arg_tys,
+                        &format!("task `{agent_name}.{method}`"),
+                    );
                     return sig.return_type;
                 }
                 // Special cases for inferring Ai.classify → Enum(T)
@@ -1554,6 +1582,41 @@ impl Checker {
                 }
                 Ty::Enum(name.clone(), vec![])
             }
+        }
+    }
+
+    /// Check inferred argument types against declared parameter types.
+    /// Positional args fill params in order; named args match by param name
+    /// (mirroring the interpreter's Python-style keyword-argument convention).
+    fn check_call_args(
+        &mut self,
+        params: &[(String, Ty)],
+        args: &[crate::ast::CallArg],
+        arg_tys: &[Ty],
+        callee: &str,
+    ) {
+        let named: HashMap<&str, &Ty> = args
+            .iter()
+            .zip(arg_tys.iter())
+            .filter_map(|(a, ty)| a.name.as_deref().map(|n| (n, ty)))
+            .collect();
+        let positional: Vec<&Ty> = args
+            .iter()
+            .zip(arg_tys.iter())
+            .filter(|(a, _)| a.name.is_none())
+            .map(|(_, ty)| ty)
+            .collect();
+        let mut pos_idx = 0;
+        for (param_name, param_ty) in params {
+            let arg_ty = if let Some(ty) = named.get(param_name.as_str()) {
+                *ty
+            } else if let Some(ty) = positional.get(pos_idx) {
+                pos_idx += 1;
+                *ty
+            } else {
+                continue;
+            };
+            self.expect(arg_ty, param_ty, &format!("{callee} arg `{param_name}`"));
         }
     }
 

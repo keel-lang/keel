@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+### Nullable safety enforced at task call sites
+
+The type checker now rejects nullable arguments passed to non-nullable parameters
+at every task call site — top-level tasks, `self.task(...)`, and `self.method(...)`.
+
+```keel
+task process(text: str) { ... }
+
+task t() {
+  val: str? = Env.get("PROMPT")
+  process(val)          # error: expected str, got str? — use `!` or `??`
+  process(val!)         # ok
+  process(val ?? "")    # ok
+}
+```
+
+Named arguments are also checked: `process(text: val)` produces the same error.
+Type mismatches at call sites (e.g. `int` passed where `str` is expected) are
+caught as well.
+
 ---
 
 ## v0.1.20 — 2026-05-14

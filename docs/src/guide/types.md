@@ -175,6 +175,20 @@ task t() {
 }
 ```
 
+Call sites are also checked — a nullable argument where a non-nullable
+parameter is declared is a type error:
+
+```keel
+task process(text: str) { ... }
+
+task t() {
+  val: str? = Env.get("PROMPT")
+  process(val)          # error: task `process` arg `text`: expected str, got str?
+  process(val!)         # ok
+  process(val ?? "")    # ok
+}
+```
+
 AI operations return nullable types when they can fail:
 
 ```keel

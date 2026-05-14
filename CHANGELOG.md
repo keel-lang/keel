@@ -12,6 +12,27 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- Type checker: nullable safety is now enforced at task call sites. Passing a
+  nullable value (`T?`) where a non-nullable parameter (`T`) is expected is a
+  type error; the error message guides the caller to use `!` (null-assert) or
+  `??` (null-coalesce) to unwrap.
+  ```keel
+  task process(x: str) { ... }
+
+  task t() {
+    val: str? = Env.get("KEY")
+    process(val)          # error: expected str, got str? — use `!` or `??`
+    process(val!)         # ok
+    process(val ?? "")    # ok
+  }
+  ```
+  Applies to all three call forms: top-level tasks, `self.task_name(...)`, and
+  `self.method(...)`. Named args (`process(x: val)`) are also checked.
+  Type mismatches beyond nullable (e.g. `int` passed where `str` expected) are
+  caught at call sites as well.
+
 ---
 
 ## [0.1.20] — 2026-05-14

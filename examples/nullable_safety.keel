@@ -14,6 +14,18 @@ task env_config() -> str {
   "{host}:{port}"
 }
 
+# Call-site nullable enforcement: nullable args must be unwrapped before
+# passing to a task that expects a non-nullable type.
+task greet(name: str) -> str {
+  "Hello, {name}!"
+}
+
+task greet_from_env() -> str {
+  # Env.get returns str?, so it must be unwrapped before passing to greet(name: str).
+  raw: str? = Env.get("USER_NAME")
+  greet(raw ?? "stranger")   # coalesce to non-nullable before the call
+}
+
 agent NullableDemo {
   @role "Demonstrates nullable type safety"
   @on_start {
