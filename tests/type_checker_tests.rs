@@ -1065,3 +1065,59 @@ task t(p: Pair[str, int]) {
         "expected int, got str",
     );
 }
+
+// ─── Generic tasks ───────────────────────────────────────────────────────────
+
+#[test]
+fn valid_generic_task_identity_inferred() {
+    type_ok(
+        r#"
+task identity[T](x: T) -> T { x }
+
+task main() {
+  s: str = identity("hello")
+  n: int = identity(42)
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_task_return_type_inferred() {
+    type_ok(
+        r#"
+task wrap[T](x: T) -> list[T] { [x] }
+
+task main() {
+  xs: list[int] = wrap(1)
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_generic_task_multi_param_inferred() {
+    type_ok(
+        r#"
+task first[A, B](a: A, b: B) -> A { a }
+
+task main() {
+  s: str = first("hi", 99)
+}
+"#,
+    );
+}
+
+#[test]
+fn error_generic_task_return_type_mismatch() {
+    expect_error(
+        r#"
+task identity[T](x: T) -> T { x }
+
+task main() {
+  n: int = identity("oops")
+}
+"#,
+        "expected int, got str",
+    );
+}

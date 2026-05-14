@@ -69,6 +69,24 @@ task t(p: Pair[str, int]) {
 }
 ```
 
+### Generic task declarations
+
+Tasks may now declare type parameters. Type arguments are inferred at every
+call site — no explicit instantiation syntax is needed.
+
+```keel
+task identity[T](x: T) -> T { x }
+task first[A, B](a: A, b: B) -> A { a }
+
+task main() {
+  s: str = identity("hello")   # T = str
+  n: int = identity(42)        # T = int
+  f: str = first("hi", 99)     # A = str, B = int
+}
+```
+
+The formatter round-trips `task name[T, U](...)` syntax correctly.
+
 ---
 
 ## v0.1.19 — 2026-05-14

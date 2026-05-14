@@ -666,6 +666,46 @@ fn parse_generic_func_type_alias() {
     }
 }
 
+// ─── Generic tasks ──────────────────────────────────────────────────────────
+
+#[test]
+fn parse_generic_task_single_param() {
+    let prog = parse_ok("task identity[T](x: T) -> T { x }");
+    match first_decl(&prog) {
+        Decl::Task(t) => {
+            assert_eq!(t.name, "identity");
+            assert_eq!(t.type_params, vec!["T"]);
+            assert_eq!(t.params.len(), 1);
+            assert!(t.return_type.is_some());
+        }
+        other => panic!("expected Task, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_generic_task_multi_param() {
+    let prog = parse_ok("task swap[A, B](a: A, b: B) -> B { b }");
+    match first_decl(&prog) {
+        Decl::Task(t) => {
+            assert_eq!(t.name, "swap");
+            assert_eq!(t.type_params, vec!["A", "B"]);
+            assert_eq!(t.params.len(), 2);
+        }
+        other => panic!("expected Task, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_non_generic_task_has_empty_type_params() {
+    let prog = parse_ok("task greet(name: str) -> str { name }");
+    match first_decl(&prog) {
+        Decl::Task(t) => {
+            assert!(t.type_params.is_empty());
+        }
+        other => panic!("expected Task, got {:?}", other),
+    }
+}
+
 // ─── Error cases ────────────────────────────────────────────────────────────
 
 #[test]

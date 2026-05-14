@@ -308,6 +308,7 @@ mod tests {
         let mut interp = new_interp();
         let task_decl = TaskDecl {
             name: "do_thing".into(),
+            type_params: vec![],
             params: vec![],
             return_type: Some(named_ty("str")),
             body: vec![],
@@ -370,6 +371,7 @@ mod tests {
                 }]),
                 AgentItem::Task(TaskDecl {
                     name: "tick".into(),
+                    type_params: vec![],
                     params: vec![],
                     return_type: None,
                     body: vec![],
@@ -430,12 +432,14 @@ mod tests {
             items: vec![
                 AgentItem::Task(TaskDecl {
                     name: "a".into(),
+                    type_params: vec![],
                     params: vec![],
                     return_type: None,
                     body: vec![],
                 }),
                 AgentItem::Task(TaskDecl {
                     name: "b".into(),
+                    type_params: vec![],
                     params: vec![],
                     return_type: None,
                     body: vec![],

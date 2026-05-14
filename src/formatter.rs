@@ -221,7 +221,12 @@ impl Fmt {
     }
 
     fn task_decl(&mut self, t: &TaskDecl) {
-        self.push(&format!("task {}(", t.name));
+        let header = if t.type_params.is_empty() {
+            t.name.clone()
+        } else {
+            format!("{}[{}]", t.name, t.type_params.join(", "))
+        };
+        self.push(&format!("task {}(", header));
         self.params(&t.params);
         self.push(")");
         if let Some(ret) = &t.return_type {

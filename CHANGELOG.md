@@ -71,6 +71,20 @@ All notable changes to Keel.
   type Thunk   = () -> none
   type Predicate[T] = (T) -> bool   # generic + function type
   ```
+- Parser + AST + type checker: generic task declarations. Tasks may now carry type parameters
+  with the `task name[T, U](...)` syntax. Type arguments are **inferred at call sites** —
+  no explicit instantiation syntax needed.
+  ```keel
+  task identity[T](x: T) -> T { x }
+  task first[A, B](a: A, b: B) -> A { a }
+
+  task main() {
+    s: str = identity("hello")   # T inferred as str
+    n: int = identity(42)        # T inferred as int
+    f: str = first("hi", 99)     # A = str, B = int
+  }
+  ```
+- Formatter: `keel fmt` now round-trips generic task declarations, emitting `task name[T, U](...)`.
 
 ---
 

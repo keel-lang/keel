@@ -119,6 +119,31 @@ resolves lexical and top-level scope only. Use `self.increment()` for
 agent-local work. Prefer top-level tasks for any logic that doesn't need agent
 state.
 
+## Generic tasks
+
+Tasks can declare type parameters in brackets after their name. Type arguments
+are **inferred at every call site** — no explicit instantiation syntax is needed.
+
+```keel
+task identity[T](x: T) -> T { x }
+
+task first[A, B](a: A, b: B) -> A { a }
+
+task main() {
+  s: str = identity("hello")   # T = str
+  n: int = identity(42)        # T = int
+  f: str = first("hi", 99)     # A = str, B = int
+}
+```
+
+Generic tasks work equally well inside agents:
+
+```keel
+agent Bot {
+  task wrap[T](x: T) -> list[T] { [x] }
+}
+```
+
 ## Pipeline composition
 
 ```keel

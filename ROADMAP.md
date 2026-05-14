@@ -27,7 +27,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Parser | [x] | Attributes, interfaces, named args, `as T`, rich enums, triple-quoted strings, duration literals, destructuring |
 | Interpreter | [x] | Namespace dispatch, agent lifecycle, pattern matching, closures, async, `try/catch` |
 | Formatter (`keel fmt`) | [x] | Idempotent round-trip against AST |
-| Type checker | [~] | Scope, arity, enum exhaustiveness, nullable safety, return-type matching, struct subtyping, `?.`/`??` propagation, `Ai.extract`/`Ai.decide` `as:` inference, lambda block bodies, `set[]` literals, implicit return, `if`-expr branch unification (v0.1.19), generic type instantiation — `Foo[T]` declarations parsed and substituted at use sites; generic struct/alias bodies resolve concretely (v0.1.20). Remaining gaps: generic function declarations (`task f[T](x: T)`) are not yet supported. |
+| Type checker | [~] | Scope, arity, enum exhaustiveness, nullable safety, return-type matching, struct subtyping, `?.`/`??` propagation, `Ai.extract`/`Ai.decide` `as:` inference, lambda block bodies, `set[]` literals, implicit return, `if`-expr branch unification (v0.1.19), generic type instantiation — `Foo[T]` declarations parsed and substituted at use sites; generic struct/alias bodies resolve concretely (v0.1.20); generic task declarations with call-site type-parameter inference (v0.1.20). Remaining gaps: full nullable-safety enforcement at call sites. |
 | Bytecode compiler (`keel build`) | [ ] | Deferred post-v0.1 — tree-walking interpreter covers all alpha workloads |
 
 ### Agent model

@@ -1188,8 +1188,15 @@ fn task_decl() -> P<TaskDecl> {
         .then(just(Token::Eq).ignore_then(expr_parser()).or_not())
         .map(|((name, ty), default)| Param { name, ty, default });
 
+    let type_params = just(Token::LBracket)
+        .ignore_then(ident().separated_by(just(Token::Comma)).at_least(1))
+        .then_ignore(just(Token::RBracket))
+        .or_not()
+        .map(|p| p.unwrap_or_default());
+
     just(Token::Task)
         .ignore_then(ident())
+        .then(type_params)
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
@@ -1199,8 +1206,9 @@ fn task_decl() -> P<TaskDecl> {
         )
         .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
         .then(block_toplevel())
-        .map(|(((name, params), return_type), body)| TaskDecl {
+        .map(|((((name, type_params), params), return_type), body)| TaskDecl {
             name,
+            type_params,
             params,
             return_type,
             body,

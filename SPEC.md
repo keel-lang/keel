@@ -630,7 +630,27 @@ task compose(e: EmailInfo, tone: str = "pro") {...}  # default params
 task quick(d: {body: str}) -> str { d.body }      # structural param
 ```
 
-### 6.5 Agent-local task calls
+### 6.5 Generic tasks
+
+Tasks can be parameterised over type variables. Type arguments are **inferred at call sites** from the concrete argument types — you never write `swap[str, int](p)` unless inference fails.
+
+```keel
+task swap[A, B](p: Pair[A, B]) -> Pair[B, A] {
+  { first: p.second, second: p.first }
+}
+
+task identity[T](x: T) -> T { x }
+
+task map_items[T, U](items: list[T], f: (T) -> U) -> list[U] {
+  items.map(f)
+}
+```
+
+Type parameters are scoped to the task body and are substituted by the type checker when the concrete call-site types are known.
+
+Generic tasks are allowed inside agent bodies under the same rules as non-generic tasks.
+
+### 6.6 Agent-local task calls
 
 Tasks declared inside an agent are methods of the current agent. Invoke them
 with `self.task(...)`:
@@ -1246,13 +1266,15 @@ AttributeBody <- STRING / Expr / Block / (IDENT "[" (Expr ",")* "]")   # flexibl
 OnHandler   <- "on" IDENT "(" Params? ")" Block
 StateBlock  <- "state" "{" (IDENT ":" "readonly"? Type ("=" Expr)? ","?)* "}"
 
-TaskDecl    <- "task" IDENT "(" Params? ")" ("->" Type)? Block
+TaskDecl    <- "task" IDENT TypeParams? "(" Params? ")" ("->" Type)? Block
 InterfaceDecl <- "interface" IDENT "{" (TaskSig)* "}"
 TaskSig     <- "task" IDENT "(" Params? ")" ("->" Type)?
 
 TypeDecl    <- "type" IDENT TypeParams? "=" EnumDef                      # enum
              / "type" IDENT TypeParams? "{" FieldDef* "}"                # struct
              / "type" IDENT TypeParams? "=" Type                         # alias
+
+TypeParams  <- "[" IDENT ("," IDENT)* "]"                               # e.g. [T], [A, B]
 EnumDef     <- EnumVariant ("|" EnumVariant)*
 EnumVariant <- IDENT ("{" FieldDef* "}")?
 

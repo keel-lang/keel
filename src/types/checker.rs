@@ -116,6 +116,9 @@ struct Checker {
     /// Generic type declarations stored as `name → (type_params, body)` for
     /// deferred instantiation when a concrete `Foo[str]` application appears.
     generic_decls: HashMap<String, (Vec<String>, TypeDef)>,
+    /// Generic task declarations stored by name so call sites can infer
+    /// type arguments from the concrete argument types.
+    generic_task_decls: HashMap<String, TaskDecl>,
     top_tasks: HashMap<String, TaskSig>,
     agents: HashMap<String, AgentInfo>,
     current_agent: Option<String>,
@@ -269,6 +272,7 @@ impl Checker {
             structs: HashMap::new(),
             aliases: HashMap::new(),
             generic_decls: HashMap::new(),
+            generic_task_decls: HashMap::new(),
             top_tasks: HashMap::new(),
             agents: HashMap::new(),
             current_agent: None,
@@ -306,6 +310,9 @@ impl Checker {
             match decl {
                 Decl::Type(t) => self.collect_type_decl(t),
                 Decl::Task(t) => {
+                    if !t.type_params.is_empty() {
+                        self.generic_task_decls.insert(t.name.clone(), t.clone());
+                    }
                     let sig = self.task_sig(t);
                     self.top_tasks.insert(t.name.clone(), sig);
                 }
@@ -911,6 +918,80 @@ impl Checker {
         }
     }
 
+    /// Infer type-parameter bindings from a concrete argument type.
+    ///
+    /// Walks `param_expr` against `arg_ty`, populating `env` with
+    /// name → concrete-type mappings for each name in `type_params`.
+    /// Handles named params, nullable, list, set, and generic struct/enum
+    /// applications. Falls back gracefully when the shape cannot be matched.
+    fn unify_type_params(
+        &self,
+        param_expr: &TypeExpr,
+        arg_ty: &Ty,
+        type_params: &[String],
+        env: &mut HashMap<String, Ty>,
+    ) {
+        match param_expr {
+            TypeExpr::Named(n) if type_params.contains(n) => {
+                env.entry(n.clone()).or_insert_with(|| arg_ty.clone());
+            }
+            TypeExpr::Nullable(inner) => {
+                let inner_ty = match arg_ty {
+                    Ty::Nullable(t) => (**t).clone(),
+                    t => t.clone(),
+                };
+                self.unify_type_params(inner, &inner_ty, type_params, env);
+            }
+            TypeExpr::List(inner) => {
+                if let Ty::List(t) = arg_ty {
+                    self.unify_type_params(inner, t, type_params, env);
+                }
+            }
+            TypeExpr::Set(inner) => {
+                if let Ty::Set(t) = arg_ty {
+                    self.unify_type_params(inner, t, type_params, env);
+                }
+            }
+            TypeExpr::Generic(generic_name, args) => {
+                match arg_ty {
+                    // Generic enum: Ty::Enum already carries resolved type args.
+                    Ty::Enum(enum_name, type_args) if generic_name == enum_name => {
+                        for (a_expr, a_ty) in args.iter().zip(type_args.iter()) {
+                            self.unify_type_params(a_expr, a_ty, type_params, env);
+                        }
+                    }
+                    // Generic struct: rebuild positional type args by matching
+                    // concrete field types against the generic definition's fields.
+                    Ty::Struct(concrete_fields) => {
+                        if let Some((inner_params, TypeDef::Struct(gfields))) =
+                            self.generic_decls.get(generic_name).cloned()
+                        {
+                            // Build the inner substitution from generic field type exprs.
+                            let mut inner_env: HashMap<String, Ty> = HashMap::new();
+                            for gfield in &gfields {
+                                if let Some((_, concrete_ty)) =
+                                    concrete_fields.iter().find(|(n, _)| *n == gfield.name)
+                                {
+                                    bind_type_params(&gfield.ty, concrete_ty, &inner_params, &mut inner_env);
+                                }
+                            }
+                            // Unify each arg expr against its resolved concrete type.
+                            for (i, a_expr) in args.iter().enumerate() {
+                                if let Some(concrete_ty) =
+                                    inner_params.get(i).and_then(|p| inner_env.get(p)).cloned()
+                                {
+                                    self.unify_type_params(a_expr, &concrete_ty, type_params, env);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
     /// Resolve the type of a single variant binding, given the subject enum
     /// type, the variant name, the binding name, and its positional index.
     ///
@@ -1201,6 +1282,27 @@ impl Checker {
                         self.err(format!(
                             "task `{name}` takes {expected} argument(s), got {positional} — {hint}"
                         ));
+                    }
+                    // For generic tasks, infer type params from argument types and
+                    // substitute into the return type.
+                    if let Some(td) = self.generic_task_decls.get(name).cloned() {
+                        let arg_tys: Vec<Ty> = args
+                            .iter()
+                            .map(|a| self.infer_expr(&a.value, scope))
+                            .collect();
+                        let mut type_env: HashMap<String, Ty> = HashMap::new();
+                        for (param, arg_ty) in td.params.iter().zip(arg_tys.iter()) {
+                            self.unify_type_params(
+                                &param.ty,
+                                arg_ty,
+                                &td.type_params,
+                                &mut type_env,
+                            );
+                        }
+                        if let Some(ret_expr) = &td.return_type {
+                            return self.resolve_type_with_env(ret_expr, &type_env);
+                        }
+                        return Ty::None_;
                     }
                     return sig.return_type.clone();
                 }
@@ -1807,6 +1909,27 @@ fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String,
                 }
             }
         }
+        _ => {}
+    }
+}
+
+/// Bind type-parameter names from a `TypeExpr`/`Ty` pair into `env`.
+///
+/// Free-function counterpart to `Checker::unify_type_params` used for the
+/// inner-generic-struct case where `&self` is not available.
+fn bind_type_params(
+    expr: &TypeExpr,
+    ty: &Ty,
+    type_params: &[String],
+    env: &mut HashMap<String, Ty>,
+) {
+    match (expr, ty) {
+        (TypeExpr::Named(n), _) if type_params.contains(n) => {
+            env.entry(n.clone()).or_insert_with(|| ty.clone());
+        }
+        (TypeExpr::Nullable(inner), Ty::Nullable(t)) => bind_type_params(inner, t, type_params, env),
+        (TypeExpr::List(inner), Ty::List(t)) => bind_type_params(inner, t, type_params, env),
+        (TypeExpr::Set(inner), Ty::Set(t)) => bind_type_params(inner, t, type_params, env),
         _ => {}
     }
 }

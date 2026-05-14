@@ -229,6 +229,7 @@ mod tests {
         assert_eq!(Value::Duration(1.0).type_name(), "duration");
         let td = TaskDecl {
             name: "t".into(),
+            type_params: vec![],
             params: vec![],
             return_type: None,
             body: vec![],
@@ -437,6 +438,7 @@ mod tests {
     fn display_task() {
         let td = TaskDecl {
             name: "my_task".into(),
+            type_params: vec![],
             params: vec![],
             return_type: None,
             body: vec![],

@@ -62,6 +62,8 @@ pub enum UseKind {
 #[derive(Debug, Clone)]
 pub struct TaskDecl {
     pub name: String,
+    /// Type parameter names for generic tasks, e.g. `["T"]` for `task f[T](x: T)`.
+    pub type_params: Vec<String>,
     pub params: Vec<Param>,
     pub return_type: Option<TypeExpr>,
     pub body: Block,
