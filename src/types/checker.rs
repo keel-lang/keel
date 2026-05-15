@@ -1462,6 +1462,20 @@ impl Checker {
                     (Ty::List(_), "is_empty") => Ty::Bool,
                     (Ty::List(_), "contains" | "any" | "all") => Ty::Bool,
                     (Ty::List(elem), "first" | "last" | "find") => Ty::Nullable(elem.clone()),
+                    (Ty::List(elem_a), "zip") => {
+                        let elem_b = match arg_tys.first().map(|ty| ty.strip_nullable()) {
+                            Some(Ty::List(e)) => *e.clone(),
+                            Some(other) => {
+                                self.err(format!(
+                                    "`.zip()` expects a list argument, got {}",
+                                    describe_ty(other)
+                                ));
+                                Ty::Unknown
+                            }
+                            None => Ty::Unknown,
+                        };
+                        Ty::List(Box::new(Ty::Tuple(vec![*elem_a.clone(), elem_b])))
+                    }
                     (Ty::List(_), "map") => Ty::List(Box::new(Ty::Unknown)),
                     (Ty::List(_), "reduce" | "sum" | "min" | "max") => Ty::Unknown,
                     (Ty::List(_), "join") => Ty::Str,

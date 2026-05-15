@@ -472,6 +472,22 @@ impl Interpreter {
                     .max(0) as usize;
                 Ok(Value::List(items.iter().skip(n).cloned().collect()))
             }
+            (Value::List(items), "zip") => {
+                let other = args
+                    .first()
+                    .map(|a| a.value.clone())
+                    .ok_or_else(|| runtime_error("zip expects a list argument"))?;
+                let other_items = match other {
+                    Value::List(v) => v,
+                    _ => return Err(runtime_error("zip argument must be a list")),
+                };
+                let pairs = items
+                    .iter()
+                    .zip(other_items.iter())
+                    .map(|(a, b)| Value::List(vec![a.clone(), b.clone()]))
+                    .collect();
+                Ok(Value::List(pairs))
+            }
             (Value::Map(m), "keys") => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort();

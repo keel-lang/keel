@@ -132,6 +132,26 @@ top3 = scores.sort().reverse().take(3)
 [[1, 2], [3], [4, 5]].flatten()   # [1, 2, 3, 4, 5]
 ```
 
+### zip — pair two lists
+
+Returns a new list where each element is a 2-element tuple `[a, b]` drawn from the two input
+lists in order. Stops when the shorter list is exhausted.
+
+```keel
+names  = ["alice", "bob", "carol"]
+scores = [90, 85, 95]
+
+pairs = names.zip(scores)
+# → [["alice", 90], ["bob", 85], ["carol", 95]]
+
+for (name, score) in names.zip(scores) {
+    Log.info(name + " scored " + score)
+}
+```
+
+The return type is inferred as `list[(T, U)]`, so the loop variables `name` and `score` are
+fully typed.
+
 ### take / skip — slice by count
 
 ```keel

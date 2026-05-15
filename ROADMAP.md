@@ -62,7 +62,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 
 | Namespace | Status | Implemented | Gaps |
 |---|---|---|---|
-| `Ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json) | `embed` returns `[]`; `Ai.install(provider)` not registered |
+| `Ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json) | `embed` deferred to v0.2 (requires pluggable provider registry); `Ai.install(provider)` not registered |
 | `Io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
 | `Schedule` | [x] | `every`, `after`, `at`, `cron`, `sleep` | — |
 | `Email` | [~] | `fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback) | — |
@@ -107,7 +107,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 ### Deferred post-v0.1
 
 - **`keel build` bytecode compiler.** Tree-walking interpreter is fast enough for alpha (~8ms cold start). Revisit with a concrete motivator (LLVM/WASM backend, embeddable runtime).
-- **Pluggable LLM provider registry.** `LlmProvider` interface exists; adding a second provider is the forcing function for the registry plumbing.
+- **Pluggable LLM provider registry + `Ai.embed`.** Define a `LlmProvider` trait covering both chat and embedding methods. Ship built-in impls for Ollama, OpenAI, Gemini, DeepSeek, and Anthropic (via Voyage AI). Expose the trait publicly so developers can register custom providers. `Ai.embed` ships alongside this — it needs multi-provider dispatch and a common interface before it's worth implementing.
 - **Vector-store `Memory` backend.** Current persistent store is a JSON file. Semantic search needs an embeddings pipeline and `VectorStore` interface — belongs in v0.2.
 - **Major dependency bumps** (`chumsky 0.9 → 1.0`, `imap 2 → 3`, `colored 2 → 3`, `lettre 0.11 → 0.12`) — batched for v0.2.
 

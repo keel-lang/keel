@@ -125,6 +125,7 @@ Rules: `[...]` is a list. `{k: v}` is a map. `set[...]` is a set (the only place
 | `.take(n)` | `list[T]` | first `n` elements |
 | `.skip(n)` | `list[T]` | all but first `n` |
 | `.contains(v)` | `bool` | |
+| `.zip(list[U])` | `list[(T, U)]` | stops at the shorter list |
 
 Maps expose `.count`, `.keys`, `.values`. Sets expose `.count`, `.contains(v)`, `.is_empty`.
 

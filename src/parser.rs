@@ -908,6 +908,21 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             })
             .boxed();
 
+        // for (a, b) in expr [if pred] { ... }
+        let tuple_destruct_for_stmt = just(Token::For)
+            .ignore_then(tuple_destruct_pat())
+            .then_ignore(just(Token::In))
+            .then(expr.clone())
+            .then(just(Token::If).ignore_then(expr.clone()).or_not())
+            .then(block.clone())
+            .map(|(((names, iter), filter), body)| Stmt::For {
+                binding: Binding::Destruct(DestructPat::Tuple(names)),
+                iter,
+                filter,
+                body,
+            })
+            .boxed();
+
         let if_stmt = just(Token::If)
             .ignore_then(expr.clone())
             .then(block.clone())
@@ -1009,6 +1024,7 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             let_stmt,
             return_stmt,
             destruct_for_stmt,
+            tuple_destruct_for_stmt,
             for_stmt,
             if_stmt,
             when_stmt,

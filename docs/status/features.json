@@ -84,7 +84,7 @@
       "name": "Ai",
       "status": "partial",
       "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json)",
-      "gaps": "`embed` returns `[]`; `Ai.install(provider)` not registered",
+      "gaps": "`embed` deferred to v0.2 (requires pluggable provider registry); `Ai.install(provider)` not registered",
       "purpose": "LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳"
     },
     {

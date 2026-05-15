@@ -6,6 +6,20 @@
 
 ## Unreleased
 
+### `list.zip(other)` — pair two lists
+
+`zip` pairs elements from two lists into a list of 2-element tuples, stopping at the shorter list.
+The return type is inferred as `list[(T, U)]`, so tuple destructuring in `for` loops is fully typed.
+
+```keel
+names  = ["alice", "bob", "carol"]
+scores = [90, 85, 95]
+
+for (name, score) in names.zip(scores) {
+    Log.info(name + " scored " + score)
+}
+```
+
 ---
 
 ## v0.1.22 — 2026-05-14

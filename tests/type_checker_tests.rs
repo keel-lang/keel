@@ -1272,3 +1272,15 @@ task describe(m: Mood) -> str {
 "#,
     );
 }
+
+#[test]
+fn invalid_zip_non_list_arg_is_type_error() {
+    expect_error(
+        r#"
+task t() {
+  result = [1, 2, 3].zip("hello")
+}
+"#,
+        "`.zip()` expects a list argument, got str",
+    );
+}

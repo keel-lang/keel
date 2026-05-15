@@ -958,6 +958,71 @@ run(A)
 }
 
 // ---------------------------------------------------------------------------
+// List zip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn list_zip_pairs_elements() {
+    let src = r#"
+agent A {
+  @on_start {
+    a = [1, 2, 3]
+    b = ["x", "y", "z"]
+    pairs = a.zip(b)
+    Io.show("{pairs.len()}")
+    Io.show("{pairs[1][0]}")
+    Io.show("{pairs[1][1]}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains('3'), "len: {stdout}");
+    assert!(stdout.contains('2'), "pair[1][0]: {stdout}");
+    assert!(stdout.contains('y'), "pair[1][1]: {stdout}");
+}
+
+#[test]
+fn list_zip_stops_at_shorter_list() {
+    let src = r#"
+agent A {
+  @on_start {
+    pairs = [1, 2, 3].zip(["a", "b"])
+    Io.show("{pairs.len()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains('2'), "should stop at shorter: {stdout}");
+}
+
+#[test]
+fn list_zip_destructuring_in_for_loop() {
+    let src = r#"
+agent A {
+  @on_start {
+    names = ["alice", "bob"]
+    scores = [90, 85]
+    for (name, score) in names.zip(scores) {
+        Io.show("{name}:{score}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok);
+    assert!(stdout.contains("alice:90"), "destructure: {stdout}");
+    assert!(stdout.contains("bob:85"), "destructure: {stdout}");
+}
+
+// ---------------------------------------------------------------------------
 // String methods — repeat, slice, index_of, trim_start, trim_end,
 //                  to_int, to_float
 // ---------------------------------------------------------------------------
