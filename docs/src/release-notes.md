@@ -10,6 +10,19 @@
 
 ## v0.1.22 — 2026-05-14
 
+### `@tools` guards now use `if`
+
+Conditional tool entries in `@tools` now use `if` instead of `when`:
+
+```keel
+@tools [
+  Email.send  if self.confirmed,   # only after confirmation
+  Db.exec     if self.admin,       # admin only
+]
+```
+
+This separates tool guards from the `when` pattern-match keyword. Existing code using `when self.*` in `@tools` must be updated to `if self.*`.
+
 ### `when` as an expression
 
 `when` now works in expression position — the matched arm's value becomes the result.
