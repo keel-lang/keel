@@ -802,6 +802,39 @@ try {
 }
 ```
 
+### 8.6 `raise`
+
+Throws an error from a value. Symmetric with `try`/`catch` — you can throw as well as catch.
+
+```keel
+raise "validation failed"
+
+# Caught by catch err: Error; err.message == "validation failed"
+try {
+  raise "quota exceeded"
+} catch err: Error {
+  Io.notify("Caught: {err.message}")
+}
+```
+
+`raise` accepts any expression. If the value is a string it is used as the error message directly. Otherwise the value's display representation becomes the message. `raise` is always caught by `catch err: Error`.
+
+### 8.7 Augmented assignment (`+=`, `-=`, `*=`, `/=`)
+
+Shorthand for `x = x op expr`. Works for local bindings and agent state fields.
+
+```keel
+count = 0
+count += 1          # same as: count = count + 1
+
+self.total += price # same as: self.total = self.total + price
+retries -= 1
+scale *= 2.0
+ratio /= 100.0
+```
+
+Type annotations are not permitted on augmented assignments — use plain `x: T = expr` for the initial declaration.
+
 ---
 
 ## 9. Concurrency
@@ -864,7 +897,7 @@ use from
 state on self
 if else when where
 for in
-try catch return
+try catch return raise
 as and or not
 true false none
 set
@@ -1185,6 +1218,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 | `==` `!=` `<` `>` `<=` `>=` | Comparison |
 | `and` `or` `not` | Boolean logic |
 | `+` `-` `*` `/` `%` | Arithmetic |
+| `+=` `-=` `*=` `/=` | Augmented assignment — desugars to `x = x op rhs` |
 
 ---
 
@@ -1339,7 +1373,12 @@ WhenArm     <- Pattern ("," Pattern)* ("where" Expr)? "=>" (Expr / Block)
 Pattern     <- VariantPat / StructPat / TuplePat / IDENT / "_" / Literal
 
 # --- Statements ---
-Stmt        <- ReturnStmt / AssignStmt / SelfAssign / ForStmt / TryStmt / ExprStmt
+Stmt        <- ReturnStmt / RaiseStmt / AugAssignStmt / AugSelfAssign / AssignStmt / SelfAssign / ForStmt / TryStmt / ExprStmt
+ReturnStmt  <- "return" Expr?
+RaiseStmt   <- "raise" Expr
+AugOp       <- "+=" / "-=" / "*=" / "/="
+AugAssignStmt <- IDENT AugOp Expr                   # desugars to x = x op rhs
+AugSelfAssign <- "self" "." IDENT AugOp Expr        # desugars to self.f = self.f op rhs
 AssignStmt  <- AssignTarget (":" Type)? "=" Expr
 SelfAssign  <- "self" "." IDENT "=" Expr
 ForStmt     <- "for" (IDENT / DestructPat) "in" Expr ("if" Expr)? Block

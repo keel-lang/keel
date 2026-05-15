@@ -28,6 +28,10 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Interpreter | [x] | Namespace dispatch, agent lifecycle, pattern matching, closures, async, `try/catch` |
 | Formatter (`keel fmt`) | [x] | Idempotent round-trip against AST |
 | Type checker | [x] | Scope, arity, enum exhaustiveness, nullable safety (including call-site enforcement), return-type matching, struct subtyping, `?.`/`??` propagation, `Ai.extract`/`Ai.decide` `as:` inference, lambda block bodies, `set[]` literals, implicit return, `if`-expr branch unification (v0.1.19), generic type instantiation — `Foo[T]` declarations parsed and substituted at use sites; generic struct/alias bodies resolve concretely (v0.1.20); generic task declarations with call-site type-parameter inference (v0.1.20); nullable arg checking at all task call sites (v0.1.21); `when` expression arm-type unification (v0.1.22). |
+| Augmented assignment (`+=`, `-=`, `*=`, `/=`) | [x] | Mutates the nearest enclosing scope binding; does not shadow; works on locals and `self.field` |
+| `break` / `continue` in loops | [ ] | Every `for` loop currently processes every element; needed for quota- and rate-limited workloads |
+| `raise expr` | [x] | Symmetric with `try`/`catch`; string value becomes error message; any other value is converted via display |
+| Type checker: operator type compatibility | [ ] | Binary expressions (`+`, `-`, `%=`, etc.) don't validate that operand types are compatible — `"x" + 5` passes the checker and fails at runtime. Needs a `check_binop(lhs_ty, op, rhs_ty)` pass applied uniformly to all `BinOp` and `AugAssign` sites. |
 | Bytecode compiler (`keel build`) | [ ] | Deferred post-v0.1 — tree-walking interpreter covers all alpha workloads |
 
 ### Agent model
@@ -74,8 +78,9 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
 | `Async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
 | `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | — |
-| `Str` | [x] | `match`, `extract`, `truncate`, `pad` | — |
-| `File` | [x] | `read`, `write`, `exists`, `list` | — |
+| `Str` | [~] | `match`, `extract` (capture group 1), `truncate`, `pad` | `find_all`, `replace` — regex crate already present |
+| `File` | [~] | `read`, `write`, `exists`, `list` | `mkdir`, `remove`, `copy`, `glob` |
+| `Math` | [ ] | — | `random()`, `uuid()`, `abs()`, `floor()`, `ceil()`, `round()`, `min(a,b)`, `max(a,b)` |
 | `Json` | [x] | `parse`, `stringify` | — |
 | `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
@@ -110,6 +115,14 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 - **Pluggable LLM provider registry + `Ai.embed`.** Define a `LlmProvider` trait covering both chat and embedding methods. Ship built-in impls for Ollama, OpenAI, Gemini, DeepSeek, and Anthropic (via Voyage AI). Expose the trait publicly so developers can register custom providers. `Ai.embed` ships alongside this — it needs multi-provider dispatch and a common interface before it's worth implementing.
 - **Vector-store `Memory` backend.** Current persistent store is a JSON file. Semantic search needs an embeddings pipeline and `VectorStore` interface — belongs in v0.2.
 - **Major dependency bumps** (`chumsky 0.9 → 1.0`, `imap 2 → 3`, `colored 2 → 3`, `lettre 0.11 → 0.12`) — batched for v0.2.
+- **`while` loop.** Unbounded iteration. Needs new `Stmt::While` AST node, lexer token, parser, type-checker, and interpreter eval. The highest-impact control-flow gap — deferred only because `while` + `break`/`continue` + a mutable-loop-variable convention is a small but coherent design unit worth speccing carefully.
+- **`list[i]` subscript access.** No `Expr::Index` exists yet. Requires new AST variant, parser rule, type-checker (bounds are dynamic), and interpreter. `items.first()` / `items.last()` / `.nth(i)` bridge the gap for now.
+- **Structural pattern matching.** `when` currently matches only enum variant tags. Struct destructuring, map shapes, and tuple decomposition would transform agent decision code from imperative `if` chains into exhaustiveness-checked decision tables — significant scope, best specced post-v0.1.
+- **Variadic functions (`*args`).** Required for organic prelude growth and decorator/proxy patterns. Design question: how variadics interact with Keel's named-arg calling convention.
+- **Lazy sequences / generators.** Everything is eagerly materialized. Extending `Range`'s lazy evaluation to a general iterator protocol would make large-dataset pipelines memory-efficient.
+- **String format specifiers** (`"{ value:.2f }"`). Agents spend most of their time formatting text; a minimal subset (`.2f`, `>10`, `<10`) would cover 90% of needs.
+- **CSV / YAML serialization.** LLMs frequently emit and consume CSV; YAML is the dominant config format. A `Csv` and `Yaml` namespace alongside `Json` rounds out the serialization story.
+- **Subprocess / shell-out.** A `Shell.run(cmd)` primitive is the universal tool bridge. Deferred to avoid adding an OS-shell dependency to the v0.1 binary surface; revisit when the sandboxed execution model is clearer.
 
 ---
 

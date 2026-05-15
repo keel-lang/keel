@@ -1,0 +1,35 @@
+agent Counter {
+    @role "counter"
+
+    state {
+        count: int = 0
+        total: float = 0.0
+    }
+
+    @on_start {
+        # augmented assignment on local variables
+        x = 10
+        x += 5
+        x -= 2
+        x *= 3
+        Io.show("x = {x}")     # 39
+
+        # augmented assignment on agent state
+        self.count += 1
+        self.count += 1
+        self.total += 9.5
+        Io.show("count = {self.count}, total = {self.total}")
+
+        # raise + try/catch
+        try {
+            n = -1
+            if n < 0 {
+                raise "n must be non-negative"
+            }
+        } catch err: Error {
+            Io.show("caught: {err.message}")
+        }
+    }
+}
+
+run(Counter)

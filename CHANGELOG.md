@@ -14,6 +14,30 @@ All notable changes to Keel.
 
 ### Added
 
+- Language: augmented assignment operators `+=`, `-=`, `*=`, `/=` mutate an existing variable in
+  its enclosing scope; they do not shadow. Works on local variables and `self.field`.
+  ```keel
+  total = 0
+  for i in 1..5 {
+      total += i
+  }
+  // total is 15
+
+  self.counter += 1
+  ```
+
+- Language: `raise expr` throws a runtime error from any expression value. Strings become the
+  error message directly; other values are converted with their display representation. Caught by
+  `try/catch err: Error` like any other error.
+  ```keel
+  task validate(n: Int) {
+      if n < 0 {
+          raise "n must be non-negative"
+      }
+      return n
+  }
+  ```
+
 - Language: `list.zip(other)` pairs two lists element-by-element into a list of 2-element tuples,
   stopping at the shorter list. The return type is inferred as `list[(T, U)]`, so tuple
   destructuring in `for` loops is fully typed.

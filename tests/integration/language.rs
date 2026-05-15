@@ -1356,3 +1356,204 @@ Io.show(label(5))
     assert!(stdout.contains("one"), "stdout: {stdout}");
     assert!(stdout.contains("many"), "stdout: {stdout}");
 }
+
+// ---------------------------------------------------------------------------
+// Augmented assignment (+=, -=, *=, /=)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn aug_assign_plus_eq_local() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 10
+        x += 5
+        Io.show("{x}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("15"), "expected 15, stdout: {stdout}");
+}
+
+#[test]
+fn aug_assign_minus_eq_local() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 10
+        x -= 3
+        Io.show("{x}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("7"), "expected 7, stdout: {stdout}");
+}
+
+#[test]
+fn aug_assign_star_eq_local() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 3
+        x *= 4
+        Io.show("{x}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("12"), "expected 12, stdout: {stdout}");
+}
+
+#[test]
+fn aug_assign_slash_eq_local() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 20
+        x /= 4
+        Io.show("{x}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("5"), "expected 5, stdout: {stdout}");
+}
+
+#[test]
+fn aug_assign_self_field() {
+    let src = r#"
+agent A {
+    @role "aug"
+    state { count: int = 0 }
+    @on_start {
+        self.count += 3
+        self.count += 2
+        Io.show("{self.count}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("5"), "expected 5, stdout: {stdout}");
+}
+
+#[test]
+fn aug_assign_percent_eq_local() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 17
+        x %= 5
+        Io.show("{x}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("2"), "expected 2, stdout: {stdout}");
+}
+
+#[test]
+fn aug_assign_chained_in_loop() {
+    let src = r#"
+agent A {
+    @on_start {
+        total = 0
+        for i in 1..5 {
+            total += i
+        }
+        Io.show("{total}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("15"), "expected 15, stdout: {stdout}");
+}
+
+// ---------------------------------------------------------------------------
+// raise
+// ---------------------------------------------------------------------------
+
+#[test]
+fn raise_string_is_caught_by_error() {
+    let src = r#"
+try {
+    raise "something went wrong"
+} catch err: Error {
+    Io.show("caught: {err.message}")
+}
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(
+        stdout.contains("caught: something went wrong"),
+        "expected catch message, stdout: {stdout}"
+    );
+}
+
+#[test]
+fn raise_stops_execution_in_block() {
+    let src = r#"
+try {
+    Io.show("before")
+    raise "stop"
+    Io.show("after")
+} catch err: Error {
+    Io.show("caught")
+}
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("before"), "stdout: {stdout}");
+    assert!(
+        !stdout.contains("after"),
+        "execution should stop at raise, stdout: {stdout}"
+    );
+    assert!(stdout.contains("caught"), "stdout: {stdout}");
+}
+
+#[test]
+fn raise_without_catch_exits_nonzero() {
+    let src = r#"
+raise "unhandled error"
+"#;
+    let (ok, _stdout, _stderr) = run_inline(src, false);
+    assert!(!ok, "expected non-zero exit for unhandled raise");
+}
+
+#[test]
+fn raise_inside_task_propagates() {
+    let src = r#"
+task validate(x: int) {
+    if x < 0 {
+        raise "x must be non-negative"
+    }
+}
+
+try {
+    validate(-1)
+} catch err: Error {
+    Io.show("task raised: {err.message}")
+}
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(
+        stdout.contains("task raised: x must be non-negative"),
+        "stdout: {stdout}"
+    );
+}

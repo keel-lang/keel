@@ -836,6 +836,17 @@ impl Checker {
                     scope.pop();
                 }
             }
+            Stmt::AugAssign { name, rhs, .. } => {
+                if scope.get(name).is_none() {
+                    self.err(format!(
+                        "augmented assignment to undefined variable `{name}`"
+                    ));
+                }
+                self.infer_expr(rhs, scope);
+            }
+            Stmt::Raise(e) => {
+                self.infer_expr(e, scope);
+            }
             Stmt::Expr(e) => {
                 self.infer_expr(e, scope);
             }

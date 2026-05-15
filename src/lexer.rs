@@ -17,7 +17,7 @@ pub type Spanned<T> = (T, Span);
 // Token
 // ---------------------------------------------------------------------------
 //
-// Keel v0.1 reserves 27 words. Everything else is an identifier, including
+// Keel v0.1 reserves 28 words. Everything else is an identifier, including
 // stdlib namespaces (`Ai`, `Io`, …), attribute names (`@role`, `@model`, …),
 // and duration units (`minutes`, `hours`, …).
 //
@@ -71,6 +71,8 @@ pub enum Token {
     Catch,
     #[token("return")]
     Return,
+    #[token("raise")]
+    Raise,
 
     // ── Cast / logic ─────────────────────────────────────────────────
     #[token("as")]
@@ -137,6 +139,18 @@ pub enum Token {
     NullDot,
     #[token("..")]
     DotDot,
+    // Augmented assignment — must be listed before single-char `+` `-` `*` `/`
+    // so the logos DFA picks the longer match first.
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    StarEq,
+    #[token("/=")]
+    SlashEq,
+    #[token("%=")]
+    PercentEq,
 
     // ── Single-char operators ────────────────────────────────────────
     #[token("=")]
@@ -313,6 +327,7 @@ impl fmt::Display for Token {
             Token::Try => write!(f, "try"),
             Token::Catch => write!(f, "catch"),
             Token::Return => write!(f, "return"),
+            Token::Raise => write!(f, "raise"),
             Token::As => write!(f, "as"),
             Token::And => write!(f, "and"),
             Token::Or => write!(f, "or"),
@@ -335,6 +350,11 @@ impl fmt::Display for Token {
             Token::NullCoalesce => write!(f, "??"),
             Token::NullDot => write!(f, "?."),
             Token::DotDot => write!(f, ".."),
+            Token::PlusEq => write!(f, "+="),
+            Token::MinusEq => write!(f, "-="),
+            Token::StarEq => write!(f, "*="),
+            Token::SlashEq => write!(f, "/="),
+            Token::PercentEq => write!(f, "%="),
             Token::Eq => write!(f, "="),
             Token::Lt => write!(f, "<"),
             Token::Gt => write!(f, ">"),
@@ -449,6 +469,11 @@ fn continues_to_next_line(token: &Token) -> bool {
             | Token::LParen
             | Token::Comma
             | Token::Eq
+            | Token::PlusEq
+            | Token::MinusEq
+            | Token::StarEq
+            | Token::SlashEq
+            | Token::PercentEq
             | Token::FatArrow
             | Token::Arrow
             | Token::Pipe

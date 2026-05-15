@@ -58,6 +58,17 @@ pub enum Stmt {
         body: Block,
         catches: Vec<CatchClause>,
     },
+    /// `x += rhs`, `x -= rhs`, etc. — mutates an existing binding in the
+    /// nearest enclosing scope; does not create a shadow. Distinct from
+    /// `Stmt::Let` (which uses define-in-current-scope semantics) so that
+    /// accumulation inside `for` loops updates the outer variable correctly.
+    AugAssign {
+        name: String,
+        op: crate::ast::expr::BinOp,
+        rhs: Expr,
+    },
+    /// `raise expr` — throws an error; caught by `catch err: Error`.
+    Raise(Expr),
     /// Expression used as a statement — covers `Io.notify(...)`,
     /// `Email.send(...)`, `run(MyAgent)`, bare calls, etc.
     Expr(Expr),

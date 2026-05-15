@@ -831,6 +831,32 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then_ignore(just(Token::RBrace))
             .boxed();
 
+        // Matches one augmented-assignment operator and returns its BinOp.
+        let aug_op = choice([
+            just(Token::PlusEq).to(BinOp::Add),
+            just(Token::MinusEq).to(BinOp::Sub),
+            just(Token::StarEq).to(BinOp::Mul),
+            just(Token::SlashEq).to(BinOp::Div),
+            just(Token::PercentEq).to(BinOp::Mod),
+        ])
+        .boxed();
+
+        // self.field += expr  (desugars to self.field = self.field op expr)
+        let aug_self_assign = just(Token::SelfKw)
+            .ignore_then(just(Token::Dot))
+            .ignore_then(ident())
+            .then(aug_op.clone())
+            .then(expr.clone())
+            .map(|((field, op), rhs)| Stmt::SelfAssign {
+                field: field.clone(),
+                value: Expr::BinaryOp {
+                    left: Box::new(Expr::SelfAccess(field)),
+                    op,
+                    right: Box::new(rhs),
+                },
+            })
+            .boxed();
+
         // self.field = expr
         let self_assign = just(Token::SelfKw)
             .ignore_then(just(Token::Dot))
@@ -838,6 +864,15 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then_ignore(just(Token::Eq))
             .then(expr.clone())
             .map(|(field, value)| Stmt::SelfAssign { field, value })
+            .boxed();
+
+        // x += expr, x -= expr, etc. — produces Stmt::AugAssign so the
+        // interpreter can use env.set (mutation) rather than env.define
+        // (shadow), which makes accumulation in for loops work correctly.
+        let aug_let_stmt = ident()
+            .then(aug_op)
+            .then(expr.clone())
+            .map(|((name, op), rhs)| Stmt::AugAssign { name, op, rhs })
             .boxed();
 
         // x = expr  or  x: Type = expr
@@ -877,6 +912,11 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
         let return_stmt = just(Token::Return)
             .ignore_then(expr.clone().or_not())
             .map(Stmt::Return)
+            .boxed();
+
+        let raise_stmt = just(Token::Raise)
+            .ignore_then(expr.clone())
+            .map(Stmt::Raise)
             .boxed();
 
         let for_stmt = just(Token::For)
@@ -1018,11 +1058,14 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
         let expr_stmt = expr.map(Stmt::Expr).boxed();
 
         choice((
+            aug_self_assign,
             self_assign,
             destruct_struct_let,
             destruct_tuple_let,
+            aug_let_stmt,
             let_stmt,
             return_stmt,
+            raise_stmt,
             destruct_for_stmt,
             tuple_destruct_for_stmt,
             for_stmt,

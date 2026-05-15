@@ -126,6 +126,32 @@ for x in 1..10 if x % 2 == 0 {
 }
 ```
 
+## Augmented assignment
+
+`+=`, `-=`, `*=`, and `/=` mutate an existing variable in its nearest enclosing scope. They do not create a new binding — a plain `=` in the same position would shadow; these update.
+
+```keel
+total = 0
+for i in 1..5 {
+    total += i      # updates outer `total`, not a loop-scoped shadow
+}
+# total is 15
+```
+
+Works on `self.field` inside an agent handler:
+
+```keel
+agent Counter {
+    state { count: int = 0 }
+
+    @on_start {
+        self.count += 1
+    }
+}
+```
+
+Compound forms: `total -= cost`, `total *= factor`, `total /= divisor`.
+
 ## return
 
 Explicit early return from a task:

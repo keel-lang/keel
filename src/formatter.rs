@@ -480,6 +480,14 @@ impl Fmt {
                     self.push("}");
                 }
             }
+            Stmt::AugAssign { name, op, rhs } => {
+                self.push(&format!("{name} {}= ", binop_str(*op)));
+                self.push(&self.expr_str(rhs));
+            }
+            Stmt::Raise(e) => {
+                self.push("raise ");
+                self.push(&self.expr_str(e));
+            }
             Stmt::Expr(e) => {
                 self.push(&self.expr_str(e));
             }
@@ -733,6 +741,10 @@ impl Fmt {
                 s.push_str(&format!("self.{field} = "));
                 s.push_str(&self.expr_at(value, indent));
             }
+            Stmt::Raise(e) => {
+                s.push_str("raise ");
+                s.push_str(&self.expr_at(e, indent));
+            }
             Stmt::Return(Some(e)) => {
                 s.push_str("return ");
                 s.push_str(&self.expr_at(e, indent));
@@ -812,6 +824,10 @@ impl Fmt {
                     s.push('}');
                 }
             }
+            Stmt::AugAssign { name, op, rhs } => {
+                s.push_str(&format!("{name} {}= ", binop_str(*op)));
+                s.push_str(&self.expr_at(rhs, indent));
+            }
         }
     }
 
@@ -881,6 +897,10 @@ impl Fmt {
                 )
             }
             Stmt::SelfAssign { field, value } => format!("self.{field} = {}", self.expr_str(value)),
+            Stmt::AugAssign { name, op, rhs } => {
+                format!("{name} {}= {}", binop_str(*op), self.expr_str(rhs))
+            }
+            Stmt::Raise(e) => format!("raise {}", self.expr_str(e)),
             _ => "...".into(), // fallback for complex stmts inline
         }
     }

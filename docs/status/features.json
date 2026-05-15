@@ -166,16 +166,16 @@
     },
     {
       "name": "Str",
-      "status": "shipped",
-      "implemented_ops": "`match`, `extract`, `truncate`, `pad`",
-      "gaps": "—",
+      "status": "partial",
+      "implemented_ops": "`match`, `extract` (capture group 1), `truncate`, `pad`",
+      "gaps": "`find_all`, `replace` — regex crate already present",
       "purpose": "Regex & string tools: `match`, `extract`, `truncate`, `pad`"
     },
     {
       "name": "File",
-      "status": "shipped",
+      "status": "partial",
       "implemented_ops": "`read`, `write`, `exists`, `list`",
-      "gaps": "—",
+      "gaps": "`mkdir`, `remove`, `copy`, `glob`",
       "purpose": "Filesystem: `read`, `write`, `exists`, `list`"
     },
     {

@@ -6,6 +6,35 @@
 
 ## Unreleased
 
+### Augmented assignment — `+=`, `-=`, `*=`, `/=`
+
+Mutate an existing variable in its nearest enclosing scope without shadowing it:
+
+```keel
+total = 0
+for i in 1..5 {
+    total += i
+}
+# total is 15
+```
+
+Also works on `self.field` in agent handlers: `self.counter += 1`.
+
+### `raise expr` — throw errors symmetrically with `try/catch`
+
+`raise` makes the error model complete — you can now throw as well as catch:
+
+```keel
+task validate(n: int) {
+    if n < 0 {
+        raise "n must be non-negative"
+    }
+    return n
+}
+```
+
+Strings become the error message; other values are converted via their display representation. Caught by `try/catch err: Error` like any other runtime error.
+
 ### `list.zip(other)` — pair two lists
 
 `zip` pairs elements from two lists into a list of 2-element tuples, stopping at the shorter list.

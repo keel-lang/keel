@@ -52,6 +52,31 @@ try {
 | `message` | `str` | Human-readable description |
 | `got` | `str` | The raw LLM output that didn't match |
 
+## `raise` — throw an error
+
+Throw an error from any point in a task or agent handler:
+
+```keel
+task divide(a: int, b: int) -> int {
+    if b == 0 {
+        raise "division by zero"
+    }
+    return a / b
+}
+```
+
+Any string becomes the error message. Caught by `try/catch err: Error`:
+
+```keel
+try {
+    result = divide(10, 0)
+} catch err: Error {
+    Io.notify("Failed: {err.message}")
+}
+```
+
+Non-string values are converted using their display representation. `raise` pairs symmetrically with `try/catch` — the two form a complete error-signalling and recovery model.
+
 ## `Control.retry`
 
 Retry a failing operation with optional exponential backoff:

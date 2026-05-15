@@ -165,6 +165,8 @@ pub fn walk_stmt<V: Visitor + ?Sized>(v: &mut V, stmt: &Stmt, _span: &Span) {
                 v.visit_block(&catch.body);
             }
         }
+        Stmt::AugAssign { rhs, .. } => v.visit_expr(rhs),
+        Stmt::Raise(expr) => v.visit_expr(expr),
         Stmt::Expr(expr) => v.visit_expr(expr),
     }
 }

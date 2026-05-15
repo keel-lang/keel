@@ -166,6 +166,32 @@ impl Interpreter {
                     }
                     Ok(StmtOutcome::Normal)
                 }
+                Stmt::AugAssign { name, op, rhs } => {
+                    let rhs_val = self.eval_expr(rhs, env).await?;
+                    if let Value::EarlyReturn(inner) = rhs_val {
+                        return Ok(StmtOutcome::Return(*inner));
+                    }
+                    let current = env.get(name).cloned().unwrap_or(Value::None);
+                    let result =
+                        crate::interpreter::binary::eval_binary(*op, current, rhs_val)?;
+                    if !env.set(name, result) {
+                        return Err(runtime_error(format!(
+                            "augmented assignment to undefined variable `{name}`"
+                        )));
+                    }
+                    Ok(StmtOutcome::Normal)
+                }
+                Stmt::Raise(e) => {
+                    let v = self.eval_expr(e, env).await?;
+                    if let Value::EarlyReturn(inner) = v {
+                        return Ok(StmtOutcome::Return(*inner));
+                    }
+                    let message = match &v {
+                        Value::String(s) => s.clone(),
+                        other => other.to_display_string(),
+                    };
+                    return Err(runtime_error(message));
+                }
                 Stmt::TryCatch { body, catches } => {
                     self.last_typed_error = None;
                     match self.exec_block(body, env).await {
