@@ -310,12 +310,18 @@ impl Interpreter {
                             StmtOutcome::Return(v) => Ok(Value::EarlyReturn(Box::new(v))),
                             StmtOutcome::Value(v) => Ok(v),
                             StmtOutcome::Normal => Ok(Value::None),
+                            StmtOutcome::Break | StmtOutcome::Continue => {
+                                Err(runtime_error("`break`/`continue` inside an expression"))
+                            }
                         }
                     } else {
                         match self.exec_block(else_body, env).await? {
                             StmtOutcome::Return(v) => Ok(Value::EarlyReturn(Box::new(v))),
                             StmtOutcome::Value(v) => Ok(v),
                             StmtOutcome::Normal => Ok(Value::None),
+                            StmtOutcome::Break | StmtOutcome::Continue => {
+                                Err(runtime_error("`break`/`continue` inside an expression"))
+                            }
                         }
                     }
                 }
@@ -341,6 +347,12 @@ impl Interpreter {
                                 StmtOutcome::Return(v) => Value::EarlyReturn(Box::new(v)),
                                 StmtOutcome::Value(v) => v,
                                 StmtOutcome::Normal => Value::None,
+                                StmtOutcome::Break | StmtOutcome::Continue => {
+                                    env.pop_scope();
+                                    return Err(runtime_error(
+                                        "`break`/`continue` inside an expression",
+                                    ));
+                                }
                             };
                             env.pop_scope();
                             return Ok(result);

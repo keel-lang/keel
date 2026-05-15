@@ -167,6 +167,7 @@ pub fn walk_stmt<V: Visitor + ?Sized>(v: &mut V, stmt: &Stmt, _span: &Span) {
         }
         Stmt::AugAssign { rhs, .. } => v.visit_expr(rhs),
         Stmt::Raise(expr) => v.visit_expr(expr),
+        Stmt::Break | Stmt::Continue => {}
         Stmt::Expr(expr) => v.visit_expr(expr),
     }
 }

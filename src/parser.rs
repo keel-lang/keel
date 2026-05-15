@@ -919,6 +919,9 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .map(Stmt::Raise)
             .boxed();
 
+        let break_stmt = just(Token::Break).to(Stmt::Break).boxed();
+        let continue_stmt = just(Token::Continue).to(Stmt::Continue).boxed();
+
         let for_stmt = just(Token::For)
             .ignore_then(ident())
             .then_ignore(just(Token::In))
@@ -1066,6 +1069,8 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             let_stmt,
             return_stmt,
             raise_stmt,
+            break_stmt,
+            continue_stmt,
             destruct_for_stmt,
             tuple_destruct_for_stmt,
             for_stmt,

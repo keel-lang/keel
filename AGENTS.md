@@ -73,8 +73,8 @@ agent task interface type extern
 use from
 state on self
 if else when where
-for in
-try catch return
+for in break continue
+try catch return raise
 as and or not
 true false none
 set

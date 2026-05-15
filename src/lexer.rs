@@ -17,7 +17,7 @@ pub type Spanned<T> = (T, Span);
 // Token
 // ---------------------------------------------------------------------------
 //
-// Keel v0.1 reserves 28 words. Everything else is an identifier, including
+// Keel v0.1 reserves 30 words. Everything else is an identifier, including
 // stdlib namespaces (`Ai`, `Io`, …), attribute names (`@role`, `@model`, …),
 // and duration units (`minutes`, `hours`, …).
 //
@@ -73,6 +73,10 @@ pub enum Token {
     Return,
     #[token("raise")]
     Raise,
+    #[token("break")]
+    Break,
+    #[token("continue")]
+    Continue,
 
     // ── Cast / logic ─────────────────────────────────────────────────
     #[token("as")]
@@ -328,6 +332,8 @@ impl fmt::Display for Token {
             Token::Catch => write!(f, "catch"),
             Token::Return => write!(f, "return"),
             Token::Raise => write!(f, "raise"),
+            Token::Break => write!(f, "break"),
+            Token::Continue => write!(f, "continue"),
             Token::As => write!(f, "as"),
             Token::And => write!(f, "and"),
             Token::Or => write!(f, "or"),

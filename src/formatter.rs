@@ -488,6 +488,8 @@ impl Fmt {
                 self.push("raise ");
                 self.push(&self.expr_str(e));
             }
+            Stmt::Break => self.push("break"),
+            Stmt::Continue => self.push("continue"),
             Stmt::Expr(e) => {
                 self.push(&self.expr_str(e));
             }
@@ -828,6 +830,8 @@ impl Fmt {
                 s.push_str(&format!("{name} {}= ", binop_str(*op)));
                 s.push_str(&self.expr_at(rhs, indent));
             }
+            Stmt::Break => s.push_str("break"),
+            Stmt::Continue => s.push_str("continue"),
         }
     }
 
@@ -901,6 +905,8 @@ impl Fmt {
                 format!("{name} {}= {}", binop_str(*op), self.expr_str(rhs))
             }
             Stmt::Raise(e) => format!("raise {}", self.expr_str(e)),
+            Stmt::Break => "break".into(),
+            Stmt::Continue => "continue".into(),
             _ => "...".into(), // fallback for complex stmts inline
         }
     }

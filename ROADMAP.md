@@ -29,7 +29,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Formatter (`keel fmt`) | [x] | Idempotent round-trip against AST |
 | Type checker | [x] | Scope, arity, enum exhaustiveness, nullable safety (including call-site enforcement), return-type matching, struct subtyping, `?.`/`??` propagation, `Ai.extract`/`Ai.decide` `as:` inference, lambda block bodies, `set[]` literals, implicit return, `if`-expr branch unification (v0.1.19), generic type instantiation — `Foo[T]` declarations parsed and substituted at use sites; generic struct/alias bodies resolve concretely (v0.1.20); generic task declarations with call-site type-parameter inference (v0.1.20); nullable arg checking at all task call sites (v0.1.21); `when` expression arm-type unification (v0.1.22). |
 | Augmented assignment (`+=`, `-=`, `*=`, `/=`) | [x] | Mutates the nearest enclosing scope binding; does not shadow; works on locals and `self.field` |
-| `break` / `continue` in loops | [ ] | Every `for` loop currently processes every element; needed for quota- and rate-limited workloads |
+| `break` / `continue` in loops | [x] | Exit or skip iterations; both are reserved keywords; innermost-loop semantics only |
 | `raise expr` | [x] | Symmetric with `try`/`catch`; string value becomes error message; any other value is converted via display |
 | Type checker: operator type compatibility | [ ] | Binary expressions (`+`, `-`, `%=`, etc.) don't validate that operand types are compatible — `"x" + 5` passes the checker and fails at runtime. Needs a `check_binop(lhs_ty, op, rhs_ty)` pass applied uniformly to all `BinOp` and `AugAssign` sites. |
 | Bytecode compiler (`keel build`) | [ ] | Deferred post-v0.1 — tree-walking interpreter covers all alpha workloads |

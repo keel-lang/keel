@@ -847,6 +847,7 @@ impl Checker {
             Stmt::Raise(e) => {
                 self.infer_expr(e, scope);
             }
+            Stmt::Break | Stmt::Continue => {}
             Stmt::Expr(e) => {
                 self.infer_expr(e, scope);
             }

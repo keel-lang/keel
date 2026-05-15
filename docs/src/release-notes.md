@@ -35,6 +35,30 @@ task validate(n: int) {
 
 Strings become the error message; other values are converted via their display representation. Caught by `try/catch err: Error` like any other runtime error.
 
+### `break` and `continue` in `for` loops
+
+`break` exits the nearest enclosing `for` loop immediately. `continue` skips the rest of the current iteration and advances to the next. Both are reserved keywords.
+
+```keel
+# stop as soon as the target is found
+for item in items {
+    if item == target {
+        break
+    }
+    process(item)
+}
+
+# skip even numbers
+for n in 1..100 {
+    if n % 2 == 0 {
+        continue
+    }
+    process_odd(n)
+}
+```
+
+Both affect only the **innermost** loop. No labeled jumps in v0.1.
+
 ### `list.zip(other)` — pair two lists
 
 `zip` pairs elements from two lists into a list of 2-element tuples, stopping at the shorter list.

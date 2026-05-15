@@ -69,6 +69,10 @@ pub enum Stmt {
     },
     /// `raise expr` — throws an error; caught by `catch err: Error`.
     Raise(Expr),
+    /// `break` — exits the nearest enclosing `for` loop.
+    Break,
+    /// `continue` — skips the rest of the current iteration.
+    Continue,
     /// Expression used as a statement — covers `Io.notify(...)`,
     /// `Email.send(...)`, `run(MyAgent)`, bare calls, etc.
     Expr(Expr),

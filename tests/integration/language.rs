@@ -1557,3 +1557,128 @@ try {
         "stdout: {stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// break / continue
+// ---------------------------------------------------------------------------
+
+#[test]
+fn break_exits_loop_early() {
+    let src = r#"
+agent A {
+    @on_start {
+        count = 0
+        for i in 1..10 {
+            if i > 3 {
+                break
+            }
+            count += 1
+        }
+        Io.show("{count}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("3"), "expected count=3, stdout: {stdout}");
+}
+
+#[test]
+fn continue_skips_current_iteration() {
+    let src = r#"
+agent A {
+    @on_start {
+        sum = 0
+        for i in 1..6 {
+            if i == 3 {
+                continue
+            }
+            sum += i
+        }
+        Io.show("{sum}")
+    }
+}
+run(A)
+"#;
+    // 1+2+4+5+6 = 18 (3 is skipped)
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("18"), "expected sum=18, stdout: {stdout}");
+}
+
+#[test]
+fn break_inside_if_stmt_in_loop() {
+    // Verifies break inside an `if` inside a `for` exits the loop.
+    // Items before 99 are counted; break fires at 99 so count stays at 2.
+    let src = r#"
+agent A {
+    @on_start {
+        items = [10, 20, 99, 30, 40]
+        count = 0
+        for item in items {
+            if item == 99 {
+                break
+            }
+            count += 1
+        }
+        Io.show("{count}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("2"), "expected count=2, stdout: {stdout}");
+}
+
+#[test]
+fn continue_and_break_together() {
+    let src = r#"
+agent A {
+    @on_start {
+        result = 0
+        for i in 1..10 {
+            if i == 7 {
+                break
+            }
+            if i % 2 == 0 {
+                continue
+            }
+            result += i
+        }
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    // odd numbers 1..6: 1+3+5 = 9 (7 triggers break, evens are skipped)
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("9"), "expected result=9, stdout: {stdout}");
+}
+
+#[test]
+fn break_in_nested_loop_only_exits_inner() {
+    let src = r#"
+agent A {
+    @on_start {
+        outer = 0
+        for i in 1..3 {
+            outer += 1
+            for j in 1..10 {
+                if j > 2 {
+                    break
+                }
+            }
+        }
+        Io.show("{outer}")
+    }
+}
+run(A)
+"#;
+    // outer loop runs 3 times; inner break only exits the inner loop
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("3"), "expected outer=3, stdout: {stdout}");
+}

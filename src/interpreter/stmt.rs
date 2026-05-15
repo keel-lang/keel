@@ -117,11 +117,16 @@ impl Interpreter {
                                 continue;
                             }
                         }
-                        if let StmtOutcome::Return(v) = self.exec_block(body, env).await? {
-                            env.pop_scope();
-                            return Ok(StmtOutcome::Return(v));
-                        }
+                        let outcome = self.exec_block(body, env).await?;
                         env.pop_scope();
+                        match outcome {
+                            StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
+                            StmtOutcome::Break => break,
+                            // Continue falls through to the next iteration.
+                            StmtOutcome::Continue
+                            | StmtOutcome::Normal
+                            | StmtOutcome::Value(_) => {}
+                        }
                     }
                     Ok(StmtOutcome::Normal)
                 }
@@ -192,6 +197,8 @@ impl Interpreter {
                     };
                     return Err(runtime_error(message));
                 }
+                Stmt::Break => return Ok(StmtOutcome::Break),
+                Stmt::Continue => return Ok(StmtOutcome::Continue),
                 Stmt::TryCatch { body, catches } => {
                     self.last_typed_error = None;
                     match self.exec_block(body, env).await {
@@ -246,6 +253,10 @@ impl Interpreter {
         for (stmt, _) in block {
             match self.exec_stmt(stmt, env).await? {
                 StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
+                // Break and Continue bubble up through exec_block; the For
+                // loop handler in exec_stmt catches them at the loop boundary.
+                StmtOutcome::Break => return Ok(StmtOutcome::Break),
+                StmtOutcome::Continue => return Ok(StmtOutcome::Continue),
                 StmtOutcome::Value(v) => {
                     if let Value::EarlyReturn(inner) = v {
                         return Ok(StmtOutcome::Return(*inner));
@@ -338,6 +349,10 @@ pub enum StmtOutcome {
     Value(Value),
     /// `return` reached — propagate to enclosing task.
     Return(Value),
+    /// `break` — exit the nearest enclosing `for` loop.
+    Break,
+    /// `continue` — skip to the next iteration of the nearest `for` loop.
+    Continue,
 }
 
 // ---------------------------------------------------------------------------

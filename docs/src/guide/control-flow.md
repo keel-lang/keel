@@ -126,6 +126,44 @@ for x in 1..10 if x % 2 == 0 {
 }
 ```
 
+## break and continue
+
+`break` exits the nearest enclosing `for` loop immediately. `continue` skips the rest of the current iteration and advances to the next.
+
+```keel
+# break — stop as soon as the target is found
+for item in items {
+    if item == target {
+        break
+    }
+    process(item)
+}
+
+# continue — skip even numbers
+for n in 1..100 {
+    if n % 2 == 0 {
+        continue
+    }
+    process_odd(n)
+}
+```
+
+Both keywords affect only the **innermost** `for` loop. There are no labeled jumps in v0.1.
+
+```keel
+# break inside a nested loop only exits the inner one
+for outer in 1..5 {
+    for inner in 1..10 {
+        if inner > 2 {
+            break          # exits inner loop only
+        }
+    }
+    Io.show("outer={outer}")   # still runs 5 times
+}
+```
+
+> `break` and `continue` are reserved keywords. Using them outside a `for` loop is a runtime error.
+
 ## Augmented assignment
 
 `+=`, `-=`, `*=`, and `/=` mutate an existing variable in its nearest enclosing scope. They do not create a new binding — a plain `=` in the same position would shadow; these update.

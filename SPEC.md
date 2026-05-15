@@ -835,6 +835,39 @@ ratio /= 100.0
 
 Type annotations are not permitted on augmented assignments — use plain `x: T = expr` for the initial declaration.
 
+### 8.8 `break` and `continue`
+
+Exit or skip within the nearest enclosing `for` loop.
+
+```keel
+# break — exit the loop immediately
+for item in items {
+    if item == target {
+        break
+    }
+    process(item)
+}
+
+# continue — skip to the next iteration
+for n in 1..100 {
+    if n % 2 == 0 {
+        continue
+    }
+    process_odd(n)
+}
+
+# together — skip even, stop at 50
+for n in 1..100 {
+    if n % 2 == 0 { continue }
+    if n > 50      { break }
+    process_odd(n)
+}
+```
+
+Both statements affect only the **nearest enclosing `for` loop** — there are no labeled jumps in v0.1.
+
+`break` and `continue` are reserved keywords; using either outside a loop is a runtime error.
+
 ---
 
 ## 9. Concurrency
@@ -896,7 +929,7 @@ agent task interface type extern
 use from
 state on self
 if else when where
-for in
+for in break continue
 try catch return raise
 as and or not
 true false none

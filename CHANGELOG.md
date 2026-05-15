@@ -38,6 +38,25 @@ All notable changes to Keel.
   }
   ```
 
+- Language: `break` and `continue` for `for` loops. `break` exits the nearest enclosing loop
+  immediately; `continue` skips the rest of the current iteration and advances to the next.
+  Both are reserved keywords and affect only the innermost loop (no labeled jumps in v0.1).
+  ```keel
+  for item in items {
+      if item == target {
+          break
+      }
+      process(item)
+  }
+
+  for n in 1..100 {
+      if n % 2 == 0 {
+          continue
+      }
+      process_odd(n)
+  }
+  ```
+
 - Language: `list.zip(other)` pairs two lists element-by-element into a list of 2-element tuples,
   stopping at the shorter list. The return type is inferred as `list[(T, U)]`, so tuple
   destructuring in `for` loops is fully typed.

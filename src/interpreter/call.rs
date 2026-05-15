@@ -33,6 +33,9 @@ impl Interpreter {
             LambdaBody::Block(block) => match self.exec_block(block, &mut env).await? {
                 StmtOutcome::Value(v) | StmtOutcome::Return(v) => Ok(v),
                 StmtOutcome::Normal => Ok(Value::None),
+                StmtOutcome::Break | StmtOutcome::Continue => {
+                    Err(super::runtime_error("`break`/`continue` outside a loop"))
+                }
             },
         }
     }
@@ -80,6 +83,9 @@ impl Interpreter {
         match self.exec_block(&decl.body, &mut env).await? {
             StmtOutcome::Value(v) | StmtOutcome::Return(v) => Ok(v),
             StmtOutcome::Normal => Ok(Value::None),
+            StmtOutcome::Break | StmtOutcome::Continue => {
+                Err(super::runtime_error("`break`/`continue` outside a loop"))
+            }
         }
     }
 
