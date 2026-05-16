@@ -166,8 +166,7 @@ async fn eval_stmt(interp: &mut Interpreter, env: &mut Environment, stmt: &Stmt)
         crate::interpreter::StmtOutcome::Value(v) => Ok(v),
         crate::interpreter::StmtOutcome::Return(v) => Ok(v),
         crate::interpreter::StmtOutcome::Normal => Ok(Value::None),
-        crate::interpreter::StmtOutcome::Break
-        | crate::interpreter::StmtOutcome::Continue => {
+        crate::interpreter::StmtOutcome::Break | crate::interpreter::StmtOutcome::Continue => {
             Err(miette::miette!("`break`/`continue` outside a loop"))
         }
     }

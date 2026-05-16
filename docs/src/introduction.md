@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.22](./release-notes.md)** — `when` now works as an expression — pattern-match and produce a value in one step. [See what's new →](./release-notes.md)
+> **Latest: [v0.1.23](./release-notes.md)** — Augmented assignment, raise statement, break/continue, and list.zip(). [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

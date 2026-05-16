@@ -123,9 +123,8 @@ impl Interpreter {
                             StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
                             StmtOutcome::Break => break,
                             // Continue falls through to the next iteration.
-                            StmtOutcome::Continue
-                            | StmtOutcome::Normal
-                            | StmtOutcome::Value(_) => {}
+                            StmtOutcome::Continue | StmtOutcome::Normal | StmtOutcome::Value(_) => {
+                            }
                         }
                     }
                     Ok(StmtOutcome::Normal)
@@ -177,8 +176,7 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     let current = env.get(name).cloned().unwrap_or(Value::None);
-                    let result =
-                        crate::interpreter::binary::eval_binary(*op, current, rhs_val)?;
+                    let result = crate::interpreter::binary::eval_binary(*op, current, rhs_val)?;
                     if !env.set(name, result) {
                         return Err(runtime_error(format!(
                             "augmented assignment to undefined variable `{name}`"
@@ -195,10 +193,10 @@ impl Interpreter {
                         Value::String(s) => s.clone(),
                         other => other.to_display_string(),
                     };
-                    return Err(runtime_error(message));
+                    Err(runtime_error(message))
                 }
-                Stmt::Break => return Ok(StmtOutcome::Break),
-                Stmt::Continue => return Ok(StmtOutcome::Continue),
+                Stmt::Break => Ok(StmtOutcome::Break),
+                Stmt::Continue => Ok(StmtOutcome::Continue),
                 Stmt::TryCatch { body, catches } => {
                     self.last_typed_error = None;
                     match self.exec_block(body, env).await {

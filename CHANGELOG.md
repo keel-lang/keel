@@ -12,6 +12,12 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.23] — 2026-05-16
+
+Augmented assignment, raise statement, break/continue, and list.zip()
+
 ### Added
 
 - Language: augmented assignment operators `+=`, `-=`, `*=`, `/=` mutate an existing variable in

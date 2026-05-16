@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.23 — 2026-05-16
+
 ### Augmented assignment — `+=`, `-=`, `*=`, `/=`
 
 Mutate an existing variable in its nearest enclosing scope without shadowing it:
