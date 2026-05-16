@@ -73,7 +73,7 @@ names  = ["alice", "bob", "carol"]
 scores = [90, 85, 95]
 
 for (name, score) in names.zip(scores) {
-    Log.info(name + " scored " + score)
+    Log.info("{name} scored {score}")
 }
 ```
 

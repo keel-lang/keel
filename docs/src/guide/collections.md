@@ -145,7 +145,7 @@ pairs = names.zip(scores)
 # → [["alice", 90], ["bob", 85], ["carol", 95]]
 
 for (name, score) in names.zip(scores) {
-    Log.info(name + " scored " + score)
+    Log.info("{name} scored {score}")
 }
 ```
 

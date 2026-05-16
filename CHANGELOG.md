@@ -71,7 +71,7 @@ Augmented assignment, raise statement, break/continue, and list.zip()
   scores = [90, 85, 95]
 
   for (name, score) in names.zip(scores) {
-      Log.info(name + " scored " + score)
+      Log.info("{name} scored {score}")
   }
   ```
 
