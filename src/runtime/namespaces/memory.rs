@@ -148,11 +148,13 @@ pub(crate) fn namespace() -> Namespace {
                 )),
                 "persistent" => {
                     assert_memory_serializable(&value)?;
-                    interp
-                        .runtime
-                        .persistent_memory
-                        .remember(&program_name, &agent_name, key, value)?;
-                    Ok(Value::None)
+                    let pm = interp.runtime.persistent_memory.clone();
+                    tokio::task::spawn_blocking(move || {
+                        pm.remember(&program_name, &agent_name, key, value)
+                    })
+                    .await
+                    .map_err(|e| miette::miette!("Memory.remember: {e}"))?
+                    .map(|_| Value::None)
                 }
                 _ => {
                     assert_memory_serializable(&value)?;
@@ -174,10 +176,14 @@ pub(crate) fn namespace() -> Namespace {
                 "none" => Err(miette::miette!(
                     "CapabilityError: Memory.recall is not allowed — agent has @memory none"
                 )),
-                "persistent" => Ok(interp
-                    .runtime
-                    .persistent_memory
-                    .recall(&program_name, &agent_name, &key)?),
+                "persistent" => {
+                    let pm = interp.runtime.persistent_memory.clone();
+                    tokio::task::spawn_blocking(move || {
+                        pm.recall(&program_name, &agent_name, &key)
+                    })
+                    .await
+                    .map_err(|e| miette::miette!("Memory.recall: {e}"))?
+                }
                 _ => {
                     let result = interp.runtime.session_memory.recall(&agent_name, &key);
                     Ok(result)
@@ -198,11 +204,13 @@ pub(crate) fn namespace() -> Namespace {
                     "CapabilityError: Memory.forget is not allowed — agent has @memory none"
                 )),
                 "persistent" => {
-                    interp
-                        .runtime
-                        .persistent_memory
-                        .forget(&program_name, &agent_name, &key)?;
-                    Ok(Value::None)
+                    let pm = interp.runtime.persistent_memory.clone();
+                    tokio::task::spawn_blocking(move || {
+                        pm.forget(&program_name, &agent_name, &key)
+                    })
+                    .await
+                    .map_err(|e| miette::miette!("Memory.forget: {e}"))?
+                    .map(|_| Value::None)
                 }
                 _ => {
                     interp.runtime.session_memory.forget(&agent_name, &key);

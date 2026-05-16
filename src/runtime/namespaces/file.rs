@@ -8,10 +8,15 @@ pub(crate) fn namespace() -> Namespace {
             let path = positional(&args, 0)
                 .map(|v| v.to_display_string())
                 .ok_or_else(|| miette::miette!("File.read: missing path argument"))?;
-            match interp.runtime.file_system.read_to_string(std::path::Path::new(&path)) {
-                Ok(content) => Ok(Value::String(content)),
-                Err(e) => Err(miette::miette!("FileError: File.read `{path}`: {e}")),
-            }
+            let fs = interp.runtime.file_system.clone();
+            let path_inner = path.clone();
+            tokio::task::spawn_blocking(move || {
+                fs.read_to_string(std::path::Path::new(&path_inner))
+            })
+            .await
+            .map_err(|e| miette::miette!("File.read: {e}"))?
+            .map(Value::String)
+            .map_err(|e| miette::miette!("FileError: File.read `{path}`: {e}"))
         }),
         "write" => |interp, args| Box::pin(async move {
             let path = positional(&args, 0)
@@ -20,32 +25,42 @@ pub(crate) fn namespace() -> Namespace {
             let content = positional(&args, 1)
                 .map(|v| v.to_display_string())
                 .ok_or_else(|| miette::miette!("File.write: missing content argument"))?;
-
-            match interp
-                .runtime
-                .file_system
-                .write_string(std::path::Path::new(&path), &content)
-            {
-                Ok(_) => Ok(Value::None),
-                Err(e) => Err(miette::miette!("FileError: File.write `{path}`: {e}")),
-            }
+            let fs = interp.runtime.file_system.clone();
+            let path_inner = path.clone();
+            tokio::task::spawn_blocking(move || {
+                fs.write_string(std::path::Path::new(&path_inner), &content)
+            })
+            .await
+            .map_err(|e| miette::miette!("File.write: {e}"))?
+            .map(|_| Value::None)
+            .map_err(|e| miette::miette!("FileError: File.write `{path}`: {e}"))
         }),
         "exists" => |interp, args| Box::pin(async move {
             let path = positional(&args, 0)
                 .map(|v| v.to_display_string())
                 .ok_or_else(|| miette::miette!("File.exists: missing path argument"))?;
-            let exists = interp.runtime.file_system.exists(std::path::Path::new(&path));
+            let fs = interp.runtime.file_system.clone();
+            let path_inner = path.clone();
+            let exists = tokio::task::spawn_blocking(move || {
+                fs.exists(std::path::Path::new(&path_inner))
+            })
+            .await
+            .map_err(|e| miette::miette!("File.exists: {e}"))?;
             Ok(Value::Bool(exists))
         }),
         "list" => |interp, args| Box::pin(async move {
             let dir_path = positional(&args, 0)
                 .map(|v| v.to_display_string())
                 .ok_or_else(|| miette::miette!("File.list: missing directory argument"))?;
-
-            match interp.runtime.file_system.read_dir_names(std::path::Path::new(&dir_path)) {
-                Ok(names) => Ok(Value::List(names.into_iter().map(Value::String).collect())),
-                Err(e) => Err(miette::miette!("FileError: File.list `{dir_path}`: {e}")),
-            }
+            let fs = interp.runtime.file_system.clone();
+            let dir_inner = dir_path.clone();
+            tokio::task::spawn_blocking(move || {
+                fs.read_dir_names(std::path::Path::new(&dir_inner))
+            })
+            .await
+            .map_err(|e| miette::miette!("File.list: {e}"))?
+            .map(|names| Value::List(names.into_iter().map(Value::String).collect()))
+            .map_err(|e| miette::miette!("FileError: File.list `{dir_path}`: {e}"))
         }),
     })
 }
