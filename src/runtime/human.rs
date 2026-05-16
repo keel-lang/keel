@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io::{self, Write};
 
 use colored::Colorize;
@@ -69,12 +70,13 @@ pub fn show_with_repl(value: &Value, repl_mode: bool) {
 
 /// Render a list of maps as a table.
 fn show_table(items: &[Value]) {
-    // Collect all column names
+    // Collect all column names in insertion order, O(1) membership check.
     let mut columns: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
     for item in items {
         if let Value::Map(fields) = item {
             for key in fields.keys() {
-                if !columns.contains(key) {
+                if seen.insert(key.clone()) {
                     columns.push(key.clone());
                 }
             }

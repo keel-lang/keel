@@ -91,9 +91,14 @@ pub(crate) fn namespace() -> Namespace {
 fn agents_in_team(interp: &crate::interpreter::Interpreter, team: &str) -> Vec<String> {
     use crate::ast::{AttributeBody, Expr, StringPart};
 
-    let live = interp.live_agents.lock();
+    let instances: Vec<_> = interp
+        .live_agents
+        .lock()
+        .iter()
+        .map(|(name, inst)| (name.clone(), inst.clone()))
+        .collect();
     let mut out = Vec::new();
-    for (name, instance) in live.iter() {
+    for (name, instance) in &instances {
         let def = instance.lock().def.clone();
         let in_team = def.attributes.iter().any(|attr| {
             if attr.name != "team" {

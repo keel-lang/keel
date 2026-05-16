@@ -4,6 +4,7 @@
 //! reached or mapped, the call fails with an error that explains how
 //! to fix it. `KEEL_LLM=mock` short-circuits all calls for tests.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -214,7 +215,7 @@ impl LlmClient {
             println!(
                 "  {} system prompt: {}",
                 "→".dimmed(),
-                truncate(&full_system, 200).dimmed()
+                truncate(&full_system, 200).as_ref().dimmed()
             );
         }
 
@@ -294,7 +295,7 @@ impl LlmClient {
                 variants_str.bright_cyan(),
                 self.describe_model(model).dimmed()
             );
-            println!("     input: {}", truncate(input, 80).dimmed());
+            println!("     input: {}", truncate(input, 80).as_ref().dimmed());
         }
 
         let mut system = format!(
@@ -363,7 +364,7 @@ impl LlmClient {
                 length_instruction.dimmed(),
                 self.describe_model(model).dimmed()
             );
-            println!("     input: {}", truncate(input, 80).dimmed());
+            println!("     input: {}", truncate(input, 80).as_ref().dimmed());
         }
 
         let mut system = format!(
@@ -419,7 +420,7 @@ impl LlmClient {
                 tone_s.dimmed(),
                 self.describe_model(model).dimmed()
             );
-            println!("     prompt: {}", truncate(description, 80).dimmed());
+            println!("     prompt: {}", truncate(description, 80).as_ref().dimmed());
         }
 
         let mut system =
@@ -458,7 +459,7 @@ impl LlmClient {
                 fields_desc.join(", ").bright_cyan(),
                 self.describe_model(model).dimmed()
             );
-            println!("     from: {}", truncate(input, 80).dimmed());
+            println!("     from: {}", truncate(input, 80).as_ref().dimmed());
         }
 
         let system = format!(
@@ -493,7 +494,7 @@ impl LlmClient {
                 langs.bright_cyan(),
                 self.describe_model(model).dimmed()
             );
-            println!("     input: {}", truncate(input, 80).dimmed());
+            println!("     input: {}", truncate(input, 80).as_ref().dimmed());
         }
 
         let system = if target_langs.len() == 1 {
@@ -544,7 +545,7 @@ impl LlmClient {
                 "→".dimmed(),
                 self.describe_model(model).dimmed()
             );
-            println!("     input: {}", truncate(input, 80).dimmed());
+            println!("     input: {}", truncate(input, 80).as_ref().dimmed());
         }
 
         let system = format!(
@@ -629,10 +630,10 @@ impl LlmClient {
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
+fn truncate(s: &str, max: usize) -> Cow<'_, str> {
     if s.len() > max {
-        format!("{}...", &s[..max])
+        Cow::Owned(format!("{}...", &s[..max]))
     } else {
-        s.to_string()
+        Cow::Borrowed(s)
     }
 }
