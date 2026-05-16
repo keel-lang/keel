@@ -45,6 +45,28 @@ cargo test examples_all_parse --test integration_tests
 
 Every `.keel` file in `examples/` must be listed in `examples_all_parse` and pass `keel check`. Add any new example to the list first.
 
+## Step 4a — Doc Code Block Audit
+
+Every `.keel` code block in `docs/src/` and every inline example in `CHANGELOG.md`, `SPEC.md`, and `ROADMAP.md` must be valid, runnable Keel code.
+
+For each block, ask:
+
+1. **Is it syntactically valid?** Paste it into `keel check` (via a temp file). If the block is intentionally a fragment (e.g. a single expression without a wrapping `agent`), wrap it in a minimal harness first:
+   ```keel
+   agent _Check { @on_start { <snippet> } }
+   run(_Check)
+   ```
+2. **Is the type correct?** Pay special attention to operator expressions. `str + int` is invalid. String interpolation (`"{x}"`) is required when mixing types.
+3. **Does it match the feature it documents?** The example must actually demonstrate the described behaviour — not a subtly wrong variant.
+
+Any block that fails check or contains a type error is a **blocking failure**. Fix it before continuing to Step 5.
+
+Common mistakes to look for:
+- `str + int` instead of `"{str} {int}"` (string interpolation)
+- Calling methods that don't exist on the given type
+- Using `=` where the variable hasn't been declared yet in scope
+- Missing `run(AgentName)` in standalone examples
+
 ## Step 5 — Docs Update
 
 Update every affected page:
