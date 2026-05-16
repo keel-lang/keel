@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use miette::{NamedSource, Result};
 use parking_lot::Mutex;
@@ -135,10 +135,13 @@ pub struct Interpreter {
     pub(crate) event_rx: Option<UnboundedReceiver<Event>>,
     /// Registered closures keyed by id. Scheduled tasks post the id
     /// via `Event::FireClosure`; the event loop looks up the closure
-    /// and invokes it in the correct agent context.
-    pub(crate) closures: HashMap<u64, ScheduledClosure>,
-    /// Next free closure id.
-    pub(crate) next_closure_id: u64,
+    /// and invokes it in the correct agent context. Shared with any
+    /// interpreter spawned via `Async.spawn` so scheduled closures
+    /// registered inside a spawned task are visible to the main event loop.
+    pub(crate) closures: Arc<Mutex<HashMap<u64, ScheduledClosure>>>,
+    /// Next free closure id — shared with spawned interpreters to avoid
+    /// id collisions when both register closures concurrently.
+    pub(crate) next_closure_id: Arc<AtomicU64>,
     /// Number of active Http.serve listeners. The event loop keeps running
     /// while this is > 0, even if no agents are live.
     pub(crate) active_http_servers: Arc<AtomicU64>,
@@ -171,8 +174,8 @@ impl Interpreter {
             runtime,
             event_tx,
             event_rx: Some(event_rx),
-            closures: HashMap::new(),
-            next_closure_id: 0,
+            closures: Arc::new(Mutex::new(HashMap::new())),
+            next_closure_id: Arc::new(AtomicU64::new(0)),
             active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
             program_name: "__inline__".to_string(),
@@ -190,9 +193,8 @@ impl Interpreter {
         params: Vec<LambdaParam>,
         body: LambdaBody,
     ) -> u64 {
-        let id = self.next_closure_id;
-        self.next_closure_id += 1;
-        self.closures.insert(
+        let id = self.next_closure_id.fetch_add(1, Ordering::Relaxed);
+        self.closures.lock().insert(
             id,
             ScheduledClosure {
                 agent_name,
@@ -216,7 +218,7 @@ impl Interpreter {
         agent_name: &str,
         closure_id: u64,
     ) -> Result<()> {
-        let closure = self.closures.get(&closure_id).cloned();
+        let closure = self.closures.lock().get(&closure_id).cloned();
         let inst = self.live_agents.lock().get(agent_name).cloned();
         let (Some(c), Some(agent_inst)) = (closure, inst) else {
             return Ok(()); // agent stopped or closure removed

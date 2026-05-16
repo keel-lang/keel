@@ -108,7 +108,7 @@ impl Interpreter {
                     request_json,
                     response_tx,
                 } => {
-                    let closure = self.closures.get(&closure_id).cloned();
+                    let closure = self.closures.lock().get(&closure_id).cloned();
                     if let Some(c) = closure {
                         // Deserialize request JSON to Value
                         let request_val =

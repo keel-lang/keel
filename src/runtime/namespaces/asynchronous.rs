@@ -29,7 +29,13 @@ pub(crate) fn namespace() -> Namespace {
             let agents = interp.agents.clone();
             let enum_types = interp.enum_types.clone();
             let struct_types = interp.struct_types.clone();
+            // Share the parent's event infrastructure so the spawned task can
+            // use Schedule.*, Agent.send, and Http.serve — events route to
+            // the main event loop via the shared channel and closure registry.
             let closures = interp.closures.clone();
+            let next_closure_id = interp.next_closure_id.clone();
+            let event_tx = interp.event_tx.clone();
+            let active_http_servers = interp.active_http_servers.clone();
             let live_agents = interp.live_agents.clone();
 
             let handle = tokio::spawn(async move {
@@ -40,6 +46,10 @@ pub(crate) fn namespace() -> Namespace {
                 local_interp.enum_types = enum_types;
                 local_interp.struct_types = struct_types;
                 local_interp.closures = closures;
+                local_interp.next_closure_id = next_closure_id;
+                local_interp.event_tx = event_tx;
+                local_interp.event_rx = None;
+                local_interp.active_http_servers = active_http_servers;
                 local_interp.live_agents = live_agents;
                 local_interp.current_agent = current_agent;
                 local_interp.program_name = program_name;
