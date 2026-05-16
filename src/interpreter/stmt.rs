@@ -35,7 +35,12 @@ impl Interpreter {
                     }
                     if let Some(agent) = &self.current_agent {
                         let mut guard = agent.lock();
-                        if guard.def.state_fields.iter().any(|f| f.name == *field && f.readonly) {
+                        if guard
+                            .def
+                            .state_fields
+                            .iter()
+                            .any(|f| f.name == *field && f.readonly)
+                        {
                             return Err(runtime_error(format!(
                                 "cannot assign to `self.{field}`: field is declared readonly"
                             )));

@@ -420,7 +420,10 @@ impl LlmClient {
                 tone_s.dimmed(),
                 self.describe_model(model).dimmed()
             );
-            println!("     prompt: {}", truncate(description, 80).as_ref().dimmed());
+            println!(
+                "     prompt: {}",
+                truncate(description, 80).as_ref().dimmed()
+            );
         }
 
         let mut system =

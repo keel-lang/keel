@@ -14,6 +14,37 @@ All notable changes to Keel.
 
 ---
 
+## [0.1.24] — 2026-05-16
+
+Concurrency safety fixes: lock ordering, shared HTTP client, blocking I/O handling, and async event routing.
+
+### Fixed
+
+- Runtime: fixed potential deadlock in `agents_in_team` by snaphotting agent Arc handles before
+  acquiring per-instance locks. Prevents lock-ordering inversion if future code paths acquire
+  locks in opposite order.
+
+- Runtime: `Http.*` now reuse a process-wide HTTP client with connection pooling instead of
+  constructing a new client on every call. Eliminates redundant TCP+TLS handshakes and improves
+  throughput for high-frequency HTTP operations.
+
+- Runtime: `File.*` and `Memory.*` operations now run on the tokio blocking thread pool instead
+  of blocking the main executor. Fixes stalls when many tasks perform concurrent file or memory
+  I/O; blocking operations no longer starve the event loop.
+
+- Runtime: fixed async spawning by sharing event channels and closure registries with spawned
+  interpreters. Previously, `Async.spawn` created orphaned event channels that silently dropped
+  `Schedule.*`, `Agent.send/broadcast`, and `Http.serve` events. Now all spawned tasks route
+  events to the parent interpreter's event loop.
+
+- Runtime: `llm.truncate()` no longer allocates on the happy path — returns `Cow<str>` so short
+  strings borrow the input, reducing GC pressure.
+
+- Runtime: `show_table` column deduplication now uses a HashSet for O(1) membership testing
+  instead of O(n) linear search, fixing quadratic behaviour on wide tables.
+
+---
+
 ## [0.1.23] — 2026-05-16
 
 Augmented assignment, raise statement, break/continue, and list.zip()

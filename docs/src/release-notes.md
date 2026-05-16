@@ -8,6 +8,20 @@
 
 ---
 
+## v0.1.24 — 2026-05-16
+
+### Bug fixes
+
+This release focuses on runtime safety and performance:
+
+- Fixed potential deadlock in agent team queries through proper lock ordering.
+- HTTP client now uses connection pooling, eliminating redundant TCP+TLS handshakes.
+- File and memory I/O operations now use async-safe blocking thread pools, preventing event loop stalls.
+- Fixed async task spawning to properly route events to the parent interpreter.
+- Reduced allocations in string truncation and improved deduplication performance.
+
+---
+
 ## v0.1.23 — 2026-05-16
 
 ### Augmented assignment — `+=`, `-=`, `*=`, `/=`

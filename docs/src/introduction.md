@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.23](./release-notes.md)** — Augmented assignment, raise statement, break/continue, and list.zip(). [See what's new →](./release-notes.md)
+> **Latest: [v0.1.24](./release-notes.md)** — Concurrency safety fixes: lock ordering, shared HTTP client, blocking I/O handling, and async event routing. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
