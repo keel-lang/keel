@@ -34,18 +34,13 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     if let Some(agent) = &self.current_agent {
-                        let is_readonly = agent
-                            .lock()
-                            .def
-                            .state_fields
-                            .iter()
-                            .any(|f| f.name == *field && f.readonly);
-                        if is_readonly {
+                        let mut guard = agent.lock();
+                        if guard.def.state_fields.iter().any(|f| f.name == *field && f.readonly) {
                             return Err(runtime_error(format!(
                                 "cannot assign to `self.{field}`: field is declared readonly"
                             )));
                         }
-                        agent.lock().state.insert(field.clone(), v);
+                        guard.state.insert(field.clone(), v);
                         Ok(StmtOutcome::Normal)
                     } else {
                         Err(runtime_error(format!(

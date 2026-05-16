@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::convert::value_to_json;
 use crate::runtime::namespace::{find_arg, ns, positional};
+
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Http", {
@@ -158,7 +161,7 @@ async fn http_send(
     headers: HashMap<String, Value>,
     body: Option<Value>,
 ) -> miette::Result<Value> {
-    let client = reqwest::Client::new();
+    let client = &*HTTP_CLIENT;
     let method_upper = method.to_uppercase();
     let reqwest_method = match method_upper.as_str() {
         "GET" => reqwest::Method::GET,
