@@ -16,7 +16,6 @@ mod log;
 pub(crate) mod memory;
 mod schedule;
 mod search;
-mod str;
 mod time;
 
 pub(crate) fn install(interp: &mut Interpreter) {
@@ -25,7 +24,7 @@ pub(crate) fn install(interp: &mut Interpreter) {
     }
 }
 
-fn namespaces() -> [Namespace; 18] {
+fn namespaces() -> [Namespace; 17] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -44,6 +43,5 @@ fn namespaces() -> [Namespace; 18] {
         file::namespace(),
         json::namespace(),
         cache::namespace(),
-        str::namespace(),
     ]
 }

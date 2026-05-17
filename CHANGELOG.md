@@ -12,6 +12,35 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Changed
+
+- **String API unified on value methods — `Str` namespace removed.** All string operations are
+  now called directly on the string value. `Str.match`, `Str.extract`, `Str.truncate`, and
+  `Str.pad` no longer exist; use the equivalent method calls instead:
+
+  ```keel
+  # before
+  if Str.match(text, "\\d+") { ... }
+  short = Str.truncate(text, 20)
+  col   = Str.pad("ID", 10)
+
+  # after
+  if text.matches("\\d+") { ... }
+  short = text.truncate(20)
+  col   = "ID".pad(10)
+  ```
+
+  Two new methods added at the same time:
+
+  ```keel
+  dates = text.find_all("\\d{4}-\\d{2}-\\d{2}")   # list[str] — all matches
+  clean = text.sub("\\s+", " ")                    # str — regex replace all
+  ```
+
+  **Migration:** rename `Str.match(t, p)` → `t.matches(p)`, `Str.extract(t, p)` →
+  `t.extract(p)`, `Str.truncate(t, n)` → `t.truncate(n)`, `Str.pad(t, w)` → `t.pad(w)`,
+  `Str.pad(t, w, char: c)` → `t.pad(w, char: c)`.
+
 ---
 
 ## [0.1.24] — 2026-05-16

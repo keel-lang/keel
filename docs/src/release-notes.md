@@ -595,15 +595,17 @@ Cache.delete("key")
 Cache.clear()
 ```
 
-#### `Str` namespace
+#### String value methods — regex & formatting
 
-Regex matching and string manipulation:
+Regex matching and string manipulation are available as methods directly on string values. The `Str` namespace was removed in a later release; see the migration note in the changelog.
 
 ```keel
-Str.match(text, "\\d+")                 # bool
-Str.extract(text, "(\\d+)")             # str? — first capture group
-Str.truncate("hello world", 5)          # "hello…"
-Str.pad("42", 6, char: "0")             # "000042"
+text.matches("\\d+")                    # bool
+text.extract("(\\d+)")                  # str? — first capture group
+text.find_all("\\d+")                   # list[str] — all matches
+text.sub("\\d+", "N")                   # str — regex replace all
+"hello world".truncate(5)               # "hello…"
+"42".pad(6, char: "0")                  # "000042"
 ```
 
 #### `Http.serve` — webhook listener

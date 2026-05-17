@@ -200,7 +200,7 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "Str", "File", "Json",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json",
         ] {
             prelude.insert(n.to_string());
         }
@@ -1502,6 +1502,10 @@ impl Checker {
                     (Ty::Str, "to_int") => Ty::Nullable(Box::new(Ty::Int)),
                     (Ty::Str, "to_float") => Ty::Nullable(Box::new(Ty::Float)),
                     (Ty::Str, "index_of") => Ty::Nullable(Box::new(Ty::Int)),
+                    (Ty::Str, "truncate" | "pad" | "sub") => Ty::Str,
+                    (Ty::Str, "matches") => Ty::Bool,
+                    (Ty::Str, "extract") => Ty::Nullable(Box::new(Ty::Str)),
+                    (Ty::Str, "find_all") => Ty::List(Box::new(Ty::Str)),
                     (Ty::Map(_, v), "get") => Ty::Nullable(v.clone()),
                     (Ty::Map(k, _), "keys") => Ty::List(k.clone()),
                     (Ty::Map(_, v), "values") => Ty::List(v.clone()),
@@ -1880,7 +1884,6 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "Log"
             | "Agent"
             | "Cache"
-            | "Str"
             | "File"
             | "Json"
     ) {

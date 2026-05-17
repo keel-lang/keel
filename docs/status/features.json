@@ -165,11 +165,11 @@
       "purpose": "In-memory process-scoped cache: `set`, `get`, `delete`, `clear`"
     },
     {
-      "name": "Str",
-      "status": "partial",
-      "implemented_ops": "`match`, `extract` (capture group 1), `truncate`, `pad`",
-      "gaps": "`find_all`, `replace` — regex crate already present",
-      "purpose": "Regex & string tools: `match`, `extract`, `truncate`, `pad`"
+      "name": "String value methods",
+      "status": "shipped",
+      "implemented_ops": "`.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed",
+      "gaps": "—",
+      "purpose": "Regex and formatting directly on string values: matches, extract, find_all, sub, truncate, pad"
     },
     {
       "name": "File",

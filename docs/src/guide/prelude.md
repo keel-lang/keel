@@ -26,7 +26,6 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `File` | 🟡 | Filesystem: `read`, `write`, `exists`, `list` |
 | `Json` | ✅ | JSON: `parse`, `stringify` |
 | `Cache` | ✅ | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |
-| `Str` | 🟡 | Regex & string tools: `match`, `extract`, `truncate`, `pad` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
 | `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
 | `Memory` | ✅ | Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\|persistent\|none` (default: session). Persistent mode writes `~/.keel/memory/<stem>_<hash12>/<agent>.json`. |

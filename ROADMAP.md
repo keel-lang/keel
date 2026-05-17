@@ -78,7 +78,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
 | `Async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
 | `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | — |
-| `Str` | [~] | `match`, `extract` (capture group 1), `truncate`, `pad` | `find_all`, `replace` — regex crate already present |
+| String value methods | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — `Str` namespace removed; all string ops unified on the value | — |
 | `File` | [~] | `read`, `write`, `exists`, `list` | `mkdir`, `remove`, `copy`, `glob` |
 | `Math` | [ ] | — | `random()`, `uuid()`, `abs()`, `floor()`, `ceil()`, `round()`, `min(a,b)`, `max(a,b)` |
 | `Json` | [x] | `parse`, `stringify` | — |

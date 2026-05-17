@@ -295,11 +295,11 @@ run(CacheTest)
 }
 
 #[test]
-fn str_match_true() {
+fn str_matches_true() {
     let src = r#"
 agent StrTest {
     @on_start {
-        result = Str.match("hello world", "\\w+")
+        result = "hello world".matches("\\w+")
         if result {
             Io.show("matched")
         }
@@ -314,16 +314,16 @@ run(StrTest)
     );
     assert!(
         stdout.contains("matched"),
-        "Str.match true case failed:\n{stdout}"
+        "matches true case failed:\n{stdout}"
     );
 }
 
 #[test]
-fn str_match_false() {
+fn str_matches_false() {
     let src = r#"
 agent StrTest {
     @on_start {
-        result = Str.match("hello world", "^\\d+$")
+        result = "hello world".matches("^\\d+$")
         if result {
             Io.show("matched")
         } else {
@@ -340,7 +340,7 @@ run(StrTest)
     );
     assert!(
         stdout.contains("no-match"),
-        "Str.match false case failed:\n{stdout}"
+        "matches false case failed:\n{stdout}"
     );
 }
 
@@ -349,7 +349,7 @@ fn str_extract() {
     let src = r#"
 agent StrTest {
     @on_start {
-        v = Str.extract("Total: $99.99", "\\$(\\S+)")
+        v = "Total: $99.99".extract("\\$(\\S+)")
         Io.show("amount={v}")
     }
 }
@@ -360,10 +360,7 @@ run(StrTest)
         ok,
         "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
     );
-    assert!(
-        stdout.contains("amount=99.99"),
-        "Str.extract failed:\n{stdout}"
-    );
+    assert!(stdout.contains("amount=99.99"), "extract failed:\n{stdout}");
 }
 
 #[test]
@@ -371,7 +368,7 @@ fn str_truncate() {
     let src = r#"
 agent StrTest {
     @on_start {
-        v = Str.truncate("hello world", 5)
+        v = "hello world".truncate(5)
         Io.show("short={v}")
     }
 }
@@ -384,7 +381,7 @@ run(StrTest)
     );
     assert!(
         stdout.contains("short=hello…"),
-        "Str.truncate failed:\n{stdout}"
+        "truncate failed:\n{stdout}"
     );
 }
 
@@ -393,7 +390,7 @@ fn str_pad() {
     let src = r#"
 agent StrTest {
     @on_start {
-        v = Str.pad("42", 5)
+        v = "42".pad(5)
         Io.show("padded={v}")
     }
 }
@@ -404,5 +401,54 @@ run(StrTest)
         ok,
         "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
     );
-    assert!(stdout.contains("padded=   42"), "Str.pad failed:\n{stdout}");
+    assert!(stdout.contains("padded=   42"), "pad failed:\n{stdout}");
+}
+
+#[test]
+fn str_find_all() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        matches = "one 1 two 2 three 3".find_all("\\d+")
+        Io.show("count={matches.count}")
+        Io.show("first={matches.first}")
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("count=3"),
+        "find_all count failed:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("first=1"),
+        "find_all first failed:\n{stdout}"
+    );
+}
+
+#[test]
+fn str_sub() {
+    let src = r#"
+agent StrTest {
+    @on_start {
+        v = "hello world hello".sub("hello", "hi")
+        Io.show("result={v}")
+    }
+}
+run(StrTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("result=hi world hi"),
+        "sub failed:\n{stdout}"
+    );
 }

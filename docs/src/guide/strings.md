@@ -81,36 +81,37 @@ notify user "Price: \{not interpolated\}"
 | `.to_int()` | `int?` | `"42".to_int()` → `42`; `"bad".to_int()` → `none` |
 | `.to_float()` | `float?` | `"3.14".to_float()` → `3.14`; `"x".to_float()` → `none` |
 | `.to_str()` | `str` | identity — useful in generic contexts |
+| `.truncate(max)` | `str` | Truncates to `max` chars; appends `"…"` if cut. `max` must be ≥ 0 |
+| `.pad(width, char?)` | `str` | Left-pads to `width` with `char` (default `" "`). `width` must be ≥ 0 |
+| `.matches(pattern)` | `bool` | `true` if regex matches anywhere in the string |
+| `.extract(pattern)` | `str?` | First capture group of regex; `none` if no match |
+| `.find_all(pattern)` | `list[str]` | All non-overlapping regex matches; empty list if none |
+| `.sub(pattern, replacement)` | `str` | Replace all regex matches; supports `$1` backreferences |
 
-## `Str` namespace — regex & processing
-
-The `Str` namespace provides regex matching and string manipulation:
+Patterns use standard regex syntax (Rust `regex` crate — no look-behind).
 
 ```keel
-# Test if a pattern matches
-if Str.match(text, "\\d{4}-\\d{2}-\\d{2}") {
-  Io.show("looks like a date")
+text = "Invoice #1042 — Total: $3,750.00 due 2026-05-15"
+
+# Regex test
+if text.matches("\\d{4}-\\d{2}-\\d{2}") {
+    Io.show("looks like a date")
 }
 
 # Extract first capture group (returns str?)
-phone = Str.extract(text, "(\\+?\\d[\\d\\s-]{7,})")
+amount = text.extract("\\$(\\S+)")         # "3,750.00"
 
-# Truncate with ellipsis
-short = Str.truncate("Hello, World!", 7)   # "Hello, …"
+# All matches
+dates = text.find_all("\\d{4}-\\d{2}-\\d{2}")  # ["2026-05-15"]
 
-# Left-pad with spaces (or custom char)
-padded  = Str.pad("42", 6)              # "    42"
-zeroed  = Str.pad("42", 6, char: "0")  # "000042"
+# Regex replace (global)
+redacted = text.sub("\\$[\\d,]+\\.\\d{2}", "[REDACTED]")
+
+# Truncate and pad
+short  = text.truncate(20)         # "Invoice #1042 — Tot…"
+padded = "42".pad(6)               # "    42"
+zeroed = "42".pad(6, char: "0")   # "000042"
 ```
-
-| Method | Returns | Notes |
-|--------|---------|-------|
-| `Str.match(text, pattern)` | `bool` | True if regex matches anywhere in `text` |
-| `Str.extract(text, pattern)` | `str?` | First capture group; `none` if no match |
-| `Str.truncate(text, max)` | `str` | Truncates to `max` chars; appends `"…"` if cut. `max` must be ≥ 0 |
-| `Str.pad(text, width, char?)` | `str` | Left-pads to `width` with `char` (default `" "`). `width` must be ≥ 0 |
-
-Patterns use standard regex syntax (Rust `regex` crate — no look-behind).
 
 ## `Cache` namespace — in-memory shared cache
 

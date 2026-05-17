@@ -105,6 +105,102 @@ impl Interpreter {
             }
             (Value::String(s), "trim_start") => Ok(Value::String(s.trim_start().to_string())),
             (Value::String(s), "trim_end") => Ok(Value::String(s.trim_end().to_string())),
+            (Value::String(s), "matches") => {
+                let pattern = args
+                    .first()
+                    .map(|a| a.value.to_display_string())
+                    .ok_or_else(|| runtime_error("matches: missing pattern argument"))?;
+                let re = regex::Regex::new(&pattern)
+                    .map_err(|e| runtime_error(format!("matches: invalid regex: {e}")))?;
+                Ok(Value::Bool(re.is_match(s)))
+            }
+            (Value::String(s), "extract") => {
+                let pattern = args
+                    .first()
+                    .map(|a| a.value.to_display_string())
+                    .ok_or_else(|| runtime_error("extract: missing pattern argument"))?;
+                let re = regex::Regex::new(&pattern)
+                    .map_err(|e| runtime_error(format!("extract: invalid regex: {e}")))?;
+                match re.captures(s) {
+                    Some(caps) => match caps.get(1) {
+                        Some(m) => Ok(Value::String(m.as_str().to_string())),
+                        None => Ok(Value::None),
+                    },
+                    None => Ok(Value::None),
+                }
+            }
+            (Value::String(s), "truncate") => {
+                let max_i = args
+                    .first()
+                    .and_then(|a| a.value.as_int())
+                    .ok_or_else(|| runtime_error("truncate: missing max argument"))?;
+                if max_i < 0 {
+                    return Err(runtime_error(format!(
+                        "truncate: max must be non-negative, got {max_i}"
+                    )));
+                }
+                let max_chars = max_i as usize;
+                let char_count = s.chars().count();
+                if char_count <= max_chars {
+                    Ok(Value::String(s.clone()))
+                } else {
+                    let truncated: String = s.chars().take(max_chars).collect();
+                    Ok(Value::String(format!("{truncated}…")))
+                }
+            }
+            (Value::String(s), "pad") => {
+                let width_i = args
+                    .first()
+                    .and_then(|a| a.value.as_int())
+                    .ok_or_else(|| runtime_error("pad: missing width argument"))?;
+                if width_i < 0 {
+                    return Err(runtime_error(format!(
+                        "pad: width must be non-negative, got {width_i}"
+                    )));
+                }
+                let width = width_i as usize;
+                let pad_char_str = args
+                    .iter()
+                    .find(|a| a.name.as_deref() == Some("char"))
+                    .map(|a| a.value.to_display_string())
+                    .unwrap_or_else(|| " ".to_string());
+                let pad_char = pad_char_str.chars().next().unwrap_or(' ');
+                let len = s.chars().count();
+                if len >= width {
+                    Ok(Value::String(s.clone()))
+                } else {
+                    let padding: String = std::iter::repeat_n(pad_char, width - len).collect();
+                    Ok(Value::String(format!("{padding}{s}")))
+                }
+            }
+            (Value::String(s), "find_all") => {
+                let pattern = args
+                    .first()
+                    .map(|a| a.value.to_display_string())
+                    .ok_or_else(|| runtime_error("find_all: missing pattern argument"))?;
+                let re = regex::Regex::new(&pattern)
+                    .map_err(|e| runtime_error(format!("find_all: invalid regex: {e}")))?;
+                let matches: Vec<Value> = re
+                    .find_iter(s)
+                    .map(|m| Value::String(m.as_str().to_string()))
+                    .collect();
+                Ok(Value::List(matches))
+            }
+            (Value::String(s), "sub") => {
+                let pattern = args
+                    .first()
+                    .map(|a| a.value.to_display_string())
+                    .ok_or_else(|| runtime_error("sub: missing pattern argument"))?;
+                let replacement = args
+                    .get(1)
+                    .map(|a| a.value.to_display_string())
+                    .ok_or_else(|| runtime_error("sub: missing replacement argument"))?;
+                let re = regex::Regex::new(&pattern)
+                    .map_err(|e| runtime_error(format!("sub: invalid regex: {e}")))?;
+                Ok(Value::String(
+                    re.replace_all(s, replacement.as_str()).to_string(),
+                ))
+            }
             (Value::Range(lo, hi), "count" | "len") => {
                 Ok(Value::Integer(if lo <= hi { hi - lo + 1 } else { 0 }))
             }
