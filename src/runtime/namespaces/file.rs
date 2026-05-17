@@ -62,6 +62,99 @@ pub(crate) fn namespace() -> Namespace {
             .map(|names| Value::List(names.into_iter().map(Value::String).collect()))
             .map_err(|e| miette::miette!("FileError: File.list `{dir_path}`: {e}"))
         }),
+        "mkdir" => |interp, args| Box::pin(async move {
+            let path = positional(&args, 0)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.mkdir: missing path argument"))?;
+            let fs = interp.runtime.file_system.clone();
+            let path_inner = path.clone();
+            tokio::task::spawn_blocking(move || {
+                fs.mkdir(std::path::Path::new(&path_inner))
+            })
+            .await
+            .map_err(|e| miette::miette!("File.mkdir: {e}"))?
+            .map(|_| Value::None)
+            .map_err(|e| miette::miette!("FileError: File.mkdir `{path}`: {e}"))
+        }),
+        "remove" => |interp, args| Box::pin(async move {
+            let path = positional(&args, 0)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.remove: missing path argument"))?;
+            let fs = interp.runtime.file_system.clone();
+            let path_inner = path.clone();
+            tokio::task::spawn_blocking(move || {
+                fs.remove(std::path::Path::new(&path_inner))
+            })
+            .await
+            .map_err(|e| miette::miette!("File.remove: {e}"))?
+            .map(|_| Value::None)
+            .map_err(|e| miette::miette!("FileError: File.remove `{path}`: {e}"))
+        }),
+        "copy" => |interp, args| Box::pin(async move {
+            let src = positional(&args, 0)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.copy: missing src argument"))?;
+            let dst = positional(&args, 1)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.copy: missing dst argument"))?;
+            let fs = interp.runtime.file_system.clone();
+            let (src_inner, dst_inner) = (src.clone(), dst.clone());
+            tokio::task::spawn_blocking(move || {
+                fs.copy_file(
+                    std::path::Path::new(&src_inner),
+                    std::path::Path::new(&dst_inner),
+                )
+            })
+            .await
+            .map_err(|e| miette::miette!("File.copy: {e}"))?
+            .map(|_| Value::None)
+            .map_err(|e| miette::miette!("FileError: File.copy `{src}` -> `{dst}`: {e}"))
+        }),
+        "glob" => |interp, args| Box::pin(async move {
+            let pattern = positional(&args, 0)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.glob: missing pattern argument"))?;
+            let fs = interp.runtime.file_system.clone();
+            let pat_inner = pattern.clone();
+            tokio::task::spawn_blocking(move || fs.glob(&pat_inner))
+            .await
+            .map_err(|e| miette::miette!("File.glob: {e}"))?
+            .map(|paths| Value::List(paths.into_iter().map(Value::String).collect()))
+            .map_err(|e| miette::miette!("FileError: File.glob `{pattern}`: {e}"))
+        }),
+        "move" => |interp, args| Box::pin(async move {
+            let src = positional(&args, 0)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.move: missing src argument"))?;
+            let dst = positional(&args, 1)
+                .map(|v| v.to_display_string())
+                .ok_or_else(|| miette::miette!("File.move: missing dst argument"))?;
+            let fs = interp.runtime.file_system.clone();
+            let (src_inner, dst_inner) = (src.clone(), dst.clone());
+            tokio::task::spawn_blocking(move || {
+                fs.move_path(
+                    std::path::Path::new(&src_inner),
+                    std::path::Path::new(&dst_inner),
+                )
+            })
+            .await
+            .map_err(|e| miette::miette!("File.move: {e}"))?
+            .map(|_| Value::None)
+            .map_err(|e| miette::miette!("FileError: File.move `{src}` -> `{dst}`: {e}"))
+        }),
+        "mktemp" => |interp, args| Box::pin(async move {
+            let is_dir = args
+                .iter()
+                .find(|a| a.name.as_deref() == Some("dir"))
+                .map(|a| matches!(a.value, Value::Bool(true)))
+                .unwrap_or(false);
+            let fs = interp.runtime.file_system.clone();
+            tokio::task::spawn_blocking(move || fs.mktemp(is_dir))
+            .await
+            .map_err(|e| miette::miette!("File.mktemp: {e}"))?
+            .map(Value::String)
+            .map_err(|e| miette::miette!("FileError: File.mktemp: {e}"))
+        }),
     })
 }
 
@@ -97,6 +190,12 @@ mod tests {
         assert!(ns.methods.contains_key("write"));
         assert!(ns.methods.contains_key("exists"));
         assert!(ns.methods.contains_key("list"));
+        assert!(ns.methods.contains_key("mkdir"));
+        assert!(ns.methods.contains_key("remove"));
+        assert!(ns.methods.contains_key("copy"));
+        assert!(ns.methods.contains_key("glob"));
+        assert!(ns.methods.contains_key("move"));
+        assert!(ns.methods.contains_key("mktemp"));
     }
 
     #[tokio::test]
@@ -195,5 +294,257 @@ mod tests {
         let result = method(&mut interp, vec![arg(Value::String("missing.txt".into()))]).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("FileError"));
+    }
+
+    #[tokio::test]
+    async fn mkdir_creates_directory() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let mkdir = ns.methods.get("mkdir").unwrap();
+        let exists = ns.methods.get("exists").unwrap();
+
+        mkdir(&mut interp, vec![arg(Value::String("mydir".into()))])
+            .await
+            .unwrap();
+
+        let result = exists(&mut interp, vec![arg(Value::String("mydir".into()))]).await;
+        assert_eq!(result.unwrap(), Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn remove_deletes_file() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let write = ns.methods.get("write").unwrap();
+        let remove = ns.methods.get("remove").unwrap();
+        let exists = ns.methods.get("exists").unwrap();
+
+        write(
+            &mut interp,
+            vec![
+                arg(Value::String("del.txt".into())),
+                arg(Value::String("bye".into())),
+            ],
+        )
+        .await
+        .unwrap();
+
+        remove(&mut interp, vec![arg(Value::String("del.txt".into()))])
+            .await
+            .unwrap();
+
+        let result = exists(&mut interp, vec![arg(Value::String("del.txt".into()))]).await;
+        assert_eq!(result.unwrap(), Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn remove_directory_is_recursive() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let write = ns.methods.get("write").unwrap();
+        let remove = ns.methods.get("remove").unwrap();
+        let exists = ns.methods.get("exists").unwrap();
+
+        write(
+            &mut interp,
+            vec![
+                arg(Value::String("tree/a.txt".into())),
+                arg(Value::String("a".into())),
+            ],
+        )
+        .await
+        .unwrap();
+        write(
+            &mut interp,
+            vec![
+                arg(Value::String("tree/b.txt".into())),
+                arg(Value::String("b".into())),
+            ],
+        )
+        .await
+        .unwrap();
+
+        remove(&mut interp, vec![arg(Value::String("tree".into()))])
+            .await
+            .unwrap();
+
+        let a = exists(&mut interp, vec![arg(Value::String("tree/a.txt".into()))]).await;
+        assert_eq!(a.unwrap(), Value::Bool(false));
+        let b = exists(&mut interp, vec![arg(Value::String("tree/b.txt".into()))]).await;
+        assert_eq!(b.unwrap(), Value::Bool(false));
+    }
+
+    #[tokio::test]
+    async fn copy_duplicates_file() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let write = ns.methods.get("write").unwrap();
+        let copy = ns.methods.get("copy").unwrap();
+        let read = ns.methods.get("read").unwrap();
+
+        write(
+            &mut interp,
+            vec![
+                arg(Value::String("orig.txt".into())),
+                arg(Value::String("content".into())),
+            ],
+        )
+        .await
+        .unwrap();
+
+        copy(
+            &mut interp,
+            vec![
+                arg(Value::String("orig.txt".into())),
+                arg(Value::String("copy.txt".into())),
+            ],
+        )
+        .await
+        .unwrap();
+
+        let result = read(&mut interp, vec![arg(Value::String("copy.txt".into()))]).await;
+        assert_eq!(result.unwrap(), Value::String("content".into()));
+    }
+
+    #[tokio::test]
+    async fn glob_matches_pattern() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let write = ns.methods.get("write").unwrap();
+        let glob = ns.methods.get("glob").unwrap();
+
+        for name in &["data/a.txt", "data/b.txt", "data/c.log"] {
+            write(
+                &mut interp,
+                vec![
+                    arg(Value::String((*name).into())),
+                    arg(Value::String("x".into())),
+                ],
+            )
+            .await
+            .unwrap();
+        }
+
+        let result = glob(&mut interp, vec![arg(Value::String("data/*.txt".into()))]).await;
+        match result.unwrap() {
+            Value::List(items) => {
+                let names: Vec<String> = items.iter().map(|v| v.to_display_string()).collect();
+                assert!(
+                    names.contains(&"data/a.txt".to_string()),
+                    "missing a.txt: {names:?}"
+                );
+                assert!(
+                    names.contains(&"data/b.txt".to_string()),
+                    "missing b.txt: {names:?}"
+                );
+                assert!(
+                    !names.contains(&"data/c.log".to_string()),
+                    "should not match .log"
+                );
+            }
+            other => panic!("expected list, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn glob_empty_result_is_ok() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let glob = ns.methods.get("glob").unwrap();
+        let result = glob(&mut interp, vec![arg(Value::String("*.nothing".into()))]).await;
+        assert_eq!(result.unwrap(), Value::List(vec![]));
+    }
+
+    #[tokio::test]
+    async fn glob_invalid_pattern_is_error() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let glob = ns.methods.get("glob").unwrap();
+        // Unmatched `[` is an invalid glob pattern.
+        let result = glob(&mut interp, vec![arg(Value::String("[invalid".into()))]).await;
+        assert!(result.is_err(), "expected error for bad pattern");
+    }
+
+    #[tokio::test]
+    async fn remove_missing_path_is_error() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let remove = ns.methods.get("remove").unwrap();
+        let result = remove(&mut interp, vec![arg(Value::String("ghost.txt".into()))]).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("FileError"));
+    }
+
+    #[tokio::test]
+    async fn move_renames_file() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let write = ns.methods.get("write").unwrap();
+        let mv = ns.methods.get("move").unwrap();
+        let exists = ns.methods.get("exists").unwrap();
+        let read = ns.methods.get("read").unwrap();
+
+        write(
+            &mut interp,
+            vec![
+                arg(Value::String("src.txt".into())),
+                arg(Value::String("payload".into())),
+            ],
+        )
+        .await
+        .unwrap();
+
+        mv(
+            &mut interp,
+            vec![
+                arg(Value::String("src.txt".into())),
+                arg(Value::String("dst.txt".into())),
+            ],
+        )
+        .await
+        .unwrap();
+
+        let src_gone = exists(&mut interp, vec![arg(Value::String("src.txt".into()))]).await;
+        assert_eq!(src_gone.unwrap(), Value::Bool(false));
+
+        let content = read(&mut interp, vec![arg(Value::String("dst.txt".into()))]).await;
+        assert_eq!(content.unwrap(), Value::String("payload".into()));
+    }
+
+    #[tokio::test]
+    async fn mktemp_returns_unique_paths() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let mktemp = ns.methods.get("mktemp").unwrap();
+
+        let p1 = mktemp(&mut interp, vec![]).await.unwrap();
+        let p2 = mktemp(&mut interp, vec![]).await.unwrap();
+        assert_ne!(p1, p2, "mktemp must return unique paths");
+
+        // Both paths should exist.
+        let exists = ns.methods.get("exists").unwrap();
+        let e1 = exists(&mut interp, vec![arg(p1.clone())]).await.unwrap();
+        assert_eq!(e1, Value::Bool(true));
+    }
+
+    #[tokio::test]
+    async fn mktemp_dir_creates_directory() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let mktemp = ns.methods.get("mktemp").unwrap();
+        let exists = ns.methods.get("exists").unwrap();
+
+        let path = mktemp(
+            &mut interp,
+            vec![CallArgValue {
+                name: Some("dir".into()),
+                value: Value::Bool(true),
+            }],
+        )
+        .await
+        .unwrap();
+
+        let e = exists(&mut interp, vec![arg(path.clone())]).await.unwrap();
+        assert_eq!(e, Value::Bool(true));
     }
 }

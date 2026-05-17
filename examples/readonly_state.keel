@@ -12,7 +12,7 @@ agent SessionBot {
 
   on message(msg: str) {
     self.turns = self.turns + 1
-    Io.show("Turn " + self.turns + " in session " + self.session_id)
+    Io.show("Turn {self.turns} in session {self.session_id}")
   }
 }
 

@@ -307,6 +307,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Search` | Web search providers | `web(query)`, custom providers via interface |
 | `Db` | SQL databases | `connect`, `query`, `exec` |
 | `Memory` | Per-agent key-value store | `remember(key, value)`, `recall(key) -> Value?`, `forget(key)` |
+| `File` | Local filesystem | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` |
 | `Schedule` | Time-based scheduling | `every`, `after`, `at`, `cron` |
 | `Async` | Structured concurrency | `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | Control combinators | `retry`, `with_timeout`, `with_deadline` |

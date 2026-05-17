@@ -12,6 +12,32 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- **`File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` added.**
+  The `File` namespace now covers the full local filesystem story:
+
+  ```keel
+  File.mkdir("output/reports")           # creates directory (and parents)
+  File.copy("template.txt", "out.txt")   # copies a file; creates dst parent dirs
+  File.move("draft.txt", "final.txt")    # renames/moves; creates dst parent dirs
+  File.remove("tmp/scratch.txt")         # deletes a file or directory (recursive for dirs)
+  reports = File.glob("output/*.txt")    # returns list[str] of matching paths
+  tmp = File.mktemp()                    # creates a temp file; caller removes it
+  tmpdir = File.mktemp(dir: true)        # creates a temp directory
+  ```
+
+  `File.remove` auto-detects files and directories — directories are removed recursively.
+  `File.glob` returns an empty list when no files match; an invalid pattern is a runtime error.
+  `File.mktemp` returns the path as `str`; lifecycle is the caller's responsibility.
+
+### Fixed
+
+- **Type checker: `datetime` operator types.** Comparisons (`<`, `>`, `<=`, `>=`) and arithmetic
+  (`+`, `-`) on `datetime` and `duration` values were incorrectly rejected by `keel check`. Now
+  `datetime > datetime`, `datetime + duration`, `datetime - duration`, and `datetime - datetime`
+  all type-check correctly.
+
 ### Changed
 
 - **String API unified on value methods — `Str` namespace removed.** All string operations are

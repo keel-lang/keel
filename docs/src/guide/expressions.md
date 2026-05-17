@@ -68,9 +68,10 @@ The type checker validates operand types at `keel check` time.
 
 | Operator | Valid operand types |
 |---|---|
-| `+` | `int`, `float` (mixed ok), `str + str`, `list + list` |
-| `-` `*` `/` `%` | `int`, `float` (mixed ok) |
-| `<` `>` `<=` `>=` | `int`, `float` (mixed ok), `str + str` |
+| `+` | `int`, `float` (mixed ok), `str + str`, `list + list`, `datetime + duration`, `duration + datetime`, `duration + duration` |
+| `-` | `int`, `float` (mixed ok), `datetime - duration`, `datetime - datetime`, `duration - duration` |
+| `*` `/` `%` | `int`, `float` (mixed ok) |
+| `<` `>` `<=` `>=` | `int`, `float` (mixed ok), `str + str`, `datetime`, `duration` |
 | `==` `!=` | any |
 | `and` `or` | any |
 | `+=` `-=` `*=` `/=` `%=` | same rules as the base operator |

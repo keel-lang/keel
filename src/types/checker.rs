@@ -1470,6 +1470,16 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "File" {
+                        match method.as_str() {
+                            "read" => return Ty::Nullable(Box::new(Ty::Str)),
+                            "write" | "mkdir" | "remove" | "copy" | "move" => return Ty::None_,
+                            "exists" => return Ty::Bool,
+                            "list" | "glob" => return Ty::List(Box::new(Ty::Str)),
+                            "mktemp" => return Ty::Str,
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -2144,16 +2154,32 @@ fn check_binop(op: BinOp, l: &Ty, r: &Ty) -> Option<String> {
     }
 
     let ok = match op {
-        BinOp::Add => matches!(
+        BinOp::Add => {
+            matches!(
+                (lb, rb),
+                (Ty::Int, Ty::Int)
+                    | (Ty::Float, Ty::Float)
+                    | (Ty::Int, Ty::Float)
+                    | (Ty::Float, Ty::Int)
+                    | (Ty::Str, Ty::Str)
+                    | (Ty::Datetime, Ty::Duration)
+                    | (Ty::Duration, Ty::Datetime)
+                    | (Ty::Duration, Ty::Duration)
+            ) || matches!((lb, rb), (Ty::List(_), Ty::List(_)))
+        }
+
+        BinOp::Sub => matches!(
             (lb, rb),
             (Ty::Int, Ty::Int)
                 | (Ty::Float, Ty::Float)
                 | (Ty::Int, Ty::Float)
                 | (Ty::Float, Ty::Int)
-                | (Ty::Str, Ty::Str)
-        ) || matches!((lb, rb), (Ty::List(_), Ty::List(_))),
+                | (Ty::Datetime, Ty::Duration)
+                | (Ty::Datetime, Ty::Datetime)
+                | (Ty::Duration, Ty::Duration)
+        ),
 
-        BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => matches!(
+        BinOp::Mul | BinOp::Div | BinOp::Mod => matches!(
             (lb, rb),
             (Ty::Int, Ty::Int)
                 | (Ty::Float, Ty::Float)
@@ -2168,6 +2194,8 @@ fn check_binop(op: BinOp, l: &Ty, r: &Ty) -> Option<String> {
                 | (Ty::Int, Ty::Float)
                 | (Ty::Float, Ty::Int)
                 | (Ty::Str, Ty::Str)
+                | (Ty::Datetime, Ty::Datetime)
+                | (Ty::Duration, Ty::Duration)
         ),
 
         BinOp::Eq | BinOp::Neq | BinOp::And | BinOp::Or => true,

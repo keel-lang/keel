@@ -6,6 +6,31 @@
 
 ## Unreleased
 
+### `File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`
+
+The `File` namespace now covers all common filesystem operations:
+
+```keel
+File.mkdir("output/reports")              # create directory (and parents)
+File.copy("template.txt", "output/r.txt") # copy a file; parent dirs created automatically
+File.remove("tmp/scratch.txt")            # delete file or directory (recursive for dirs)
+File.move("draft.txt", "final.txt")       # rename / move; creates dst parent dirs
+paths = File.glob("output/*.txt")         # list[str] of matching paths; empty list if none match
+tmp = File.mktemp()                       # create a temp file; caller removes it
+tmpdir = File.mktemp(dir: true)           # create a temp directory
+```
+
+`File.remove` auto-detects files and directories — directories are removed recursively.
+`File.glob` supports standard glob patterns (`*`, `?`, `**`). An invalid pattern raises a runtime
+error; no matches returns an empty list. `File.mktemp` returns the path and leaves cleanup to the
+caller — use `File.remove(path)` when done.
+
+### Bug fix: `datetime` comparison and arithmetic in `keel check`
+
+Comparisons and arithmetic involving `datetime` and `duration` values were incorrectly rejected
+by the static type checker. `datetime > datetime`, `datetime + duration`, `datetime - duration`,
+and `datetime - datetime` now all pass `keel check`.
+
 ---
 
 ## v0.1.24 — 2026-05-16

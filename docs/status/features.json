@@ -173,10 +173,10 @@
     },
     {
       "name": "File",
-      "status": "partial",
-      "implemented_ops": "`read`, `write`, `exists`, `list`",
-      "gaps": "`mkdir`, `remove`, `copy`, `glob`",
-      "purpose": "Filesystem: `read`, `write`, `exists`, `list`"
+      "status": "shipped",
+      "implemented_ops": "`read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`",
+      "gaps": "—",
+      "purpose": "Filesystem: `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`"
     },
     {
       "name": "Json",

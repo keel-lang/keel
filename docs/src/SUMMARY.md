@@ -27,6 +27,7 @@
 - [Io (human interaction)](./guide/human-interaction.md)
 - [Schedule (time & cron)](./guide/scheduling.md)
 - [Email & Http (connections)](./guide/connections.md)
+- [Filesystem](./guide/filesystem.md)
 - [Strings & Cache (text & memory)](./guide/strings.md)
 
 # CLI Reference
