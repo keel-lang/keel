@@ -836,13 +836,17 @@ impl Checker {
                     scope.pop();
                 }
             }
-            Stmt::AugAssign { name, rhs, .. } => {
-                if scope.get(name).is_none() {
+            Stmt::AugAssign { name, op, rhs } => {
+                let var_ty = scope.get(name).cloned().unwrap_or_else(|| {
                     self.err(format!(
                         "augmented assignment to undefined variable `{name}`"
                     ));
+                    Ty::Unknown
+                });
+                let rhs_ty = self.infer_expr(rhs, scope);
+                if let Some(msg) = check_binop(*op, &var_ty, &rhs_ty) {
+                    self.err(msg);
                 }
-                self.infer_expr(rhs, scope);
             }
             Stmt::Raise(e) => {
                 self.infer_expr(e, scope);
@@ -1205,6 +1209,9 @@ impl Checker {
             Expr::BinaryOp { left, op, right } => {
                 let l = self.infer_expr(left, scope);
                 let r = self.infer_expr(right, scope);
+                if let Some(msg) = check_binop(*op, &l, &r) {
+                    self.err(msg);
+                }
                 infer_binary(*op, &l, &r)
             }
 
@@ -2107,6 +2114,74 @@ fn describe_ty(ty: &Ty) -> String {
         Ty::Unknown => "unknown".into(),
         Ty::Nullable(inner) => format!("{}?", describe_ty(inner)),
         Ty::Dynamic => "dynamic".into(),
+    }
+}
+
+fn op_symbol(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Add => "+",
+        BinOp::Sub => "-",
+        BinOp::Mul => "*",
+        BinOp::Div => "/",
+        BinOp::Mod => "%",
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::Lte => "<=",
+        BinOp::Gte => ">=",
+        BinOp::Eq => "==",
+        BinOp::Neq => "!=",
+        BinOp::And => "and",
+        BinOp::Or => "or",
+    }
+}
+
+fn check_binop(op: BinOp, l: &Ty, r: &Ty) -> Option<String> {
+    let lb = l.strip_nullable();
+    let rb = r.strip_nullable();
+
+    if matches!(lb, Ty::Unknown | Ty::Dynamic) || matches!(rb, Ty::Unknown | Ty::Dynamic) {
+        return None;
+    }
+
+    let ok = match op {
+        BinOp::Add => matches!(
+            (lb, rb),
+            (Ty::Int, Ty::Int)
+                | (Ty::Float, Ty::Float)
+                | (Ty::Int, Ty::Float)
+                | (Ty::Float, Ty::Int)
+                | (Ty::Str, Ty::Str)
+        ) || matches!((lb, rb), (Ty::List(_), Ty::List(_))),
+
+        BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => matches!(
+            (lb, rb),
+            (Ty::Int, Ty::Int)
+                | (Ty::Float, Ty::Float)
+                | (Ty::Int, Ty::Float)
+                | (Ty::Float, Ty::Int)
+        ),
+
+        BinOp::Lt | BinOp::Gt | BinOp::Lte | BinOp::Gte => matches!(
+            (lb, rb),
+            (Ty::Int, Ty::Int)
+                | (Ty::Float, Ty::Float)
+                | (Ty::Int, Ty::Float)
+                | (Ty::Float, Ty::Int)
+                | (Ty::Str, Ty::Str)
+        ),
+
+        BinOp::Eq | BinOp::Neq | BinOp::And | BinOp::Or => true,
+    };
+
+    if ok {
+        None
+    } else {
+        Some(format!(
+            "cannot apply `{}` to {} and {}",
+            op_symbol(op),
+            describe_ty(lb),
+            describe_ty(rb)
+        ))
     }
 }
 

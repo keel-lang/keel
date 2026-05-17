@@ -1297,7 +1297,11 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 | Unreachable code / catch | Warning |
 | Deprecated attribute | Warning |
 
+| Incompatible operand types (`"x" + 5`, `true + 1`, etc.) | Error |
+
 All `keel check` errors and warnings include a source-span pointer (line:column) and an underlined excerpt. Arity errors list the expected parameter names as a correction hint.
+
+`check_binop` validates that arithmetic and comparison operands are type-compatible; `Unknown`/`Dynamic` operands are always accepted (gradual typing escape hatch). Augmented assignment (`+=`, `-=`, etc.) is checked with the same rules.
 
 ---
 

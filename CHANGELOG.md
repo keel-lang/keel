@@ -49,6 +49,11 @@ Concurrency safety fixes: lock ordering, shared HTTP client, blocking I/O handli
 
 ### Fixed
 
+- Type checker: invalid operator combinations (`"x" + 5`, `"x" < 5`, `true + 1`, etc.) are now
+  caught at `keel check` time instead of failing at runtime. Augmented assignment (`+=`, `-=`,
+  etc.) is checked with the same rules. `unknown`/`dynamic` operands are always accepted (gradual
+  typing escape hatch).
+
 - Runtime: fixed potential deadlock in `agents_in_team` by snaphotting agent Arc handles before
   acquiring per-instance locks. Prevents lock-ordering inversion if future code paths acquire
   locks in opposite order.

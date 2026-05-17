@@ -1284,3 +1284,187 @@ task t() {
         "`.zip()` expects a list argument, got str",
     );
 }
+
+// ─── operator type compatibility ───────────────────────────────────────────
+
+#[test]
+fn binop_str_plus_int_is_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        x = "hi" + 5
+    }
+}
+run(A)
+"#,
+        "cannot apply `+`",
+    );
+}
+
+#[test]
+fn binop_str_minus_int_is_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        x = "hi" - 1
+    }
+}
+run(A)
+"#,
+        "cannot apply `-`",
+    );
+}
+
+#[test]
+fn binop_str_lt_int_is_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        x = "hi" < 5
+    }
+}
+run(A)
+"#,
+        "cannot apply `<`",
+    );
+}
+
+#[test]
+fn binop_bool_plus_int_is_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        x = true + 1
+    }
+}
+run(A)
+"#,
+        "cannot apply `+`",
+    );
+}
+
+#[test]
+fn binop_list_minus_int_is_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        x = [1, 2] - 1
+    }
+}
+run(A)
+"#,
+        "cannot apply `-`",
+    );
+}
+
+#[test]
+fn aug_assign_type_mismatch_is_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        x = 0
+        x += "oops"
+    }
+}
+run(A)
+"#,
+        "cannot apply `+`",
+    );
+}
+
+#[test]
+fn binop_valid_numeric_combos() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        a = 1 + 1
+        b = 1.0 + 2
+        c = 1 + 2.0
+        d = 3.0 - 1.0
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn binop_valid_str_concat() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        x = "a" + "b"
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn binop_valid_list_concat() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        x = [1] + [2]
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn binop_valid_comparisons() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        a = 1 < 2
+        b = "a" < "b"
+        c = 1.0 >= 0
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn binop_equality_is_always_valid() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        x = 1 == "hello"
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn binop_unknown_operand_skips_check() {
+    // list.reduce() returns Unknown — should not trigger a type error when used as operand
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        v = [1, 2, 3].reduce()
+        x = v + 1
+    }
+}
+run(A)
+"#,
+    );
+}

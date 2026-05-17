@@ -62,6 +62,30 @@ if x > 0 and x < 100 {
 }
 ```
 
+## Type rules for operators
+
+The type checker validates operand types at `keel check` time.
+
+| Operator | Valid operand types |
+|---|---|
+| `+` | `int`, `float` (mixed ok), `str + str`, `list + list` |
+| `-` `*` `/` `%` | `int`, `float` (mixed ok) |
+| `<` `>` `<=` `>=` | `int`, `float` (mixed ok), `str + str` |
+| `==` `!=` | any |
+| `and` `or` | any |
+| `+=` `-=` `*=` `/=` `%=` | same rules as the base operator |
+
+`unknown` / `dynamic` values skip the check (gradual typing escape hatch).
+
+Type mismatches are caught early:
+
+```keel
+x = "hello" + 5     # error: cannot apply `+` to str and int
+x = "hello" < 42    # error: cannot apply `<` to str and int
+x = 0
+x += "oops"         # error: cannot apply `+` to int and str
+```
+
 ## Null coalescing
 
 The `??` operator provides a default when the left side is `none`:
