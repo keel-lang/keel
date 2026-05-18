@@ -365,8 +365,8 @@ min(...scores)                        # 2  — spread a list
 max(...scores, 99)                    # 99 — spread + extra value
 min(...scores, ...more_scores)        # merge two lists, find min
 
-min(people, by: |p| p.age)           # person with lowest age
-max(products, by: |p| p.price)       # most expensive product
+min(people, by: p => p.age)          # person with lowest age
+max(products, by: p => p.price)      # most expensive product
 ```
 
 `min` / `max` return `T?` — an empty input (no args, or all spreads empty) yields `none`.
@@ -752,13 +752,13 @@ greet(...names, ...other_names)    # merge two lists
 **Named args after variadics:** the `identifier:` suffix unambiguously terminates the positional section:
 
 ```keel
-min(a, b, c, by: |x| x.score)
-min(...scores, 99, by: |x| x)
+min(a, b, c, by: x => x.score)
+min(...scores, 99, by: x => x)
 ```
 
 **Type checking:** all variadic args must be the same type `T`; `...expr` requires `expr: list[T]` or `set[T]`.
 
-Note: `min(scores)` where `scores: list[int]` is a **type error** — the variadic expects `int`, not `list[int]`. Use `min(...scores)` to spread the list.
+Note: `min(scores)` where `scores: list[T]` is a **single-argument shorthand** — a lone list argument is auto-spread, so `min(scores)` and `min(...scores)` are equivalent. This matches `min(people, by: p => p.age)` where `people` is a list.
 
 ### 6.7 Agent-local task calls
 

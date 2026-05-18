@@ -58,6 +58,116 @@ pub fn install_prelude(interp: &mut Interpreter) {
 
     namespaces::install(interp);
     install_top_level_agent_fns(interp);
+    install_min_max(interp);
+}
+
+fn cmp_values(a: &Value, b: &Value) -> miette::Result<std::cmp::Ordering> {
+    match (a, b) {
+        (Value::Integer(x), Value::Integer(y)) => Ok(x.cmp(y)),
+        (Value::Float(x), Value::Float(y)) => {
+            Ok(x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal))
+        }
+        (Value::Integer(x), Value::Float(y)) => Ok((*x as f64)
+            .partial_cmp(y)
+            .unwrap_or(std::cmp::Ordering::Equal)),
+        (Value::Float(x), Value::Integer(y)) => Ok(x
+            .partial_cmp(&(*y as f64))
+            .unwrap_or(std::cmp::Ordering::Equal)),
+        (Value::String(x), Value::String(y)) => Ok(x.cmp(y)),
+        _ => Err(miette::miette!(
+            "cannot compare `{}` with `{}`",
+            a.type_name(),
+            b.type_name()
+        )),
+    }
+}
+
+fn install_min_max(interp: &mut Interpreter) {
+    use std::cmp::Ordering;
+
+    for want_max in [false, true] {
+        let name = if want_max { "max" } else { "min" };
+        interp.register_top_fn(
+            name,
+            Arc::new(move |interp: &mut Interpreter, args: Vec<CallArgValue>| {
+                Box::pin(async move {
+                    let by_val = args
+                        .iter()
+                        .find(|a| a.name.as_deref() == Some("by"))
+                        .map(|a| a.value.clone());
+                    let positional: Vec<Value> = args
+                        .into_iter()
+                        .filter(|a| a.name.is_none())
+                        .map(|a| a.value)
+                        .collect();
+                    // A single list argument is auto-spread so that
+                    // `min(items, by: |x| x.score)` iterates the list elements,
+                    // mirroring Python's min(iterable, key=...) convention.
+                    let items: Vec<Value> = match positional.as_slice() {
+                        [Value::List(v)] => v.clone(),
+                        _ => positional,
+                    };
+                    if items.is_empty() {
+                        return Ok(Value::None);
+                    }
+                    let target = if want_max {
+                        Ordering::Greater
+                    } else {
+                        Ordering::Less
+                    };
+                    match by_val {
+                        Some(by) => {
+                            let (params, body) = match by {
+                                Value::Closure(p, b) => (p, *b),
+                                _ => {
+                                    return Err(miette::miette!(
+                                        "`by:` argument must be a function"
+                                    ));
+                                }
+                            };
+                            let mut best = items[0].clone();
+                            let mut best_key = interp
+                                .call_closure(
+                                    &params,
+                                    &body,
+                                    vec![CallArgValue {
+                                        name: None,
+                                        value: best.clone(),
+                                    }],
+                                )
+                                .await?;
+                            for item in items.into_iter().skip(1) {
+                                let key = interp
+                                    .call_closure(
+                                        &params,
+                                        &body,
+                                        vec![CallArgValue {
+                                            name: None,
+                                            value: item.clone(),
+                                        }],
+                                    )
+                                    .await?;
+                                if cmp_values(&key, &best_key)? == target {
+                                    best = item;
+                                    best_key = key;
+                                }
+                            }
+                            Ok(best)
+                        }
+                        None => {
+                            let mut best = items[0].clone();
+                            for item in items.into_iter().skip(1) {
+                                if cmp_values(&item, &best)? == target {
+                                    best = item;
+                                }
+                            }
+                            Ok(best)
+                        }
+                    }
+                })
+            }),
+        );
+    }
 }
 
 fn install_top_level_agent_fns(interp: &mut Interpreter) {

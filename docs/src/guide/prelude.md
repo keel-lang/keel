@@ -40,6 +40,32 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 
 `run` and `stop` are re-exported at the top level so programs can end with `run(MyAgent)` without the namespace prefix.
 
+## Free Functions
+
+A small set of functions live directly in the global scope — no namespace prefix needed.
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `run(agent)` | `(agent) -> none` | `none` | Start an agent |
+| `stop(agent)` | `(agent) -> none` | `none` | Stop an agent |
+| `min(...)` | `(...items: T, by: (T -> any)? = none) -> T?` | `T?` | Minimum; `none` on empty |
+| `max(...)` | `(...items: T, by: (T -> any)? = none) -> T?` | `T?` | Maximum; `none` on empty |
+
+`min` and `max` accept any number of positional arguments, an optional `by:` key-selector, and return `none` when called with no items.
+
+```keel
+min(3, 1, 4)                           # 1
+max("banana", "apple", "cherry")       # cherry
+
+scores = [4, 9, 2, 7]
+min(scores)                            # 2 — single list auto-spread
+max(...scores, 99)                     # 99 — explicit spread
+
+people = [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
+min(people, by: p => p.age)            # {name: "Bob", age: 25}
+max(people, by: p => p.age)            # {name: "Alice", age: 30}
+```
+
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces

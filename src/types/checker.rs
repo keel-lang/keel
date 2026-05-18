@@ -207,7 +207,7 @@ impl Checker {
             prelude.insert(n.to_string());
         }
         // Top-level builtins
-        for n in ["run", "stop"] {
+        for n in ["run", "stop", "min", "max"] {
             prelude.insert(n.to_string());
         }
         // Built-in type names
@@ -1385,6 +1385,47 @@ impl Checker {
                         &format!("task `{name}`"),
                     );
                     return sig.return_type.clone();
+                }
+                // Typed inference for prelude free functions min/max.
+                if let Expr::Ident(name) = callee.as_ref()
+                    && matches!(name.as_str(), "min" | "max")
+                {
+                    // Validate by: is a function if present.
+                    if let Some(by_ty) = args
+                        .iter()
+                        .zip(arg_tys.iter())
+                        .find(|(a, _)| a.name.as_deref() == Some("by"))
+                        .map(|(_, ty)| ty)
+                        && !matches!(by_ty, Ty::Func(..) | Ty::Unknown | Ty::Dynamic)
+                    {
+                        self.err(format!(
+                            "`{name}`: `by:` must be a function, got `{}`",
+                            describe_ty(by_ty)
+                        ));
+                    }
+                    let positional_tys: Vec<Ty> = args
+                        .iter()
+                        .zip(arg_tys.iter())
+                        .filter(|(a, _)| a.name.is_none())
+                        .map(|(_, ty)| ty.clone())
+                        .collect();
+                    let elem_ty = match positional_tys.as_slice() {
+                        [] => Ty::Unknown,
+                        [Ty::List(inner)] => *inner.clone(),
+                        [single] => single.clone(),
+                        slice if slice.iter().all(|t| self.types_match(t, &slice[0])) => {
+                            slice[0].clone()
+                        }
+                        slice => {
+                            let types: Vec<String> = slice.iter().map(describe_ty).collect();
+                            self.err(format!(
+                                "`{name}`: arguments must all have the same type, got {}",
+                                types.join(", ")
+                            ));
+                            Ty::Unknown
+                        }
+                    };
+                    return Ty::Nullable(Box::new(elem_ty));
                 }
                 let _ = self.infer_expr(callee, scope);
                 Ty::Unknown

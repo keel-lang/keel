@@ -1780,3 +1780,153 @@ run(A)
         "expected 'tags: rust keel lang', stdout: {stdout}"
     );
 }
+
+// ─── min / max prelude free functions (v0.1.26) ──────────────────────────────
+
+#[test]
+fn min_variadic_integers() {
+    let src = r#"
+agent A {
+    @on_start {
+        result = min(3, 1, 4, 1, 5, 9)
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("1"), "expected 1, stdout: {stdout}");
+}
+
+#[test]
+fn max_variadic_integers() {
+    let src = r#"
+agent A {
+    @on_start {
+        result = max(3, 1, 4, 1, 5, 9)
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("9"), "expected 9, stdout: {stdout}");
+}
+
+#[test]
+fn min_with_list_spread() {
+    let src = r#"
+agent A {
+    @on_start {
+        scores = [7, 2, 9, 4]
+        lo = min(scores)
+        hi = max(scores)
+        Io.show("{lo}")
+        Io.show("{hi}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("2"), "expected lo=2, stdout: {stdout}");
+    assert!(stdout.contains("9"), "expected hi=9, stdout: {stdout}");
+}
+
+#[test]
+fn min_empty_returns_none() {
+    let src = r#"
+agent A {
+    @on_start {
+        result = min()
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("none"), "expected none, stdout: {stdout}");
+}
+
+#[test]
+fn min_with_by_key_selector() {
+    let src = r#"
+agent A {
+    @on_start {
+        people = [
+            {name: "Alice", age: 30},
+            {name: "Bob", age: 25},
+            {name: "Carol", age: 35},
+        ]
+        youngest = min(people, by: p => p.age)
+        Io.show(youngest.name)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("Bob"), "expected Bob, stdout: {stdout}");
+}
+
+#[test]
+fn max_with_by_key_selector() {
+    let src = r#"
+agent A {
+    @on_start {
+        people = [
+            {name: "Alice", age: 30},
+            {name: "Bob", age: 25},
+            {name: "Carol", age: 35},
+        ]
+        oldest = max(people, by: p => p.age)
+        Io.show(oldest.name)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("Carol"), "expected Carol, stdout: {stdout}");
+}
+
+#[test]
+fn min_single_item_returns_it() {
+    let src = r#"
+agent A {
+    @on_start {
+        result = min(42)
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("42"), "expected 42, stdout: {stdout}");
+}
+
+#[test]
+fn min_max_strings() {
+    let src = r#"
+agent A {
+    @on_start {
+        lo = min("banana", "apple", "cherry")
+        hi = max("banana", "apple", "cherry")
+        Io.show(lo)
+        Io.show(hi)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("apple"), "expected apple, stdout: {stdout}");
+    assert!(
+        stdout.contains("cherry"),
+        "expected cherry, stdout: {stdout}"
+    );
+}

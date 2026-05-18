@@ -10,7 +10,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% min/max prelude functions, variadic parameters, and File namespace completion.
 
 ### Added
 
@@ -39,6 +39,27 @@ All notable changes to Keel.
 
   Passing `list[T]` without `...` to a variadic param is a **type error** — use `...scores`
   not `scores`.
+
+- **`min` and `max` prelude free functions.**
+  `min` and `max` are now global functions that work with any number of arguments. They accept
+  an optional `by:` key-selector lambda and return `none` on empty input:
+
+  ```keel
+  min(3, 1, 4)                           # 1
+  max("banana", "apple", "cherry")       # cherry
+
+  scores = [4, 9, 2, 7]
+  min(scores)                            # 2 — single list is auto-spread
+  max(...scores, 99)                     # 99 — explicit spread + extra value
+
+  people = [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
+  youngest = min(people, by: p => p.age) # {name: "Bob", age: 25}
+  oldest   = max(people, by: p => p.age) # {name: "Alice", age: 30}
+  ```
+
+  Passing a single `list[T]` is a shorthand for spreading it — `min(scores)` and
+  `min(...scores)` are equivalent. Both `min()` and `max()` called with no arguments
+  return `none`.
 
 - **`File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` added.**
   The `File` namespace now covers the full local filesystem story:

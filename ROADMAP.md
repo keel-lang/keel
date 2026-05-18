@@ -82,7 +82,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `String value methods` | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed | — |
 | `File` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
 | Numeric value methods | [ ] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
-| `min` / `max` prelude functions | [ ] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; spread with `...` | Requires variadic params |
+| `min` / `max` prelude functions | [x] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; single list arg auto-spread; `none` on empty | — |
 | `Random` namespace | [ ] | `Random.float()`, `Random.int(min:, max:)`, `Random.bool()` | — |
 | `Uuid` type + namespace | [ ] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
 | `Stringable` interface | [ ] | `interface Stringable { task to_str() -> str }`; enables `"{expr}"` interpolation for any type | Implemented by all primitives + `Uuid` |

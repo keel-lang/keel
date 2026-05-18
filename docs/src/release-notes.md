@@ -33,6 +33,27 @@ Passing `list[T]` without `...` to a variadic param is a compile-time type error
 
 See [Tasks → Variadic parameters](guide/tasks.md#variadic-parameters).
 
+### `min` and `max` prelude free functions
+
+`min` and `max` are now available as global free functions — no namespace prefix needed.
+They accept variadic positional arguments, an optional `by:` key-selector lambda, and
+return `none` when called with zero items:
+
+```keel
+min(3, 1, 4)                           # 1
+max("banana", "apple", "cherry")       # cherry
+
+scores = [4, 9, 2, 7]
+min(scores)                            # 2 — single list auto-spread
+max(...scores, 99)                     # 99
+
+people = [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
+youngest = min(people, by: p => p.age) # {name: "Bob", age: 25}
+oldest   = max(people, by: p => p.age) # {name: "Alice", age: 30}
+```
+
+See [Prelude → Free Functions](guide/prelude.md#free-functions).
+
 ### `File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`
 
 The `File` namespace now covers all common filesystem operations:
