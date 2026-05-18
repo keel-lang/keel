@@ -413,10 +413,29 @@ impl Interpreter {
         let mut out = Vec::with_capacity(args.len());
         for a in args {
             let v = self.eval_expr(&a.value, env).await?;
-            out.push(CallArgValue {
-                name: a.name.clone(),
-                value: v,
-            });
+            if a.spread {
+                // Expand list (sets share the list repr in v0.1) into individual positional args.
+                let items = match v {
+                    Value::List(items) => items,
+                    other => {
+                        return Err(super::runtime_error(format!(
+                            "spread `...` requires a list or set, got {}",
+                            other.type_name()
+                        )));
+                    }
+                };
+                for item in items {
+                    out.push(CallArgValue {
+                        name: None,
+                        value: item,
+                    });
+                }
+            } else {
+                out.push(CallArgValue {
+                    name: a.name.clone(),
+                    value: v,
+                });
+            }
         }
         Ok(out)
     }

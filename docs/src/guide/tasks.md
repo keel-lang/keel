@@ -119,6 +119,53 @@ resolves lexical and top-level scope only. Use `self.increment()` for
 agent-local work. Prefer top-level tasks for any logic that doesn't need agent
 state.
 
+## Variadic parameters
+
+A task can collect any number of positional arguments into a list by prefixing the last parameter with `...`:
+
+```keel
+task greet(...names: str) -> str {
+  result = ""
+  for n in names { result += n + " " }
+  result
+}
+
+greet("Alice", "Bob")     # names = ["Alice", "Bob"]
+greet()                   # names = []  (empty list)
+```
+
+**Spread at call sites:** prefix any `list[T]` or `set[T]` with `...` to expand it into individual variadic slots:
+
+```keel
+more = ["Dave", "Eve"]
+greet("Alice", ...more)       # names = ["Alice", "Dave", "Eve"]
+greet(...more, ...more)       # merge two lists
+```
+
+**Fixed params before the variadic** are supported:
+
+```keel
+task labeled(prefix: str, ...items: str) -> str {
+  result = prefix + ":"
+  for item in items { result += " " + item }
+  result
+}
+
+labeled("tags", "rust", "keel", "lang")  # "tags: rust keel lang"
+```
+
+**Important:** passing `list[T]` without `...` is a **type error** — the variadic expects `T`, not `list[T]`:
+
+```keel
+task add(...nums: int) -> int { ... }
+
+scores = [1, 2, 3]
+add(scores)     # ERROR: variadic arg `nums`: expected int, got list[int]
+add(...scores)  # OK: expands list into slots
+```
+
+Inside the body the variadic parameter binds as `list[T]`, so all list methods work on it.
+
 ## Generic tasks
 
 Tasks can declare type parameters in brackets after their name. Type arguments

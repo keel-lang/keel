@@ -745,3 +745,22 @@ task t(x: str) {
         other => panic!("expected Task, got {:?}", other),
     }
 }
+
+// ─── Variadic parameters ─────────────────────────────────────────────────────
+
+#[test]
+fn variadic_trailing_param_is_ok() {
+    parse_ok("task f(a: int, ...rest: str) -> str { \"ok\" }");
+}
+
+#[test]
+fn variadic_only_param_is_ok() {
+    parse_ok("task f(...items: int) -> int { 0 }");
+}
+
+#[test]
+fn variadic_non_trailing_is_parse_error() {
+    // parse_err panics if the source parses successfully.
+    // Reaching here means the parser correctly rejected the non-trailing variadic.
+    parse_err("task f(...a: int, b: int) -> int { 0 }");
+}

@@ -471,6 +471,7 @@ mod tests {
                         name: crate::ast::Binding::Ident("x".into()),
                         ty: named_ty("int"),
                         default: None,
+                        variadic: false,
                     }),
                     body: vec![],
                 }),

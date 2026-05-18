@@ -250,6 +250,9 @@ impl Fmt {
             if i > 0 {
                 self.push(", ");
             }
+            if p.variadic {
+                self.push("...");
+            }
             self.push(&format!("{}: ", binding_str(&p.name)));
             self.push(&self.type_expr_str(&p.ty));
             if let Some(default) = &p.default {
@@ -871,9 +874,15 @@ impl Fmt {
     fn args_at(&self, args: &[CallArg], indent: usize) -> String {
         let parts: Vec<String> = args
             .iter()
-            .map(|a| match &a.name {
-                Some(n) => format!("{n}: {}", self.expr_at(&a.value, indent)),
-                None => self.expr_at(&a.value, indent),
+            .map(|a| {
+                if a.spread {
+                    format!("...{}", self.expr_at(&a.value, indent))
+                } else {
+                    match &a.name {
+                        Some(n) => format!("{n}: {}", self.expr_at(&a.value, indent)),
+                        None => self.expr_at(&a.value, indent),
+                    }
+                }
             })
             .collect();
         parts.join(", ")

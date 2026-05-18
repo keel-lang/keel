@@ -119,6 +119,8 @@ pub enum StringPart {
 pub struct CallArg {
     pub name: Option<String>,
     pub value: Expr,
+    /// If true, `value` is expanded (spread) into individual variadic slots.
+    pub spread: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -85,6 +85,7 @@ Keel uses a **structural type system with full inference** as its design target.
 | `none` | `none` | Unit type / absence value |
 | `duration` | `5.minutes`, `2.hours` | Duration literals |
 | `datetime` | `@2026-04-15`, `@monday_9am` | Time literals |
+| `Uuid`     | `uuid()` | UUID value; implements `Stringable` — interpolates as `"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"` |
 | `dynamic` | — | FFI/interop boundary only |
 
 **Built-in constants:** `true`, `false`, `none`.
@@ -132,6 +133,23 @@ Maps expose `.count`, `.keys`, `.values`. Sets expose `.count`, `.contains(v)`, 
 **String methods:** `.len()` / `.length`, `.is_empty()`, `.contains(s)`, `.starts_with(s)`, `.ends_with(s)`, `.trim()`, `.trim_start()`, `.trim_end()`, `.upper()`, `.lower()`, `.repeat(n)`, `.slice(start, end?)`, `.index_of(needle)` → `int?`, `.split(sep)`, `.replace(old, new)`, `.to_int()` → `int?`, `.to_float()` → `float?`, `.to_str()`, `.truncate(max)` → `str`, `.pad(width, char?)` → `str`, `.matches(pattern)` → `bool`, `.extract(pattern)` → `str?`, `.find_all(pattern)` → `list[str]`, `.sub(pattern, replacement)` → `str`. Patterns (`matches`, `extract`, `find_all`, `sub`) use Rust `regex` crate syntax — no look-behind.
 
 **Conversions:** `.to_int()`, `.to_float()`, `.to_str()`. Fallible conversions return nullable (`str.to_int() -> int?`).
+
+**Numeric value methods** (available on both `int` and `float`; `floor`/`ceil`/`round` are no-ops on `int` and return the same type):
+
+| Method | Types | Returns | Notes |
+|---|---|---|---|
+| `.abs()` | `int`, `float` | same type | Absolute value; `-3.abs()` → `3` |
+| `.floor()` | `int`, `float` | same type | Round toward −∞; `3.7.floor()` → `3.0`; no-op on `int` |
+| `.ceil()` | `int`, `float` | same type | Round toward +∞; `3.2.ceil()` → `4.0`; no-op on `int` |
+| `.round()` | `int`, `float` | same type | Round to nearest; `3.5.round()` → `4.0`; no-op on `int` |
+
+```keel
+price = -3.75
+price.abs()           # 3.75
+price.abs().ceil()    # 4.0  — chains naturally
+count = 5
+count.abs()           # 5    — no-op, returns int
+```
 
 ### 2.4 Struct types (structural records)
 
@@ -256,6 +274,13 @@ type HttpResponse {
 
 type Decision[T] { choice: T, reason: str, confidence: float }
 
+# Uuid — distinct type, not str; implements Stringable
+# Construction via Uuid.v4(), Uuid.v7(), Uuid.v5(ns:, name:), or uuid() shorthand
+# uuid() is an alias for Uuid.v4()
+# Methods: .version() -> int, .to_str() -> str, .format(as: "hyphenated"|"simple"|"urn") -> str
+# Uuid.parse(s: str) -> Uuid?  — none if invalid format
+# Predefined namespace constants: Uuid.DNS, Uuid.URL, Uuid.OID, Uuid.X500
+
 type Error =
   | AIError { model: str, tokens_used: int }
   | NetworkError { status: int?, url: str }
@@ -315,12 +340,42 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Time` | Time utilities | `now()`, `parse`, `format`, `diff`, duration math |
 | `Log` | Structured logging | `info`, `warn`, `error`, `debug` |
 | `Agent` | Agent lifecycle | `run`, `stop`, `send(target, message)`, `delegate`, `broadcast` (also exposed as bare `run`/`stop` at top level) |
+| `Random` | Pseudo-random generation | `float()`, `int(min:, max:)`, `bool()` |
+| `Uuid` | UUID generation | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
+| `Crypto` | Cryptographic primitives | `hash(data, algo:)`, `hmac(data, key:, algo:)`, `token(bytes:)`, `random_bytes(n)` |
 
-### 3.3 Prelude surface is identifiers, not keywords
+### 3.3 Prelude free functions
+
+A small set of functions live directly in the root scope — no namespace qualifier needed:
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `uuid()` | `() -> Uuid` | `Uuid` | Alias for `Uuid.v4()` |
+| `min(...)` | `(...items: T, by: ((T) -> any)? = none) -> T?` | `T?` | Minimum; `none` on empty |
+| `max(...)` | `(...items: T, by: ((T) -> any)? = none) -> T?` | `T?` | Maximum; `none` on empty |
+
+```keel
+id = uuid()                           # Uuid
+
+min(3, 1, 4)                          # 1
+max(3, 1, 4)                          # 4
+
+scores = [4, 9, 2, 7]
+min(...scores)                        # 2  — spread a list
+max(...scores, 99)                    # 99 — spread + extra value
+min(...scores, ...more_scores)        # merge two lists, find min
+
+min(people, by: |p| p.age)           # person with lowest age
+max(products, by: |p| p.price)       # most expensive product
+```
+
+`min` / `max` return `T?` — an empty input (no args, or all spreads empty) yields `none`.
+
+### 3.5 Prelude surface is identifiers, not keywords
 
 `Ai`, `Io`, `Schedule`, etc. are **identifiers** whose bindings are installed by the runtime into the root scope. A user program can shadow them (`Ai = my_module` is legal, if unwise). They do not appear in the reserved keyword list (§10). This is the crucial difference: the language doesn't know about `Ai`. The runtime does.
 
-### 3.4 Example: everything you need, no imports
+### 3.6 Example: everything you need, no imports
 
 ```keel
 # Zero imports. All namespaces are in scope.
@@ -557,7 +612,28 @@ interface Tracer {
 }
 ```
 
-### 5.2 Why interfaces are core
+### 5.2 Built-in interfaces
+
+**`Stringable`** — types that implement `Stringable` can appear inside string interpolation `"{expr}"`:
+
+```keel
+interface Stringable {
+  task to_str() -> str
+}
+```
+
+All primitives (`int`, `float`, `bool`, `datetime`, `duration`, `Uuid`) implement `Stringable` by default. User-defined types opt in by implementing `to_str()`.
+
+`Stringable` enables interpolation only — it does not create implicit coercion. `let s: str = id` is a type error; use `id.to_str()` explicitly.
+
+```keel
+id = uuid()
+Log.info("created {id}")         # ok — Uuid implements Stringable
+s: str = id                      # error — Uuid is not str
+s: str = id.to_str()             # ok — explicit conversion
+```
+
+### 5.3 Why interfaces are core
 
 - `Ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding a single provider into the runtime locks users out of self-hosted, proprietary, or novel backends.
 - `Memory` in v0.1 is a plain K/V store (JSON file); in v0.2 it will dispatch through a `VectorStore` interface so users can swap backends.
@@ -565,7 +641,7 @@ interface Tracer {
 
 The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and, once the runtime registry is wired, let users swap implementations.
 
-### 5.3 Installing implementations <span class="badge badge-soon">Planned</span>
+### 5.4 Installing implementations <span class="badge badge-soon">Planned</span>
 
 Custom implementation installation is planned, but not registered in the v0.1 runtime yet. The intended startup shape is:
 
@@ -652,7 +728,39 @@ Type parameters are scoped to the task body and are substituted by the type chec
 
 Generic tasks are allowed inside agent bodies under the same rules as non-generic tasks.
 
-### 6.6 Agent-local task calls
+### 6.6 Variadic parameters
+
+A task may declare a variadic positional parameter by prefixing it with `...`. The variadic param collects all positional call-site arguments into a `list[T]` inside the body. It must be the last parameter in the declaration.
+
+```keel
+task greet(...names: str) -> str {
+  names.map(n => "Hello, {n}!").join(", ")
+}
+
+greet("Alice", "Bob")              # names = ["Alice", "Bob"]
+greet()                            # names = []
+```
+
+**Spread at call sites:** prefix any `list[T]` or `set[T]` with `...` to expand it into individual variadic slots:
+
+```keel
+more = ["Dave", "Eve"]
+greet("Alice", ...more)            # names = ["Alice", "Dave", "Eve"]
+greet(...names, ...other_names)    # merge two lists
+```
+
+**Named args after variadics:** the `identifier:` suffix unambiguously terminates the positional section:
+
+```keel
+min(a, b, c, by: |x| x.score)
+min(...scores, 99, by: |x| x)
+```
+
+**Type checking:** all variadic args must be the same type `T`; `...expr` requires `expr: list[T]` or `set[T]`.
+
+Note: `min(scores)` where `scores: list[int]` is a **type error** — the variadic expects `int`, not `list[int]`. Use `min(...scores)` to spread the list.
+
+### 6.7 Agent-local task calls
 
 Tasks declared inside an agent are methods of the current agent. Invoke them
 with `self.task(...)`:
@@ -765,7 +873,7 @@ when action {
 }
 ```
 
-**Tuple and struct patterns, `where` guards** — see §22 grammar for the full form.
+**Tuple and struct patterns, `where` guards** — see §23 grammar for the full form.
 
 **Non-enum matching (primitives, strings):** wildcard `_` is **required** (the compiler can't prove exhaustiveness on unbounded types).
 
@@ -1145,9 +1253,82 @@ if deadline > Time.now() {
 
 ---
 
-## 14. Escape Hatches
+## 14. Random, Uuid, and Crypto
 
-### 14.1 `Ai.prompt` — raw LLM access
+### 14.1 `Random` — pseudo-random generation
+
+`Random` produces non-cryptographic pseudo-random values. Use it for simulation, sampling, games, and any context where security is not a concern.
+
+| Call | Returns | Notes |
+|---|---|---|
+| `Random.float()` | `float` | Uniform in `[0.0, 1.0)` |
+| `Random.int(min:, max:)` | `int` | Inclusive range |
+| `Random.bool()` | `bool` | 50/50 |
+
+```keel
+Random.float()              # 0.7341...
+Random.int(min: 1, max: 6)  # dice roll
+Random.bool()               # true or false
+```
+
+### 14.2 `Uuid` — UUID generation
+
+`Uuid` is a distinct type (not `str`). It implements `Stringable` so it interpolates cleanly.
+
+| Call | Returns | Notes |
+|---|---|---|
+| `uuid()` | `Uuid` | Prelude alias for `Uuid.v4()` |
+| `Uuid.v4()` | `Uuid` | Random (CSPRNG) |
+| `Uuid.v7()` | `Uuid` | Time-ordered — monotonically increasing, B-tree friendly |
+| `Uuid.v5(ns:, name:)` | `Uuid` | Deterministic — SHA-1 of namespace + name |
+| `Uuid.parse(s)` | `Uuid?` | `none` if invalid format |
+
+**Namespace constants:** `Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, `Uuid.X500` — for use with `Uuid.v5`.
+
+**Value methods:**
+
+| Method | Returns | Notes |
+|---|---|---|
+| `.version()` | `int` | 4, 7, or 5 |
+| `.to_str()` | `str` | Hyphenated lowercase |
+| `.format(as:)` | `str` | `"hyphenated"` (default), `"simple"` (no hyphens), `"urn"` |
+
+```keel
+id = uuid()                                        # Uuid v4
+Log.info("created {id}")                           # interpolates via Stringable
+Uuid.v7()                                          # time-ordered
+Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")       # deterministic
+Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479") # Uuid?
+id.format(as: "simple")                            # "f47ac10b58cc4372a5670e02b2c3d479"
+```
+
+### 14.3 `Crypto` — cryptographic primitives <span class="badge badge-soon">Coming soon</span>
+
+> Status: planned — not implemented in v0.1.
+
+`Crypto` provides security-grade operations backed by a CSPRNG. It is **distinct from `Random`** — use `Crypto` wherever the output affects security (tokens, signatures, key derivation).
+
+| Call | Returns | Notes |
+|---|---|---|
+| `Crypto.hash(data, algo:)` | `str` | Hex digest; `algo:` one of `"sha256"`, `"sha512"` |
+| `Crypto.hmac(data, key:, algo:)` | `str` | Hex HMAC |
+| `Crypto.token(bytes: 32)` | `str` | Cryptographically secure random hex token |
+| `Crypto.random_bytes(n)` | `list[int]` | `n` CSPRNG bytes |
+
+```keel
+Crypto.hash("hello", algo: "sha256")          # "2cf24db..."
+Crypto.hmac("msg", key: secret, algo: "sha256")
+Crypto.token()                                # 64-char hex string (32 bytes)
+Crypto.token(bytes: 16)                       # 32-char hex string
+Crypto.random_bytes(16)                       # list[int] of 16 bytes
+```
+
+---
+
+## 15. Escape Hatches
+
+
+### 15.1 `Ai.prompt` — raw LLM access
 
 ```keel
 score = Ai.prompt(
@@ -1160,7 +1341,7 @@ score = Ai.prompt(
 
 `Ai.prompt(...)` **must be followed by `as T`**. A bare `Ai.prompt(...)` that tries to use the result is a compile error. Use `as dynamic` to explicitly opt out of typing.
 
-### 14.2 `Http.request` — raw HTTP
+### 15.2 `Http.request` — raw HTTP
 
 ```keel
 r = Http.request(
@@ -1173,7 +1354,7 @@ r = Http.request(
 # r: HttpResponse?
 ```
 
-### 14.3 `Db.query` — raw SQL
+### 15.3 `Db.query` — raw SQL
 
 ```keel
 rows = Db.query(
@@ -1183,7 +1364,7 @@ rows = Db.query(
 # rows: list[dynamic]
 ```
 
-### 14.4 `extern` — call external code
+### 15.4 `extern` — call external code
 
 ```keel
 extern task tokenize(text: str) -> list[str] from "nlp_utils"
@@ -1195,7 +1376,7 @@ tokens = tokenize(document.body)
 
 ---
 
-## 15. Environment & Configuration
+## 16. Environment & Configuration
 
 ### 15.1 Environment variables
 
@@ -1224,7 +1405,7 @@ log:
 
 ---
 
-## 16. Modules & Imports
+## 17. Modules & Imports
 
 ```keel
 use "./email_utils.keel"               # import a local file
@@ -1236,7 +1417,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 
 ---
 
-## 17. Operators
+## 18. Operators
 
 | Operator | Meaning |
 |---|---|
@@ -1253,10 +1434,11 @@ The prelude is always imported. `use` adds additional modules to scope.
 | `and` `or` `not` | Boolean logic |
 | `+` `-` `*` `/` `%` | Arithmetic |
 | `+=` `-=` `*=` `/=` | Augmented assignment — desugars to `x = x op rhs` |
+| `...expr` | Spread — expands `list[T]` or `set[T]` into variadic slots at a call site |
 
 ---
 
-## 18. Execution Model
+## 19. Execution Model
 
 Keel runs on the **Keel Runtime** (Rust, Tokio).
 
@@ -1281,7 +1463,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 
 ---
 
-## 19. Compile-Time Errors
+## 20. Compile-Time Errors
 
 | Error | Severity |
 |---|---|
@@ -1306,7 +1488,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 20. Lint Rules (`keel lint`)
+## 21. Lint Rules (`keel lint`)
 
 `keel lint` checks for style and best-practice issues that are not type errors. The program may still run; lint warnings indicate dead code or likely misuse patterns.
 
@@ -1321,7 +1503,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 21. IDE Contract
+## 22. IDE Contract
 
 Every feature is designed for tooling.
 
@@ -1343,7 +1525,7 @@ Every feature is designed for tooling.
 
 ---
 
-## 22. Formal Grammar (PEG summary, condensed)
+## 23. Formal Grammar (PEG summary, condensed)
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
@@ -1356,6 +1538,10 @@ OnHandler   <- "on" IDENT "(" Params? ")" Block
 StateBlock  <- "state" "{" (IDENT ":" "readonly"? Type ("=" Expr)? ","?)* "}"
 
 TaskDecl    <- "task" IDENT TypeParams? "(" Params? ")" ("->" Type)? Block
+Params      <- Param ("," Param)* ("," VariadicParam)? ("," NamedParam)*
+             / VariadicParam ("," NamedParam)*
+VariadicParam <- "..." IDENT ":" Type                                    # collected as list[T] inside body
+NamedParam  <- IDENT ":" Type ("=" Expr)?                               # named, may have default
 InterfaceDecl <- "interface" IDENT "{" (TaskSig)* "}"
 TaskSig     <- "task" IDENT "(" Params? ")" ("->" Type)?
 
@@ -1393,6 +1579,7 @@ Index       <- "[" Expr "]"
 Cast        <- "as" Type
 Args        <- Arg ("," Arg)*
 Arg         <- (IDENT ":")? Expr                                         # named args supported
+             / "..." Expr                                                # spread: expands list/set into variadic slots
 
 PrimaryExpr <- Literal / SelfExpr / IDENT / Lambda
              / TupleLit / ListLit / MapLit / SetLit
@@ -1432,7 +1619,7 @@ That keeps the parser small, type inference uniform (no hard-coded primitive sig
 
 ---
 
-## 23. What's Next
+## 24. What's Next
 
 v0.1 is the initial alpha. `keel run` accepts only the surface described in this document.
 

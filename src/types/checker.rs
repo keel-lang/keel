@@ -89,6 +89,8 @@ impl Ty {
 struct TaskSig {
     params: Vec<(String, Ty)>,
     return_type: Ty,
+    /// True if the last param is variadic (`...name: T`).
+    variadic: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -366,6 +368,7 @@ impl Checker {
     }
 
     fn task_sig(&self, t: &TaskDecl) -> TaskSig {
+        let variadic = t.params.last().is_some_and(|p| p.variadic);
         let params = t
             .params
             .iter()
@@ -374,6 +377,8 @@ impl Checker {
                     Binding::Ident(n) => n.clone(),
                     Binding::Destruct(_) => "_".to_string(),
                 };
+                // Variadic params are `list[T]` inside the body but `T` at call sites.
+                // The sig stores the element type so call-site checks compare each arg to T.
                 (name, self.resolve_type(&p.ty))
             })
             .collect();
@@ -385,6 +390,7 @@ impl Checker {
         TaskSig {
             params,
             return_type,
+            variadic,
         }
     }
 
@@ -646,7 +652,13 @@ impl Checker {
 
         let mut scope = self.fresh_scope();
         for p in &t.params {
-            let param_ty = self.resolve_type(&p.ty);
+            let elem_ty = self.resolve_type(&p.ty);
+            // Variadic params are visible inside the body as `list[T]`.
+            let param_ty = if p.variadic {
+                Ty::List(Box::new(elem_ty))
+            } else {
+                elem_ty
+            };
             self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
 
@@ -1281,8 +1293,11 @@ impl Checker {
                         return Ty::Unknown;
                     };
                     let expected = sig.params.len();
-                    let positional = args.iter().filter(|arg| arg.name.is_none()).count();
-                    if positional > expected {
+                    let positional = args
+                        .iter()
+                        .filter(|arg| arg.name.is_none() && !arg.spread)
+                        .count();
+                    if !sig.variadic && positional > expected {
                         let param_names: Vec<&str> =
                             sig.params.iter().map(|(name, _)| name.as_str()).collect();
                         let hint = if param_names.is_empty() {
@@ -1296,6 +1311,7 @@ impl Checker {
                     }
                     self.check_call_args(
                         &sig.params,
+                        sig.variadic,
                         args,
                         &arg_tys,
                         &format!("task `{agent_name}.{task_name}`"),
@@ -1306,9 +1322,12 @@ impl Checker {
                     && let Some(sig) = self.top_tasks.get(name).cloned()
                 {
                     let expected = sig.params.len();
-                    // Count only positional args (named args may map to params by name).
-                    let positional: usize = args.iter().filter(|a| a.name.is_none()).count();
-                    if positional > expected {
+                    // Count only non-spread positional args (named args may map to params by name).
+                    let positional: usize = args
+                        .iter()
+                        .filter(|a| a.name.is_none() && !a.spread)
+                        .count();
+                    if !sig.variadic && positional > expected {
                         let param_names: Vec<&str> =
                             sig.params.iter().map(|(n, _)| n.as_str()).collect();
                         let hint = if param_names.is_empty() {
@@ -1332,6 +1351,7 @@ impl Checker {
                                 &mut type_env,
                             );
                         }
+                        let td_variadic = td.params.last().is_some_and(|p| p.variadic);
                         let resolved_params: Vec<(String, Ty)> = td
                             .params
                             .iter()
@@ -1347,6 +1367,7 @@ impl Checker {
                             .collect();
                         self.check_call_args(
                             &resolved_params,
+                            td_variadic,
                             args,
                             &arg_tys,
                             &format!("task `{name}`"),
@@ -1356,7 +1377,13 @@ impl Checker {
                         }
                         return Ty::None_;
                     }
-                    self.check_call_args(&sig.params, args, &arg_tys, &format!("task `{name}`"));
+                    self.check_call_args(
+                        &sig.params,
+                        sig.variadic,
+                        args,
+                        &arg_tys,
+                        &format!("task `{name}`"),
+                    );
                     return sig.return_type.clone();
                 }
                 let _ = self.infer_expr(callee, scope);
@@ -1388,8 +1415,11 @@ impl Checker {
                         return Ty::Unknown;
                     };
                     let expected = sig.params.len();
-                    let positional = args.iter().filter(|arg| arg.name.is_none()).count();
-                    if positional > expected {
+                    let positional = args
+                        .iter()
+                        .filter(|arg| arg.name.is_none() && !arg.spread)
+                        .count();
+                    if !sig.variadic && positional > expected {
                         let param_names: Vec<&str> =
                             sig.params.iter().map(|(name, _)| name.as_str()).collect();
                         let hint = if param_names.is_empty() {
@@ -1403,6 +1433,7 @@ impl Checker {
                     }
                     self.check_call_args(
                         &sig.params,
+                        sig.variadic,
                         args,
                         &arg_tys,
                         &format!("task `{agent_name}.{method}`"),
@@ -1682,9 +1713,13 @@ impl Checker {
     /// Check inferred argument types against declared parameter types.
     /// Positional args fill params in order; named args match by param name
     /// (mirroring the interpreter's Python-style keyword-argument convention).
+    /// When `variadic` is true the last param is a rest-parameter (`...name: T`):
+    ///   - plain positional args beyond the fixed params are each checked as `T`
+    ///   - spread args (`...expr`) must be `list[T]` or `set[T]`
     fn check_call_args(
         &mut self,
         params: &[(String, Ty)],
+        variadic: bool,
         args: &[crate::ast::CallArg],
         arg_tys: &[Ty],
         callee: &str,
@@ -1694,14 +1729,22 @@ impl Checker {
             .zip(arg_tys.iter())
             .filter_map(|(a, ty)| a.name.as_deref().map(|n| (n, ty)))
             .collect();
+        // Plain positional args — not named, not spread.
         let positional: Vec<&Ty> = args
             .iter()
             .zip(arg_tys.iter())
-            .filter(|(a, _)| a.name.is_none())
+            .filter(|(a, _)| a.name.is_none() && !a.spread)
             .map(|(_, ty)| ty)
             .collect();
+
+        let fixed_params = if variadic && !params.is_empty() {
+            &params[..params.len() - 1]
+        } else {
+            params
+        };
+
         let mut pos_idx = 0;
-        for (param_name, param_ty) in params {
+        for (param_name, param_ty) in fixed_params {
             let arg_ty = if let Some(ty) = named.get(param_name.as_str()) {
                 *ty
             } else if let Some(ty) = positional.get(pos_idx) {
@@ -1711,6 +1754,60 @@ impl Checker {
                 continue;
             };
             self.expect(arg_ty, param_ty, &format!("{callee} arg `{param_name}`"));
+        }
+
+        if variadic && let Some((var_name, elem_ty)) = params.last() {
+            // Check each remaining plain positional arg against the element type.
+            for arg_ty in positional.iter().skip(pos_idx) {
+                self.expect(
+                    arg_ty,
+                    elem_ty,
+                    &format!("{callee} variadic arg `{var_name}`"),
+                );
+            }
+            // Check spread args: each must be list[T] or set[T].
+            for (_a, arg_ty) in args.iter().zip(arg_tys.iter()).filter(|(a, _)| a.spread) {
+                let expected_list = Ty::List(Box::new(elem_ty.clone()));
+                let expected_set = Ty::Set(Box::new(elem_ty.clone()));
+                let ok = match arg_ty {
+                    Ty::List(inner) | Ty::Set(inner) => self.types_match(inner.as_ref(), elem_ty),
+                    _ => false,
+                };
+                if !ok {
+                    self.err(format!(
+                        "{callee}: spread arg `...` must be `{}` or `{}`, got `{}`",
+                        describe_ty(&expected_list),
+                        describe_ty(&expected_set),
+                        describe_ty(arg_ty),
+                    ));
+                }
+            }
+        }
+    }
+
+    /// Structural type equality (ignoring nullability wrapping differences).
+    fn types_match(&self, a: &Ty, b: &Ty) -> bool {
+        match (a, b) {
+            (Ty::Unknown, _) | (_, Ty::Unknown) => true,
+            (Ty::Dynamic, _) | (_, Ty::Dynamic) => true,
+            (Ty::Int, Ty::Int)
+            | (Ty::Float, Ty::Float)
+            | (Ty::Str, Ty::Str)
+            | (Ty::Bool, Ty::Bool)
+            | (Ty::None_, Ty::None_) => true,
+            (Ty::List(a), Ty::List(b)) | (Ty::Set(a), Ty::Set(b)) => {
+                self.types_match(a.as_ref(), b.as_ref())
+            }
+            (Ty::Nullable(a), Ty::Nullable(b)) => self.types_match(a.as_ref(), b.as_ref()),
+            (Ty::Enum(a, _), Ty::Enum(b, _)) => a == b,
+            (Ty::Struct(af), Ty::Struct(bf)) => {
+                af.len() == bf.len()
+                    && af
+                        .iter()
+                        .zip(bf.iter())
+                        .all(|((an, at), (bn, bt))| an == bn && self.types_match(at, bt))
+            }
+            _ => false,
         }
     }
 

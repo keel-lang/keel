@@ -74,6 +74,10 @@ pub struct Param {
     pub name: Binding,
     pub ty: TypeExpr,
     pub default: Option<Expr>,
+    /// If true, this is a variadic rest-parameter (`...name: T`).
+    /// Inside the task body it binds as `list[T]`.
+    /// Must be the last positional parameter.
+    pub variadic: bool,
 }
 
 #[derive(Debug, Clone)]

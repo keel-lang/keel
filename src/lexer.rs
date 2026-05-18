@@ -141,6 +141,8 @@ pub enum Token {
     NullCoalesce,
     #[token("?.")]
     NullDot,
+    #[token("...")]
+    DotDotDot,
     #[token("..")]
     DotDot,
     // Augmented assignment — must be listed before single-char `+` `-` `*` `/`
@@ -355,6 +357,7 @@ impl fmt::Display for Token {
             Token::Gte => write!(f, ">="),
             Token::NullCoalesce => write!(f, "??"),
             Token::NullDot => write!(f, "?."),
+            Token::DotDotDot => write!(f, "..."),
             Token::DotDot => write!(f, ".."),
             Token::PlusEq => write!(f, "+="),
             Token::MinusEq => write!(f, "-="),

@@ -1,0 +1,28 @@
+task join(...words: str) -> str {
+  result = ""
+  for w in words {
+    result += w
+  }
+  result
+}
+
+task sum_with_bonus(bonus: int, ...nums: int) -> int {
+  total = bonus
+  for n in nums {
+    total += n
+  }
+  total
+}
+
+agent Demo {
+  @role "variadic demo"
+  @on_start {
+    greeting = join("Hello", ", ", "world", "!")
+    Io.show(greeting)
+    xs = [4, 5, 6]
+    total = sum_with_bonus(10, 1, 2, 3, ...xs)
+    Io.show("total: {total}")
+  }
+}
+
+run(Demo)

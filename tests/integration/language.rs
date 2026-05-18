@@ -1682,3 +1682,101 @@ run(A)
     assert!(ok, "expected success:\nstderr: {stderr}");
     assert!(stdout.contains("3"), "expected outer=3, stdout: {stdout}");
 }
+
+// ─── Variadic parameters (v0.1.25) ───────────────────────────────────────────
+
+#[test]
+fn variadic_basic_collect() {
+    // The variadic param collects all positional args into a list.
+    let src = r#"
+task join_words(...words: str) -> str {
+    result = ""
+    for w in words { result += w }
+    result
+}
+
+agent A {
+    @on_start {
+        out = join_words("hello", " ", "world")
+        Io.show(out)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(
+        stdout.contains("hello world"),
+        "expected 'hello world', stdout: {stdout}"
+    );
+}
+
+#[test]
+fn variadic_zero_args_yields_empty_list() {
+    let src = r#"
+task count_args(...items: str) -> int {
+    total = 0
+    for _ in items { total += 1 }
+    total
+}
+
+agent A {
+    @on_start {
+        n = count_args()
+        Io.show("{n}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("0"), "expected 0, stdout: {stdout}");
+}
+
+#[test]
+fn variadic_spread_expands_list() {
+    let src = r#"
+task sum_ints(...nums: int) -> int {
+    total = 0
+    for n in nums { total += n }
+    total
+}
+
+agent A {
+    @on_start {
+        xs = [1, 2, 3]
+        result = sum_ints(...xs, 4)
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("10"), "expected 10, stdout: {stdout}");
+}
+
+#[test]
+fn variadic_with_fixed_prefix() {
+    let src = r#"
+task labeled(prefix: str, ...items: str) -> str {
+    result = prefix + ":"
+    for item in items { result += " " + item }
+    result
+}
+
+agent A {
+    @on_start {
+        out = labeled("tags", "rust", "keel", "lang")
+        Io.show(out)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(
+        stdout.contains("tags: rust keel lang"),
+        "expected 'tags: rust keel lang', stdout: {stdout}"
+    );
+}

@@ -1468,3 +1468,125 @@ run(A)
 "#,
     );
 }
+
+// ─── Variadic parameters ──────────────────────────────────────────────────────
+
+#[test]
+fn variadic_zero_args_ok() {
+    type_ok(
+        r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start { x = greet() }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn variadic_many_args_ok() {
+    type_ok(
+        r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start { x = greet("a", "b", "c") }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn variadic_spread_list_ok() {
+    type_ok(
+        r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start {
+        xs = ["a", "b"]
+        x = greet(...xs)
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn variadic_mixed_spread_ok() {
+    type_ok(
+        r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start {
+        xs = ["b", "c"]
+        x = greet("a", ...xs)
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn variadic_wrong_type_error() {
+    expect_error(
+        r#"
+task add(...nums: int) -> int { 0 }
+agent A {
+    @on_start { x = add("oops") }
+}
+run(A)
+"#,
+        "variadic arg `nums`",
+    );
+}
+
+#[test]
+fn variadic_list_without_spread_is_error() {
+    // Passing list[int] where int is expected — must use ...
+    expect_error(
+        r#"
+task add(...nums: int) -> int { 0 }
+agent A {
+    @on_start {
+        xs = [1, 2, 3]
+        x = add(xs)
+    }
+}
+run(A)
+"#,
+        "variadic arg `nums`",
+    );
+}
+
+#[test]
+fn variadic_body_sees_list_type() {
+    // Inside the body, the variadic param should be list[str].
+    type_ok(
+        r#"
+task join(...words: str) -> str {
+    result: list[str] = words
+    "ok"
+}
+agent A {
+    @on_start { join("a", "b") }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn variadic_with_fixed_params_ok() {
+    type_ok(
+        r#"
+task fmt(prefix: str, ...parts: str) -> str { "ok" }
+agent A {
+    @on_start { fmt(">>", "a", "b", "c") }
+}
+run(A)
+"#,
+    );
+}

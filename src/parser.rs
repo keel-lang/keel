@@ -594,8 +594,20 @@ fn expr_parser() -> P<Expr> {
             .map(|(name, value)| CallArg {
                 name: Some(name),
                 value,
+                spread: false,
             })
-            .or(expr.clone().map(|value| CallArg { name: None, value }))
+            .or(just(Token::DotDotDot)
+                .ignore_then(expr.clone())
+                .map(|value| CallArg {
+                    name: None,
+                    value,
+                    spread: true,
+                }))
+            .or(expr.clone().map(|value| CallArg {
+                name: None,
+                value,
+                spread: false,
+            }))
             .boxed();
 
         let call_args = just(Token::LParen)
@@ -1207,6 +1219,7 @@ fn interface_decl() -> P<Decl> {
             name: Binding::Ident(name),
             ty,
             default: None,
+            variadic: false,
         });
 
     let task_sig = just(Token::Task)
@@ -1244,6 +1257,7 @@ fn extern_decl() -> P<Decl> {
             name: Binding::Ident(name),
             ty,
             default: None,
+            variadic: false,
         });
 
     just(Token::Extern)
@@ -1303,11 +1317,54 @@ fn task_decl() -> P<TaskDecl> {
         struct_destruct_pat().map(|fields| Binding::Destruct(DestructPat::Struct(fields))),
         ident().map(Binding::Ident),
     ));
-    let param = param_name
+    // Ordinary param: `name: Type` with an optional `= default`.
+    let regular_param = param_name
         .then_ignore(just(Token::Colon))
         .then(type_expr())
         .then(just(Token::Eq).ignore_then(expr_parser()).or_not())
-        .map(|((name, ty), default)| Param { name, ty, default });
+        .map(|((name, ty), default)| Param {
+            name,
+            ty,
+            default,
+            variadic: false,
+        });
+    // Variadic param: `...name: Type` — no default allowed (defaults to []).
+    let variadic_param = just(Token::DotDotDot)
+        .ignore_then(ident())
+        .then_ignore(just(Token::Colon))
+        .then(type_expr())
+        .map(|(name, ty)| Param {
+            name: Binding::Ident(name),
+            ty,
+            default: None,
+            variadic: true,
+        });
+    // Each slot is either a variadic or a regular param.
+    let any_param = choice((variadic_param, regular_param)).boxed();
+    let param_list = just(Token::LParen)
+        .ignore_then(newlines())
+        .ignore_then(any_param.separated_by(field_sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RParen))
+        .try_map(|params: Vec<Param>, span| {
+            // Enforce: at most one variadic, and it must be the last parameter.
+            let bad = params
+                .iter()
+                .enumerate()
+                .find(|(i, p)| p.variadic && *i + 1 < params.len());
+            if let Some((_, p)) = bad {
+                let name = match &p.name {
+                    Binding::Ident(s) => s.clone(),
+                    _ => "?".into(),
+                };
+                Err(Simple::custom(
+                    span,
+                    format!("variadic parameter `...{name}` must be the last parameter"),
+                ))
+            } else {
+                Ok(params)
+            }
+        });
 
     let type_params = just(Token::LBracket)
         .ignore_then(ident().separated_by(just(Token::Comma)).at_least(1))
@@ -1318,13 +1375,7 @@ fn task_decl() -> P<TaskDecl> {
     just(Token::Task)
         .ignore_then(ident())
         .then(type_params)
-        .then(
-            just(Token::LParen)
-                .ignore_then(newlines())
-                .ignore_then(param.separated_by(field_sep()).allow_trailing())
-                .then_ignore(newlines())
-                .then_ignore(just(Token::RParen)),
-        )
+        .then(param_list)
         .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
         .then(block_toplevel())
         .map(
@@ -1443,6 +1494,7 @@ fn agent_item() -> P<AgentItem> {
                             name,
                             ty,
                             default: None,
+                            variadic: false,
                         }),
                 )
                 .then_ignore(just(Token::RParen))

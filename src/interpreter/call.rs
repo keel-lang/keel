@@ -51,6 +51,7 @@ impl Interpreter {
         // (label matches param name) bind by name and are skipped in the
         // positional sequence. Mixed calls like `foo(1, b: 20, 3)` work
         // the same way as Python keyword arguments.
+        // Spread args have already been flattened into positional slots by eval_args.
         let positional: Vec<&Value> = args
             .iter()
             .filter(|a| a.name.is_none())
@@ -60,15 +61,29 @@ impl Interpreter {
             .iter()
             .filter_map(|a| a.name.as_deref().map(|n| (n, &a.value)))
             .collect();
+
+        let variadic_idx = decl
+            .params
+            .iter()
+            .position(|p| p.variadic)
+            .unwrap_or(decl.params.len());
+
         let mut pos_idx = 0;
-        for p in &decl.params {
+        for (i, p) in decl.params.iter().enumerate() {
             // Only simple `Binding::Ident` params can be matched by name;
             // destructuring params (`{a, b}`) fall back to positional only.
             let param_name = match &p.name {
                 crate::ast::Binding::Ident(s) => Some(s.as_str()),
                 _ => None,
             };
+            if p.variadic {
+                // Collect all remaining positional args into a list.
+                let rest: Vec<Value> = positional[pos_idx..].iter().map(|v| (*v).clone()).collect();
+                bind_value(&p.name, Value::List(rest), &mut env)?;
+                break;
+            }
             let v = if let Some(name) = param_name
+                && i < variadic_idx
                 && let Some(v) = named.get(name)
             {
                 (*v).clone()

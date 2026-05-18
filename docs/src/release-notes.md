@@ -6,6 +6,33 @@
 
 ## Unreleased
 
+### Variadic parameters (`...param: T`) and spread (`...expr`)
+
+Tasks can now accept any number of positional arguments through a rest-parameter:
+
+```keel
+task greet(...names: str) -> str {
+  result = ""
+  for n in names { result += n + " " }
+  result
+}
+
+greet("Alice", "Bob")    # names = ["Alice", "Bob"]
+greet()                  # names = []
+```
+
+Spread a `list[T]` or `set[T]` at any call site with `...`:
+
+```keel
+xs = ["Dave", "Eve"]
+greet("Alice", ...xs)    # ["Alice", "Dave", "Eve"]
+greet(...xs, ...xs)      # merge two lists
+```
+
+Passing `list[T]` without `...` to a variadic param is a compile-time type error.
+
+See [Tasks → Variadic parameters](guide/tasks.md#variadic-parameters).
+
 ### `File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`
 
 The `File` namespace now covers all common filesystem operations:

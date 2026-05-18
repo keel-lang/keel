@@ -480,3 +480,36 @@ fn lex_null_chain() {
         ]
     );
 }
+
+// ─── Variadic / spread ────────────────────────────────────────────────────────
+
+#[test]
+fn lex_dot_dot_dot_distinct_from_dot_dot() {
+    // `...` and `..` must not be confused with each other.
+    let toks = tokens("0..10 ...x");
+    assert_eq!(
+        toks,
+        vec![
+            Token::Integer("0".into()),
+            Token::DotDot,
+            Token::Integer("10".into()),
+            Token::DotDotDot,
+            Token::Ident("x".into()),
+        ]
+    );
+}
+
+#[test]
+fn lex_spread_in_call() {
+    let toks = tokens("f(...items)");
+    assert_eq!(
+        toks,
+        vec![
+            Token::Ident("f".into()),
+            Token::LParen,
+            Token::DotDotDot,
+            Token::Ident("items".into()),
+            Token::RParen,
+        ]
+    );
+}

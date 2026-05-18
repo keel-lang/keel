@@ -14,6 +14,32 @@ All notable changes to Keel.
 
 ### Added
 
+- **Variadic parameters (`...param: T`) and spread call sites (`...expr`).**
+  Tasks can now declare a rest-parameter by prefixing it with `...`. Inside the body it
+  binds as `list[T]`; zero, one, or many positional arguments are accepted. At call sites
+  any `list[T]` or `set[T]` can be expanded with `...`:
+
+  ```keel
+  task greet(...names: str) -> str {
+      result = ""
+      for n in names { result += n + " " }
+      result
+  }
+
+  greet("Alice", "Bob")             # names = ["Alice", "Bob"]
+  greet()                           # names = []
+
+  more = ["Dave", "Eve"]
+  greet("Alice", ...more)           # names = ["Alice", "Dave", "Eve"]
+  greet(...more, ...more)           # merge two lists
+
+  task labeled(prefix: str, ...items: str) -> str { ... }
+  labeled("tags", "rust", "keel")  # prefix = "tags", items = ["rust", "keel"]
+  ```
+
+  Passing `list[T]` without `...` to a variadic param is a **type error** — use `...scores`
+  not `scores`.
+
 - **`File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` added.**
   The `File` namespace now covers the full local filesystem story:
 

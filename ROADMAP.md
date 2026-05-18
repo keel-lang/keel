@@ -32,6 +32,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `break` / `continue` in loops | [x] | Exit or skip iterations; both are reserved keywords; innermost-loop semantics only |
 | `raise expr` | [x] | Symmetric with `try`/`catch`; string value becomes error message; any other value is converted via display |
 | Type checker: operator type compatibility | [x] | Binary expressions (`+`, `-`, `%=`, etc.) don't validate that operand types are compatible — `"x" + 5` passes the checker and fails at runtime. Needs a `check_binop(lhs_ty, op, rhs_ty)` pass applied uniformly to all `BinOp` and `AugAssign` sites. |
+| Variadic parameters (`...param: T`) | [x] | Declaration, `list[T]` inside body, `...expr` spread at call sites; named args follow naturally via positional/named dispatch | Unblocks `min`/`max` prelude functions |
 | Bytecode compiler (`keel build`) | [ ] | Deferred post-v0.1 — tree-walking interpreter covers all alpha workloads |
 
 ### Agent model
@@ -80,11 +81,16 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | — |
 | `String value methods` | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed | — |
 | `File` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
-| `Math` | [ ] | — | `random()`, `uuid()`, `abs()`, `floor()`, `ceil()`, `round()`, `min(a,b)`, `max(a,b)` |
+| Numeric value methods | [ ] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
+| `min` / `max` prelude functions | [ ] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; spread with `...` | Requires variadic params |
+| `Random` namespace | [ ] | `Random.float()`, `Random.int(min:, max:)`, `Random.bool()` | — |
+| `Uuid` type + namespace | [ ] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
+| `Stringable` interface | [ ] | `interface Stringable { task to_str() -> str }`; enables `"{expr}"` interpolation for any type | Implemented by all primitives + `Uuid` |
 | `Json` | [x] | `parse`, `stringify` | — |
 | `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
+| `Crypto` | [ ] | — | `hash(data, algo:)`, `hmac(data, key:, algo:)`, `token(bytes:)`, `random_bytes(n)` — cryptographic primitives; distinct from `Random` (PRNG) |
 
 ### CLI
 
@@ -118,7 +124,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 - **`while` loop.** Unbounded iteration. Needs new `Stmt::While` AST node, lexer token, parser, type-checker, and interpreter eval. The highest-impact control-flow gap — deferred only because `while` + `break`/`continue` + a mutable-loop-variable convention is a small but coherent design unit worth speccing carefully.
 - **`list[i]` subscript access.** No `Expr::Index` exists yet. Requires new AST variant, parser rule, type-checker (bounds are dynamic), and interpreter. `items.first()` / `items.last()` / `.nth(i)` bridge the gap for now.
 - **Structural pattern matching.** `when` currently matches only enum variant tags. Struct destructuring, map shapes, and tuple decomposition would transform agent decision code from imperative `if` chains into exhaustiveness-checked decision tables — significant scope, best specced post-v0.1.
-- **Variadic functions (`*args`).** Required for organic prelude growth and decorator/proxy patterns. Design question: how variadics interact with Keel's named-arg calling convention.
+- **Variadic functions** — shipped in v0.1.25 (see core language table).
 - **Lazy sequences / generators.** Everything is eagerly materialized. Extending `Range`'s lazy evaluation to a general iterator protocol would make large-dataset pipelines memory-efficient.
 - **String format specifiers** (`"{ value:.2f }"`). Agents spend most of their time formatting text; a minimal subset (`.2f`, `>10`, `<10`) would cover 90% of needs.
 - **CSV / YAML serialization.** LLMs frequently emit and consume CSV; YAML is the dominant config format. A `Csv` and `Yaml` namespace alongside `Json` rounds out the serialization story.
