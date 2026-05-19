@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.25 — 2026-05-19
+
 ### Variadic parameters (`...param: T`) and spread (`...expr`)
 
 Tasks can now accept any number of positional arguments through a rest-parameter:

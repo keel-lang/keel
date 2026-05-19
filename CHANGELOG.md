@@ -10,7 +10,13 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% min/max prelude functions, variadic parameters, and File namespace completion.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.25] — 2026-05-19
+
+min/max prelude functions, variadic parameters, and File namespace completion.
 
 ### Added
 
