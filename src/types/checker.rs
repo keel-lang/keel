@@ -1407,7 +1407,16 @@ impl Checker {
                         .iter()
                         .zip(arg_tys.iter())
                         .filter(|(a, _)| a.name.is_none())
-                        .map(|(_, ty)| ty.clone())
+                        .map(|(a, ty)| {
+                            if a.spread {
+                                match ty {
+                                    Ty::List(inner) | Ty::Set(inner) => *inner.clone(),
+                                    _ => ty.clone(),
+                                }
+                            } else {
+                                ty.clone()
+                            }
+                        })
                         .collect();
                     let elem_ty = match positional_tys.as_slice() {
                         [] => Ty::Unknown,
@@ -1544,7 +1553,7 @@ impl Checker {
                     }
                     if name == "File" {
                         match method.as_str() {
-                            "read" => return Ty::Nullable(Box::new(Ty::Str)),
+                            "read" => return Ty::Str,
                             "write" | "mkdir" | "remove" | "copy" | "move" => return Ty::None_,
                             "exists" => return Ty::Bool,
                             "list" | "glob" => return Ty::List(Box::new(Ty::Str)),
@@ -1765,6 +1774,12 @@ impl Checker {
         arg_tys: &[Ty],
         callee: &str,
     ) {
+        if !variadic && args.iter().any(|a| a.spread) {
+            self.err(format!(
+                "{callee}: spread args (`...`) require a variadic callee"
+            ));
+            return;
+        }
         let named: HashMap<&str, &Ty> = args
             .iter()
             .zip(arg_tys.iter())

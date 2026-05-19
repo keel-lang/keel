@@ -80,6 +80,43 @@ All notable changes to Keel.
 
 ### Fixed
 
+- **Type checker: spread args rejected on fixed-arity tasks.** Calling a non-variadic task with
+  a spread argument (`f(...xs)`) now produces a type error instead of silently bypassing the
+  arity check. Spread call syntax is only valid when the callee is variadic:
+
+  ```keel
+  task greet(name: str) -> str { name }
+  xs = ["Alice", "Bob"]
+  greet(...xs)   # ✗ error: spread args require a variadic callee
+  ```
+
+- **Type checker: `max(...scores, 99)` and `min(...a, ...b)` were falsely rejected.**
+  The checker compared spread container types (`list[int]`) against scalar types (`int`),
+  causing "arguments must all have the same type" errors on valid spread-plus-extra and
+  multi-spread calls. Spread element types are now unwrapped before uniformity checking:
+
+  ```keel
+  scores = [4, 9, 2]
+  hi = max(...scores, 99)          # ok — 99
+  lo = min(...scores, ...scores)   # ok — 2
+  ```
+
+- **`File.read` type corrected to `str` (was `str?`).** The type checker was inferring
+  a nullable `str?` for `File.read`, but the runtime always raises `FileError` when the
+  file is missing — it never returns `none`. Checker and docs now reflect the true contract:
+  `File.read` returns `str` and raises on failure. Guard with `File.exists` if the path
+  may be absent:
+
+  ```keel
+  if File.exists("config.json") {
+      cfg = File.read("config.json")
+  }
+  ```
+
+- **LSP: stale `Str` namespace completions removed.** The completion list and hover handler
+  still offered `Str` as a namespace and listed `match`, `extract`, `truncate`, `pad` as
+  "Str methods" after the `Str` namespace was removed. Those entries are now gone.
+
 - **Type checker: `datetime` operator types.** Comparisons (`<`, `>`, `<=`, `>=`) and arithmetic
   (`+`, `-`) on `datetime` and `duration` values were incorrectly rejected by `keel check`. Now
   `datetime > datetime`, `datetime + duration`, `datetime - duration`, and `datetime - datetime`

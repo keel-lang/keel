@@ -1590,3 +1590,53 @@ run(A)
 "#,
     );
 }
+
+#[test]
+fn spread_on_fixed_arity_task_is_error() {
+    expect_error(
+        r#"
+task greet(name: str) -> str { name }
+agent A {
+    @on_start {
+        xs = ["alice", "bob"]
+        greet(...xs)
+    }
+}
+run(A)
+"#,
+        "spread args",
+    );
+}
+
+#[test]
+fn min_max_spread_plus_scalar_ok() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        scores = [4, 9, 2]
+        hi = max(...scores, 99)
+        lo = min(...scores, 1)
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn min_max_multi_spread_ok() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        a = [4, 9]
+        b = [2, 7]
+        lo = min(...a, ...b)
+        hi = max(...a, ...b)
+    }
+}
+run(A)
+"#,
+    );
+}

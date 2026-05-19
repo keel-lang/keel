@@ -7,11 +7,11 @@ The `File` namespace gives agents access to the local filesystem. It is auto-imp
 ## Reading and writing
 
 ```keel
-content = File.read("data/report.txt")    # str? — none if file missing
-File.write("output/result.txt", content ?? "")
+content = File.read("data/report.txt")    # str — raises FileError if file missing
+File.write("output/result.txt", content)
 ```
 
-`File.read` returns a nullable string (`str?`) — use `??` to supply a default when the file doesn't exist.
+`File.read` returns `str`. If the file does not exist it raises a `FileError` at runtime — use `File.exists` to guard reads when the path may be absent.
 
 `File.write` creates parent directories automatically.
 
@@ -19,7 +19,7 @@ File.write("output/result.txt", content ?? "")
 
 ```keel
 if File.exists("config.json") {
-  cfg = File.read("config.json") ?? "{}"
+  cfg = File.read("config.json")
 }
 
 entries = File.list("output")   # list[str] — names only, not full paths
@@ -80,7 +80,7 @@ File.remove(tmp)
 
 | Method | Returns | Notes |
 |---|---|---|
-| `File.read(path)` | `str?` | `none` if file missing |
+| `File.read(path)` | `str` | raises `FileError` if file missing |
 | `File.write(path, content)` | `none` | creates parent dirs |
 | `File.exists(path)` | `bool` | true for files and directories |
 | `File.list(dir)` | `list[str]` | entry names only, not paths |

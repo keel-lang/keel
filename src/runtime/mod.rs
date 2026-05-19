@@ -2,7 +2,7 @@
 //!
 //! Every Keel program starts with these namespaces in scope:
 //!   `Ai`, `Io`, `Schedule`, `Email`, `Http`, `Memory`, `Async`,
-//!   `Control`, `Env`, `Log`, `Agent`, `Cache`, `Str`, `File`, `Json`.
+//!   `Control`, `Env`, `Log`, `Agent`, `Cache`, `File`, `Json`.
 //!
 //! Top-level convenience bindings (`run`, `stop`) wrap `Agent.*`.
 

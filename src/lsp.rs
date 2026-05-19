@@ -118,7 +118,7 @@ impl LanguageServer for Backend {
         // Get prelude namespace suggestions
         let namespaces = vec![
             "Ai", "Io", "Schedule", "Email", "Http", "Env", "Log", "Agent", "Control", "Async",
-            "Memory", "Search", "Db", "Time", "File", "Json", "Cache", "Str",
+            "Memory", "Search", "Db", "Time", "File", "Json", "Cache",
         ];
 
         for ns in namespaces {
@@ -177,11 +177,6 @@ impl LanguageServer for Backend {
             ("get", "Cache method"),
             ("delete", "Cache method"),
             ("clear", "Cache method"),
-            // Str
-            ("match", "Str method"),
-            ("extract", "Str method"),
-            ("truncate", "Str method"),
-            ("pad", "Str method"),
         ];
 
         for (method, kind) in methods {
@@ -289,7 +284,6 @@ impl LanguageServer for Backend {
                 | "Log"
                 | "Agent"
                 | "Cache"
-                | "Str"
                 | "File"
                 | "Json"
                 | "int"

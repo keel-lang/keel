@@ -68,6 +68,15 @@ impl Interpreter {
             .position(|p| p.variadic)
             .unwrap_or(decl.params.len());
 
+        let is_variadic = variadic_idx < decl.params.len();
+        if !is_variadic && positional.len() > decl.params.len() {
+            return Err(miette::miette!(
+                "task takes {} argument(s), got {} — spread args (`...`) require a variadic callee",
+                decl.params.len(),
+                positional.len()
+            ));
+        }
+
         let mut pos_idx = 0;
         for (i, p) in decl.params.iter().enumerate() {
             // Only simple `Binding::Ident` params can be matched by name;

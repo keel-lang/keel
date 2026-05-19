@@ -1930,3 +1930,58 @@ run(A)
         "expected cherry, stdout: {stdout}"
     );
 }
+
+#[test]
+fn max_spread_plus_extra_scalar() {
+    let src = r#"
+agent A {
+    @on_start {
+        scores = [4, 9, 2, 7]
+        result = max(...scores, 99)
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("99"), "expected 99, stdout: {stdout}");
+}
+
+#[test]
+fn min_multi_spread() {
+    let src = r#"
+agent A {
+    @on_start {
+        a = [4, 9]
+        b = [2, 7]
+        result = min(...a, ...b)
+        Io.show("{result}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected success:\nstderr: {stderr}");
+    assert!(stdout.contains("2"), "expected 2, stdout: {stdout}");
+}
+
+#[test]
+fn spread_on_fixed_arity_task_is_runtime_error() {
+    let src = r#"
+task greet(name: str) -> str { name }
+agent A {
+    @on_start {
+        xs = ["Alice", "Bob"]
+        greet(...xs)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected runtime error for spread on fixed-arity task");
+    assert!(
+        stderr.contains("spread") || stderr.contains("variadic"),
+        "expected spread/variadic error:\n{stderr}"
+    );
+}
