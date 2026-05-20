@@ -84,7 +84,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Numeric value methods | [ ] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
 | `min` / `max` prelude functions | [x] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; single list arg auto-spread; `none` on empty | — |
 | `Random` | [x] | `Random.float()`, `Random.int(min:, max:)`, `Random.bool()` | — |
-| `Uuid` type + namespace | [ ] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
+| `Uuid` | [x] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
 | `Stringable` interface | [ ] | `interface Stringable { task to_str() -> str }`; enables `"{expr}"` interpolation for any type | Implemented by all primitives + `Uuid` |
 | `Json` | [x] | `parse`, `stringify` | — |
 | `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |

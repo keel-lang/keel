@@ -331,6 +331,36 @@ run(A)
 }
 
 #[test]
+fn uuid_namespace_generates_parses_and_formats_values() {
+    let src = r#"
+agent A {
+    @on_start {
+        id: Uuid = uuid()
+        v4 = id.version()
+        v7 = Uuid.v7().version()
+        site = Uuid.v5(ns: Uuid.DNS, name: "www.example.com")
+        parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+        missing = Uuid.parse("bad")
+        simple = id.format(as: "simple")
+        urn = id.format(as: "urn")
+        if v4 == 4 and v7 == 7 and site.to_str() == "2ed6657d-e927-568b-95e1-2665a8aea6a2" and parsed != none and missing == none {
+            Io.show("uuid-ok {simple} {urn}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "Uuid namespace program failed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("uuid-ok"), "{stdout}");
+    assert!(stdout.contains("urn:uuid:"), "{stdout}");
+}
+
+#[test]
 fn env_require_returns_set_value_and_errors_when_missing() {
     let ok_src = r#"
 agent A {

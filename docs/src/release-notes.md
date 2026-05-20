@@ -19,6 +19,23 @@ enabled = Random.bool()
 Use `Random` for simulation, sampling, games, and similar non-security work. `Random.int`
 uses an inclusive `min:` / `max:` range and raises a runtime error if `min > max`.
 
+### `Uuid` type and namespace
+
+`Uuid` is now a distinct runtime/type-checker value with factories, parsing, formatting, and the
+top-level `uuid()` alias:
+
+```keel
+id: Uuid = uuid()
+trace = Uuid.v7()
+site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
+parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+simple = id.format(as: "simple")
+version = id.version()
+```
+
+`Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, and `Uuid.X500` are built-in namespace constants for deterministic
+version-5 UUIDs. Interpolation displays UUIDs in lowercase hyphenated form.
+
 ---
 
 ## v0.1.25 — 2026-05-19

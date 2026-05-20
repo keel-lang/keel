@@ -212,6 +212,13 @@
       "implemented_ops": "`Random.float()`, `Random.int(min:, max:)`, `Random.bool()`",
       "gaps": "—",
       "purpose": "Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness."
+    },
+    {
+      "name": "Uuid",
+      "status": "shipped",
+      "implemented_ops": "`Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()`",
+      "gaps": "Implements `Stringable`",
+      "purpose": "UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`."
     }
   ],
   "cli": [

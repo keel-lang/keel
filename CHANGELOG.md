@@ -26,6 +26,21 @@ All notable changes to Keel.
   Use `Random` for simulation, sampling, games, and other non-security work. `Random.int`
   uses an inclusive `min:` / `max:` range and raises a runtime error when `min > max`.
 
+- **`Uuid` type and namespace.**
+  `Uuid` is now a distinct type with random, time-ordered, deterministic, and parsed values:
+
+  ```keel
+  id: Uuid = uuid()
+  trace = Uuid.v7()
+  site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
+  parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+  simple = id.format(as: "simple")
+  version = id.version()
+  ```
+
+  `uuid()` is an alias for `Uuid.v4()`. UUIDs interpolate as lowercase hyphenated strings and
+  support `.to_str()`, `.format(as:)`, and `.version()`.
+
 ---
 
 ## [0.1.25] — 2026-05-19

@@ -18,6 +18,7 @@ mod random;
 mod schedule;
 mod search;
 mod time;
+pub(crate) mod uuid;
 
 pub(crate) fn install(interp: &mut Interpreter) {
     for namespace in namespaces() {
@@ -25,7 +26,7 @@ pub(crate) fn install(interp: &mut Interpreter) {
     }
 }
 
-fn namespaces() -> [Namespace; 18] {
+fn namespaces() -> [Namespace; 19] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -45,5 +46,6 @@ fn namespaces() -> [Namespace; 18] {
         json::namespace(),
         cache::namespace(),
         random::namespace(),
+        uuid::namespace(),
     ]
 }

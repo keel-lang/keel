@@ -81,6 +81,13 @@ impl Interpreter {
                 }
 
                 Expr::FieldAccess(obj, field) => {
+                    if let Expr::Ident(name) = obj.as_ref()
+                        && name == "Uuid"
+                        && let Some(value) =
+                            crate::runtime::namespaces::uuid::uuid_namespace_constant(field)
+                    {
+                        return Ok(value);
+                    }
                     // Enum variant access: `Urgency.medium`. If `obj` is
                     // a bare identifier naming a registered type, produce
                     // an EnumVariant directly (don't evaluate `obj`, which
@@ -98,6 +105,12 @@ impl Interpreter {
                     let obj_v = self.eval_expr(obj, env).await?;
                     match &obj_v {
                         Value::Namespace(ns_name) => {
+                            if ns_name == "Uuid"
+                                && let Some(value) =
+                                    crate::runtime::namespaces::uuid::uuid_namespace_constant(field)
+                            {
+                                return Ok(value);
+                            }
                             Ok(Value::EnumVariant(ns_name.clone(), field.clone(), None))
                         }
                         Value::Map(m) => {

@@ -36,6 +36,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
 | `Time` | ✅ | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
 | `Random` | ✅ | Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness. |
+| `Uuid` | ✅ | UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`. |
 | `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
 | `Agent` | ✅ | `run`, `stop`, `send`, `delegate`, `broadcast` |
 
@@ -49,6 +50,7 @@ A small set of functions live directly in the global scope — no namespace pref
 |---|---|---|---|
 | `run(agent)` | `(agent) -> none` | `none` | Start an agent |
 | `stop(agent)` | `(agent) -> none` | `none` | Stop an agent |
+| `uuid()` | `() -> Uuid` | `Uuid` | Alias for `Uuid.v4()` |
 | `min(...)` | `(...items: T, by: (T -> any)? = none) -> T?` | `T?` | Minimum; `none` on empty |
 | `max(...)` | `(...items: T, by: (T -> any)? = none) -> T?` | `T?` | Maximum; `none` on empty |
 
@@ -81,6 +83,34 @@ max(people, by: p => p.age)            # {name: "Alice", age: 30}
 roll = Random.int(min: 1, max: 6)
 sample = Random.float()
 enabled = Random.bool()
+```
+
+## Uuid
+
+`Uuid` is a distinct value type, not a `str`. It displays and interpolates as a lowercase hyphenated UUID, and it can be converted explicitly with `.to_str()`.
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `uuid()` | `() -> Uuid` | `Uuid` | Alias for `Uuid.v4()` |
+| `Uuid.v4()` | `() -> Uuid` | `Uuid` | Random UUID |
+| `Uuid.v7()` | `() -> Uuid` | `Uuid` | Time-ordered UUID |
+| `Uuid.v5(ns:, name:)` | `(ns: Uuid, name: str) -> Uuid` | `Uuid` | Deterministic UUID from namespace + name |
+| `Uuid.parse(s)` | `(str) -> Uuid?` | `Uuid?` | `none` if invalid |
+
+Namespace constants `Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, and `Uuid.X500` are available for `Uuid.v5`.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `.version()` | `int` | UUID version number |
+| `.format(as:)` | `str` | `"hyphenated"`, `"simple"`, or `"urn"` |
+| `.to_str()` | `str` | Lowercase hyphenated string |
+
+```keel
+id: Uuid = uuid()
+trace = Uuid.v7()
+site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
+parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+simple = id.format(as: "simple")
 ```
 
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).

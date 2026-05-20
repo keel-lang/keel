@@ -36,6 +36,7 @@ pub fn value_to_json(v: &Value) -> serde_json::Value {
             .map(serde_json::Value::Number)
             .unwrap_or(serde_json::Value::Null),
         Value::String(s) => serde_json::Value::String(s.clone()),
+        Value::Uuid(id) => serde_json::Value::String(id.clone()),
         Value::EnumVariant(_, v, _) => serde_json::Value::String(v.clone()),
         Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
         Value::Map(m) => {

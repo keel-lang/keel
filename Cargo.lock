@@ -1145,6 +1145,7 @@ dependencies = [
  "colored",
  "fastrand",
  "fs2",
+ "getrandom 0.2.17",
  "glob",
  "imap",
  "lettre",

@@ -618,6 +618,26 @@ impl Interpreter {
             (Value::Float(f), "to_str") => Ok(Value::String(f.to_string())),
             (Value::Bool(b), "to_str") => Ok(Value::String(b.to_string())),
             (Value::EnumVariant(_, v, _), "to_str") => Ok(Value::String(v.clone())),
+            (Value::Uuid(id), "to_str") => Ok(Value::String(id.clone())),
+            (Value::Uuid(id), "version") => uuid_version(id)
+                .map(Value::Integer)
+                .ok_or_else(|| runtime_error(format!("Uuid.version: invalid UUID `{id}`"))),
+            (Value::Uuid(id), "format") => {
+                let format = args
+                    .iter()
+                    .find(|a| a.name.as_deref() == Some("as"))
+                    .or_else(|| args.first())
+                    .map(|a| a.value.to_display_string())
+                    .unwrap_or_else(|| "hyphenated".to_string());
+                match format.as_str() {
+                    "hyphenated" => Ok(Value::String(id.clone())),
+                    "simple" => Ok(Value::String(id.replace('-', ""))),
+                    "urn" => Ok(Value::String(format!("urn:uuid:{id}"))),
+                    other => Err(runtime_error(format!(
+                        "Uuid.format: unsupported format `{other}`; expected `hyphenated`, `simple`, or `urn`"
+                    ))),
+                }
+            }
             // datetime methods — dispatched on strings that parse as RFC 3339
             (Value::String(s), "parts") => {
                 use chrono::{Datelike, Timelike};
@@ -658,4 +678,16 @@ impl Interpreter {
             ))),
         }
     }
+}
+
+fn uuid_version(id: &str) -> Option<i64> {
+    let simple = id.strip_prefix("urn:uuid:").unwrap_or(id).replace('-', "");
+    if simple.len() != 32 {
+        return None;
+    }
+    simple
+        .as_bytes()
+        .get(12)
+        .and_then(|b| char::from(*b).to_digit(16))
+        .map(i64::from)
 }

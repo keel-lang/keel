@@ -56,6 +56,7 @@ pub enum Ty {
     None_,
     Duration,
     Datetime,
+    Uuid,
     List(Box<Ty>),
     Map(Box<Ty>, Box<Ty>),
     Set(Box<Ty>),
@@ -202,12 +203,12 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid",
         ] {
             prelude.insert(n.to_string());
         }
         // Top-level builtins
-        for n in ["run", "stop", "min", "max"] {
+        for n in ["run", "stop", "min", "max", "uuid"] {
             prelude.insert(n.to_string());
         }
         // Built-in type names
@@ -219,6 +220,7 @@ impl Checker {
             "none",
             "datetime",
             "duration",
+            "Uuid",
             "dynamic",
             "list",
             "map",
@@ -450,6 +452,7 @@ impl Checker {
                     "none" => Ty::None_,
                     "datetime" => Ty::Datetime,
                     "duration" => Ty::Duration,
+                    "Uuid" => Ty::Uuid,
                     _ => {
                         if self.enum_variants.contains_key(n) {
                             Ty::Enum(n.clone(), vec![])
@@ -1148,6 +1151,11 @@ impl Checker {
                         return Ty::Enum(name.clone(), vec![]);
                     }
                     if self.prelude.contains(name) {
+                        if name == "Uuid"
+                            && matches!(field.as_str(), "DNS" | "URL" | "OID" | "X500")
+                        {
+                            return Ty::Uuid;
+                        }
                         return Ty::Unknown;
                     }
                 }
@@ -1386,6 +1394,13 @@ impl Checker {
                     );
                     return sig.return_type.clone();
                 }
+                // Typed inference for prelude free functions.
+                if let Expr::Ident(name) = callee.as_ref()
+                    && name == "uuid"
+                {
+                    return Ty::Uuid;
+                }
+
                 // Typed inference for prelude free functions min/max.
                 if let Expr::Ident(name) = callee.as_ref()
                     && matches!(name.as_str(), "min" | "max")
@@ -1569,6 +1584,13 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Uuid" {
+                        match method.as_str() {
+                            "v4" | "v7" | "v5" => return Ty::Uuid,
+                            "parse" => return Ty::Nullable(Box::new(Ty::Uuid)),
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -1620,6 +1642,8 @@ impl Checker {
                     (Ty::Map(_, _), "contains" | "has") => Ty::Bool,
                     (Ty::Datetime, "parts") => Ty::Unknown,
                     (Ty::Datetime, "format") => Ty::Nullable(Box::new(Ty::Str)),
+                    (Ty::Uuid, "to_str" | "format") => Ty::Str,
+                    (Ty::Uuid, "version") => Ty::Int,
                     _ => Ty::Unknown,
                 }
             }
@@ -1858,7 +1882,8 @@ impl Checker {
             | (Ty::Float, Ty::Float)
             | (Ty::Str, Ty::Str)
             | (Ty::Bool, Ty::Bool)
-            | (Ty::None_, Ty::None_) => true,
+            | (Ty::None_, Ty::None_)
+            | (Ty::Uuid, Ty::Uuid) => true,
             (Ty::List(a), Ty::List(b)) | (Ty::Set(a), Ty::Set(b)) => {
                 self.types_match(a.as_ref(), b.as_ref())
             }
@@ -2065,6 +2090,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "File"
             | "Json"
             | "Random"
+            | "Uuid"
     ) {
         return Some(format!("namespace `{name}`"));
     }
@@ -2077,6 +2103,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "none"
             | "datetime"
             | "duration"
+            | "Uuid"
             | "list"
             | "map"
             | "set"
@@ -2273,6 +2300,7 @@ fn describe_ty(ty: &Ty) -> String {
         Ty::None_ => "none".into(),
         Ty::Duration => "duration".into(),
         Ty::Datetime => "datetime".into(),
+        Ty::Uuid => "Uuid".into(),
         Ty::List(inner) => format!("list[{}]", describe_ty(inner)),
         Ty::Map(k, v) => format!("map[{}, {}]", describe_ty(k), describe_ty(v)),
         Ty::Set(inner) => format!("set[{}]", describe_ty(inner)),

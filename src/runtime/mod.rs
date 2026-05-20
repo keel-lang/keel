@@ -2,7 +2,8 @@
 //!
 //! Every Keel program starts with these namespaces in scope:
 //!   `Ai`, `Io`, `Schedule`, `Email`, `Http`, `Memory`, `Async`,
-//!   `Control`, `Env`, `Log`, `Agent`, `Cache`, `File`, `Json`.
+//!   `Control`, `Env`, `Log`, `Agent`, `Cache`, `File`, `Json`,
+//!   `Random`, `Uuid`.
 //!
 //! Top-level convenience bindings (`run`, `stop`) wrap `Agent.*`.
 
@@ -59,6 +60,7 @@ pub fn install_prelude(interp: &mut Interpreter) {
     namespaces::install(interp);
     install_top_level_agent_fns(interp);
     install_min_max(interp);
+    install_uuid_alias(interp);
 }
 
 fn cmp_values(a: &Value, b: &Value) -> miette::Result<std::cmp::Ordering> {
@@ -202,6 +204,15 @@ fn install_top_level_agent_fns(interp: &mut Interpreter) {
                 interp.stop_agent(&agent_name).await?;
                 Ok(Value::None)
             })
+        }),
+    );
+}
+
+fn install_uuid_alias(interp: &mut Interpreter) {
+    interp.register_top_fn(
+        "uuid",
+        Arc::new(|interp: &mut Interpreter, _args: Vec<CallArgValue>| {
+            Box::pin(async move { interp.call_namespace_method("Uuid", "v4", vec![]).await })
         }),
     );
 }

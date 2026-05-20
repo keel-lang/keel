@@ -27,6 +27,9 @@ pub enum Value {
     /// Duration in seconds
     Duration(f64),
 
+    /// UUID value stored in canonical lowercase hyphenated form.
+    Uuid(String),
+
     /// A callable task (name, boxed declaration).
     Task(String, Box<TaskDecl>),
 
@@ -63,6 +66,7 @@ impl Value {
             Value::Map(_) => "map",
             Value::EnumVariant(_, _, _) => "enum",
             Value::Duration(_) => "duration",
+            Value::Uuid(_) => "Uuid",
             Value::Task(_, _) => "task",
             Value::AgentRef(_) => "agent",
             Value::Closure(_, _) => "closure",
@@ -167,6 +171,7 @@ impl fmt::Display for Value {
                     write!(f, "{secs} seconds")
                 }
             }
+            Value::Uuid(id) => write!(f, "{id}"),
             Value::Task(name, _) => write!(f, "<task {name}>"),
             Value::AgentRef(name) => write!(f, "<agent {name}>"),
             Value::Closure(params, _) => {
@@ -196,6 +201,7 @@ impl PartialEq for Value {
                 let tol = f64::EPSILON * a.abs().max(b.abs()).max(1.0);
                 (a - b).abs() < tol
             }
+            (Value::Uuid(a), Value::Uuid(b)) => a == b,
             (Value::Task(a, _), Value::Task(b, _)) => a == b,
             (Value::AgentRef(a), Value::AgentRef(b)) => a == b,
             (Value::Namespace(a), Value::Namespace(b)) => a == b,
@@ -227,6 +233,10 @@ mod tests {
             "enum"
         );
         assert_eq!(Value::Duration(1.0).type_name(), "duration");
+        assert_eq!(
+            Value::Uuid("f47ac10b-58cc-4372-a567-0e02b2c3d479".into()).type_name(),
+            "Uuid"
+        );
         let td = TaskDecl {
             name: "t".into(),
             type_params: vec![],
@@ -332,6 +342,18 @@ mod tests {
     }
 
     #[test]
+    fn partial_eq_uuid() {
+        assert_eq!(
+            Value::Uuid("f47ac10b-58cc-4372-a567-0e02b2c3d479".into()),
+            Value::Uuid("f47ac10b-58cc-4372-a567-0e02b2c3d479".into())
+        );
+        assert_ne!(
+            Value::Uuid("f47ac10b-58cc-4372-a567-0e02b2c3d479".into()),
+            Value::Uuid("00000000-0000-0000-0000-000000000000".into())
+        );
+    }
+
+    #[test]
     fn partial_eq_list() {
         assert_eq!(
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
@@ -432,6 +454,17 @@ mod tests {
     #[test]
     fn display_duration_days() {
         assert_eq!(format!("{}", Value::Duration(172800.0)), "2 days");
+    }
+
+    #[test]
+    fn display_uuid() {
+        assert_eq!(
+            format!(
+                "{}",
+                Value::Uuid("f47ac10b-58cc-4372-a567-0e02b2c3d479".into())
+            ),
+            "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+        );
     }
 
     #[test]
