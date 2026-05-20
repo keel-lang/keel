@@ -10,9 +10,22 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% adds core utility namespaces for random values, UUIDs, and cryptographic primitives.
+%%TAGLINE%% adds numeric value methods and core utility namespaces for random values, UUIDs, and cryptographic primitives.
 
 ### Added
+
+- **Numeric value methods (`.abs()`, `.floor()`, `.ceil()`, `.round()`).**
+  All four methods are now available on `int` and `float` values. Return type matches the
+  receiver — `float` methods return `float`, `int` methods return `int`. `floor`, `ceil`, and
+  `round` are identity no-ops on `int`.
+
+  ```keel
+  price = -3.75
+  price.abs()           # 3.75
+  price.abs().ceil()    # 4.0  — chains naturally
+  count = -5
+  count.abs()           # 5    — int stays int
+  ```
 
 - **`Random` namespace.**
   `Random` is now available in the prelude for non-cryptographic pseudo-random values:

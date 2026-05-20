@@ -1651,6 +1651,8 @@ impl Checker {
                     (Ty::Map(_, _), "len" | "count" | "size") => Ty::Int,
                     (Ty::Map(_, _), "is_empty") => Ty::Bool,
                     (Ty::Map(_, _), "contains" | "has") => Ty::Bool,
+                    (Ty::Int, "abs" | "floor" | "ceil" | "round") => Ty::Int,
+                    (Ty::Float, "abs" | "floor" | "ceil" | "round") => Ty::Float,
                     (Ty::Datetime, "parts") => Ty::Unknown,
                     (Ty::Datetime, "format") => Ty::Nullable(Box::new(Ty::Str)),
                     (Ty::Uuid, "to_str" | "format") => Ty::Str,

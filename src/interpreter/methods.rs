@@ -614,6 +614,12 @@ impl Interpreter {
                     .unwrap_or_default();
                 Ok(Value::Bool(m.contains_key(&key)))
             }
+            (Value::Integer(n), "abs") => Ok(Value::Integer(n.abs())),
+            (Value::Integer(n), "floor" | "ceil" | "round") => Ok(Value::Integer(*n)),
+            (Value::Float(f), "abs") => Ok(Value::Float(f.abs())),
+            (Value::Float(f), "floor") => Ok(Value::Float(f.floor())),
+            (Value::Float(f), "ceil") => Ok(Value::Float(f.ceil())),
+            (Value::Float(f), "round") => Ok(Value::Float(f.round())),
             (Value::Integer(n), "to_str") => Ok(Value::String(n.to_string())),
             (Value::Float(f), "to_str") => Ok(Value::String(f.to_string())),
             (Value::Bool(b), "to_str") => Ok(Value::String(b.to_string())),

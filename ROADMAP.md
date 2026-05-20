@@ -81,7 +81,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | — |
 | `String value methods` | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed | — |
 | `File` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
-| Numeric value methods | [ ] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
+| Numeric value methods | [x] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
 | `min` / `max` prelude functions | [x] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; single list arg auto-spread; `none` on empty | — |
 | `Random` | [x] | `Random.float()`, `Random.int(min:, max:)`, `Random.bool()` | — |
 | `Uuid` | [x] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |

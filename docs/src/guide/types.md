@@ -244,6 +244,28 @@ label = Urgency.high.to_str()        # str — "high"
 
 Conversions that can fail return nullable types (`str.to_int()` → `int?`). Conversions that always succeed return non-nullable (`int.to_str()` → `str`).
 
+## Numeric value methods
+
+`int` and `float` values expose four built-in methods. The return type always matches the receiver — calling a method on an `int` returns an `int`, and calling it on a `float` returns a `float`.
+
+| Method | Returns | Notes |
+|---|---|---|
+| `.abs()` | same type | Absolute value |
+| `.floor()` | same type | Round toward −∞; no-op on `int` |
+| `.ceil()` | same type | Round toward +∞; no-op on `int` |
+| `.round()` | same type | Round to nearest; no-op on `int` |
+
+```keel
+price = -3.75
+price.abs()           # 3.75
+price.abs().ceil()    # 4.0  — methods chain naturally
+count = -5
+count.abs()           # 5    — int stays int
+3.7.floor()           # 3.0
+3.2.ceil()            # 4.0
+3.5.round()           # 4.0
+```
+
 ## Duration literals
 
 ```keel
