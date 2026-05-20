@@ -219,6 +219,13 @@
       "implemented_ops": "`Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()`",
       "gaps": "Implements `Stringable`",
       "purpose": "UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`."
+    },
+    {
+      "name": "Crypto",
+      "status": "shipped",
+      "implemented_ops": "`sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)`",
+      "gaps": "Cryptographic primitives; distinct from `Random` (PRNG)",
+      "purpose": "Cryptographic primitives: fixed safe SHA-2 hash/HMAC methods, `token`, `random_bytes`."
     }
   ],
   "cli": [

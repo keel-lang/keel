@@ -90,7 +90,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
-| `Crypto` | [ ] | — | `hash(data, algo:)`, `hmac(data, key:, algo:)`, `token(bytes:)`, `random_bytes(n)` — cryptographic primitives; distinct from `Random` (PRNG) |
+| `Crypto` | [x] | `sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)` | Cryptographic primitives; distinct from `Random` (PRNG) |
 
 ### CLI
 

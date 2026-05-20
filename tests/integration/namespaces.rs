@@ -361,6 +361,50 @@ run(A)
 }
 
 #[test]
+fn crypto_namespace_hashes_signs_and_generates_random_values() {
+    let src = r#"
+agent A {
+    @on_start {
+        digest = Crypto.sha256("hello")
+        wide = Crypto.sha384("hello")
+        sig = Crypto.hmac_sha256("The quick brown fox jumps over the lazy dog", key: "key")
+        token = Crypto.token(bytes: 16)
+        bytes = Crypto.random_bytes(4)
+        if digest == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" and wide == "59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f" and sig == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8" and token.len() == 32 and bytes.len() == 4 {
+            Io.show("crypto-ok")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "Crypto namespace program failed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("crypto-ok"), "{stdout}");
+}
+
+#[test]
+fn crypto_namespace_does_not_expose_generic_hash_selection() {
+    let src = r#"
+agent A {
+    @on_start {
+        Crypto.hash("hello", algo: "md5")
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "generic Crypto.hash should fail");
+    assert!(
+        stderr.contains("Namespace `Crypto` has no method `hash`"),
+        "expected missing Crypto.hash diagnostic:\n{stderr}"
+    );
+}
+
+#[test]
 fn env_require_returns_set_value_and_errors_when_missing() {
     let ok_src = r#"
 agent A {

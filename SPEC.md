@@ -342,7 +342,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Agent` | Agent lifecycle | `run`, `stop`, `send(target, message)`, `delegate`, `broadcast` (also exposed as bare `run`/`stop` at top level) |
 | `Random` | Pseudo-random generation | `float()`, `int(min:, max:)`, `bool()` |
 | `Uuid` | UUID generation | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
-| `Crypto` | Cryptographic primitives | `hash(data, algo:)`, `hmac(data, key:, algo:)`, `token(bytes:)`, `random_bytes(n)` |
+| `Crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
 
 ### 3.3 Prelude free functions
 
@@ -1302,26 +1302,37 @@ Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479") # Uuid?
 id.format(as: "simple")                            # "f47ac10b58cc4372a5670e02b2c3d479"
 ```
 
-### 14.3 `Crypto` — cryptographic primitives <span class="badge badge-soon">Coming soon</span>
-
-> Status: planned — not implemented in v0.1.
+### 14.3 `Crypto` — cryptographic primitives
 
 `Crypto` provides security-grade operations backed by a CSPRNG. It is **distinct from `Random`** — use `Crypto` wherever the output affects security (tokens, signatures, key derivation).
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Crypto.hash(data, algo:)` | `str` | Hex digest; `algo:` one of `"sha256"`, `"sha512"` |
-| `Crypto.hmac(data, key:, algo:)` | `str` | Hex HMAC |
+| `Crypto.sha224(data)` | `str` | SHA-224 hex digest |
+| `Crypto.sha256(data)` | `str` | SHA-256 hex digest |
+| `Crypto.sha384(data)` | `str` | SHA-384 hex digest |
+| `Crypto.sha512(data)` | `str` | SHA-512 hex digest |
+| `Crypto.sha512_224(data)` | `str` | SHA-512/224 hex digest |
+| `Crypto.sha512_256(data)` | `str` | SHA-512/256 hex digest |
+| `Crypto.hmac_sha224(data, key:)` | `str` | HMAC-SHA-224 hex signature |
+| `Crypto.hmac_sha256(data, key:)` | `str` | HMAC-SHA-256 hex signature |
+| `Crypto.hmac_sha384(data, key:)` | `str` | HMAC-SHA-384 hex signature |
+| `Crypto.hmac_sha512(data, key:)` | `str` | HMAC-SHA-512 hex signature |
+| `Crypto.hmac_sha512_224(data, key:)` | `str` | HMAC-SHA-512/224 hex signature |
+| `Crypto.hmac_sha512_256(data, key:)` | `str` | HMAC-SHA-512/256 hex signature |
 | `Crypto.token(bytes: 32)` | `str` | Cryptographically secure random hex token |
 | `Crypto.random_bytes(n)` | `list[int]` | `n` CSPRNG bytes |
 
 ```keel
-Crypto.hash("hello", algo: "sha256")          # "2cf24db..."
-Crypto.hmac("msg", key: secret, algo: "sha256")
+Crypto.sha256("hello")                        # "2cf24db..."
+Crypto.sha384("hello")
+Crypto.hmac_sha256("msg", key: secret)
 Crypto.token()                                # 64-char hex string (32 bytes)
 Crypto.token(bytes: 16)                       # 32-char hex string
 Crypto.random_bytes(16)                       # list[int] of 16 bytes
 ```
+
+`Crypto` intentionally exposes fixed safe SHA-2 methods only. MD5, SHA-1, and string-selected hash algorithms are not available through `Crypto`.
 
 ---
 

@@ -203,7 +203,7 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto",
         ] {
             prelude.insert(n.to_string());
         }
@@ -1591,6 +1591,17 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Crypto" {
+                        match method.as_str() {
+                            "sha224" | "sha256" | "sha384" | "sha512" | "sha512_224"
+                            | "sha512_256" | "hmac_sha224" | "hmac_sha256" | "hmac_sha384"
+                            | "hmac_sha512" | "hmac_sha512_224" | "hmac_sha512_256" | "token" => {
+                                return Ty::Str;
+                            }
+                            "random_bytes" => return Ty::List(Box::new(Ty::Int)),
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -2091,6 +2102,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "Json"
             | "Random"
             | "Uuid"
+            | "Crypto"
     ) {
         return Some(format!("namespace `{name}`"));
     }

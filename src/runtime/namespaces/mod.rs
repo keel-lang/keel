@@ -5,6 +5,7 @@ mod ai;
 mod asynchronous;
 mod cache;
 mod control;
+mod crypto;
 mod db;
 mod email;
 mod env;
@@ -26,7 +27,7 @@ pub(crate) fn install(interp: &mut Interpreter) {
     }
 }
 
-fn namespaces() -> [Namespace; 19] {
+fn namespaces() -> [Namespace; 20] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -47,5 +48,6 @@ fn namespaces() -> [Namespace; 19] {
         cache::namespace(),
         random::namespace(),
         uuid::namespace(),
+        crypto::namespace(),
     ]
 }

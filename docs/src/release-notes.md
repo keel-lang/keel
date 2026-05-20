@@ -36,6 +36,22 @@ version = id.version()
 `Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, and `Uuid.X500` are built-in namespace constants for deterministic
 version-5 UUIDs. Interpolation displays UUIDs in lowercase hyphenated form.
 
+### `Crypto` namespace
+
+`Crypto` is now available for security-sensitive hashes, HMACs, tokens, and random bytes:
+
+```keel
+digest = Crypto.sha256("hello")
+sig = Crypto.hmac_sha256("message", key: secret)
+token = Crypto.token(bytes: 32)
+bytes = Crypto.random_bytes(16)
+```
+
+`Crypto` exposes fixed safe SHA-2 methods: `sha224`, `sha256`, `sha384`, `sha512`,
+`sha512_224`, and `sha512_256`, with matching `hmac_` methods. Legacy MD5 and SHA-1 are not exposed.
+`Crypto.token` returns hex, so `bytes: 16` produces a 32-character token. Use `Random` only for
+non-security work.
+
 ---
 
 ## v0.1.25 — 2026-05-19

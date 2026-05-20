@@ -37,6 +37,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Time` | ✅ | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
 | `Random` | ✅ | Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness. |
 | `Uuid` | ✅ | UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`. |
+| `Crypto` | ✅ | Cryptographic primitives: fixed safe SHA-2 hash/HMAC methods, `token`, `random_bytes`. |
 | `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
 | `Agent` | ✅ | `run`, `stop`, `send`, `delegate`, `broadcast` |
 
@@ -112,6 +113,37 @@ site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
 parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 simple = id.format(as: "simple")
 ```
+
+## Crypto
+
+`Crypto` provides security-grade primitives backed by the operating system CSPRNG. It is distinct from `Random`; use `Crypto` for tokens, secrets, signatures, digests, and other security-sensitive work.
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `Crypto.sha224(data)` | `(str) -> str` | `str` | SHA-224 hex digest |
+| `Crypto.sha256(data)` | `(str) -> str` | `str` | SHA-256 hex digest |
+| `Crypto.sha384(data)` | `(str) -> str` | `str` | SHA-384 hex digest |
+| `Crypto.sha512(data)` | `(str) -> str` | `str` | SHA-512 hex digest |
+| `Crypto.sha512_224(data)` | `(str) -> str` | `str` | SHA-512/224 hex digest |
+| `Crypto.sha512_256(data)` | `(str) -> str` | `str` | SHA-512/256 hex digest |
+| `Crypto.hmac_sha224(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-224 hex signature |
+| `Crypto.hmac_sha256(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-256 hex signature |
+| `Crypto.hmac_sha384(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-384 hex signature |
+| `Crypto.hmac_sha512(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-512 hex signature |
+| `Crypto.hmac_sha512_224(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-512/224 hex signature |
+| `Crypto.hmac_sha512_256(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-512/256 hex signature |
+| `Crypto.token(bytes: 32)` | `(bytes: int = 32) -> str` | `str` | CSPRNG-backed hex token |
+| `Crypto.random_bytes(n)` | `(int) -> list[int]` | `list[int]` | CSPRNG bytes as integers `0..255` |
+
+```keel
+digest = Crypto.sha256("hello")
+wide = Crypto.sha384("hello")
+sig = Crypto.hmac_sha256("message", key: secret)
+token = Crypto.token(bytes: 32)
+bytes = Crypto.random_bytes(16)
+```
+
+`Crypto` intentionally exposes fixed safe SHA-2 methods only. Legacy hashes such as MD5 and SHA-1, and string-selected hash algorithms, are not exposed.
 
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 

@@ -118,7 +118,7 @@ impl LanguageServer for Backend {
         // Get prelude namespace suggestions
         let namespaces = vec![
             "Ai", "Io", "Schedule", "Email", "Http", "Env", "Log", "Agent", "Control", "Async",
-            "Memory", "Search", "Db", "Time", "File", "Json", "Cache", "Random", "Uuid",
+            "Memory", "Search", "Db", "Time", "File", "Json", "Cache", "Random", "Uuid", "Crypto",
         ];
 
         for ns in namespaces {
@@ -187,6 +187,21 @@ impl LanguageServer for Backend {
             ("v5", "Uuid method"),
             ("parse", "Uuid method"),
             ("version", "Uuid method"),
+            // Crypto
+            ("sha224", "Crypto method"),
+            ("sha256", "Crypto method"),
+            ("sha384", "Crypto method"),
+            ("sha512", "Crypto method"),
+            ("sha512_224", "Crypto method"),
+            ("sha512_256", "Crypto method"),
+            ("hmac_sha224", "Crypto method"),
+            ("hmac_sha256", "Crypto method"),
+            ("hmac_sha384", "Crypto method"),
+            ("hmac_sha512", "Crypto method"),
+            ("hmac_sha512_224", "Crypto method"),
+            ("hmac_sha512_256", "Crypto method"),
+            ("token", "Crypto method"),
+            ("random_bytes", "Crypto method"),
         ];
 
         for (method, kind) in methods {
@@ -298,6 +313,7 @@ impl LanguageServer for Backend {
                 | "Json"
                 | "Random"
                 | "Uuid"
+                | "Crypto"
                 | "int"
                 | "float"
                 | "str"
