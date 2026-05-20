@@ -10,7 +10,12 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% adds numeric value methods and core utility namespaces for random values, UUIDs, and cryptographic primitives.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.26] — 2026-05-20
+
 
 ### Added
 

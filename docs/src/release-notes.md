@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.26 — 2026-05-20
+
 ### Numeric value methods
 
 `.abs()`, `.floor()`, `.ceil()`, and `.round()` are now available on `int` and `float` values.

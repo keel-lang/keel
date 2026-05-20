@@ -1,13 +1,13 @@
 agent UuidDemo {
-    @on_start {
-        id: Uuid = uuid()
-        trace = Uuid.v7()
-        site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
-        parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
-        site_simple = site.format(as: "simple")
-        Io.show("id={id} trace_v={trace.version()} site={site_simple} parsed={parsed}")
-        stop(self)
-    }
+  @on_start {
+    id: Uuid = uuid()
+    trace = Uuid.v7()
+    site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
+    parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+    site_simple = site.format(as: "simple")
+    Io.show("id={id} trace_v={trace.version()} site={site_simple} parsed={parsed}")
+    stop(self)
+  }
 }
 
 run(UuidDemo)
