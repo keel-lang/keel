@@ -10,7 +10,21 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% adds core utility namespaces for random values, UUIDs, and cryptographic primitives.
+
+### Added
+
+- **`Random` namespace.**
+  `Random` is now available in the prelude for non-cryptographic pseudo-random values:
+
+  ```keel
+  roll = Random.int(min: 1, max: 6)
+  sample = Random.float()
+  enabled = Random.bool()
+  ```
+
+  Use `Random` for simulation, sampling, games, and other non-security work. `Random.int`
+  uses an inclusive `min:` / `max:` range and raises a runtime error when `min > max`.
 
 ---
 

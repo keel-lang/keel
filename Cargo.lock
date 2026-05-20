@@ -1143,6 +1143,7 @@ dependencies = [
  "chumsky",
  "clap",
  "colored",
+ "fastrand",
  "fs2",
  "glob",
  "imap",

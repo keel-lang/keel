@@ -289,6 +289,48 @@ run(A)
 }
 
 #[test]
+fn random_namespace_generates_values_in_expected_shapes() {
+    let src = r#"
+agent A {
+    @on_start {
+        roll = Random.int(min: 1, max: 6)
+        sample = Random.float()
+        enabled = Random.bool()
+        if roll >= 1 and roll <= 6 and sample >= 0.0 and sample < 1.0 {
+            Io.show("random-ok {enabled}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "Random namespace program failed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(stdout.contains("random-ok"), "{stdout}");
+}
+
+#[test]
+fn random_namespace_rejects_inverted_int_bounds() {
+    let src = r#"
+agent A {
+    @on_start {
+        Random.int(min: 5, max: 1)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "inverted Random.int bounds should fail");
+    assert!(
+        stderr.contains("Random.int: `min:` must be <= `max:`"),
+        "expected Random.int diagnostic:\n{stderr}"
+    );
+}
+
+#[test]
 fn env_require_returns_set_value_and_errors_when_missing() {
     let ok_src = r#"
 agent A {

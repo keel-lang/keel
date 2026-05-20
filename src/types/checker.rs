@@ -202,7 +202,7 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "File", "Json",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random",
         ] {
             prelude.insert(n.to_string());
         }
@@ -1561,6 +1561,14 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Random" {
+                        match method.as_str() {
+                            "float" => return Ty::Float,
+                            "int" => return Ty::Int,
+                            "bool" => return Ty::Bool,
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -2056,6 +2064,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "Cache"
             | "File"
             | "Json"
+            | "Random"
     ) {
         return Some(format!("namespace `{name}`"));
     }

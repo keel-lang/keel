@@ -39,6 +39,7 @@ axum = "0.8"
 sha2 = "0.10"
 fs2 = "0.4"
 parking_lot = "0.12"
+fastrand = "2.4"
 
 
 [dev-dependencies]

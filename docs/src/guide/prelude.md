@@ -35,6 +35,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Control` | ✅ | `retry`, `with_timeout`, `with_deadline` |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
 | `Time` | ✅ | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
+| `Random` | ✅ | Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness. |
 | `Log` | ✅ | Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level("debug")` at runtime. |
 | `Agent` | ✅ | `run`, `stop`, `send`, `delegate`, `broadcast` |
 
@@ -64,6 +65,22 @@ max(...scores, 99)                     # 99 — explicit spread
 people = [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
 min(people, by: p => p.age)            # {name: "Bob", age: 25}
 max(people, by: p => p.age)            # {name: "Alice", age: 30}
+```
+
+## Random
+
+`Random` produces non-cryptographic pseudo-random values for simulation, sampling, games, and tests where security is not involved. Use `Crypto` for tokens, secrets, signatures, or key material.
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `Random.float()` | `() -> float` | `float` | Uniform in `[0.0, 1.0)` |
+| `Random.int(min:, max:)` | `(min: int, max: int) -> int` | `int` | Inclusive range; raises if `min > max` |
+| `Random.bool()` | `() -> bool` | `bool` | 50/50 boolean |
+
+```keel
+roll = Random.int(min: 1, max: 6)
+sample = Random.float()
+enabled = Random.bool()
 ```
 
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).

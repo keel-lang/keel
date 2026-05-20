@@ -6,6 +6,19 @@
 
 ## Unreleased
 
+### `Random` namespace
+
+`Random` is now available in the prelude for non-cryptographic pseudo-random values:
+
+```keel
+roll = Random.int(min: 1, max: 6)
+sample = Random.float()
+enabled = Random.bool()
+```
+
+Use `Random` for simulation, sampling, games, and similar non-security work. `Random.int`
+uses an inclusive `min:` / `max:` range and raises a runtime error if `min > max`.
+
 ---
 
 ## v0.1.25 — 2026-05-19

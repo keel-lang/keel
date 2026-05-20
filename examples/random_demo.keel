@@ -1,0 +1,11 @@
+agent RandomDemo {
+    @on_start {
+        roll = Random.int(min: 1, max: 6)
+        sample = Random.float()
+        enabled = Random.bool()
+        Io.show("roll={roll} sample={sample} enabled={enabled}")
+        stop(self)
+    }
+}
+
+run(RandomDemo)

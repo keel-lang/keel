@@ -205,6 +205,13 @@
       "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week`",
       "gaps": "—",
       "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`."
+    },
+    {
+      "name": "Random",
+      "status": "shipped",
+      "implemented_ops": "`Random.float()`, `Random.int(min:, max:)`, `Random.bool()`",
+      "gaps": "—",
+      "purpose": "Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness."
     }
   ],
   "cli": [
