@@ -91,21 +91,28 @@ pub(crate) fn namespace() -> Namespace {
                     .to_display_string(),
             };
             // Schema from `schema: { field: "type" }` map, or derived from `as: T` struct type.
-            let schema: Vec<(String, String)> = match find_arg(&args, "schema") {
-                Some(Value::Map(m)) => m.iter().map(|(k, v)| (k.clone(), v.to_display_string())).collect(),
-                _ => match find_arg(&args, "as") {
-                    Some(Value::Namespace(type_name)) => {
-                        let type_name = type_name.clone();
-                        interp.struct_types.get(&type_name).cloned().ok_or_else(|| {
-                            miette::miette!(
-                                "Ai.extract: `as: {type_name}` is not a known struct type. \
-                                 Declare it with `type {type_name} {{ field: type }}`"
-                            )
-                        })?
-                    }
-                    _ => Vec::new(),
-                },
-            };
+            // target_type records the struct name when using `as: T` so the result can be tagged.
+            let (schema, target_type): (Vec<(String, String)>, Option<String>) =
+                match find_arg(&args, "schema") {
+                    Some(Value::Map(m)) => (
+                        m.iter().map(|(k, v)| (k.clone(), v.to_display_string())).collect(),
+                        None,
+                    ),
+                    _ => match find_arg(&args, "as") {
+                        Some(Value::Namespace(type_name)) => {
+                            let type_name = type_name.clone();
+                            let schema =
+                                interp.struct_types.get(&type_name).cloned().ok_or_else(|| {
+                                    miette::miette!(
+                                        "Ai.extract: `as: {type_name}` is not a known struct type. \
+                                         Declare it with `type {type_name} {{ field: type }}`"
+                                    )
+                                })?;
+                            (schema, Some(type_name))
+                        }
+                        _ => (Vec::new(), None),
+                    },
+                };
             let model = resolve_model(interp, &args);
             let role = interp.current_role();
             let rules = interp.current_rules();
@@ -113,7 +120,15 @@ pub(crate) fn namespace() -> Namespace {
             match llm.extract(role.as_deref(), &rules, &input, &schema, &model).await {
                 Ok(Some(json)) => {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
-                        Ok(json_to_value(&parsed))
+                        let v = json_to_value(&parsed);
+                        let v = if let Some(tn) = target_type
+                            && let Value::Map(fields) = v
+                        {
+                            Value::Struct(tn, fields)
+                        } else {
+                            v
+                        };
+                        Ok(v)
                     } else {
                         Ok(Value::String(json))
                     }

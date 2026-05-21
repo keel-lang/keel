@@ -276,8 +276,11 @@ impl Checker {
             prelude.insert(n.to_string());
         }
 
-        // Built-in interface names are identifiers (not keywords) installed by the
-        // runtime.  Suppress "undefined" errors when they appear in `impl X for T`.
+        // Built-in interface names (Stringable, Comparable, …) are not keywords —
+        // they're identifiers resolved at runtime.  Adding them to the prelude
+        // prevents spurious "undefined identifier" errors when the checker
+        // encounters `impl Stringable for Foo` before seeing any declaration of
+        // `Stringable` in the source file.
         for iface in ["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"] {
             prelude.insert(iface.to_string());
         }
@@ -2628,9 +2631,8 @@ fn type_expr_str(te: &TypeExpr) -> String {
             let ps: Vec<_> = params.iter().map(type_expr_str).collect();
             format!("({}) -> {}", ps.join(", "), type_expr_str(ret))
         }
-        TypeExpr::Struct(_) | TypeExpr::Generic(_, _) | TypeExpr::Dynamic => {
-            "unknown".to_string()
-        }
+        TypeExpr::Dynamic => "dynamic".to_string(),
+        TypeExpr::Struct(_) | TypeExpr::Generic(_, _) => "unknown".to_string(),
     }
 }
 
@@ -2638,12 +2640,16 @@ fn checker_return_types_match(req: &str, got: &str) -> bool {
     if req == got {
         return true;
     }
-    // "unknown" is how the checker serializes Dynamic — accept any concrete type.
+    // "unknown" covers Struct/Generic return types — accept any concrete type at v0.1.
     if req == "unknown" {
         return true;
     }
-    // "[unknown]" (i.e. list[dynamic]) in the interface sig accepts any list[T].
-    if req == "[unknown]" && got.starts_with('[') {
+    // "dynamic" is TypeExpr::Dynamic — an explicit wildcard in interface signatures.
+    if req == "dynamic" {
+        return true;
+    }
+    // list[dynamic] or list[unknown] in an interface sig accept any list[T].
+    if (req == "[dynamic]" || req == "[unknown]") && got.starts_with('[') {
         return true;
     }
     false

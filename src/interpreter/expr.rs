@@ -55,14 +55,16 @@ impl Interpreter {
                 Expr::Ident(name) => self.lookup_ident(name, env),
 
                 Expr::SelfAccess(field) => {
-                    // impl block receiver: `self` bound in local env as a Map
+                    // impl block receiver: `self` bound in local env as a Map or Struct
                     if let Some(v) = env.get("self").cloned() {
                         return match v {
-                            Value::Map(ref m) => m.get(field).cloned().ok_or_else(|| {
-                                runtime_error(format!(
-                                    "impl receiver has no field `{field}`"
-                                ))
-                            }),
+                            Value::Map(ref m) | Value::Struct(_, ref m) => {
+                                m.get(field).cloned().ok_or_else(|| {
+                                    runtime_error(format!(
+                                        "impl receiver has no field `{field}`"
+                                    ))
+                                })
+                            }
                             _ => Err(runtime_error(format!(
                                 "impl receiver is not a struct (got {})",
                                 v.type_name()
@@ -140,7 +142,7 @@ impl Interpreter {
                             }
                             Ok(Value::EnumVariant(ns_name.clone(), field.clone(), None))
                         }
-                        Value::Map(m) => {
+                        Value::Map(m) | Value::Struct(_, m) => {
                             if let Some(v) = m.get(field) {
                                 return Ok(v.clone());
                             }
@@ -148,7 +150,9 @@ impl Interpreter {
                             let out = self
                                 .call_method_on_value(obj_v.clone(), field, vec![], env)
                                 .await;
-                            out.map_err(|_| runtime_error(format!("Map has no field `{field}`")))
+                            out.map_err(|_| {
+                                runtime_error(format!("Value has no field `{field}`"))
+                            })
                         }
                         _ => {
                             // Zero-arg method fallback for properties

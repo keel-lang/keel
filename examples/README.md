@@ -20,6 +20,10 @@
 | [`at_demo.keel`](at_demo.keel) | `Schedule.at` with an ISO 8601 datetime |
 | [`cron_schedule.keel`](cron_schedule.keel) | `Schedule.cron` with 5-field cron expressions |
 | [`rich_enum.keel`](rich_enum.keel) | Rich enum variants: construction + destructuring |
+| [`interfaces.keel`](interfaces.keel) | User-defined interfaces + all four built-in interfaces (`Comparable`, `Equatable`, `Serializable`, `Iterable`) |
+| [`stringable.keel`](stringable.keel) | `impl Stringable for T` — custom string interpolation for user-defined types |
+| [`while_loop.keel`](while_loop.keel) | `while` loops with `break` and `continue` |
+| [`subscript_access.keel`](subscript_access.keel) | List and string subscript syntax (`list[i]`, `str[i]`) |
 
 ## Common conventions
 

@@ -161,6 +161,10 @@ s = p.to_str()             # explicit call
 
 See the [String Interpolation guide](guide/strings.md#stringable-interface--custom-interpolation) for the full reference.
 
+### Fixes
+
+- **Impl dispatch is now deterministic.** Calling an impl method on a struct value previously used field-set matching — if two types declared the same fields (e.g. `Point` and `Vec2` both `{x, y}`), the wrong impl could be selected. Struct values are now type-tagged at their binding site and impl dispatch is a direct O(1) lookup. `Ai.extract(... as: T)` results are tagged with `T` automatically.
+
 ---
 
 ## v0.1.26 — 2026-05-20

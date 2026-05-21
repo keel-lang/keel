@@ -26,7 +26,7 @@ pub(crate) fn namespace() -> Namespace {
                 .ok_or_else(|| miette::miette!("Json.stringify: missing argument"))?;
 
             // Delegate to Serializable.to_json() if available.
-            let task_opt = i.find_impl_task(&value, "to_json").map(|t| t.clone());
+            let task_opt = i.find_impl_task(&value, "to_json");
             if let Some(task) = task_opt {
                 return i
                     .call_task("to_json", &task, vec![CallArgValue { name: None, value }])

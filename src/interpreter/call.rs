@@ -1,6 +1,6 @@
 use miette::Result;
 
-use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, TaskDecl};
+use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, TaskDecl, TypeExpr};
 
 use super::bind_value;
 use super::environment::Environment;
@@ -102,10 +102,35 @@ impl Interpreter {
             } else {
                 Value::None
             };
+            // Tag plain map values that match a declared struct type annotation.
+            let v = if let TypeExpr::Named(type_name) = &p.ty
+                && self.struct_types.contains_key(type_name.as_str())
+            {
+                match v {
+                    Value::Map(fields) => Value::Struct(type_name.clone(), fields),
+                    other => other,
+                }
+            } else {
+                v
+            };
             bind_value(&p.name, v, &mut env)?;
         }
         match self.exec_block(&decl.body, &mut env).await? {
-            StmtOutcome::Value(v) | StmtOutcome::Return(v) => Ok(v),
+            StmtOutcome::Value(v) | StmtOutcome::Return(v) => {
+                // Tag plain map return values that match the declared return type.
+                let v = match &decl.return_type {
+                    Some(TypeExpr::Named(type_name))
+                        if self.struct_types.contains_key(type_name.as_str()) =>
+                    {
+                        match v {
+                            Value::Map(fields) => Value::Struct(type_name.clone(), fields),
+                            other => other,
+                        }
+                    }
+                    _ => v,
+                };
+                Ok(v)
+            }
             StmtOutcome::Normal => Ok(Value::None),
             StmtOutcome::Break | StmtOutcome::Continue => {
                 Err(super::runtime_error("`break`/`continue` outside a loop"))

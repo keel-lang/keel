@@ -10,7 +10,7 @@ fn bind_destructure(pat: &DestructPat, value: Value, env: &mut Environment) -> R
     match pat {
         DestructPat::Struct(fields) => {
             let map = match value {
-                Value::Map(m) => m,
+                Value::Map(m) | Value::Struct(_, m) => m,
                 other => {
                     return Err(runtime_error(format!(
                         "cannot destructure {} as a struct",

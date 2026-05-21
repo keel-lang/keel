@@ -8,45 +8,39 @@ use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
 
 impl Interpreter {
-    /// Find the `impl` TaskDecl for `method` on `value` (must be a Map whose field
-    /// set matches a registered struct type).  Returns `None` if no impl is found.
+    /// Find the `impl` TaskDecl for `method` on `value`.
+    /// For type-tagged `Value::Struct` this is O(1); for untagged `Value::Map`
+    /// (struct literals with no type annotation) a field-set fallback is used.
+    /// Returns `None` if no impl is found.
     /// Clones the TaskDecl to avoid borrow-across-await issues.
-    ///
-    /// # Dispatch fragility (v0.1 known limitation)
-    /// Dispatch is based on field-set subset matching: a Map whose keys are a
-    /// superset of a struct type's declared fields is considered an instance of
-    /// that type. This has two failure modes:
-    ///
-    /// 1. **Ambiguity** — two types with identical field sets (e.g. `Point` and
-    ///    `Vec2` both having `{x, y}`) can match the wrong impl; iteration order
-    ///    determines which one wins.
-    /// 2. **False positives** — a `Point3D { x, y, z }` impl can match a plain
-    ///    `{x: 1, y: 2}` map because `{x, y} ⊆ {x, y, z}`.
-    ///
-    /// TODO(post-v0.1): store a type tag in `Value::Map` so dispatch is O(1)
-    /// and unambiguous, and remove the struct_types field-set lookup entirely.
     pub(crate) fn find_impl_task(
         &self,
         value: &Value,
         method: &str,
     ) -> Option<crate::ast::TaskDecl> {
-        let Value::Map(m) = value else {
-            return None;
-        };
-        let map_keys: HashSet<&str> = m.keys().map(String::as_str).collect();
-        self.impl_methods.iter().find_map(|(type_name, methods)| {
-            methods.get(method).and_then(|task| {
-                self.struct_types.get(type_name).and_then(|schema| {
-                    let type_fields: HashSet<&str> =
-                        schema.iter().map(|(k, _)| k.as_str()).collect();
-                    if type_fields.is_subset(&map_keys) {
-                        Some(task.clone())
-                    } else {
-                        None
-                    }
+        match value {
+            Value::Struct(type_name, _) => {
+                self.impl_methods.get(type_name.as_str())?.get(method).cloned()
+            }
+            Value::Map(m) => {
+                // Fallback for untagged maps (no type annotation at binding site).
+                let map_keys: HashSet<&str> = m.keys().map(String::as_str).collect();
+                self.impl_methods.iter().find_map(|(type_name, methods)| {
+                    methods.get(method).and_then(|task| {
+                        self.struct_types.get(type_name).and_then(|schema| {
+                            let type_fields: HashSet<&str> =
+                                schema.iter().map(|(k, _)| k.as_str()).collect();
+                            if type_fields.is_subset(&map_keys) {
+                                Some(task.clone())
+                            } else {
+                                None
+                            }
+                        })
+                    })
                 })
-            })
-        })
+            }
+            _ => None,
+        }
     }
 
     pub(crate) async fn call_method_on_value(
@@ -708,30 +702,32 @@ impl Interpreter {
                     .collect();
                 Ok(Value::List(pairs))
             }
-            (Value::Map(m), "keys") => {
+            (Value::Map(m) | Value::Struct(_, m), "keys") => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort();
                 Ok(Value::List(
                     keys.into_iter().map(|k| Value::String(k.clone())).collect(),
                 ))
             }
-            (Value::Map(m), "values") => {
+            (Value::Map(m) | Value::Struct(_, m), "values") => {
                 let mut keys: Vec<&String> = m.keys().collect();
                 keys.sort();
                 Ok(Value::List(
                     keys.into_iter().map(|k| m[k].clone()).collect(),
                 ))
             }
-            (Value::Map(m), "get") => {
+            (Value::Map(m) | Value::Struct(_, m), "get") => {
                 let key = args
                     .first()
                     .map(|a| a.value.to_display_string())
                     .unwrap_or_default();
                 Ok(m.get(&key).cloned().unwrap_or(Value::None))
             }
-            (Value::Map(m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
-            (Value::Map(m), "is_empty") => Ok(Value::Bool(m.is_empty())),
-            (Value::Map(m), "contains" | "has") => {
+            (Value::Map(m) | Value::Struct(_, m), "count" | "len" | "size") => {
+                Ok(Value::Integer(m.len() as i64))
+            }
+            (Value::Map(m) | Value::Struct(_, m), "is_empty") => Ok(Value::Bool(m.is_empty())),
+            (Value::Map(m) | Value::Struct(_, m), "contains" | "has") => {
                 let key = args
                     .first()
                     .map(|a| a.value.to_display_string())

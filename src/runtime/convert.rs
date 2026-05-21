@@ -39,7 +39,7 @@ pub fn value_to_json(v: &Value) -> serde_json::Value {
         Value::Uuid(id) => serde_json::Value::String(id.clone()),
         Value::EnumVariant(_, v, _) => serde_json::Value::String(v.clone()),
         Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
-        Value::Map(m) => {
+        Value::Map(m) | Value::Struct(_, m) => {
             let mut obj = serde_json::Map::new();
             for (k, v) in m {
                 obj.insert(k.clone(), value_to_json(v));

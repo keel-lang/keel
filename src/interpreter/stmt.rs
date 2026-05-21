@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{Block, Expr, Pattern, Stmt, StringPart};
+use crate::ast::{Block, Expr, Pattern, Stmt, StringPart, TypeExpr};
 
 use super::bind_value;
 use super::environment::Environment;
@@ -20,11 +20,20 @@ impl Interpreter {
     ) -> Pin<Box<dyn Future<Output = Result<StmtOutcome>> + Send + 'a>> {
         Box::pin(async move {
             match stmt {
-                Stmt::Let { binding, value, .. } => {
+                Stmt::Let { binding, ty, value } => {
                     let v = self.eval_expr(value, env).await?;
                     if let Value::EarlyReturn(inner) = v {
                         return Ok(StmtOutcome::Return(*inner));
                     }
+                    let v = match ty {
+                        Some(TypeExpr::Named(name)) if self.struct_types.contains_key(name.as_str()) => {
+                            match v {
+                                Value::Map(fields) => Value::Struct(name.clone(), fields),
+                                other => other,
+                            }
+                        }
+                        _ => v,
+                    };
                     bind_value(binding, v, env)?;
                     Ok(StmtOutcome::Normal)
                 }
@@ -84,7 +93,7 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     // Unwrap Iterable structs: call items() to get the list.
-                    let iter_v = if let Value::Map(_) = &iter_v {
+                    let iter_v = if matches!(&iter_v, Value::Map(_) | Value::Struct(_, _)) {
                         let task_opt = self.find_impl_task(&iter_v, "items");
                         if let Some(task) = task_opt {
                             self.call_task(

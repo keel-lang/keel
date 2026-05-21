@@ -142,7 +142,7 @@ v0.2 and later milestones are **deliberately un-planned** until v0.1 ships.
 
 Known technical debt to address post-v0.1:
 
-- **Type-tagged `Value::Map`.** Struct dispatch in `find_impl_task` uses field-set subset matching, which is ambiguous when two types share the same field names and breaks when a wider type's fields are a superset of a narrower one's. The fix is to store the declared type name as a tag inside `Value::Map` at construction time so dispatch is O(1) and unambiguous. Tracked as a TODO in `src/interpreter/methods.rs`.
+- ~~**Type-tagged struct values.**~~ Shipped alongside v0.1.28. `Value::Struct(TypeName, fields)` is now a distinct variant; impl dispatch is O(1) via direct type-name lookup. Field-set fallback retained for untagged map literals. Ambiguous dispatch between types sharing field names is eliminated.
 
 - **v1.0** is the first API-stable release. Semver begins at v1.0. Scope defined after real usage feedback from v0.1.
 

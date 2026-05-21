@@ -122,6 +122,10 @@ All notable changes to Keel.
   Use `len()` to guard dynamic indices; `.first()` / `.last()` remain
   available when you want a nullable fallback for the first or last element.
 
+### Fixed
+
+- **Struct impl dispatch is now O(1) and unambiguous.** Previously, calling an impl method on a struct value used field-set subset matching: the interpreter scanned all registered types to find one whose declared fields were a subset of the value's keys. Two types sharing the same field names (e.g. `Point` and `Vec2`, both `{x, y}`) would match each other's impls non-deterministically. The runtime now stores a type tag directly in struct values (`Value::Struct(TypeName, fields)`) and dispatches in O(1) via direct lookup. Values produced by `Ai.extract(... as: T)` are tagged with `T` so method dispatch works on the extracted struct. Untagged map literals (no type annotation at the binding site) retain the field-set fallback for backward compatibility.
+
 ---
 
 ## [0.1.26] — 2026-05-20

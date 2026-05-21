@@ -178,7 +178,7 @@ impl Interpreter {
             enum_types: HashMap::with_capacity(16),
             struct_types: HashMap::with_capacity(16),
             interfaces: builtin_interfaces(),
-            impl_methods: HashMap::with_capacity(8),
+            impl_methods: HashMap::with_capacity(16),
             runtime,
             event_tx,
             event_rx: Some(event_rx),

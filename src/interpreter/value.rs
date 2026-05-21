@@ -16,8 +16,13 @@ pub enum Value {
     List(Vec<Value>),
     /// Lazy inclusive integer range — stores only lo and hi, never materializes.
     Range(i64, i64),
-    /// Map / struct literal — keys are always strings
+    /// Anonymous map literal — keys are always strings
     Map(HashMap<String, Value>),
+    /// Type-tagged struct instance: (declared_type_name, fields).
+    /// Created when a Map literal is bound with a known struct type annotation,
+    /// passed to/from a typed task param, or returned from Ai.extract.
+    /// Enables O(1) impl-method dispatch instead of field-set subset matching.
+    Struct(String, HashMap<String, Value>),
 
     /// An enum variant: (type_name, variant_name, optional rich fields).
     /// Simple variants (`Urgency.high`) use `None`; rich variants
@@ -64,6 +69,7 @@ impl Value {
             Value::None => "none",
             Value::List(_) | Value::Range(_, _) => "list",
             Value::Map(_) => "map",
+            Value::Struct(_, _) => "struct",
             Value::EnumVariant(_, _, _) => "enum",
             Value::Duration(_) => "duration",
             Value::Uuid(_) => "Uuid",
@@ -134,7 +140,7 @@ impl fmt::Display for Value {
                 write!(f, "]")
             }
             Value::Range(lo, hi) => write!(f, "{lo}..{hi}"),
-            Value::Map(fields) => {
+            Value::Map(fields) | Value::Struct(_, fields) => {
                 write!(f, "{{")?;
                 for (i, (k, v)) in fields.iter().enumerate() {
                     if i > 0 {
@@ -196,6 +202,9 @@ impl PartialEq for Value {
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Range(a1, a2), Value::Range(b1, b2)) => a1 == b1 && a2 == b2,
             (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::Struct(_, a), Value::Struct(_, b)) => a == b,
+            // Cross-comparison: fields-only equality regardless of tag
+            (Value::Map(a), Value::Struct(_, b)) | (Value::Struct(_, a), Value::Map(b)) => a == b,
             (Value::EnumVariant(t1, v1, _), Value::EnumVariant(t2, v2, _)) => t1 == t2 && v1 == v2,
             (Value::Duration(a), Value::Duration(b)) => {
                 let tol = f64::EPSILON * a.abs().max(b.abs()).max(1.0);
