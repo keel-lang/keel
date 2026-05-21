@@ -26,7 +26,9 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     let v = match ty {
-                        Some(TypeExpr::Named(name)) if self.struct_types.contains_key(name.as_str()) => {
+                        Some(TypeExpr::Named(name))
+                            if self.struct_types.contains_key(name.as_str()) =>
+                        {
                             match v {
                                 Value::Map(fields) => Value::Struct(name.clone(), fields),
                                 other => other,
@@ -99,7 +101,10 @@ impl Interpreter {
                             self.call_task(
                                 "items",
                                 &task,
-                                vec![CallArgValue { name: None, value: iter_v }],
+                                vec![CallArgValue {
+                                    name: None,
+                                    value: iter_v,
+                                }],
                             )
                             .await?
                         } else {

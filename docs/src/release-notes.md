@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.27 — 2026-05-21
+
 ### `while` loops
 
 Unbounded iteration is now supported. The condition must be `bool`; `break` and `continue` work identically to their `for`-loop counterparts.

@@ -772,7 +772,10 @@ fn parse_while_basic() {
     let prog = parse_ok("task t() { n = 0\nwhile n < 3 {\nn += 1\n}\n}");
     match first_decl(&prog) {
         Decl::Task(td) => {
-            let while_stmt = td.body.iter().find(|(s, _)| matches!(s, Stmt::While { .. }));
+            let while_stmt = td
+                .body
+                .iter()
+                .find(|(s, _)| matches!(s, Stmt::While { .. }));
             assert!(while_stmt.is_some(), "expected Stmt::While in task body");
         }
         other => panic!("expected Task, got {:?}", other),

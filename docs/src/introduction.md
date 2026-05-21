@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.26](./release-notes.md)** — adds numeric value methods and core utility namespaces for random values, UUIDs, and cryptographic primitives. [See what's new →](./release-notes.md)
+> **Latest: [v0.1.27](./release-notes.md)** — user-defined and built-in interfaces, while loops, and subscript access. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

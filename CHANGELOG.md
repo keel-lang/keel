@@ -10,7 +10,12 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%%
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.27] — 2026-05-21
+
 
 ### Added
 
@@ -75,7 +80,8 @@ All notable changes to Keel.
       result
     }
   }
-  for n in Range { lo: 1, hi: 3 } { Io.show("{n}") }   # → 1, 2, 3
+  r: Range = { lo: 1, hi: 3 }
+  for n in r { Io.show("{n}") }   # → 1, 2, 3
   ```
 
   The `Iterable` conformance check accepts any concrete `list[T]` as the return type (not just `list[dynamic]`).

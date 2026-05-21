@@ -60,9 +60,7 @@ impl Interpreter {
                         return match v {
                             Value::Map(ref m) | Value::Struct(_, ref m) => {
                                 m.get(field).cloned().ok_or_else(|| {
-                                    runtime_error(format!(
-                                        "impl receiver has no field `{field}`"
-                                    ))
+                                    runtime_error(format!("impl receiver has no field `{field}`"))
                                 })
                             }
                             _ => Err(runtime_error(format!(
@@ -150,9 +148,7 @@ impl Interpreter {
                             let out = self
                                 .call_method_on_value(obj_v.clone(), field, vec![], env)
                                 .await;
-                            out.map_err(|_| {
-                                runtime_error(format!("Value has no field `{field}`"))
-                            })
+                            out.map_err(|_| runtime_error(format!("Value has no field `{field}`")))
                         }
                         _ => {
                             // Zero-arg method fallback for properties
@@ -349,7 +345,7 @@ impl Interpreter {
                             return Err(runtime_error(format!(
                                 "subscript index must be int, got {}",
                                 other.type_name()
-                            )))
+                            )));
                         }
                     };
                     match obj {

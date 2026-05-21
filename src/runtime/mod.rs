@@ -167,8 +167,14 @@ fn install_min_max(interp: &mut Interpreter) {
                                             "compare",
                                             &task,
                                             vec![
-                                                CallArgValue { name: None, value: best.clone() },
-                                                CallArgValue { name: None, value: item.clone() },
+                                                CallArgValue {
+                                                    name: None,
+                                                    value: best.clone(),
+                                                },
+                                                CallArgValue {
+                                                    name: None,
+                                                    value: item.clone(),
+                                                },
                                             ],
                                         )
                                         .await?;

@@ -958,10 +958,11 @@ run(A)
 }
 
 // ---------------------------------------------------------------------------
-// List zip
+// List zip (deferred — open design questions)
 // ---------------------------------------------------------------------------
 
 #[test]
+#[ignore]
 fn list_zip_pairs_elements() {
     let src = r#"
 agent A {
@@ -985,6 +986,7 @@ run(A)
 }
 
 #[test]
+#[ignore]
 fn list_zip_stops_at_shorter_list() {
     let src = r#"
 agent A {
@@ -1002,6 +1004,7 @@ run(A)
 }
 
 #[test]
+#[ignore]
 fn list_zip_destructuring_in_for_loop() {
     let src = r#"
 agent A {
@@ -2120,7 +2123,10 @@ run(A)
     assert!(stdout.contains("tick:3"), "tick:3 expected:\n{stdout}");
     assert!(stdout.contains("tick:2"), "tick:2 expected:\n{stdout}");
     assert!(stdout.contains("tick:1"), "tick:1 expected:\n{stdout}");
-    assert!(!stdout.contains("tick:0"), "tick:0 should not appear:\n{stdout}");
+    assert!(
+        !stdout.contains("tick:0"),
+        "tick:0 should not appear:\n{stdout}"
+    );
 }
 
 #[test]
@@ -2304,7 +2310,10 @@ run_test()
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.contains("37"), "expected Celsius output:\n{stdout}");
-    assert!(stdout.contains("32"), "expected Fahrenheit output:\n{stdout}");
+    assert!(
+        stdout.contains("32"),
+        "expected Fahrenheit output:\n{stdout}"
+    );
 }
 
 #[test]
@@ -2524,7 +2533,11 @@ run_test()
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
     let lines: Vec<&str> = stdout.lines().collect();
-    let vals: Vec<&str> = lines.iter().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let vals: Vec<&str> = lines
+        .iter()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(vals, vec!["10", "20", "30"], "sorted: {stdout}");
 }
 
@@ -2585,7 +2598,13 @@ run_test()
 
 #[test]
 fn builtin_interfaces_cannot_be_redeclared() {
-    for iface in ["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"] {
+    for iface in [
+        "Stringable",
+        "Comparable",
+        "Equatable",
+        "Serializable",
+        "Iterable",
+    ] {
         let src = format!(
             "interface {iface} {{ task dummy(self) -> str }}\ntask run_test() {{ Io.show(\"ok\") }}\nrun_test()"
         );

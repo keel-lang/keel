@@ -34,8 +34,13 @@ impl Interpreter {
                 Ok(())
             }
             Decl::Interface(iface) => {
-                const BUILTIN: &[&str] =
-                    &["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"];
+                const BUILTIN: &[&str] = &[
+                    "Stringable",
+                    "Comparable",
+                    "Equatable",
+                    "Serializable",
+                    "Iterable",
+                ];
                 if BUILTIN.contains(&iface.name.as_str()) {
                     return Err(runtime_error(format!(
                         "`{}` is a built-in interface and cannot be redeclared",
@@ -131,10 +136,10 @@ impl Interpreter {
                     // Fix up __impl_self__ placeholder with the concrete type name.
                     let mut fixed = method.clone();
                     for param in &mut fixed.params {
-                        if let Binding::Ident(n) = &param.name {
-                            if n == "self" {
-                                param.ty = TypeExpr::Named(type_name.clone());
-                            }
+                        if let Binding::Ident(n) = &param.name
+                            && n == "self"
+                        {
+                            param.ty = TypeExpr::Named(type_name.clone());
                         }
                     }
                     self.impl_methods

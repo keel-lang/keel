@@ -19,9 +19,11 @@ impl Interpreter {
         method: &str,
     ) -> Option<crate::ast::TaskDecl> {
         match value {
-            Value::Struct(type_name, _) => {
-                self.impl_methods.get(type_name.as_str())?.get(method).cloned()
-            }
+            Value::Struct(type_name, _) => self
+                .impl_methods
+                .get(type_name.as_str())?
+                .get(method)
+                .cloned(),
             Value::Map(m) => {
                 // Fallback for untagged maps (no type annotation at binding site).
                 let map_keys: HashSet<&str> = m.keys().map(String::as_str).collect();
@@ -53,7 +55,10 @@ impl Interpreter {
         // Impl methods always win over built-in map methods so that user-defined
         // interfaces can shadow names like "size", "len", etc. on struct types.
         if let Some(task) = self.find_impl_task(&obj, method) {
-            let mut call_args = vec![CallArgValue { name: None, value: obj }];
+            let mut call_args = vec![CallArgValue {
+                name: None,
+                value: obj,
+            }];
             call_args.extend(args);
             return self.call_task(method, &task, call_args).await;
         }
@@ -535,8 +540,14 @@ impl Interpreter {
                                 "compare",
                                 &task,
                                 vec![
-                                    CallArgValue { name: None, value: result.clone() },
-                                    CallArgValue { name: None, value: item.clone() },
+                                    CallArgValue {
+                                        name: None,
+                                        value: result.clone(),
+                                    },
+                                    CallArgValue {
+                                        name: None,
+                                        value: item.clone(),
+                                    },
                                 ],
                             )
                             .await?;
@@ -575,8 +586,14 @@ impl Interpreter {
                                 "compare",
                                 &task,
                                 vec![
-                                    CallArgValue { name: None, value: result.clone() },
-                                    CallArgValue { name: None, value: item.clone() },
+                                    CallArgValue {
+                                        name: None,
+                                        value: result.clone(),
+                                    },
+                                    CallArgValue {
+                                        name: None,
+                                        value: item.clone(),
+                                    },
                                 ],
                             )
                             .await?;
@@ -628,8 +645,14 @@ impl Interpreter {
                                     "compare",
                                     &task,
                                     vec![
-                                        CallArgValue { name: None, value: a },
-                                        CallArgValue { name: None, value: b },
+                                        CallArgValue {
+                                            name: None,
+                                            value: a,
+                                        },
+                                        CallArgValue {
+                                            name: None,
+                                            value: b,
+                                        },
                                     ],
                                 )
                                 .await?;

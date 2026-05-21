@@ -281,7 +281,13 @@ impl Checker {
         // prevents spurious "undefined identifier" errors when the checker
         // encounters `impl Stringable for Foo` before seeing any declaration of
         // `Stringable` in the source file.
-        for iface in ["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"] {
+        for iface in [
+            "Stringable",
+            "Comparable",
+            "Equatable",
+            "Serializable",
+            "Iterable",
+        ] {
             prelude.insert(iface.to_string());
         }
 
@@ -329,8 +335,13 @@ impl Checker {
     fn collect(&mut self, program: &Program) {
         // First pass: register all interface declarations so impl blocks can
         // reference them regardless of source order.
-        const BUILTIN_IFACES: &[&str] =
-            &["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"];
+        const BUILTIN_IFACES: &[&str] = &[
+            "Stringable",
+            "Comparable",
+            "Equatable",
+            "Serializable",
+            "Iterable",
+        ];
         for (decl, _) in &program.declarations {
             if let Decl::Interface(iface) = decl {
                 if BUILTIN_IFACES.contains(&iface.name.as_str()) {
@@ -384,11 +395,7 @@ impl Checker {
             }
         };
 
-        let provided: HashSet<&str> = impl_decl
-            .methods
-            .iter()
-            .map(|m| m.name.as_str())
-            .collect();
+        let provided: HashSet<&str> = impl_decl.methods.iter().map(|m| m.name.as_str()).collect();
 
         for sig in &sigs {
             if !provided.contains(sig.name.as_str()) {
@@ -936,8 +943,7 @@ impl Checker {
                         let is_iterable = self.structs.iter().any(|(type_name, schema)| {
                             let schema_names: std::collections::HashSet<&str> =
                                 schema.iter().map(|(n, _)| n.as_str()).collect();
-                            schema_names == field_names
-                                && self.iterable_types.contains(type_name)
+                            schema_names == field_names && self.iterable_types.contains(type_name)
                         });
                         if is_iterable {
                             Ty::Unknown
