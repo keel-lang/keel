@@ -14,6 +14,28 @@ All notable changes to Keel.
 
 ### Added
 
+- **`while` loops.** Unbounded iteration is now supported. The condition must be `bool`;
+  `break` and `continue` work identically to their `for`-loop counterparts:
+
+  ```keel
+  n = 5
+  while n > 0 {
+      Io.show("tick: {n}")
+      n -= 1
+  }
+
+  total = 0
+  i = 1
+  while true {
+      total += i
+      i += 1
+      if total > 10 { break }
+  }
+  ```
+
+  Each iteration gets a fresh scope (loop-local bindings don't escape). `while` is now a
+  reserved keyword.
+
 - **Subscript access (`list[i]`, `str[i]`).**
   Lists and strings now support `expr[index]` subscript syntax. The index must
   be an `int`. Result type is `T` for `list[T]` and `str` for strings — no

@@ -958,7 +958,7 @@ Type annotations are not permitted on augmented assignments — use plain `x: T 
 
 ### 8.8 `break` and `continue`
 
-Exit or skip within the nearest enclosing `for` loop.
+Exit or skip within the nearest enclosing `for` or `while` loop.
 
 ```keel
 # break — exit the loop immediately
@@ -985,9 +985,43 @@ for n in 1..100 {
 }
 ```
 
-Both statements affect only the **nearest enclosing `for` loop** — there are no labeled jumps in v0.1.
+Both statements affect only the **nearest enclosing loop** — there are no labeled jumps in v0.1.
 
 `break` and `continue` are reserved keywords; using either outside a loop is a runtime error.
+
+### 8.9 `while` loops
+
+Unbounded iteration — repeat the body as long as the condition is `true`.
+
+```keel
+# Basic countdown
+n = 5
+while n > 0 {
+    Io.show("tick: {n}")
+    n -= 1
+}
+
+# Accumulate with break
+total = 0
+i = 1
+while true {
+    total += i
+    i += 1
+    if total > 10 {
+        break
+    }
+}
+
+# Skip even numbers with continue
+x = 0
+while x < 10 {
+    x += 1
+    if x % 2 == 0 { continue }
+    process_odd(x)
+}
+```
+
+The condition must be `bool`. `break` and `continue` work identically to their `for`-loop counterparts.
 
 ---
 
@@ -1050,7 +1084,7 @@ agent task interface type extern
 use from
 state on self
 if else when where
-for in break continue
+for while in break continue
 try catch return raise
 as and or not
 true false none

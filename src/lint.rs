@@ -192,6 +192,7 @@ impl Linter {
                     }
                 }
                 Stmt::For { body, .. } => self.check_block_unused(body),
+                Stmt::While { body, .. } => self.check_block_unused(body),
                 Stmt::When { arms, .. } => {
                     for arm in arms {
                         self.check_block_unused(&arm.body);

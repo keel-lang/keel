@@ -990,6 +990,12 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             })
             .boxed();
 
+        let while_stmt = just(Token::While)
+            .ignore_then(expr.clone())
+            .then(block.clone())
+            .map(|(cond, body)| Stmt::While { cond, body })
+            .boxed();
+
         let if_stmt = just(Token::If)
             .ignore_then(expr.clone())
             .then(block.clone())
@@ -1098,6 +1104,7 @@ fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             destruct_for_stmt,
             tuple_destruct_for_stmt,
             for_stmt,
+            while_stmt,
             if_stmt,
             when_stmt,
             try_catch,

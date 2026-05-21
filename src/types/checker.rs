@@ -866,6 +866,11 @@ impl Checker {
             Stmt::Raise(e) => {
                 self.infer_expr(e, scope);
             }
+            Stmt::While { cond, body } => {
+                let cond_ty = self.infer_expr(cond, scope);
+                self.expect(&cond_ty, &Ty::Bool, "`while` condition");
+                self.check_block(body, scope);
+            }
             Stmt::Break | Stmt::Continue => {}
             Stmt::Expr(e) => {
                 self.infer_expr(e, scope);
@@ -2289,6 +2294,11 @@ fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String,
                 for (s, _) in &arm.body {
                     collect_stmt_bindings(s, c, out);
                 }
+            }
+        }
+        Stmt::While { body, .. } => {
+            for (s, _) in body {
+                collect_stmt_bindings(s, c, out);
             }
         }
         Stmt::TryCatch { body, catches } => {

@@ -126,9 +126,35 @@ for x in 1..10 if x % 2 == 0 {
 }
 ```
 
+## while loops
+
+Repeat a body until the condition becomes false:
+
+```keel
+n = 5
+while n > 0 {
+    Io.show("tick: {n}")
+    n -= 1
+}
+```
+
+Use `while true { ... break }` for indefinite loops that exit via `break`:
+
+```keel
+total = 0
+i = 1
+while true {
+    total += i
+    i += 1
+    if total > 10 { break }
+}
+```
+
+The condition must be `bool`. `break` and `continue` work the same as in `for` loops.
+
 ## break and continue
 
-`break` exits the nearest enclosing `for` loop immediately. `continue` skips the rest of the current iteration and advances to the next.
+`break` exits the nearest enclosing `for` or `while` loop immediately. `continue` skips the rest of the current iteration and advances to the next.
 
 ```keel
 # break — stop as soon as the target is found
@@ -139,16 +165,16 @@ for item in items {
     process(item)
 }
 
-# continue — skip even numbers
-for n in 1..100 {
-    if n % 2 == 0 {
-        continue
-    }
-    process_odd(n)
+# continue — skip even numbers in a while loop
+x = 0
+while x < 10 {
+    x += 1
+    if x % 2 == 0 { continue }
+    process_odd(x)
 }
 ```
 
-Both keywords affect only the **innermost** `for` loop. There are no labeled jumps in v0.1.
+Both keywords affect only the **innermost** loop. There are no labeled jumps in v0.1.
 
 ```keel
 # break inside a nested loop only exits the inner one
@@ -162,7 +188,7 @@ for outer in 1..5 {
 }
 ```
 
-> `break` and `continue` are reserved keywords. Using them outside a `for` loop is a runtime error.
+> `break` and `continue` are reserved keywords. Using them outside a loop is a runtime error.
 
 ## Augmented assignment
 

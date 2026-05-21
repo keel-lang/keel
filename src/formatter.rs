@@ -419,6 +419,19 @@ impl Fmt {
                 self.dedent();
                 self.push("}");
             }
+            Stmt::While { cond, body } => {
+                self.push("while ");
+                self.push(&self.expr_str(cond));
+                self.push(" {");
+                self.newline();
+                self.indent();
+                for (s, _) in body {
+                    self.stmt(s);
+                    self.newline();
+                }
+                self.dedent();
+                self.push("}");
+            }
             Stmt::If {
                 cond,
                 then_body,
@@ -770,6 +783,16 @@ impl Fmt {
                     s.push_str(" if ");
                     s.push_str(&self.expr_at(pred, indent));
                 }
+                s.push_str(" {\n");
+                self.write_block(s, body, indent + 1);
+                for _ in 0..indent {
+                    s.push_str(INDENT);
+                }
+                s.push('}');
+            }
+            Stmt::While { cond, body } => {
+                s.push_str("while ");
+                s.push_str(&self.expr_at(cond, indent));
                 s.push_str(" {\n");
                 self.write_block(s, body, indent + 1);
                 for _ in 0..indent {

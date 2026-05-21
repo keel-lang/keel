@@ -1704,3 +1704,47 @@ run(A)
         "subscript",
     );
 }
+
+
+// ─── while loop ──────────────────────────────────────────────────────────────
+
+#[test]
+fn while_bool_condition_is_valid() {
+    type_ok(
+        r#"
+task t() {
+    n = 0
+    while n < 10 {
+        n += 1
+    }
+}
+"#,
+    );
+}
+
+#[test]
+fn while_true_literal_is_valid() {
+    type_ok(
+        r#"
+task t() {
+    while true {
+        break
+    }
+}
+"#,
+    );
+}
+
+#[test]
+fn while_non_bool_condition_is_error() {
+    expect_error(
+        r#"
+task t() {
+    while "oops" {
+        break
+    }
+}
+"#,
+        "`while` condition",
+    );
+}

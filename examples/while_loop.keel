@@ -1,0 +1,30 @@
+agent Counter {
+  @role "counter"
+  @on_start {
+    n = 5
+    while n > 0 {
+      Io.show("tick: {n}")
+      n -= 1
+    }
+    total = 0
+    i = 1
+    while true {
+      total += i
+      i += 1
+      if total > 10 {
+        break
+      }
+    }
+    Io.show("total: {total}")
+    x = 0
+    while x < 10 {
+      x += 1
+      if x % 2 == 0 {
+        continue
+      }
+      Io.show("odd: {x}")
+    }
+  }
+}
+
+run(Counter)

@@ -6,6 +6,26 @@
 
 ## Unreleased
 
+### `while` loops
+
+Unbounded iteration is now supported. The condition must be `bool`; `break` and `continue` work identically to their `for`-loop counterparts.
+
+```keel
+n = 5
+while n > 0 {
+    Io.show("tick: {n}")
+    n -= 1
+}
+
+total = 0
+i = 1
+while true {
+    total += i
+    i += 1
+    if total > 10 { break }
+}
+```
+
 ### Subscript access (`list[i]`, `str[i]`)
 
 Lists and strings now support integer subscript syntax. Result type is `T` for `list[T]` and `str` for strings — no nullable wrapper. Out-of-bounds and negative indices raise a runtime error, so there is never ambiguity between a `none` value and a missing index:

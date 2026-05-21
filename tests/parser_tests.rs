@@ -764,3 +764,36 @@ fn variadic_non_trailing_is_parse_error() {
     // Reaching here means the parser correctly rejected the non-trailing variadic.
     parse_err("task f(...a: int, b: int) -> int { 0 }");
 }
+
+// ─── while loop ──────────────────────────────────────────────────────────────
+
+#[test]
+fn parse_while_basic() {
+    let prog = parse_ok("task t() { n = 0\nwhile n < 3 {\nn += 1\n}\n}");
+    match first_decl(&prog) {
+        Decl::Task(td) => {
+            let while_stmt = td.body.iter().find(|(s, _)| matches!(s, Stmt::While { .. }));
+            assert!(while_stmt.is_some(), "expected Stmt::While in task body");
+        }
+        other => panic!("expected Task, got {:?}", other),
+    }
+}
+
+#[test]
+fn parse_while_true_with_break() {
+    parse_ok("task t() { while true {\nbreak\n}\n}");
+}
+
+#[test]
+fn parse_while_nested_in_for() {
+    parse_ok(
+        r#"task t() {
+    for i in 1..3 {
+        j = 0
+        while j < i {
+            j += 1
+        }
+    }
+}"#,
+    );
+}

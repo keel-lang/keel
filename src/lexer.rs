@@ -77,6 +77,8 @@ pub enum Token {
     Break,
     #[token("continue")]
     Continue,
+    #[token("while")]
+    While,
 
     // ── Cast / logic ─────────────────────────────────────────────────
     #[token("as")]
@@ -336,6 +338,7 @@ impl fmt::Display for Token {
             Token::Raise => write!(f, "raise"),
             Token::Break => write!(f, "break"),
             Token::Continue => write!(f, "continue"),
+            Token::While => write!(f, "while"),
             Token::As => write!(f, "as"),
             Token::And => write!(f, "and"),
             Token::Or => write!(f, "or"),

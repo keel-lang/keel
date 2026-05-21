@@ -2098,3 +2098,115 @@ run(A)
     assert!(ok, "program failed\nstderr: {stderr}");
     assert!(stdout.contains("alpha"), "expected 'alpha', got:\n{stdout}");
 }
+
+// ─── while loop (v0.1.27) ────────────────────────────────────────────────────
+
+#[test]
+fn while_basic_countdown() {
+    let src = r#"
+agent A {
+    @on_start {
+        n = 3
+        while n > 0 {
+            Io.show("tick:{n}")
+            n -= 1
+        }
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("tick:3"), "tick:3 expected:\n{stdout}");
+    assert!(stdout.contains("tick:2"), "tick:2 expected:\n{stdout}");
+    assert!(stdout.contains("tick:1"), "tick:1 expected:\n{stdout}");
+    assert!(!stdout.contains("tick:0"), "tick:0 should not appear:\n{stdout}");
+}
+
+#[test]
+fn while_break_exits_loop() {
+    let src = r#"
+agent A {
+    @on_start {
+        count = 0
+        while true {
+            count += 1
+            if count >= 3 {
+                break
+            }
+        }
+        Io.show("{count}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("3"), "expected count=3:\n{stdout}");
+}
+
+#[test]
+fn while_continue_skips_iteration() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 0
+        sum = 0
+        while x < 6 {
+            x += 1
+            if x % 2 == 0 {
+                continue
+            }
+            sum += x
+        }
+        Io.show("{sum}")
+    }
+}
+run(A)
+"#;
+    // odd numbers 1,3,5 => sum = 9
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("9"), "expected sum=9:\n{stdout}");
+}
+
+#[test]
+fn while_nested_in_for() {
+    let src = r#"
+agent A {
+    @on_start {
+        total = 0
+        for i in 1..3 {
+            j = 0
+            while j < i {
+                total += 1
+                j += 1
+            }
+        }
+        Io.show("{total}")
+    }
+}
+run(A)
+"#;
+    // i=1: 1 iter, i=2: 2 iters, i=3: 3 iters => total=6
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("6"), "expected total=6:\n{stdout}");
+}
+
+#[test]
+fn while_non_bool_condition_type_error() {
+    let src = r#"
+task t() {
+    while "oops" {
+        break
+    }
+}
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected type error for non-bool while condition");
+    assert!(
+        stderr.contains("while") || stderr.contains("bool"),
+        "expected while/bool in error:\n{stderr}"
+    );
+}

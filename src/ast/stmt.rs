@@ -69,7 +69,9 @@ pub enum Stmt {
     },
     /// `raise expr` — throws an error; caught by `catch err: Error`.
     Raise(Expr),
-    /// `break` — exits the nearest enclosing `for` loop.
+    /// `while cond { ... }` — repeat body until condition is false.
+    While { cond: Expr, body: Block },
+    /// `break` — exits the nearest enclosing loop.
     Break,
     /// `continue` — skips the rest of the current iteration.
     Continue,

@@ -195,6 +195,27 @@ impl Interpreter {
                     };
                     Err(runtime_error(message))
                 }
+                Stmt::While { cond, body } => {
+                    loop {
+                        let c = self.eval_expr(cond, env).await?;
+                        if let Value::EarlyReturn(inner) = c {
+                            return Ok(StmtOutcome::Return(*inner));
+                        }
+                        if !c.is_truthy() {
+                            break;
+                        }
+                        env.push_scope();
+                        let outcome = self.exec_block(body, env).await?;
+                        env.pop_scope();
+                        match outcome {
+                            StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
+                            StmtOutcome::Break => break,
+                            StmtOutcome::Continue | StmtOutcome::Normal | StmtOutcome::Value(_) => {
+                            }
+                        }
+                    }
+                    Ok(StmtOutcome::Normal)
+                }
                 Stmt::Break => Ok(StmtOutcome::Break),
                 Stmt::Continue => Ok(StmtOutcome::Continue),
                 Stmt::TryCatch { body, catches } => {
