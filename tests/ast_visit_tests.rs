@@ -101,7 +101,8 @@ impl Visitor for Counts {
             | Expr::NullCoalesce(_, _)
             | Expr::Call { .. }
             | Expr::MethodCall { .. }
-            | Expr::WhenExpr { .. } => {}
+            | Expr::WhenExpr { .. }
+            | Expr::Index { .. } => {}
         }
         visit::walk_expr(self, expr);
     }

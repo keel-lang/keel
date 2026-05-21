@@ -10,7 +10,29 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%%
+
+### Added
+
+- **Subscript access (`list[i]`, `str[i]`).**
+  Lists and strings now support `expr[index]` subscript syntax. The index must
+  be an `int`. Result type is `T` for `list[T]` and `str` for strings — no
+  nullable wrapper. Out-of-bounds and negative indices raise a runtime error,
+  so there is never ambiguity between a `none` value and a missing index:
+
+  ```keel
+  items = ["alpha", "beta", "gamma"]
+  first = items[0]   # str — "alpha"
+  mid   = items[1]   # str — "beta"
+  # items[99]        # runtime error: index 99 out of bounds (length 3)
+
+  word = "keel"
+  ch   = word[0]     # str — "k"
+  # word[10]         # runtime error: string index 10 out of bounds (length 4)
+  ```
+
+  Use `len()` to guard dynamic indices; `.first()` / `.last()` remain
+  available when you want a nullable fallback for the first or last element.
 
 ---
 

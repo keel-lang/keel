@@ -1,0 +1,23 @@
+agent Demo {
+  @on_start {
+    items = ["alpha", "beta", "gamma"]
+
+    first = items[0]
+    Io.show(first)
+
+    mid = items[1]
+    Io.show(mid)
+
+    scores = [42, 17, 99, 5]
+    top = scores[2]
+    Io.show(top)
+
+    word = "keel"
+    ch0 = word[0]
+    ch3 = word[3]
+    Io.show(ch0)
+    Io.show(ch3)
+  }
+}
+
+run(Demo)

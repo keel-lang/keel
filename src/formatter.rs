@@ -687,6 +687,9 @@ impl Fmt {
                 s.push('}');
                 s
             }
+            Expr::Index { object, index } => {
+                format!("{}[{}]", self.expr_str(object), self.expr_str(index))
+            }
             Expr::Duration { value, unit } => {
                 format!("{}.{}", self.expr_str(value), unit.canonical_name())
             }

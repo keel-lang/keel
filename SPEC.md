@@ -104,6 +104,18 @@ ids: set[int]        = set[1, 2, 3]
 
 Rules: `[...]` is a list. `{k: v}` is a map. `set[...]` is a set (the only place `set` is special: it's a keyword-like form, not a type application).
 
+**Subscript access** (`expr[index]`): lists and strings support integer indexing. The result type is `T` for `list[T]` and `str` for strings. Out-of-bounds and negative indices are runtime errors — check `len()` first or use `try/catch` when the index may be invalid:
+
+```keel
+items = [10, 20, 30]
+v = items[1]   # int — 20
+# items[99]    # runtime error: index 99 out of bounds (length 3)
+
+word = "keel"
+ch = word[0]   # str — "k"
+# word[10]     # runtime error: string index 10 out of bounds (length 4)
+```
+
 **Built-in collection operations** (methods, enabled by lambdas):
 
 | Method | Signature | Notes |

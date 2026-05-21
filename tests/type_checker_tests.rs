@@ -1640,3 +1640,67 @@ run(A)
 "#,
     );
 }
+
+// ─── Subscript access (`list[i]`, `str[i]`) ────────────────────────────────
+
+#[test]
+fn subscript_list_ok() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        items: list[int] = [10, 20, 30]
+        x: int = items[0]
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn subscript_string_ok() {
+    type_ok(
+        r#"
+agent A {
+    @on_start {
+        word = "hello"
+        ch: str = word[1]
+    }
+}
+run(A)
+"#,
+    );
+}
+
+#[test]
+fn subscript_non_int_index_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        items = [1, 2, 3]
+        x = items["bad"]
+    }
+}
+run(A)
+"#,
+        "subscript index must be int",
+    );
+}
+
+#[test]
+fn subscript_set_type_error() {
+    expect_error(
+        r#"
+agent A {
+    @on_start {
+        s: int = 42
+        x = s[0]
+    }
+}
+run(A)
+"#,
+        "subscript",
+    );
+}

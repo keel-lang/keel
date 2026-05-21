@@ -1263,6 +1263,30 @@ impl Checker {
                 }
             }
 
+            Expr::Index { object, index } => {
+                let obj_ty = self.infer_expr(object, scope);
+                let idx_ty = self.infer_expr(index, scope);
+                if !matches!(idx_ty.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                    self.err(format!(
+                        "subscript index must be int, got {}",
+                        describe_ty(&idx_ty)
+                    ));
+                }
+                match obj_ty.strip_nullable() {
+                    Ty::List(elem) => *elem.clone(),
+                    Ty::Str => Ty::Str,
+                    Ty::Unknown | Ty::Dynamic => Ty::Unknown,
+                    other => {
+                        self.err(format!(
+                            "subscript `[i]` is not supported on {}; \
+                             lists and strings support subscript access",
+                            describe_ty(other)
+                        ));
+                        Ty::Unknown
+                    }
+                }
+            }
+
             Expr::Range(start, end) => {
                 let s = self.infer_expr(start, scope);
                 let e = self.infer_expr(end, scope);

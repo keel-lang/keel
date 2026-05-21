@@ -251,6 +251,10 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
                 LambdaBody::Block(block) => v.visit_block(block),
             }
         }
+        Expr::Index { object, index } => {
+            v.visit_expr(object);
+            v.visit_expr(index);
+        }
         Expr::Duration { value, .. } => v.visit_expr(value),
         Expr::EnumVariant { fields, .. } => {
             for (_, value) in fields {

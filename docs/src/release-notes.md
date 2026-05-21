@@ -6,6 +6,23 @@
 
 ## Unreleased
 
+### Subscript access (`list[i]`, `str[i]`)
+
+Lists and strings now support integer subscript syntax. Result type is `T` for `list[T]` and `str` for strings — no nullable wrapper. Out-of-bounds and negative indices raise a runtime error, so there is never ambiguity between a `none` value and a missing index:
+
+```keel
+items = ["alpha", "beta", "gamma"]
+first = items[0]   # "alpha"
+mid   = items[1]   # "beta"
+# items[99]        # runtime error: index 99 out of bounds (length 3)
+
+word = "keel"
+ch   = word[0]     # "k"
+# word[10]         # runtime error: string index 10 out of bounds (length 4)
+```
+
+Use `len()` to guard dynamic indices; `.first()` / `.last()` remain available when you want a nullable fallback.
+
 ---
 
 ## v0.1.26 — 2026-05-20

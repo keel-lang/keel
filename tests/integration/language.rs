@@ -1985,3 +1985,116 @@ run(A)
         "expected spread/variadic error:\n{stderr}"
     );
 }
+
+// ─── Subscript access (`list[i]`, `str[i]`) ─────────────────────────────────
+
+#[test]
+fn subscript_list_in_bounds() {
+    let src = r#"
+agent A {
+    @on_start {
+        items = [10, 20, 30]
+        v = items[1]
+        Io.show(v)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("20"), "expected 20, got:\n{stdout}");
+}
+
+#[test]
+fn subscript_list_out_of_bounds_errors() {
+    let src = r#"
+agent A {
+    @on_start {
+        items = [10, 20, 30]
+        v = items[99]
+        Io.show(v)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected runtime error on OOB");
+    assert!(
+        stderr.contains("out of bounds"),
+        "expected 'out of bounds' error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn subscript_list_negative_errors() {
+    let src = r#"
+agent A {
+    @on_start {
+        items = [10, 20, 30]
+        v = items[-1]
+        Io.show(v)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected runtime error on negative index");
+    assert!(
+        stderr.contains("out of bounds"),
+        "expected 'out of bounds' error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn subscript_string_in_bounds() {
+    let src = r#"
+agent A {
+    @on_start {
+        word = "hello"
+        ch = word[1]
+        Io.show(ch)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("e"), "expected 'e', got:\n{stdout}");
+}
+
+#[test]
+fn subscript_string_out_of_bounds_errors() {
+    let src = r#"
+agent A {
+    @on_start {
+        word = "hi"
+        ch = word[99]
+        Io.show(ch)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected runtime error on OOB string index");
+    assert!(
+        stderr.contains("out of bounds"),
+        "expected 'out of bounds' error, got:\n{stderr}"
+    );
+}
+
+#[test]
+fn subscript_list_first_element() {
+    let src = r#"
+agent A {
+    @on_start {
+        items = ["alpha", "beta", "gamma"]
+        v = items[0]
+        Io.show(v)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstderr: {stderr}");
+    assert!(stdout.contains("alpha"), "expected 'alpha', got:\n{stdout}");
+}

@@ -92,6 +92,14 @@ pub enum Expr {
         body: LambdaBody,
     },
 
+    // ── Subscript ────────────────────────────────────────────────────
+    /// `expr[index]` — list element access (returns `T`) or string char
+    /// access (returns `str`). Out-of-bounds is a runtime error.
+    Index {
+        object: Box<Expr>,
+        index: Box<Expr>,
+    },
+
     // ── Duration ─────────────────────────────────────────────────────
     /// `5.minutes`, `2.hours` — parsed at postfix `INT "." Ident(unit)`.
     Duration {

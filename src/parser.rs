@@ -624,6 +624,12 @@ fn expr_parser() -> P<Expr> {
         // control-flow body parsing (`if f(x) { ... }` — is `{...}` a
         // trailing closure on `f(x)` or the `if` body?). Use explicit
         // lambda syntax `() => { ... }` to pass a block to a function.
+        let subscript = just(Token::LBracket)
+            .ignore_then(expr.clone())
+            .then_ignore(just(Token::RBracket))
+            .map(PostfixOp::Index)
+            .boxed();
+
         let postfix_op = choice((
             just(Token::Dot)
                 .ignore_then(field_name())
@@ -637,6 +643,7 @@ fn expr_parser() -> P<Expr> {
             just(Token::As)
                 .ignore_then(type_expr())
                 .map(PostfixOp::Cast),
+            subscript,
         ))
         .boxed();
 
@@ -675,6 +682,10 @@ fn expr_parser() -> P<Expr> {
                 PostfixOp::Cast(ty) => Expr::Cast {
                     expr: Box::new(expr),
                     ty,
+                },
+                PostfixOp::Index(idx) => Expr::Index {
+                    object: Box::new(expr),
+                    index: Box::new(idx),
                 },
             })
             .boxed();
@@ -809,6 +820,7 @@ enum PostfixOp {
     NullAssert,
     Call(Vec<CallArg>),
     Cast(TypeExpr),
+    Index(Expr),
 }
 
 fn parse_duration_unit(s: &str) -> Option<DurationUnit> {

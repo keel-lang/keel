@@ -207,6 +207,16 @@ names = ["alice", "bob"]                  # list[str]
 info = {name: "Zied", role: "builder"}   # map[str, str]
 ```
 
+**Subscript access** (`list[i]`): integer index, returns `T`. Out-of-bounds and negative indices are runtime errors — use `len()` to guard or `try/catch` when the index may be invalid:
+
+```keel
+items = [10, 20, 30]
+v = items[1]   # int — 20
+# items[99]    # runtime error: index 99 out of bounds
+```
+
+String subscript (`str[i]`) returns a single-character `str` by the same rules.
+
 **List properties:**
 
 | Property | Returns | Description |

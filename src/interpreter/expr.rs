@@ -309,6 +309,47 @@ impl Interpreter {
                     self.eval_expr(inner, env).await
                 }
 
+                Expr::Index { object, index } => {
+                    let obj = self.eval_expr(object, env).await?;
+                    let idx = self.eval_expr(index, env).await?;
+                    let i = match &idx {
+                        Value::Integer(n) => *n,
+                        other => {
+                            return Err(runtime_error(format!(
+                                "subscript index must be int, got {}",
+                                other.type_name()
+                            )))
+                        }
+                    };
+                    match obj {
+                        Value::List(items) => {
+                            if i < 0 || i as usize >= items.len() {
+                                Err(runtime_error(format!(
+                                    "index {i} out of bounds (length {})",
+                                    items.len()
+                                )))
+                            } else {
+                                Ok(items[i as usize].clone())
+                            }
+                        }
+                        Value::String(s) => {
+                            let chars: Vec<char> = s.chars().collect();
+                            if i < 0 || i as usize >= chars.len() {
+                                Err(runtime_error(format!(
+                                    "string index {i} out of bounds (length {})",
+                                    chars.len()
+                                )))
+                            } else {
+                                Ok(Value::String(chars[i as usize].to_string()))
+                            }
+                        }
+                        other => Err(runtime_error(format!(
+                            "subscript `[i]` is not supported on {}",
+                            other.type_name()
+                        ))),
+                    }
+                }
+
                 Expr::IfExpr {
                     cond,
                     then_body,
