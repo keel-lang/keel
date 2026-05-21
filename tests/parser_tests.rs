@@ -797,3 +797,24 @@ fn parse_while_nested_in_for() {
 }"#,
     );
 }
+
+// ─── Impl declarations ────────────────────────────────────────────────────────
+
+#[test]
+fn parse_impl_stringable() {
+    let src = r#"impl Stringable for Point {
+  task to_str(self) -> str {
+    "hello"
+  }
+}"#;
+    let prog = parse_ok(src);
+    match first_decl(&prog) {
+        Decl::Impl(id) => {
+            assert_eq!(id.interface_name, "Stringable");
+            assert_eq!(id.type_name, "Point");
+            assert_eq!(id.methods.len(), 1);
+            assert_eq!(id.methods[0].name, "to_str");
+        }
+        other => panic!("expected Decl::Impl, got {other:?}"),
+    }
+}

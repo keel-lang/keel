@@ -607,45 +607,133 @@ Interfaces declare a set of method signatures. A type satisfies an interface **s
 
 ### 5.1 Declaration
 
+Any user can define a new interface with `interface`:
+
 ```keel
-interface LlmProvider {
-  task complete(messages: list[Message], opts: LlmOpts) -> LlmResponse?
-  task embed(text: str) -> list[float]?
+interface Printable {
+  task print(self) -> str
 }
 
-interface VectorStore {
-  task put(key: str, value: map[str, str], embedding: list[float]) -> none
-  task query(embedding: list[float], limit: int) -> list[map[str, str]]
-  # Planned for v0.2 — backs Memory when semantic search is needed.
-}
-
-interface Tracer {
-  task on_event(event: TraceEvent) -> none
+interface Summable {
+  task total(self) -> float
 }
 ```
 
-### 5.2 Built-in interfaces
+The interface body lists method signatures — `task name(self, ...) -> ReturnType`. The `self` parameter is written without a type annotation; the type is inferred from the `for TypeName` clause of each `impl` block.
+
+Reserved built-in interfaces (`Stringable`, `Comparable`, `Equatable`, `Serializable`, `Iterable`) are declared by the runtime itself; they do not need a user-level `interface` declaration but follow the same `impl` rules.
+
+### 5.2 `impl` blocks
+
+A struct type satisfies an interface by providing an `impl` block:
+
+```keel
+type Point {
+  x: float
+  y: float
+}
+
+impl Printable for Point {
+  task print(self) -> str {
+    "({self.x}, {self.y})"
+  }
+}
+
+p: Point = { x: 1.5, y: 2.0 }
+Io.show(p.print())    # → "(1.5, 2.0)"
+```
+
+**Rules for `impl` blocks:**
+
+- `impl` and `for` are reserved keywords.
+- The named interface must be declared (either user-defined or a built-in like `Stringable`) before any `impl` references it — unless both appear in the same file, in which case order does not matter (the compiler pre-collects all interface declarations).
+- Every method listed in the interface must be provided. Missing methods are a compile-time error.
+- Extra methods not listed in the interface are a compile-time error.
+- Return types must match exactly.
+- `self` inside the block receives the struct value. Use `self.field` to access fields.
+
+**Dispatch rule.** The runtime identifies the concrete type by matching the struct's registered field names against the value's keys. When two types share identical field sets, method dispatch is ambiguous — add a distinguishing field or call `.method()` via an explicit variable with a declared type annotation.
+
+### 5.3 Built-in interfaces
+
+Five interfaces are built into the runtime. They cannot be redeclared with `interface`, but any struct type can provide an `impl` block for them.
 
 **`Stringable`** — types that implement `Stringable` can appear inside string interpolation `"{expr}"`:
 
 ```keel
 interface Stringable {
-  task to_str() -> str
+  task to_str(self) -> str
 }
 ```
 
-All primitives (`int`, `float`, `bool`, `datetime`, `duration`, `Uuid`) implement `Stringable` by default. User-defined types opt in by implementing `to_str()`.
-
-`Stringable` enables interpolation only — it does not create implicit coercion. `let s: str = id` is a type error; use `id.to_str()` explicitly.
+All primitives (`int`, `float`, `bool`, `datetime`, `duration`, `Uuid`) implement `Stringable` by default. User-defined types opt in via an explicit `impl` block:
 
 ```keel
-id = uuid()
-Log.info("created {id}")         # ok — Uuid implements Stringable
-s: str = id                      # error — Uuid is not str
-s: str = id.to_str()             # ok — explicit conversion
+impl Stringable for Point {
+  task to_str(self) -> str { "({self.x}, {self.y})" }
+}
+
+p: Point = { x: 3, y: 4 }
+Io.show("origin is {p}")    # → "origin is (3, 4)"
 ```
 
-### 5.3 Why interfaces are core
+**`Comparable`** — enables sorting and comparison for user-defined types:
+
+```keel
+interface Comparable {
+  task compare(self, other: dynamic) -> int
+}
+```
+
+`compare(self, other)` returns negative/zero/positive. Wired into `list.sort()`, `list.min()`, `list.max()`, and the global `min()`/`max()`.
+
+**`Equatable`** — typed equality check:
+
+```keel
+interface Equatable {
+  task equals(self, other: dynamic) -> bool
+}
+```
+
+Method-only. `==` remains structural comparison.
+
+**`Serializable`** — override `Json.stringify`:
+
+```keel
+interface Serializable {
+  task to_json(self) -> str
+}
+```
+
+When a type implements `Serializable`, `Json.stringify(value)` calls `to_json()` instead of the default serialiser.
+
+**`Iterable`** — use a struct in a `for` loop:
+
+```keel
+interface Iterable {
+  task items(self) -> list[dynamic]
+}
+```
+
+The concrete return type may be `list[T]` for any `T` — `list[dynamic]` is a wildcard in the conformance check. `items()` materialises the full list before iteration begins (not a generator).
+
+```keel
+type Range { lo: int, hi: int }
+impl Iterable for Range {
+  task items(self) -> list[int] {
+    result: list[int] = []
+    i = self.lo
+    while i <= self.hi {
+      result += [i]
+      i += 1
+    }
+    result
+  }
+}
+for n in Range { lo: 1, hi: 3 } { Io.show("{n}") }   # 1, 2, 3
+```
+
+### 5.4 Why interfaces are core
 
 - `Ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding a single provider into the runtime locks users out of self-hosted, proprietary, or novel backends.
 - `Memory` in v0.1 is a plain K/V store (JSON file); in v0.2 it will dispatch through a `VectorStore` interface so users can swap backends.
@@ -653,7 +741,7 @@ s: str = id.to_str()             # ok — explicit conversion
 
 The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and, once the runtime registry is wired, let users swap implementations.
 
-### 5.4 Installing implementations <span class="badge badge-soon">Planned</span>
+### 5.5 Installing implementations <span class="badge badge-soon">Planned</span>
 
 Custom implementation installation is planned, but not registered in the v0.1 runtime yet. The intended startup shape is:
 
@@ -1080,7 +1168,7 @@ Events land in the agent's mailbox. The runtime processes them one at a time. A 
 This is the complete set. If a word is not on this list, it is an identifier.
 
 ```
-agent task interface type extern
+agent task interface impl type extern
 use from
 state on self
 if else when where

@@ -85,7 +85,12 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `min` / `max` prelude functions | [x] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; single list arg auto-spread; `none` on empty | — |
 | `Random` | [x] | `Random.float()`, `Random.int(min:, max:)`, `Random.bool()` | — |
 | `Uuid` | [x] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
-| `Stringable` interface | [ ] | `interface Stringable { task to_str() -> str }`; enables `"{expr}"` interpolation for any type | Implemented by all primitives + `Uuid` |
+| `Stringable` interface | [x] | `impl Stringable for T { task to_str(self) -> str { ... } }`; enables `"{expr}"` interpolation for user-defined types | Primitives + `Uuid` built-in; user types opt in via `impl` block; `impl` reserved keyword |
+| User-defined interfaces | [x] | `interface Name { task method(self) -> T }` declares a protocol; `impl Name for Type { ... }` satisfies it; compiler validates all methods present, arity, and return types; impl methods take priority over built-in map methods | No interface-as-type (`task f(x: Iterable)`) — values are structural, not nominally typed through interfaces |
+| `Comparable` interface | [x] | `task compare(self, other) -> int`; wired into `list.sort()`, `list.min()`, `list.max()`, global `min()`/`max()` | Async insertion sort for struct lists |
+| `Equatable` interface | [x] | `task equals(self, other) -> bool`; method-only, `==` stays structural | — |
+| `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `Json.stringify` | — |
+| `Iterable` interface | [x] | `task items(self) -> list[T]`; struct usable in `for` loop | Not a generator; materialises full list; concrete `list[T]` return type accepted |
 | `Json` | [x] | `parse`, `stringify` | — |
 | `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |

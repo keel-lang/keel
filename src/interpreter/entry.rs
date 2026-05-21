@@ -41,6 +41,15 @@ pub async fn run_with_source_and_runtime(
 
 impl Interpreter {
     pub async fn execute(&mut self, program: Program) -> Result<()> {
+        // Pre-pass: register all interface declarations so that impl blocks
+        // can reference them regardless of source order.
+        for (decl, _span) in &program.declarations {
+            if let Decl::Interface(iface) = decl {
+                self.interfaces
+                    .insert(iface.name.clone(), iface.methods.clone());
+            }
+        }
+
         // Two-pass: register all declarations, then execute top-level statements.
         for (decl, _span) in &program.declarations {
             self.register_decl(decl)?;

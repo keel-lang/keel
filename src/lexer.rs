@@ -33,6 +33,8 @@ pub enum Token {
     Task,
     #[token("interface")]
     Interface,
+    #[token("impl")]
+    Impl,
     #[token("type")]
     Type,
     #[token("extern")]
@@ -319,6 +321,7 @@ impl fmt::Display for Token {
             Token::Agent => write!(f, "agent"),
             Token::Task => write!(f, "task"),
             Token::Interface => write!(f, "interface"),
+            Token::Impl => write!(f, "impl"),
             Token::Type => write!(f, "type"),
             Token::Extern => write!(f, "extern"),
             Token::Use => write!(f, "use"),

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use miette::Result;
 
 use super::environment::Environment;
@@ -6,6 +8,33 @@ use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
 
 impl Interpreter {
+    /// Find the `impl` TaskDecl for `method` on `value` (must be a Map whose field
+    /// set matches a registered struct type).  Returns `None` if no impl is found.
+    /// Clones the TaskDecl to avoid borrow-across-await issues.
+    pub(crate) fn find_impl_task(
+        &self,
+        value: &Value,
+        method: &str,
+    ) -> Option<crate::ast::TaskDecl> {
+        let Value::Map(m) = value else {
+            return None;
+        };
+        let map_keys: HashSet<&str> = m.keys().map(String::as_str).collect();
+        self.impl_methods.iter().find_map(|(type_name, methods)| {
+            methods.get(method).and_then(|task| {
+                self.struct_types.get(type_name).and_then(|schema| {
+                    let type_fields: HashSet<&str> =
+                        schema.iter().map(|(k, _)| k.as_str()).collect();
+                    if type_fields.is_subset(&map_keys) {
+                        Some(task.clone())
+                    } else {
+                        None
+                    }
+                })
+            })
+        })
+    }
+
     pub(crate) async fn call_method_on_value(
         &mut self,
         obj: Value,
@@ -13,6 +42,30 @@ impl Interpreter {
         args: Vec<CallArgValue>,
         _env: &mut Environment,
     ) -> Result<Value> {
+        // Impl methods always win over built-in map methods so that user-defined
+        // interfaces can shadow names like "size", "len", etc. on struct types.
+        if let Value::Map(ref m) = obj {
+            let map_keys: HashSet<&str> = m.keys().map(String::as_str).collect();
+            let candidate = self.impl_methods.iter().find_map(|(type_name, methods)| {
+                methods.get(method).and_then(|task| {
+                    self.struct_types.get(type_name).and_then(|schema| {
+                        let type_fields: HashSet<&str> =
+                            schema.iter().map(|(k, _)| k.as_str()).collect();
+                        if type_fields.is_subset(&map_keys) {
+                            Some(task.clone())
+                        } else {
+                            None
+                        }
+                    })
+                })
+            });
+            if let Some(task) = candidate {
+                let mut call_args = vec![CallArgValue { name: None, value: obj }];
+                call_args.extend(args);
+                return self.call_task(method, &task, call_args).await;
+            }
+        }
+
         // Minimal built-in methods for v0.1. Extend as examples need.
         match (&obj, method) {
             (Value::String(s), "length" | "len" | "count") => {
@@ -481,6 +534,26 @@ impl Interpreter {
                 if items.is_empty() {
                     return Ok(Value::None);
                 }
+                let cmp_task = self.find_impl_task(&items[0], "compare");
+                if let Some(task) = cmp_task {
+                    let mut result = items[0].clone();
+                    for item in &items[1..] {
+                        let cmp_val = self
+                            .call_task(
+                                "compare",
+                                &task,
+                                vec![
+                                    CallArgValue { name: None, value: result.clone() },
+                                    CallArgValue { name: None, value: item.clone() },
+                                ],
+                            )
+                            .await?;
+                        if matches!(cmp_val, Value::Integer(n) if n > 0) {
+                            result = item.clone();
+                        }
+                    }
+                    return Ok(result);
+                }
                 let mut result = items[0].clone();
                 for item in &items[1..] {
                     let less = match (&result, item) {
@@ -500,6 +573,26 @@ impl Interpreter {
             (Value::List(items), "max") => {
                 if items.is_empty() {
                     return Ok(Value::None);
+                }
+                let cmp_task = self.find_impl_task(&items[0], "compare");
+                if let Some(task) = cmp_task {
+                    let mut result = items[0].clone();
+                    for item in &items[1..] {
+                        let cmp_val = self
+                            .call_task(
+                                "compare",
+                                &task,
+                                vec![
+                                    CallArgValue { name: None, value: result.clone() },
+                                    CallArgValue { name: None, value: item.clone() },
+                                ],
+                            )
+                            .await?;
+                        if matches!(cmp_val, Value::Integer(n) if n < 0) {
+                            result = item.clone();
+                        }
+                    }
+                    return Ok(result);
                 }
                 let mut result = items[0].clone();
                 for item in &items[1..] {
@@ -526,6 +619,39 @@ impl Interpreter {
                 Ok(Value::String(parts.join(&sep)))
             }
             (Value::List(items), "sort") => {
+                // If items are structs with a Comparable impl, use it (async insertion sort).
+                let cmp_task = items
+                    .first()
+                    .and_then(|first| self.find_impl_task(first, "compare"));
+                if let Some(task) = cmp_task {
+                    let mut sorted = items.clone();
+                    let n = sorted.len();
+                    for i in 1..n {
+                        let mut j = i;
+                        while j > 0 {
+                            let a = sorted[j - 1].clone();
+                            let b = sorted[j].clone();
+                            let cmp_val = self
+                                .call_task(
+                                    "compare",
+                                    &task,
+                                    vec![
+                                        CallArgValue { name: None, value: a },
+                                        CallArgValue { name: None, value: b },
+                                    ],
+                                )
+                                .await?;
+                            if matches!(cmp_val, Value::Integer(n) if n > 0) {
+                                sorted.swap(j - 1, j);
+                                j -= 1;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    return Ok(Value::List(sorted));
+                }
+                // Primitive fallback.
                 let mut sorted = items.clone();
                 sorted.sort_by(|a, b| match (a, b) {
                     (Value::Integer(x), Value::Integer(y)) => x.cmp(y),

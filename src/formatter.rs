@@ -111,6 +111,7 @@ impl Fmt {
         match decl {
             Decl::Type(t) => self.type_decl(t),
             Decl::Interface(i) => self.interface_decl(i),
+            Decl::Impl(i) => self.impl_decl(i),
             Decl::Task(t) => self.task_decl(t),
             Decl::Extern(e) => self.extern_decl(e),
             Decl::Agent(a) => self.agent_decl(a),
@@ -175,6 +176,18 @@ impl Fmt {
                 self.newline();
             }
         }
+    }
+
+    fn impl_decl(&mut self, i: &ImplDecl) {
+        self.push(&format!("impl {} for {} {{", i.interface_name, i.type_name));
+        self.newline();
+        self.indent();
+        for method in &i.methods {
+            self.task_decl(method);
+        }
+        self.dedent();
+        self.push("}");
+        self.newline();
     }
 
     fn interface_decl(&mut self, i: &InterfaceDecl) {
@@ -252,6 +265,11 @@ impl Fmt {
             }
             if p.variadic {
                 self.push("...");
+            }
+            // impl receiver: `self` has a placeholder type — emit bare `self`
+            if matches!(&p.ty, TypeExpr::Named(n) if n == "__impl_self__") {
+                self.push("self");
+                continue;
             }
             self.push(&format!("{}: ", binding_str(&p.name)));
             self.push(&self.type_expr_str(&p.ty));

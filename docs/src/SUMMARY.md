@@ -19,6 +19,7 @@
 - [Control Flow](./guide/control-flow.md)
 - [Collections & Lambdas](./guide/collections.md)
 - [Error Handling](./guide/error-handling.md)
+- [Interfaces](./guide/interfaces.md)
 - [The Prelude & Interfaces](./guide/prelude.md)
 
 # Standard Library

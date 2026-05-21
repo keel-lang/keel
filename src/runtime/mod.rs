@@ -157,6 +157,32 @@ fn install_min_max(interp: &mut Interpreter) {
                             Ok(best)
                         }
                         None => {
+                            // Use Comparable impl if items are structs.
+                            let cmp_task = interp.find_impl_task(&items[0], "compare");
+                            if let Some(task) = cmp_task {
+                                let mut best = items[0].clone();
+                                for item in items.into_iter().skip(1) {
+                                    let cmp_val = interp
+                                        .call_task(
+                                            "compare",
+                                            &task,
+                                            vec![
+                                                CallArgValue { name: None, value: best.clone() },
+                                                CallArgValue { name: None, value: item.clone() },
+                                            ],
+                                        )
+                                        .await?;
+                                    let wins = if want_max {
+                                        matches!(cmp_val, Value::Integer(n) if n < 0)
+                                    } else {
+                                        matches!(cmp_val, Value::Integer(n) if n > 0)
+                                    };
+                                    if wins {
+                                        best = item;
+                                    }
+                                }
+                                return Ok(best);
+                            }
                             let mut best = items[0].clone();
                             for item in items.into_iter().skip(1) {
                                 if cmp_values(&item, &best)? == target {

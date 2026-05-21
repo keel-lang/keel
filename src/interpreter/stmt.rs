@@ -9,7 +9,7 @@ use crate::ast::{Block, Expr, Pattern, Stmt, StringPart};
 use super::bind_value;
 use super::environment::Environment;
 use super::runtime_error;
-use super::state::Interpreter;
+use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
 
 impl Interpreter {
@@ -83,6 +83,22 @@ impl Interpreter {
                     if let Value::EarlyReturn(inner) = iter_v {
                         return Ok(StmtOutcome::Return(*inner));
                     }
+                    // Unwrap Iterable structs: call items() to get the list.
+                    let iter_v = if let Value::Map(_) = &iter_v {
+                        let task_opt = self.find_impl_task(&iter_v, "items");
+                        if let Some(task) = task_opt {
+                            self.call_task(
+                                "items",
+                                &task,
+                                vec![CallArgValue { name: None, value: iter_v }],
+                            )
+                            .await?
+                        } else {
+                            iter_v
+                        }
+                    } else {
+                        iter_v
+                    };
                     // Build an owned iterator without materializing a range.
                     enum ForIter {
                         List(std::vec::IntoIter<Value>),

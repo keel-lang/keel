@@ -1,3 +1,4 @@
+use crate::interpreter::CallArgValue;
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::convert::{json_to_value, value_to_json};
@@ -18,10 +19,19 @@ pub(crate) fn namespace() -> Namespace {
             }
         }),
         // Json.stringify(value) — serialize a Keel value to a JSON string.
-        "stringify" => |_i, args| Box::pin(async move {
+        // If the value implements Serializable, calls to_json() instead.
+        "stringify" => |i, args| Box::pin(async move {
             let value = positional(&args, 0)
                 .cloned()
                 .ok_or_else(|| miette::miette!("Json.stringify: missing argument"))?;
+
+            // Delegate to Serializable.to_json() if available.
+            let task_opt = i.find_impl_task(&value, "to_json").map(|t| t.clone());
+            if let Some(task) = task_opt {
+                return i
+                    .call_task("to_json", &task, vec![CallArgValue { name: None, value }])
+                    .await;
+            }
 
             let json_val = value_to_json(&value);
             match serde_json::to_string(&json_val) {

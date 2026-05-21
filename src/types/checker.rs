@@ -116,6 +116,12 @@ struct Checker {
     enum_variants: HashMap<String, Vec<String>>,
     structs: HashMap<String, Vec<(String, Ty)>>,
     aliases: HashMap<String, Ty>,
+    /// Known interfaces: interface_name → required method signatures.
+    /// Pre-seeded with built-ins (Stringable); extended by `interface` declarations.
+    interfaces: HashMap<String, Vec<crate::ast::TaskSig>>,
+    /// Type names that implement `Iterable` — used to allow `for x in value`
+    /// on struct types.
+    iterable_types: HashSet<String>,
     /// Generic type declarations stored as `name → (type_params, body)` for
     /// deferred instantiation when a concrete `Foo[str]` application appears.
     generic_decls: HashMap<String, (Vec<String>, TypeDef)>,
@@ -270,11 +276,18 @@ impl Checker {
             prelude.insert(n.to_string());
         }
 
+        // Built-in interface names are always valid in `impl X for T`.
+        for iface in ["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"] {
+            prelude.insert(iface.to_string());
+        }
+
         Checker {
             errors: Vec::new(),
             enum_variants: HashMap::new(),
             structs: HashMap::new(),
             aliases: HashMap::new(),
+            interfaces: checker_builtin_interfaces(),
+            iterable_types: HashSet::new(),
             generic_decls: HashMap::new(),
             generic_task_decls: HashMap::new(),
             top_tasks: HashMap::new(),
@@ -310,6 +323,24 @@ impl Checker {
     // -----------------------------------------------------------------
 
     fn collect(&mut self, program: &Program) {
+        // First pass: register all interface declarations so impl blocks can
+        // reference them regardless of source order.
+        const BUILTIN_IFACES: &[&str] =
+            &["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"];
+        for (decl, _) in &program.declarations {
+            if let Decl::Interface(iface) = decl {
+                if BUILTIN_IFACES.contains(&iface.name.as_str()) {
+                    self.err(format!(
+                        "`{}` is a built-in interface and cannot be redeclared",
+                        iface.name
+                    ));
+                    continue;
+                }
+                self.interfaces
+                    .insert(iface.name.clone(), iface.methods.clone());
+            }
+        }
+
         for (decl, _) in &program.declarations {
             match decl {
                 Decl::Type(t) => self.collect_type_decl(t),
@@ -324,7 +355,95 @@ impl Checker {
                     let info = self.agent_info(a);
                     self.agents.insert(a.name.clone(), info);
                 }
+                Decl::Impl(impl_decl) => {
+                    self.check_impl_conformance(impl_decl);
+                    if impl_decl.interface_name == "Iterable" {
+                        self.iterable_types.insert(impl_decl.type_name.clone());
+                    }
+                }
                 _ => {}
+            }
+        }
+    }
+
+    fn check_impl_conformance(&mut self, impl_decl: &ImplDecl) {
+        let iface_name = &impl_decl.interface_name;
+        let type_name = &impl_decl.type_name;
+
+        let sigs = match self.interfaces.get(iface_name).cloned() {
+            Some(s) => s,
+            None => {
+                self.err(format!(
+                    "impl: unknown interface `{iface_name}` — declare it with `interface {iface_name} {{ ... }}`"
+                ));
+                return;
+            }
+        };
+
+        let provided: HashSet<&str> = impl_decl
+            .methods
+            .iter()
+            .map(|m| m.name.as_str())
+            .collect();
+
+        for sig in &sigs {
+            if !provided.contains(sig.name.as_str()) {
+                self.err(format!(
+                    "impl `{iface_name}` for `{type_name}` is missing required method `{}`",
+                    sig.name
+                ));
+                continue;
+            }
+            let got_method = impl_decl
+                .methods
+                .iter()
+                .find(|m| m.name == sig.name)
+                .unwrap();
+
+            // Arity check (exclude `self`).
+            let req_arity = sig
+                .params
+                .iter()
+                .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
+                .count();
+            let got_arity = got_method
+                .params
+                .iter()
+                .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
+                .count();
+            if req_arity != got_arity {
+                self.err(format!(
+                    "impl `{iface_name}` for `{type_name}`: method `{}` expects {req_arity} parameter(s) but got {got_arity}",
+                    sig.name
+                ));
+            }
+
+            // Return-type check.
+            let req_ret = sig
+                .return_type
+                .as_ref()
+                .map(type_expr_str)
+                .unwrap_or_else(|| "none".to_string());
+            let got_ret = got_method
+                .return_type
+                .as_ref()
+                .map(type_expr_str)
+                .unwrap_or_else(|| "none".to_string());
+            if !checker_return_types_match(&req_ret, &got_ret) {
+                self.err(format!(
+                    "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_ret}` but returns `{got_ret}`",
+                    sig.name
+                ));
+            }
+        }
+
+        // Reject extra methods not declared in the interface.
+        for method in &impl_decl.methods {
+            if !sigs.iter().any(|s| s.name == method.name) {
+                self.err(format!(
+                    "impl `{iface_name}` for `{type_name}`: method `{}` is not part of interface `{iface_name}`",
+                    method.name
+                ));
             }
         }
     }
@@ -805,6 +924,24 @@ impl Checker {
                 let element_ty = match iter_ty.strip_nullable() {
                     Ty::List(inner) => *inner.clone(),
                     Ty::Unknown | Ty::Dynamic => Ty::Unknown,
+                    Ty::Struct(fields) => {
+                        // Allow iterating over a struct that implements Iterable.
+                        // Find the struct's type name by matching its field set.
+                        let field_names: std::collections::HashSet<&str> =
+                            fields.iter().map(|(n, _)| n.as_str()).collect();
+                        let is_iterable = self.structs.iter().any(|(type_name, schema)| {
+                            let schema_names: std::collections::HashSet<&str> =
+                                schema.iter().map(|(n, _)| n.as_str()).collect();
+                            schema_names == field_names
+                                && self.iterable_types.contains(type_name)
+                        });
+                        if is_iterable {
+                            Ty::Unknown
+                        } else {
+                            self.err("`for` expects a list, got struct".to_string());
+                            Ty::Unknown
+                        }
+                    }
                     other => {
                         self.err(format!("`for` expects a list, got {}", describe_ty(other)));
                         Ty::Unknown
@@ -2467,4 +2604,105 @@ fn infer_binary(op: BinOp, l: &Ty, r: &Ty) -> Ty {
         Eq | Neq | Lt | Gt | Lte | Gte => Ty::Bool,
         And | Or => Ty::Bool,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Interface helpers
+// ---------------------------------------------------------------------------
+
+/// Stringify a `TypeExpr` for conformance comparison — mirrors the logic in
+/// `interpreter::decl::type_expr_to_string` so the two checks stay in sync.
+fn type_expr_str(te: &TypeExpr) -> String {
+    match te {
+        TypeExpr::Named(n) => n.clone(),
+        TypeExpr::Nullable(inner) => format!("{}?", type_expr_str(inner)),
+        TypeExpr::List(inner) => format!("[{}]", type_expr_str(inner)),
+        TypeExpr::Map(k, v) => format!("[{}: {}]", type_expr_str(k), type_expr_str(v)),
+        TypeExpr::Set(inner) => format!("set[{}]", type_expr_str(inner)),
+        TypeExpr::Tuple(items) => {
+            let parts: Vec<_> = items.iter().map(type_expr_str).collect();
+            format!("({})", parts.join(", "))
+        }
+        TypeExpr::Func(params, ret) => {
+            let ps: Vec<_> = params.iter().map(type_expr_str).collect();
+            format!("({}) -> {}", ps.join(", "), type_expr_str(ret))
+        }
+        TypeExpr::Struct(_) | TypeExpr::Generic(_, _) | TypeExpr::Dynamic => {
+            "unknown".to_string()
+        }
+    }
+}
+
+fn checker_return_types_match(req: &str, got: &str) -> bool {
+    if req == got {
+        return true;
+    }
+    // "unknown" is how the checker serializes Dynamic — accept any concrete type.
+    if req == "unknown" {
+        return true;
+    }
+    // "[unknown]" (i.e. list[dynamic]) in the interface sig accepts any list[T].
+    if req == "[unknown]" && got.starts_with('[') {
+        return true;
+    }
+    false
+}
+
+fn checker_builtin_interfaces() -> HashMap<String, Vec<crate::ast::TaskSig>> {
+    let mut map = HashMap::new();
+
+    let self_param = || Param {
+        name: Binding::Ident("self".to_string()),
+        ty: TypeExpr::Named("__impl_self__".to_string()),
+        default: None,
+        variadic: false,
+    };
+    let dynamic_param = |name: &str| Param {
+        name: Binding::Ident(name.to_string()),
+        ty: TypeExpr::Dynamic,
+        default: None,
+        variadic: false,
+    };
+
+    map.insert(
+        "Stringable".to_string(),
+        vec![crate::ast::TaskSig {
+            name: "to_str".to_string(),
+            params: vec![self_param()],
+            return_type: Some(TypeExpr::Named("str".to_string())),
+        }],
+    );
+    map.insert(
+        "Serializable".to_string(),
+        vec![crate::ast::TaskSig {
+            name: "to_json".to_string(),
+            params: vec![self_param()],
+            return_type: Some(TypeExpr::Named("str".to_string())),
+        }],
+    );
+    map.insert(
+        "Comparable".to_string(),
+        vec![crate::ast::TaskSig {
+            name: "compare".to_string(),
+            params: vec![self_param(), dynamic_param("other")],
+            return_type: Some(TypeExpr::Named("int".to_string())),
+        }],
+    );
+    map.insert(
+        "Equatable".to_string(),
+        vec![crate::ast::TaskSig {
+            name: "equals".to_string(),
+            params: vec![self_param(), dynamic_param("other")],
+            return_type: Some(TypeExpr::Named("bool".to_string())),
+        }],
+    );
+    map.insert(
+        "Iterable".to_string(),
+        vec![crate::ast::TaskSig {
+            name: "items".to_string(),
+            params: vec![self_param()],
+            return_type: Some(TypeExpr::List(Box::new(TypeExpr::Dynamic))),
+        }],
+    );
+    map
 }

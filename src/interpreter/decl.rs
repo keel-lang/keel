@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use miette::Result;
 
-use crate::ast::{AgentItem, AttributeBody, Decl, Expr, TypeDef, TypeExpr};
+use crate::ast::{AgentItem, AttributeBody, Binding, Decl, Expr, TypeDef, TypeExpr};
 
 use super::runtime_error;
 use super::state::{AgentDef, Interpreter};
@@ -33,7 +33,117 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            Decl::Interface(_) | Decl::Extern(_) | Decl::Use(_) => Ok(()),
+            Decl::Interface(iface) => {
+                const BUILTIN: &[&str] =
+                    &["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"];
+                if BUILTIN.contains(&iface.name.as_str()) {
+                    return Err(runtime_error(format!(
+                        "`{}` is a built-in interface and cannot be redeclared",
+                        iface.name
+                    )));
+                }
+                self.interfaces
+                    .insert(iface.name.clone(), iface.methods.clone());
+                Ok(())
+            }
+            Decl::Extern(_) | Decl::Use(_) => Ok(()),
+            Decl::Impl(impl_decl) => {
+                let type_name = &impl_decl.type_name;
+                let iface_name = &impl_decl.interface_name;
+
+                // Validate against the known interface definition.
+                let required = self.interfaces.get(iface_name).cloned();
+                match required {
+                    None => {
+                        return Err(runtime_error(format!(
+                            "impl: unknown interface `{iface_name}` — declare it with `interface {iface_name} {{ ... }}`"
+                        )));
+                    }
+                    Some(sigs) => {
+                        let provided: std::collections::HashSet<&str> =
+                            impl_decl.methods.iter().map(|m| m.name.as_str()).collect();
+                        for sig in &sigs {
+                            if !provided.contains(sig.name.as_str()) {
+                                return Err(runtime_error(format!(
+                                    "impl `{iface_name}` for `{type_name}` is missing required method `{}`",
+                                    sig.name
+                                )));
+                            }
+                            // Arity check (excluding the `self` param).
+                            let req_params: Vec<_> = sig
+                                .params
+                                .iter()
+                                .filter(|p| {
+                                    !matches!(&p.name, crate::ast::Binding::Ident(n) if n == "self")
+                                })
+                                .collect();
+                            let got_method = impl_decl
+                                .methods
+                                .iter()
+                                .find(|m| m.name == sig.name)
+                                .unwrap();
+                            let got_params: Vec<_> = got_method
+                                .params
+                                .iter()
+                                .filter(|p| {
+                                    !matches!(&p.name, crate::ast::Binding::Ident(n) if n == "self")
+                                })
+                                .collect();
+                            if req_params.len() != got_params.len() {
+                                return Err(runtime_error(format!(
+                                    "impl `{iface_name}` for `{type_name}`: method `{}` expects {} parameter(s) but got {}",
+                                    sig.name,
+                                    req_params.len(),
+                                    got_params.len()
+                                )));
+                            }
+                            // Return-type check.
+                            let req_ret = sig
+                                .return_type
+                                .as_ref()
+                                .map(type_expr_to_string)
+                                .unwrap_or_else(|| "none".to_string());
+                            let got_ret = got_method
+                                .return_type
+                                .as_ref()
+                                .map(type_expr_to_string)
+                                .unwrap_or_else(|| "none".to_string());
+                            if !return_types_match(&req_ret, &got_ret) {
+                                return Err(runtime_error(format!(
+                                    "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_ret}` but returns `{got_ret}`",
+                                    sig.name
+                                )));
+                            }
+                        }
+                        // Reject extra methods not in the interface.
+                        for method in &impl_decl.methods {
+                            if !sigs.iter().any(|s| s.name == method.name) {
+                                return Err(runtime_error(format!(
+                                    "impl `{iface_name}` for `{type_name}`: method `{}` is not part of interface `{iface_name}`",
+                                    method.name
+                                )));
+                            }
+                        }
+                    }
+                }
+
+                for method in &impl_decl.methods {
+                    // Fix up __impl_self__ placeholder with the concrete type name.
+                    let mut fixed = method.clone();
+                    for param in &mut fixed.params {
+                        if let Binding::Ident(n) = &param.name {
+                            if n == "self" {
+                                param.ty = TypeExpr::Named(type_name.clone());
+                            }
+                        }
+                    }
+                    self.impl_methods
+                        .entry(type_name.clone())
+                        .or_default()
+                        .insert(method.name.clone(), fixed);
+                }
+                Ok(())
+            }
             Decl::Task(t) => {
                 self.globals.insert(
                     t.name.clone(),
@@ -139,6 +249,25 @@ fn type_expr_to_string(te: &TypeExpr) -> String {
         }
         TypeExpr::Dynamic => "dynamic".to_string(),
     }
+}
+
+/// Return true when the required interface return type `req` is satisfied by
+/// the concrete return type `got`.  Plain equality is the common case; the
+/// extra arms handle built-in covariant wildcards used by Iterable et al.
+fn return_types_match(req: &str, got: &str) -> bool {
+    // Exact match.
+    if req == got {
+        return true;
+    }
+    // `dynamic` in the interface sig accepts anything.
+    if req == "dynamic" {
+        return true;
+    }
+    // `[dynamic]` (i.e. `list[dynamic]`) in the interface sig accepts any list.
+    if req == "[dynamic]" && got.starts_with('[') {
+        return true;
+    }
+    false
 }
 
 #[cfg(test)]

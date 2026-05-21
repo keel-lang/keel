@@ -6,6 +6,7 @@ use super::{Binding, Block, Expr, Spanned, Stmt, TypeDef, TypeExpr};
 pub enum Decl {
     Type(TypeDecl),
     Interface(InterfaceDecl),
+    Impl(ImplDecl),
     Task(TaskDecl),
     Extern(ExternDecl),
     Agent(AgentDecl),
@@ -26,6 +27,14 @@ pub struct TypeDecl {
 pub struct InterfaceDecl {
     pub name: String,
     pub methods: Vec<TaskSig>,
+}
+
+/// `impl InterfaceName for TypeName { task method(self) -> ReturnType { ... } }`
+#[derive(Debug, Clone)]
+pub struct ImplDecl {
+    pub interface_name: String,
+    pub type_name: String,
+    pub methods: Vec<TaskDecl>,
 }
 
 /// `task name(params) -> ReturnType` — method signature inside an interface.

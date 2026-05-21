@@ -9,8 +9,8 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::ast::{
-    AttributeBody, AttributeDecl, Expr, LambdaBody, LambdaParam, OnHandler, StateField, StringPart,
-    TaskDecl,
+    AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, OnHandler, Param,
+    StateField, StringPart, TaskDecl, TaskSig, TypeExpr,
 };
 
 use super::bind_value;
@@ -124,6 +124,12 @@ pub struct Interpreter {
     pub(crate) enum_types: HashMap<String, Vec<String>>,
     /// Struct type name → field (name, type_string) pairs. Populated from `type T { f: ty }`.
     pub(crate) struct_types: HashMap<String, Vec<(String, String)>>,
+    /// Known interfaces: interface_name → required method signatures.
+    /// Pre-seeded with built-ins (Stringable); extended by `interface` declarations.
+    pub(crate) interfaces: HashMap<String, Vec<TaskSig>>,
+    /// Interface impl methods: type_name → method_name → TaskDecl.
+    /// Populated from `impl Interface for Type { task method(self) -> R { ... } }`.
+    pub(crate) impl_methods: HashMap<String, HashMap<String, TaskDecl>>,
     /// Runtime backends for nondeterministic boundaries.
     pub(crate) runtime: Arc<crate::runtime::context::RuntimeContext>,
     /// Sender for runtime events. Spawned tokio tasks (scheduler,
@@ -171,6 +177,8 @@ impl Interpreter {
             namespaces: HashMap::with_capacity(32),
             enum_types: HashMap::with_capacity(16),
             struct_types: HashMap::with_capacity(16),
+            interfaces: builtin_interfaces(),
+            impl_methods: HashMap::with_capacity(8),
             runtime,
             event_tx,
             event_rx: Some(event_rx),
@@ -401,6 +409,69 @@ impl Interpreter {
             .methods
             .insert(name.to_string(), f);
     }
+}
+
+/// Returns the set of interfaces that are always available without an explicit
+/// `interface` declaration.  Adding a new built-in here is the only change
+/// needed to introduce another reserved interface name.
+fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
+    let mut map = HashMap::new();
+
+    let self_param = || Param {
+        name: Binding::Ident("self".to_string()),
+        ty: TypeExpr::Named("__impl_self__".to_string()),
+        default: None,
+        variadic: false,
+    };
+    let dynamic_param = |name: &str| Param {
+        name: Binding::Ident(name.to_string()),
+        ty: TypeExpr::Dynamic,
+        default: None,
+        variadic: false,
+    };
+
+    map.insert(
+        "Stringable".to_string(),
+        vec![TaskSig {
+            name: "to_str".to_string(),
+            params: vec![self_param()],
+            return_type: Some(TypeExpr::Named("str".to_string())),
+        }],
+    );
+    map.insert(
+        "Serializable".to_string(),
+        vec![TaskSig {
+            name: "to_json".to_string(),
+            params: vec![self_param()],
+            return_type: Some(TypeExpr::Named("str".to_string())),
+        }],
+    );
+    map.insert(
+        "Comparable".to_string(),
+        vec![TaskSig {
+            name: "compare".to_string(),
+            params: vec![self_param(), dynamic_param("other")],
+            return_type: Some(TypeExpr::Named("int".to_string())),
+        }],
+    );
+    map.insert(
+        "Equatable".to_string(),
+        vec![TaskSig {
+            name: "equals".to_string(),
+            params: vec![self_param(), dynamic_param("other")],
+            return_type: Some(TypeExpr::Named("bool".to_string())),
+        }],
+    );
+    map.insert(
+        "Iterable".to_string(),
+        vec![TaskSig {
+            name: "items".to_string(),
+            params: vec![self_param()],
+            // list[dynamic] — wildcard list return, matches any list[T] in conformance checks
+            return_type: Some(TypeExpr::List(Box::new(TypeExpr::Dynamic))),
+        }],
+    );
+    map
 }
 
 impl Default for Interpreter {

@@ -113,6 +113,69 @@ padded = "42".pad(6)               # "    42"
 zeroed = "42".pad(6, char: "0")   # "000042"
 ```
 
+## `Stringable` interface — custom interpolation
+
+By default, only primitive values (`str`, `int`, `float`, `bool`) and built-in types (`Uuid`, `datetime`) can be used inside `"{...}"` interpolation slots. To make your own struct type work in interpolation, implement the `Stringable` interface:
+
+```keel
+type Point {
+  x: float
+  y: float
+}
+
+impl Stringable for Point {
+  task to_str(self) -> str {
+    "({self.x}, {self.y})"
+  }
+}
+
+p: Point = { x: 1.5, y: 2.0 }
+Io.show("Position: {p}")      # → "Position: (1.5, 2.0)"
+s = p.to_str()                # explicit call — "(1.5, 2.0)"
+```
+
+### Syntax
+
+```
+impl InterfaceName for TypeName {
+  task method(self) -> ReturnType {
+    ...
+  }
+}
+```
+
+- `impl` is a reserved keyword.
+- `for` is the same keyword used in `for` loops; there is no ambiguity because `impl` always precedes it here.
+- `self` inside the block refers to the receiver value (typed as `TypeName`). Use `self.field` to access struct fields.
+- Only methods matching a declared interface signature are valid inside `impl` blocks.
+
+### Multiple types
+
+Each type needs its own `impl` block:
+
+```keel
+type Color = red | green | blue
+
+impl Stringable for Color {
+  task to_str(self) -> str {
+    when self {
+      red   => "red"
+      green => "green"
+      blue  => "blue"
+    }
+  }
+}
+
+c: Color = Color.green
+Io.show("Favourite: {c}")   # → "Favourite: green"
+```
+
+### Fallback behaviour
+
+Values that do **not** implement `Stringable` still render in interpolation using their built-in display representation (the same output you see from `Io.show`). Implementing `Stringable` lets you override that representation for your types.
+
+---
+
 ## `Cache` namespace — in-memory shared cache
 
 `Cache` is a process-scoped, in-memory key-value store with optional TTL. It persists across agent restarts within the same process run but is cleared when the process exits.

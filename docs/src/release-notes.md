@@ -43,6 +43,124 @@ ch   = word[0]     # "k"
 
 Use `len()` to guard dynamic indices; `.first()` / `.last()` remain available when you want a nullable fallback.
 
+### User-defined interfaces
+
+Any user can now declare a named interface and implement it for a struct type. The compiler validates conformance — missing methods, wrong arity, and wrong return types are all compile-time errors:
+
+```keel
+interface Printable {
+  task print(self) -> str
+}
+
+type Point { x: float, y: float }
+
+impl Printable for Point {
+  task print(self) -> str { "({self.x}, {self.y})" }
+}
+
+p: Point = { x: 1.5, y: 2.0 }
+Io.show(p.print())   # → "(1.5, 2.0)"
+```
+
+- Interface declarations and their `impl` blocks can appear in any order in the same file.
+- Impl methods take priority over built-in map methods — a user-defined `size()` method on a struct wins over the generic map `.size()` length accessor.
+- Interface-as-type annotations (`task f(x: Printable)`) are not yet supported.
+
+See the [Interfaces guide](guide/interfaces.md) for full documentation.
+
+### Built-in interfaces: `Comparable`, `Equatable`, `Serializable`, `Iterable`
+
+Four new built-in interfaces extend the standard library with user-driven behaviour:
+
+**`Comparable`** — sort and compare user-defined types.
+
+```keel
+type Score { val: int }
+impl Comparable for Score {
+  task compare(self, other: Score) -> int { self.val - other.val }
+}
+items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+sorted = items.sort()   # ascending by val
+lo = items.min()        # { val: 10 }
+hi = items.max()        # { val: 30 }
+```
+
+**`Equatable`** — typed equality check alongside structural `==`.
+
+```keel
+type Point { x: int, y: int }
+impl Equatable for Point {
+  task equals(self, other: Point) -> bool {
+    self.x == other.x and self.y == other.y
+  }
+}
+a: Point = { x: 1, y: 2 }
+b: Point = { x: 1, y: 2 }
+Io.show("{a.equals(b)}")   # → true
+```
+
+**`Serializable`** — override `Json.stringify` for a type.
+
+```keel
+type Event { name: str, score: int }
+impl Serializable for Event {
+  task to_json(self) -> str { "name={self.name};score={self.score}" }
+}
+e: Event = { name: "goal", score: 3 }
+Io.show(Json.stringify(e))   # → "name=goal;score=3"
+```
+
+**`Iterable`** — use a struct in a `for` loop.
+
+```keel
+type Range { lo: int, hi: int }
+impl Iterable for Range {
+  task items(self) -> list[int] {
+    result: list[int] = []
+    i = self.lo
+    while i <= self.hi {
+      result += [i]
+      i += 1
+    }
+    result
+  }
+}
+for n in Range { lo: 1, hi: 3 } { Io.show("{n}") }   # → 1, 2, 3
+```
+
+> `Iterable` materialises the full list before iteration — it is not a generator protocol.
+
+See the [Interfaces guide](guide/interfaces.md#built-in-interfaces) for the complete reference.
+
+### `impl Stringable for Type` — custom string interpolation
+
+User-defined struct types can now participate in `"{...}"` interpolation by implementing the `Stringable` interface.
+
+The `impl` keyword introduces the block; `self` inside the block is the receiver value:
+
+```keel
+type Point {
+  x: float
+  y: float
+}
+
+impl Stringable for Point {
+  task to_str(self) -> str {
+    "({self.x}, {self.y})"
+  }
+}
+
+p: Point = { x: 3.0, y: 4.0 }
+Io.show("Origin to {p}")   # → "Origin to (3.0, 4.0)"
+s = p.to_str()             # explicit call
+```
+
+- `impl` is a new reserved keyword.
+- Any struct type can implement `Stringable` — each type gets its own `impl` block.
+- Values that do not implement `Stringable` still render via their built-in display representation, so existing programs are unaffected.
+
+See the [String Interpolation guide](guide/strings.md#stringable-interface--custom-interpolation) for the full reference.
+
 ---
 
 ## v0.1.26 — 2026-05-20

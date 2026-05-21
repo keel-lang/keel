@@ -1,0 +1,56 @@
+# Stringable — user-defined types in string interpolation
+#
+# Any type can participate in `"{expr}"` interpolation by implementing
+# the built-in `Stringable` interface via an `impl` block.
+#
+# Run:
+#   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/stringable.keel
+
+type Point {
+  x: int
+  y: int
+}
+
+type Color {
+  r: int
+  g: int
+  b: int
+}
+
+impl Stringable for Point {
+  task to_str(self) -> str {
+    "({self.x}, {self.y})"
+  }
+}
+
+impl Stringable for Color {
+  task to_str(self) -> str {
+    "rgb({self.r}, {self.g}, {self.b})"
+  }
+}
+
+task distance(a: Point, b: Point) -> str {
+  dx = b.x - a.x
+  dy = b.y - a.y
+  "distance from {a} to {b} = {dx}dx + {dy}dy"
+}
+
+agent Demo {
+  @role "Demonstrates Stringable impl blocks"
+
+  @on_start {
+    origin: Point = { x: 0, y: 0 }
+    target: Point = { x: 3, y: 4 }
+    bg: Color    = { r: 255, g: 128, b: 0 }
+
+    Io.show("origin = {origin}")
+    Io.show("target = {target}")
+    Io.show("color  = {bg}")
+    Io.show(distance(origin, target))
+
+    # Explicit call also works
+    Io.show(origin.to_str())
+  }
+}
+
+run(Demo)

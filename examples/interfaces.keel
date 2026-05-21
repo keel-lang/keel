@@ -1,0 +1,93 @@
+# Interfaces in Keel — user-defined and built-in.
+#
+# User-defined: declare an interface, implement it for a struct, get
+# compile-time conformance validation.
+#
+# Built-in: Comparable, Equatable, Serializable, Iterable, Stringable.
+# Implement any of them to hook into language-level behaviour.
+
+# ── User-defined interfaces ────────────────────────────────────────────────
+
+interface Printable {
+  task print(self) -> str
+}
+
+type Point { x: float, y: float }
+type Color { r: int, g: int, b: int }
+
+impl Printable for Point {
+  task print(self) -> str { "Point({self.x}, {self.y})" }
+}
+
+impl Printable for Color {
+  task print(self) -> str { "rgb({self.r}, {self.g}, {self.b})" }
+}
+
+# ── Comparable — sort, min, max ────────────────────────────────────────────
+
+type Score { label: str, val: int }
+
+impl Comparable for Score {
+  task compare(self, other: Score) -> int { self.val - other.val }
+}
+
+# ── Equatable — typed equality ─────────────────────────────────────────────
+
+impl Equatable for Point {
+  task equals(self, other: Point) -> bool {
+    self.x == other.x and self.y == other.y
+  }
+}
+
+# ── Serializable — custom Json.stringify ──────────────────────────────────
+
+type Event { name: str, count: int }
+
+impl Serializable for Event {
+  task to_json(self) -> str { "name={self.name};count={self.count}" }
+}
+
+# ── Iterable — use struct in for loop ─────────────────────────────────────
+
+type NumRange { lo: int, hi: int }
+
+impl Iterable for NumRange {
+  task items(self) -> list[int] {
+    result: list[int] = []
+    i = self.lo
+        while i <= self.hi {
+      result += [i]
+      i += 1
+    }
+    result
+  }
+}
+
+# ── Demo ──────────────────────────────────────────────────────────────────
+
+task run_demo() {
+  p: Point = { x: 1.5, y: 2.0 }
+  c: Color = { r: 255, g: 128, b: 0 }
+  Io.show(p.print())
+  Io.show(c.print())
+
+  scores = [{ label: "B", val: 70 }, { label: "A", val: 95 }, { label: "C", val: 60 }]
+  sorted = scores.sort()
+  for s in sorted {
+    Io.show("{s.label}: {s.val}")
+  }
+
+  a: Point = { x: 1.0, y: 2.0 }
+  b: Point = { x: 1.0, y: 2.0 }
+  Io.show("equal: {a.equals(b)}")
+
+  ev: Event = { name: "click", count: 42 }
+  Io.show(Json.stringify(ev))
+
+  r: NumRange = { lo: 1, hi: 4 }
+  for n in r {
+    Io.show("{n}")
+  }
+}
+
+run_demo()

@@ -513,3 +513,17 @@ fn lex_spread_in_call() {
         ]
     );
 }
+
+#[test]
+fn lex_impl_keyword() {
+    let toks = tokens("impl Stringable for Point");
+    assert_eq!(
+        toks,
+        vec![
+            Token::Impl,
+            Token::Ident("Stringable".to_string()),
+            Token::For,
+            Token::Ident("Point".to_string()),
+        ]
+    );
+}

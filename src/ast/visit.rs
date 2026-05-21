@@ -70,6 +70,11 @@ pub fn walk_decl<V: Visitor + ?Sized>(v: &mut V, decl: &Decl, _span: &Span) {
     match decl {
         Decl::Type(type_decl) => walk_type_decl(v, type_decl),
         Decl::Interface(interface_decl) => walk_interface_decl(v, interface_decl),
+        Decl::Impl(impl_decl) => {
+            for method in &impl_decl.methods {
+                walk_task_decl(v, method);
+            }
+        }
         Decl::Task(task_decl) => walk_task_decl(v, task_decl),
         Decl::Extern(extern_decl) => walk_extern_decl(v, extern_decl),
         Decl::Agent(agent_decl) => walk_agent_decl(v, agent_decl),

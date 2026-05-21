@@ -14,6 +14,72 @@ All notable changes to Keel.
 
 ### Added
 
+- **User-defined interfaces and `impl` blocks.** Any user can now declare a named interface and implement it for a struct type. The compiler validates conformance — missing methods, wrong arity, and wrong return types are all compile-time errors:
+
+  ```keel
+  interface Printable {
+    task print(self) -> str
+  }
+
+  type Point { x: float, y: float }
+
+  impl Printable for Point {
+    task print(self) -> str { "({self.x}, {self.y})" }
+  }
+
+  p: Point = { x: 1.5, y: 2.0 }
+  Io.show(p.print())    # → "(1.5, 2.0)"
+  ```
+
+  Interfaces and their `impl` blocks can appear in any order in the same file. Impl methods take priority over built-in map methods (e.g. a user-defined `size()` on a struct wins over the generic map `.size()` length accessor).
+
+- **`impl Interface for Type` blocks — user-defined `Stringable`.** Any user-defined struct type can now participate in string interpolation by implementing the built-in `Stringable` interface. The `impl` block is explicit and unambiguous — a task named `to_str` elsewhere is not automatically a Stringable implementation:
+
+  ```keel
+  type Color { r: int, g: int, b: int }
+
+  impl Stringable for Color {
+    task to_str(self) -> str { "rgb({self.r}, {self.g}, {self.b})" }
+  }
+
+  c: Color = { r: 255, g: 128, b: 0 }
+  Io.show("color: {c}")    # → "color: rgb(255, 128, 0)"
+  ```
+
+  `impl` is a reserved keyword. `self` inside an impl body receives the struct value. String interpolation calls `to_str` via the registered impl; values without a `Stringable` impl fall back to their default display representation.
+
+- **Four new built-in interfaces: `Comparable`, `Equatable`, `Serializable`, `Iterable`.** Each is pre-declared by the runtime (cannot be redeclared) and wired into the standard library:
+
+  - **`Comparable`** — `task compare(self, other: T) -> int`. Negative/zero/positive return convention. Wired into `list.sort()`, `list.min()`, `list.max()`, and the global `min()` / `max()` functions.
+  - **`Equatable`** — `task equals(self, other: T) -> bool`. Method-only; `==` remains structural comparison.
+  - **`Serializable`** — `task to_json(self) -> str`. `Json.stringify(value)` calls `to_json` instead of the default serializer when the type implements this interface.
+  - **`Iterable`** — `task items(self) -> list[T]`. Allows a struct to appear in a `for` loop. Not a generator — `items()` materialises the full list before iteration.
+
+  ```keel
+  type Score { val: int }
+  impl Comparable for Score {
+    task compare(self, other: Score) -> int { self.val - other.val }
+  }
+  items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  Io.show("{items.sort()}")   # sorted ascending by val
+
+  type Range { lo: int, hi: int }
+  impl Iterable for Range {
+    task items(self) -> list[int] {
+      result: list[int] = []
+      i = self.lo
+      while i <= self.hi {
+      result += [i]
+      i += 1
+    }
+      result
+    }
+  }
+  for n in Range { lo: 1, hi: 3 } { Io.show("{n}") }   # → 1, 2, 3
+  ```
+
+  The `Iterable` conformance check accepts any concrete `list[T]` as the return type (not just `list[dynamic]`).
+
 - **`while` loops.** Unbounded iteration is now supported. The condition must be `bool`;
   `break` and `continue` work identically to their `for`-loop counterparts:
 

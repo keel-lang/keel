@@ -1231,7 +1231,13 @@ fn type_decl() -> P<Decl> {
 }
 
 fn interface_decl() -> P<Decl> {
-    let param = ident()
+    let self_param = just(Token::SelfKw).to(Param {
+        name: Binding::Ident("self".to_string()),
+        ty: TypeExpr::Named("__impl_self__".to_string()),
+        default: None,
+        variadic: false,
+    });
+    let typed_param = ident()
         .then_ignore(just(Token::Colon))
         .then(type_expr())
         .map(|(name, ty)| Param {
@@ -1240,13 +1246,14 @@ fn interface_decl() -> P<Decl> {
             default: None,
             variadic: false,
         });
+    let any_param = choice((self_param, typed_param)).boxed();
 
     let task_sig = just(Token::Task)
         .ignore_then(ident())
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
-                .ignore_then(param.separated_by(field_sep()).allow_trailing())
+                .ignore_then(any_param.separated_by(field_sep()).allow_trailing())
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RParen)),
         )
@@ -1538,6 +1545,66 @@ fn agent_decl() -> P<Decl> {
         .boxed()
 }
 
+fn impl_decl() -> P<Decl> {
+    // `self` as receiver param — type is filled in at registration time
+    let self_param = just(Token::SelfKw).to(Param {
+        name: Binding::Ident("self".to_string()),
+        ty: TypeExpr::Named("__impl_self__".to_string()),
+        default: None,
+        variadic: false,
+    });
+
+    let typed_param = ident()
+        .then_ignore(just(Token::Colon))
+        .then(type_expr())
+        .map(|(name, ty)| Param {
+            name: Binding::Ident(name),
+            ty,
+            default: None,
+            variadic: false,
+        });
+
+    let any_param = choice((self_param, typed_param)).boxed();
+
+    let impl_task = just(Token::Task)
+        .ignore_then(ident())
+        .then(
+            just(Token::LParen)
+                .ignore_then(newlines())
+                .ignore_then(any_param.separated_by(field_sep()).allow_trailing())
+                .then_ignore(newlines())
+                .then_ignore(just(Token::RParen)),
+        )
+        .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
+        .then(block_toplevel())
+        .map(|(((name, params), return_type), body)| TaskDecl {
+            name,
+            type_params: vec![],
+            params,
+            return_type,
+            body,
+        })
+        .boxed();
+
+    just(Token::Impl)
+        .ignore_then(ident())
+        .then_ignore(just(Token::For))
+        .then(ident())
+        .then_ignore(just(Token::LBrace))
+        .then_ignore(newlines())
+        .then(impl_task.separated_by(sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RBrace))
+        .map(|((interface_name, type_name), methods)| {
+            Decl::Impl(ImplDecl {
+                interface_name,
+                type_name,
+                methods,
+            })
+        })
+        .boxed()
+}
+
 // ---------------------------------------------------------------------------
 // Program
 // ---------------------------------------------------------------------------
@@ -1548,6 +1615,7 @@ fn program_parser() -> P<Program> {
     let decl = choice((
         type_decl(),
         interface_decl(),
+        impl_decl(),
         extern_decl(),
         task_decl().map(Decl::Task),
         agent_decl(),

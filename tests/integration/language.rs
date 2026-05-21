@@ -2210,3 +2210,413 @@ task t() {
         "expected while/bool in error:\n{stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Stringable — impl Stringable for Type
+// ---------------------------------------------------------------------------
+
+#[test]
+fn impl_stringable_interpolates_via_to_str() {
+    let src = r#"
+type Point {
+  x: int
+  y: int
+}
+
+impl Stringable for Point {
+  task to_str(self) -> str {
+    "({self.x}, {self.y})"
+  }
+}
+
+task run_test() {
+  p: Point = { x: 3, y: 4 }
+  Io.show("{p}")
+}
+
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("(3, 4)"),
+        "expected '(3, 4)' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn impl_stringable_explicit_to_str_call() {
+    let src = r#"
+type Color {
+  r: int
+  g: int
+  b: int
+}
+
+impl Stringable for Color {
+  task to_str(self) -> str {
+    "rgb({self.r}, {self.g}, {self.b})"
+  }
+}
+
+task run_test() {
+  c: Color = { r: 255, g: 128, b: 0 }
+  Io.show(c.to_str())
+}
+
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("rgb(255, 128, 0)"),
+        "expected 'rgb(255, 128, 0)' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn impl_stringable_multiple_types() {
+    let src = r#"
+type Celsius { value: float }
+type Fahrenheit { value: float }
+
+impl Stringable for Celsius {
+  task to_str(self) -> str {
+    "{self.value}°C"
+  }
+}
+
+impl Stringable for Fahrenheit {
+  task to_str(self) -> str {
+    "{self.value}°F"
+  }
+}
+
+task run_test() {
+  hot: Celsius    = { value: 37.0 }
+  cold: Fahrenheit = { value: 32.0 }
+  Io.show("{hot}")
+  Io.show("{cold}")
+}
+
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("37"), "expected Celsius output:\n{stdout}");
+    assert!(stdout.contains("32"), "expected Fahrenheit output:\n{stdout}");
+}
+
+#[test]
+fn primitives_still_interpolate_without_impl() {
+    let src = r#"
+task run_test() {
+  n = 42
+  f = 3.14
+  b = true
+  Io.show("{n} {f} {b}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("42") && stdout.contains("3.14") && stdout.contains("true"),
+        "primitives: {stdout}"
+    );
+}
+
+#[test]
+fn user_defined_interface_and_impl() {
+    let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person {
+  name: str
+}
+
+impl Greetable for Person {
+  task greet(self) -> str {
+    "Hello, {self.name}!"
+  }
+}
+
+task run_test() {
+  p: Person = { name: "Alice" }
+  Io.show(p.greet())
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("Hello, Alice!"), "got: {stdout}");
+}
+
+#[test]
+fn impl_unknown_interface_is_an_error() {
+    let src = r#"
+type Dog { name: str }
+impl Unknown for Dog {
+  task bark(self) -> str { "Woof" }
+}
+task run_test() { Io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("unknown interface") || stderr.contains("Unknown"),
+        "expected unknown-interface error, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_missing_required_method_is_an_error() {
+    let src = r#"
+interface Describable {
+  task describe(self) -> str
+  task short(self) -> str
+}
+type Item { label: str }
+impl Describable for Item {
+  task describe(self) -> str { self.label }
+}
+task run_test() { Io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("missing") || stderr.contains("short"),
+        "expected missing-method error, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_extra_method_not_in_interface_is_an_error() {
+    let src = r#"
+interface Labeled {
+  task label(self) -> str
+}
+type Tag { value: str }
+impl Labeled for Tag {
+  task label(self) -> str { self.value }
+  task extra(self) -> str { "oops" }
+}
+task run_test() { Io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("not part of interface") || stderr.contains("extra"),
+        "expected extra-method error, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_wrong_return_type_is_an_error() {
+    let src = r#"
+interface Scorer {
+  task score(self) -> int
+}
+type Game { pts: int }
+impl Scorer for Game {
+  task score(self) -> str { "oops" }
+}
+task run_test() { Io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("return") || stderr.contains("score") || stderr.contains("str"),
+        "expected return-type mismatch error, got: {stderr}"
+    );
+}
+
+#[test]
+fn interface_declared_after_impl_still_works() {
+    let src = r#"
+type Square { side: int }
+impl Sizable for Square {
+  task size(self) -> int { self.side * self.side }
+}
+interface Sizable {
+  task size(self) -> int
+}
+task run_test() {
+  b: Square = { side: 4 }
+  Io.show("{b.size()}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("16"), "got: {stdout}");
+}
+
+#[test]
+fn serializable_to_json_used_by_json_stringify() {
+    let src = r#"
+type Event { name: str, score: int }
+impl Serializable for Event {
+  task to_json(self) -> str {
+    "name={self.name};score={self.score}"
+  }
+}
+task run_test() {
+  e: Event = { name: "goal", score: 3 }
+  Io.show(Json.stringify(e))
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("goal"), "got: {stdout}");
+    assert!(stdout.contains('3'), "score: {stdout}");
+}
+
+#[test]
+fn equatable_equals_method_is_callable() {
+    let src = r#"
+type Point { x: int, y: int }
+impl Equatable for Point {
+  task equals(self, other: Point) -> bool {
+    self.x == other.x and self.y == other.y
+  }
+}
+task run_test() {
+  a: Point = { x: 1, y: 2 }
+  b: Point = { x: 1, y: 2 }
+  c: Point = { x: 9, y: 0 }
+  Io.show("{a.equals(b)}")
+  Io.show("{a.equals(c)}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("true"), "equals true: {stdout}");
+    assert!(stdout.contains("false"), "equals false: {stdout}");
+}
+
+#[test]
+fn comparable_sort_orders_structs_ascending() {
+    let src = r#"
+type Score { val: int }
+impl Comparable for Score {
+  task compare(self, other: Score) -> int {
+    self.val - other.val
+  }
+}
+task run_test() {
+  items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  sorted = items.sort()
+  for s in sorted {
+    Io.show("{s.val}")
+  }
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    let lines: Vec<&str> = stdout.lines().collect();
+    let vals: Vec<&str> = lines.iter().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    assert_eq!(vals, vec!["10", "20", "30"], "sorted: {stdout}");
+}
+
+#[test]
+fn comparable_min_max_on_structs() {
+    let src = r#"
+type Score { val: int }
+impl Comparable for Score {
+  task compare(self, other: Score) -> int {
+    self.val - other.val
+  }
+}
+task run_test() {
+  items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  lo = items.min()
+  hi = items.max()
+  Io.show("{lo.val}")
+  Io.show("{hi.val}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("10"), "min: {stdout}");
+    assert!(stdout.contains("30"), "max: {stdout}");
+}
+
+#[test]
+fn iterable_items_used_in_for_loop() {
+    let src = r#"
+type Range { lo: int, hi: int }
+impl Iterable for Range {
+  task items(self) -> list[int] {
+    result: list[int] = []
+    i = self.lo
+    while i <= self.hi {
+      result += [i]
+      i += 1
+    }
+    result
+  }
+}
+task run_test() {
+  r: Range = { lo: 1, hi: 4 }
+  for n in r {
+    Io.show("{n}")
+  }
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('1'), "1: {stdout}");
+    assert!(stdout.contains('2'), "2: {stdout}");
+    assert!(stdout.contains('3'), "3: {stdout}");
+    assert!(stdout.contains('4'), "4: {stdout}");
+}
+
+#[test]
+fn builtin_interfaces_cannot_be_redeclared() {
+    for iface in ["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"] {
+        let src = format!(
+            "interface {iface} {{ task dummy(self) -> str }}\ntask run_test() {{ Io.show(\"ok\") }}\nrun_test()"
+        );
+        let (ok, _stdout, stderr) = run_inline(&src, false);
+        assert!(!ok, "{iface} should be rejected");
+        assert!(
+            stderr.contains("built-in"),
+            "{iface}: expected 'built-in' in stderr, got: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn iterable_return_type_can_be_concrete_list() {
+    let src = r#"
+type Pair { a: int, b: int }
+impl Iterable for Pair {
+  task items(self) -> list[int] {
+    [self.a, self.b]
+  }
+}
+task run_test() {
+  p: Pair = { a: 7, b: 8 }
+  for n in p {
+    Io.show("{n}")
+  }
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('7'), "7: {stdout}");
+    assert!(stdout.contains('8'), "8: {stdout}");
+}

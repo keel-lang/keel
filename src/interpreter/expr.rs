@@ -36,7 +36,16 @@ impl Interpreter {
                                 if matches!(v, Value::EarlyReturn(_)) {
                                     return Ok(v);
                                 }
-                                out.push_str(&v.to_display_string());
+                                // Prefer to_str via method dispatch (covers built-ins,
+                                // Uuid, and user impl blocks); fall back to Display.
+                                let s = match self
+                                    .call_method_on_value(v.clone(), "to_str", vec![], env)
+                                    .await
+                                {
+                                    Ok(Value::String(s)) => s,
+                                    _ => v.to_display_string(),
+                                };
+                                out.push_str(&s);
                             }
                         }
                     }
@@ -46,6 +55,20 @@ impl Interpreter {
                 Expr::Ident(name) => self.lookup_ident(name, env),
 
                 Expr::SelfAccess(field) => {
+                    // impl block receiver: `self` bound in local env as a Map
+                    if let Some(v) = env.get("self").cloned() {
+                        return match v {
+                            Value::Map(ref m) => m.get(field).cloned().ok_or_else(|| {
+                                runtime_error(format!(
+                                    "impl receiver has no field `{field}`"
+                                ))
+                            }),
+                            _ => Err(runtime_error(format!(
+                                "impl receiver is not a struct (got {})",
+                                v.type_name()
+                            ))),
+                        };
+                    }
                     if let Some(agent) = &self.current_agent {
                         let inst = agent.lock();
                         inst.state.get(field).cloned().ok_or_else(|| {
@@ -70,6 +93,10 @@ impl Interpreter {
                 }
 
                 Expr::SelfRef => {
+                    // impl block receiver: bare `self` resolves to the Map value
+                    if let Some(v) = env.get("self").cloned() {
+                        return Ok(v);
+                    }
                     if let Some(agent) = &self.current_agent {
                         let name = agent.lock().def.name.clone();
                         Ok(Value::AgentRef(name))
