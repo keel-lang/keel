@@ -140,6 +140,10 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 
 v0.2 and later milestones are **deliberately un-planned** until v0.1 ships.
 
+Known technical debt to address post-v0.1:
+
+- **Type-tagged `Value::Map`.** Struct dispatch in `find_impl_task` uses field-set subset matching, which is ambiguous when two types share the same field names and breaks when a wider type's fields are a superset of a narrower one's. The fix is to store the declared type name as a tag inside `Value::Map` at construction time so dispatch is O(1) and unambiguous. Tracked as a TODO in `src/interpreter/methods.rs`.
+
 - **v1.0** is the first API-stable release. Semver begins at v1.0. Scope defined after real usage feedback from v0.1.
 
 One ship at a time.

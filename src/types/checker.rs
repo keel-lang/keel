@@ -276,7 +276,8 @@ impl Checker {
             prelude.insert(n.to_string());
         }
 
-        // Built-in interface names are always valid in `impl X for T`.
+        // Built-in interface names are identifiers (not keywords) installed by the
+        // runtime.  Suppress "undefined" errors when they appear in `impl X for T`.
         for iface in ["Stringable", "Comparable", "Equatable", "Serializable", "Iterable"] {
             prelude.insert(iface.to_string());
         }

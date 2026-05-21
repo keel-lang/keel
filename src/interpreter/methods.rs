@@ -11,6 +11,20 @@ impl Interpreter {
     /// Find the `impl` TaskDecl for `method` on `value` (must be a Map whose field
     /// set matches a registered struct type).  Returns `None` if no impl is found.
     /// Clones the TaskDecl to avoid borrow-across-await issues.
+    ///
+    /// # Dispatch fragility (v0.1 known limitation)
+    /// Dispatch is based on field-set subset matching: a Map whose keys are a
+    /// superset of a struct type's declared fields is considered an instance of
+    /// that type. This has two failure modes:
+    ///
+    /// 1. **Ambiguity** — two types with identical field sets (e.g. `Point` and
+    ///    `Vec2` both having `{x, y}`) can match the wrong impl; iteration order
+    ///    determines which one wins.
+    /// 2. **False positives** — a `Point3D { x, y, z }` impl can match a plain
+    ///    `{x: 1, y: 2}` map because `{x, y} ⊆ {x, y, z}`.
+    ///
+    /// TODO(post-v0.1): store a type tag in `Value::Map` so dispatch is O(1)
+    /// and unambiguous, and remove the struct_types field-set lookup entirely.
     pub(crate) fn find_impl_task(
         &self,
         value: &Value,
@@ -44,26 +58,10 @@ impl Interpreter {
     ) -> Result<Value> {
         // Impl methods always win over built-in map methods so that user-defined
         // interfaces can shadow names like "size", "len", etc. on struct types.
-        if let Value::Map(ref m) = obj {
-            let map_keys: HashSet<&str> = m.keys().map(String::as_str).collect();
-            let candidate = self.impl_methods.iter().find_map(|(type_name, methods)| {
-                methods.get(method).and_then(|task| {
-                    self.struct_types.get(type_name).and_then(|schema| {
-                        let type_fields: HashSet<&str> =
-                            schema.iter().map(|(k, _)| k.as_str()).collect();
-                        if type_fields.is_subset(&map_keys) {
-                            Some(task.clone())
-                        } else {
-                            None
-                        }
-                    })
-                })
-            });
-            if let Some(task) = candidate {
-                let mut call_args = vec![CallArgValue { name: None, value: obj }];
-                call_args.extend(args);
-                return self.call_task(method, &task, call_args).await;
-            }
+        if let Some(task) = self.find_impl_task(&obj, method) {
+            let mut call_args = vec![CallArgValue { name: None, value: obj }];
+            call_args.extend(args);
+            return self.call_task(method, &task, call_args).await;
         }
 
         // Minimal built-in methods for v0.1. Extend as examples need.

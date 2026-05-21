@@ -69,7 +69,7 @@ Say "release" or "ship a release" to run the shared release workflow in `.agents
 ## Reserved Keywords (v0.1)
 
 ```
-agent task interface type extern
+agent task interface impl type extern
 use from
 state on self
 if else when where
