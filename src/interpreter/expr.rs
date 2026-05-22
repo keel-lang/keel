@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{CallArg, Expr, StringPart, UnOp};
+use crate::ast::{CallArg, Expr, StringPart, TypeExpr, UnOp};
 
 use super::environment::Environment;
 use super::runtime_error;
@@ -444,10 +444,9 @@ impl Interpreter {
                         .await
                 }
 
-                Expr::Cast { expr: inner, ty: _ } => {
-                    // v0.1: casts are runtime-checked elsewhere; here we
-                    // just evaluate the inner expression.
-                    self.eval_expr(inner, env).await
+                Expr::Cast { expr: inner, ty } => {
+                    let val = self.eval_expr(inner, env).await?;
+                    apply_cast(val, ty)
                 }
 
                 Expr::Index { object, index } => {
@@ -651,5 +650,77 @@ impl Interpreter {
                 other => Err(runtime_error(format!("Cannot call {}", other.type_name()))),
             }
         })
+    }
+}
+
+fn is_valid_uuid(s: &str) -> bool {
+    let raw = s.strip_prefix("urn:uuid:").unwrap_or(s);
+    let hex: String = raw.chars().filter(|&c| c != '-').collect();
+    hex.len() == 32 && hex.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn apply_cast(val: Value, ty: &TypeExpr) -> Result<Value> {
+    let target = match ty {
+        TypeExpr::Named(n) => n.as_str(),
+        TypeExpr::Dynamic => return Ok(val),
+        TypeExpr::Nullable(inner) => {
+            return apply_cast(val, inner);
+        }
+        _ => {
+            return Err(runtime_error(format!(
+                "cannot cast to {ty:?}"
+            )));
+        }
+    };
+
+    // identity: typeof(val) == target → pass through
+    let val_type = match &val {
+        Value::Struct(name, _) | Value::EnumVariant(name, _, _) => name.as_str(),
+        other => other.type_name(),
+    };
+    if val_type == target {
+        return Ok(val);
+    }
+
+    match (val, target) {
+        // int <-> float
+        (Value::Integer(n), "float") => Ok(Value::Float(n as f64)),
+        (Value::Float(f), "int") => Ok(Value::Integer(f as i64)),
+
+        // numeric -> str
+        (Value::Integer(n), "str") => Ok(Value::String(n.to_string())),
+        (Value::Float(f), "str") => Ok(Value::String(f.to_string())),
+        (Value::Bool(b), "str") => Ok(Value::String(b.to_string())),
+
+        // str -> numeric
+        (Value::String(s), "int") => s.trim().parse::<i64>().map(Value::Integer).map_err(|_| {
+            runtime_error(format!("cannot cast \"{s}\" to int"))
+        }),
+        (Value::String(s), "float") => s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
+            runtime_error(format!("cannot cast \"{s}\" to float"))
+        }),
+        (Value::String(s), "bool") => match s.trim() {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => Err(runtime_error(format!("cannot cast \"{s}\" to bool"))),
+        },
+
+        // Uuid <-> str
+        (Value::Uuid(s), "str") => Ok(Value::String(s)),
+        (Value::String(s), "Uuid") => {
+            if is_valid_uuid(&s) {
+                Ok(Value::Uuid(s))
+            } else {
+                Err(runtime_error(format!("cannot cast \"{s}\" to Uuid: invalid UUID format")))
+            }
+        }
+
+        // none -> anything raises
+        (Value::None, target) => Err(runtime_error(format!("cannot cast none to {target}"))),
+
+        (val, target) => Err(runtime_error(format!(
+            "cannot cast {} to {target}",
+            val.type_name()
+        ))),
     }
 }

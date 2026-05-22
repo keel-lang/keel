@@ -214,7 +214,7 @@ impl Checker {
             prelude.insert(n.to_string());
         }
         // Top-level builtins
-        for n in ["run", "stop", "min", "max", "uuid"] {
+        for n in ["run", "stop", "min", "max", "uuid", "typeof"] {
             prelude.insert(n.to_string());
         }
         // Built-in type names
@@ -1575,6 +1575,11 @@ impl Checker {
                     && name == "uuid"
                 {
                     return Ty::Uuid;
+                }
+                if let Expr::Ident(name) = callee.as_ref()
+                    && name == "typeof"
+                {
+                    return Ty::Str;
                 }
 
                 // Typed inference for prelude free functions min/max.

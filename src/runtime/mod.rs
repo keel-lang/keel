@@ -61,6 +61,24 @@ pub fn install_prelude(interp: &mut Interpreter) {
     install_top_level_agent_fns(interp);
     install_min_max(interp);
     install_uuid_alias(interp);
+    install_typeof(interp);
+}
+
+fn install_typeof(interp: &mut Interpreter) {
+    interp.register_top_fn(
+        "typeof",
+        Arc::new(|_interp: &mut Interpreter, args: Vec<CallArgValue>| {
+            Box::pin(async move {
+                let val = args.into_iter().next().map(|a| a.value).unwrap_or(Value::None);
+                let name = match &val {
+                    Value::Struct(type_name, _) => type_name.clone(),
+                    Value::EnumVariant(type_name, _, _) => type_name.clone(),
+                    other => other.type_name().to_string(),
+                };
+                Ok(Value::String(name))
+            })
+        }),
+    );
 }
 
 fn cmp_values(a: &Value, b: &Value) -> miette::Result<std::cmp::Ordering> {

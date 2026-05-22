@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+### `as T` coercions and `typeof()`
+
+`expr as T` now performs real runtime coercions. `typeof(x)` is a new prelude function returning the runtime type name.
+
+```keel
+1 as float          # 1.0
+1.7 as int          # 1  (truncated)
+"3.14" as float     # 3.14
+"abc" as int        # raises
+
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+typeof(p)           # "Point"
+typeof(42)          # "int"
+```
+
+See the [Types guide](guide/types.md) for the full coercion table.
+
 ### `list.sort(by: key_fn)`
 
 `.sort()` now accepts an optional `by:` key function, consistent with `min(by:)` / `max(by:)`. No `impl Comparable` needed.

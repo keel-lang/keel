@@ -378,6 +378,7 @@ A small set of functions live directly in the root scope — no namespace qualif
 | `uuid()` | `() -> Uuid` | `Uuid` | Alias for `Uuid.v4()` |
 | `min(...)` | `(...items: T, by: ((T) -> any)? = none) -> T?` | `T?` | Minimum; `none` on empty |
 | `max(...)` | `(...items: T, by: ((T) -> any)? = none) -> T?` | `T?` | Maximum; `none` on empty |
+| `typeof(x)` | `(any) -> str` | `str` | Runtime type name: `"int"`, `"float"`, `"str"`, `"bool"`, `"none"`, `"list"`, `"map"`, `"duration"`, `"Uuid"`, or the declared name for structs and enums (`"Point"`, `"Color"`) |
 
 ```keel
 id = uuid()                           # Uuid
@@ -392,6 +393,13 @@ min(...scores, ...more_scores)        # merge two lists, find min
 
 min(people, by: p => p.age)          # person with lowest age
 max(products, by: p => p.price)      # most expensive product
+
+typeof(42)                            # "int"
+typeof(3.14)                          # "float"
+typeof("hi")                          # "str"
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+typeof(p)                             # "Point"
 ```
 
 `min` / `max` return `T?` — an empty input (no args, or all spreads empty) yields `none`.
@@ -1587,12 +1595,40 @@ The prelude is always imported. `use` adds additional modules to scope.
 | `!.` | Null assertion (throws) |
 | `..` | Inclusive range |
 | `in` | Membership |
-| `as` | Type narrowing (in `dynamic` casts, `Ai.prompt as T`, etc.) |
+| `as` | Type coercion / narrowing — see coercion table below |
 | `==` `!=` `<` `>` `<=` `>=` | Comparison |
 | `and` `or` `not` | Boolean logic |
 | `+` `-` `*` `/` `%` | Arithmetic |
 | `+=` `-=` `*=` `/=` | Augmented assignment — desugars to `x = x op rhs` |
 | `...expr` | Spread — expands `list[T]` or `set[T]` into variadic slots at a call site |
+
+### `as T` coercion rules
+
+`expr as T` coerces the value at runtime. Unsupported conversions raise.
+
+| From | To | Result |
+|---|---|---|
+| `int` | `float` | Widens: `5 as float` → `5.0` |
+| `float` | `int` | Truncates toward zero: `1.9 as int` → `1`, `-1.9 as int` → `-1` |
+| `int` / `float` / `bool` | `str` | Display string: `42 as str` → `"42"` |
+| `str` | `int` | Parses; raises if not a valid integer |
+| `str` | `float` | Parses; raises if not a valid float |
+| `str` | `bool` | `"true"` → `true`, `"false"` → `false`; raises otherwise |
+| `Uuid` | `str` | Hyphenated string: `"f47ac10b-..."` |
+| `str` | `Uuid` | Validates UUID format; raises if invalid |
+| same type | same type | Identity |
+| `dynamic` | any | Pass-through (runtime narrowing for `Ai.prompt`, `Json.parse`) |
+| `none` | any | Raises |
+| anything else | | Raises |
+
+```keel
+1 as float          # ok — float
+1.7 as int          # ok — 1 (truncated)
+"42" as int         # ok — 42
+"3.14" as float     # ok — 3.14
+"abc" as int        # raises: cannot cast "abc" to int
+none as int         # raises: cannot cast none to int
+```
 
 ---
 

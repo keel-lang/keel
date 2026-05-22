@@ -14,6 +14,22 @@ All notable changes to Keel.
 
 ### Added
 
+- **`as T` coercions and `typeof()`.** `expr as T` now performs real runtime coercions instead of being a no-op. Supported: `int ↔ float` (truncates toward zero), `int`/`float`/`bool → str`, `str → int`/`float`/`bool` (raises on invalid input), `none → any` (raises), `dynamic` pass-through for `Ai.prompt`/`Json.parse` narrowing. A new prelude function `typeof(x) -> str` returns the runtime type name — `"int"`, `"float"`, `"str"`, `"bool"`, `"none"`, `"list"`, `"map"`, `"duration"`, `"Uuid"`, or the declared struct/enum name.
+
+  ```keel
+  1 as float          # 1.0
+  1.7 as int          # 1  (truncated)
+  42 as str           # "42"
+  "3.14" as float     # 3.14
+  "abc" as int        # raises: cannot cast "abc" to int
+
+  type Signal = buy | sell | hold
+  s: Signal = Signal.buy
+  typeof(s)           # "Signal"
+  typeof(42)          # "int"
+  typeof("hello")     # "str"
+  ```
+
 - **`list.sort(by: key_fn)` — sort with a key function.** The existing `.sort()` now accepts an optional `by:` named argument, consistent with the `min(by:)` / `max(by:)` prelude pattern. Sort any list by a computed key without needing `impl Comparable`. The key function must return an `int`, `float`, or `str`. Ascending only; descending is achieved by negating numeric keys.
 
   ```keel

@@ -284,3 +284,53 @@ count.abs()           # 5    — int stays int
 # Short forms
 30.sec       1.min         2.hr       1.d
 ```
+
+## Type coercions — `as T`
+
+`expr as T` coerces the value at runtime. Unsupported conversions raise a runtime error.
+
+| From | To | Result |
+|---|---|---|
+| `int` | `float` | Widens: `5 as float` → `5.0` |
+| `float` | `int` | Truncates toward zero: `1.9 as int` → `1` |
+| `int` / `float` / `bool` | `str` | Display string: `42 as str` → `"42"` |
+| `str` | `int` | Parses; raises if not a valid integer |
+| `str` | `float` | Parses; raises if not a valid float |
+| `str` | `bool` | `"true"` → `true`, `"false"` → `false`; raises otherwise |
+| `Uuid` | `str` | Hyphenated string: `"f47ac10b-..."` |
+| `str` | `Uuid` | Validates UUID format; raises if invalid |
+| `dynamic` | any | Pass-through — used with `Ai.prompt(...) as T` and `Json.parse` |
+| `none` | any | Raises |
+
+```keel
+1 as float          # 1.0
+1.7 as int          # 1  (truncated, not rounded)
+-1.7 as int         # -1
+42 as str           # "42"
+"3.14" as float     # 3.14
+"99" as int         # 99
+
+"abc" as int        # raises: cannot cast "abc" to int
+none as int         # raises: cannot cast none to int
+```
+
+## `typeof(x)`
+
+The prelude function `typeof(x)` returns the runtime type name as a `str`. For struct and enum values it returns the declared type name, not the generic `"struct"` or `"enum"` tag.
+
+```keel
+typeof(42)          # "int"
+typeof(3.14)        # "float"
+typeof("hello")     # "str"
+typeof(true)        # "bool"
+typeof(none)        # "none"
+typeof([1, 2, 3])   # "list"
+
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+typeof(p)           # "Point"
+
+type Color = red | green | blue
+c: Color = Color.red
+typeof(c)           # "Color"
+```
