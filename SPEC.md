@@ -142,9 +142,10 @@ ch = word[0]   # str — "k"
 | `.any(fn)`, `.all(fn)` | `list[T].(T → bool) → bool` | |
 | `.reduce(fn, init)` | `list[T].((U, T) → U, U) → U` | `fn` receives `(acc, elem)` |
 | `.sum()` | `int\|float` | numeric lists only |
-| `.min()`, `.max()` | `T?` | `none` on empty |
+| `.min()`, `.max()` | `T?` | `none` on empty; accepts optional `by: fn` key arg: `items.min(by: x => x.score)` |
 | `.join(sep)` | `str` | `list[str]` preferred |
-| `.sort()` | `list[T]` | natural order (int, float, str) |
+| `.sort()` | `list[T]` | natural order (int, float, str); or `Comparable` impl |
+| `.sort(by: fn)` | `list[T]` | sort by key: `items.sort(by: x => x.score)`; key must be int, float, or str; ascending only |
 | `.reverse()` | `list[T]` | |
 | `.flatten()` | `list[T]` | unwraps one nesting level |
 | `.take(n)` | `list[T]` | first `n` elements |

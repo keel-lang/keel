@@ -14,6 +14,22 @@ All notable changes to Keel.
 
 ### Added
 
+- **`list.sort(by: key_fn)` — sort with a key function.** The existing `.sort()` now accepts an optional `by:` named argument, consistent with the `min(by:)` / `max(by:)` prelude pattern. Sort any list by a computed key without needing `impl Comparable`. The key function must return an `int`, `float`, or `str`. Ascending only; descending is achieved by negating numeric keys.
+
+  ```keel
+  type Product { name: str, price: float }
+
+  products = [
+    { name: "Widget",  price: 9.99 },
+    { name: "Gadget",  price: 24.99 },
+    { name: "Doohickey", price: 4.99 },
+  ]
+
+  by_price = products.sort(by: p => p.price)          # cheapest first
+  by_exp   = products.sort(by: p => 0.0 - p.price)   # most expensive first
+  by_name  = products.sort(by: p => p.name)           # alphabetical
+  ```
+
 - **String interpolation format specifiers.** Slots now accept a Python-style format spec after a colon: `{expr:spec}`. Supported forms:
 
   ```keel

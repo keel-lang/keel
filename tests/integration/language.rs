@@ -886,6 +886,27 @@ run(A)
 }
 
 #[test]
+fn list_min_max_with_by_key() {
+    let src = r#"
+type Item { name: str, score: int }
+task run_test() {
+  items: list[Item] = [
+    { name: "b", score: 5 },
+    { name: "a", score: 1 },
+    { name: "c", score: 9 },
+  ]
+  Io.show(items.min(by: x => x.score).name)
+  Io.show(items.max(by: x => x.score).name)
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    let names: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    assert_eq!(names, vec!["a", "c"], "min/max by key: {stdout}");
+}
+
+#[test]
 fn list_join_produces_delimited_string() {
     let src = r#"
 agent A {
@@ -919,6 +940,139 @@ run(A)
     assert!(ok);
     assert!(stdout.contains("1 1 3 4 5"), "sort: {stdout}");
     assert!(stdout.contains("5"), "reverse first: {stdout}");
+}
+
+#[test]
+fn list_sort_by_int_key() {
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [3, 1, 4, 1, 5, 9, 2]
+    sorted = nums.sort(by: x => x)
+    Io.show(sorted.join(" "))
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("1 1 2 3 4 5 9"), "sort_by identity: {stdout}");
+}
+
+#[test]
+fn list_sort_by_field() {
+    let src = r#"
+type Item { name: str, score: int }
+task run_test() {
+  items: list[Item] = [
+    { name: "c", score: 3 },
+    { name: "a", score: 1 },
+    { name: "b", score: 2 },
+  ]
+  sorted = items.sort(by: x => x.score)
+  for item in sorted {
+    Io.show(item.name)
+  }
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    let names: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    assert_eq!(names, vec!["a", "b", "c"], "sort_by score: {stdout}");
+}
+
+#[test]
+fn list_sort_by_string_key() {
+    let src = r#"
+agent A {
+  @on_start {
+    words = ["banana", "apple", "cherry"]
+    sorted = words.sort(by: w => w)
+    Io.show(sorted.join(" "))
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("apple banana cherry"), "sort_by str: {stdout}");
+}
+
+#[test]
+fn list_sort_by_descending_via_negation() {
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [3, 1, 4, 1, 5]
+    sorted = nums.sort(by: x => 0 - x)
+    Io.show(sorted.join(" "))
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("5 4 3 1 1"), "sort_by desc: {stdout}");
+}
+
+#[test]
+fn list_sort_by_empty_list_is_ok() {
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [1]
+    empty = nums.filter(x => x > 999)
+    Io.show("{empty.sort(by: x => x).count()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('0'), "empty sort_by: {stdout}");
+}
+
+#[test]
+fn list_sort_by_non_function_arg_is_error() {
+    let src = r#"
+agent A {
+  @on_start {
+    nums = [3, 1, 2]
+    Io.show("{nums.sort(by: 42).count()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, true);
+    assert!(!ok, "expected runtime error for non-function by: arg");
+    assert!(
+        stderr.contains("must be a function"),
+        "expected 'must be a function' in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn list_sort_by_invalid_key_type_is_error() {
+    let src = r#"
+type Item { name: str, flag: bool }
+task run_test() {
+  items: list[Item] = [{ name: "a", flag: true }, { name: "b", flag: false }]
+  items.sort(by: x => x.flag)
+}
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected runtime error for bool key type");
+    assert!(
+        stderr.contains("key function must return int, float, or str"),
+        "expected key type error in stderr:\n{stderr}"
+    );
 }
 
 #[test]

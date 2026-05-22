@@ -7,6 +7,19 @@ use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
 
+/// Total ordering over key values produced by `sort_by` closures.
+/// Matches the same primitive ordering used by `.sort()`.
+fn compare_keys(a: &Value, b: &Value) -> std::cmp::Ordering {
+    match (a, b) {
+        (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
+        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Integer(x), Value::Float(y)) => (*x as f64).partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(x), Value::Integer(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::String(x), Value::String(y)) => x.cmp(y),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
 impl Interpreter {
     /// Find the `impl` TaskDecl for `method` on `value`.
     /// For type-tagged `Value::Struct` this is O(1); for untagged `Value::Map`
@@ -527,97 +540,17 @@ impl Interpreter {
                     Ok(Value::Integer(int_sum))
                 }
             }
-            (Value::List(items), "min") => {
-                if items.is_empty() {
-                    return Ok(Value::None);
-                }
-                let cmp_task = self.find_impl_task(&items[0], "compare");
-                if let Some(task) = cmp_task {
-                    let mut result = items[0].clone();
-                    for item in &items[1..] {
-                        let cmp_val = self
-                            .call_task(
-                                "compare",
-                                &task,
-                                vec![
-                                    CallArgValue {
-                                        name: None,
-                                        value: result.clone(),
-                                    },
-                                    CallArgValue {
-                                        name: None,
-                                        value: item.clone(),
-                                    },
-                                ],
-                            )
-                            .await?;
-                        if matches!(cmp_val, Value::Integer(n) if n > 0) {
-                            result = item.clone();
-                        }
-                    }
-                    return Ok(result);
-                }
-                let mut result = items[0].clone();
-                for item in &items[1..] {
-                    let less = match (&result, item) {
-                        (Value::Integer(a), Value::Integer(b)) => b < a,
-                        (Value::Float(a), Value::Float(b)) => b < a,
-                        (Value::Integer(a), Value::Float(b)) => b < &(*a as f64),
-                        (Value::Float(a), Value::Integer(b)) => &(*b as f64) < a,
-                        (Value::String(a), Value::String(b)) => b < a,
-                        _ => false,
-                    };
-                    if less {
-                        result = item.clone();
-                    }
-                }
-                Ok(result)
-            }
-            (Value::List(items), "max") => {
-                if items.is_empty() {
-                    return Ok(Value::None);
-                }
-                let cmp_task = self.find_impl_task(&items[0], "compare");
-                if let Some(task) = cmp_task {
-                    let mut result = items[0].clone();
-                    for item in &items[1..] {
-                        let cmp_val = self
-                            .call_task(
-                                "compare",
-                                &task,
-                                vec![
-                                    CallArgValue {
-                                        name: None,
-                                        value: result.clone(),
-                                    },
-                                    CallArgValue {
-                                        name: None,
-                                        value: item.clone(),
-                                    },
-                                ],
-                            )
-                            .await?;
-                        if matches!(cmp_val, Value::Integer(n) if n < 0) {
-                            result = item.clone();
-                        }
-                    }
-                    return Ok(result);
-                }
-                let mut result = items[0].clone();
-                for item in &items[1..] {
-                    let greater = match (&result, item) {
-                        (Value::Integer(a), Value::Integer(b)) => b > a,
-                        (Value::Float(a), Value::Float(b)) => b > a,
-                        (Value::Integer(a), Value::Float(b)) => b > &(*a as f64),
-                        (Value::Float(a), Value::Integer(b)) => &(*b as f64) > a,
-                        (Value::String(a), Value::String(b)) => b > a,
-                        _ => false,
-                    };
-                    if greater {
-                        result = item.clone();
-                    }
-                }
-                Ok(result)
+            (Value::List(items), "min" | "max") => {
+                // Delegate to the global min/max prelude functions, which handle
+                // Comparable dispatch, primitive ordering, and the by: key arg.
+                // Pass the list as a single positional arg (auto-spread kicks in)
+                // plus any named args (e.g. by:) forwarded unchanged.
+                let mut call_args = vec![CallArgValue {
+                    name: None,
+                    value: Value::List(items.clone()),
+                }];
+                call_args.extend(args.iter().filter(|a| a.name.is_some()).cloned());
+                self.call_namespace_method("__global", method, call_args).await
             }
             (Value::List(items), "join") => {
                 let sep = args
@@ -628,6 +561,38 @@ impl Interpreter {
                 Ok(Value::String(parts.join(&sep)))
             }
             (Value::List(items), "sort") => {
+                // Optional `by: fn` named argument — mirrors the global min(by:)/max(by:) pattern.
+                let by_closure = args
+                    .iter()
+                    .find(|a| a.name.as_deref() == Some("by"))
+                    .map(|a| a.value.clone());
+                if let Some(by) = by_closure {
+                    let (params, body) = match by {
+                        Value::Closure(p, b) => (p, b),
+                        _ => return Err(runtime_error("sort `by:` argument must be a function")),
+                    };
+                    // Phase 1: compute all keys async, then sort synchronously.
+                    let mut keyed: Vec<(Value, Value)> = Vec::with_capacity(items.len());
+                    for item in items.iter().cloned() {
+                        let key = self
+                            .call_closure(
+                                &params,
+                                &body,
+                                vec![CallArgValue { name: None, value: item.clone() }],
+                            )
+                            .await?;
+                        match &key {
+                            Value::Integer(_) | Value::Float(_) | Value::String(_) => {}
+                            other => return Err(runtime_error(format!(
+                                "sort(by:): key function must return int, float, or str, got {}",
+                                other.type_name()
+                            ))),
+                        }
+                        keyed.push((key, item));
+                    }
+                    keyed.sort_by(|(ka, _), (kb, _)| compare_keys(ka, kb));
+                    return Ok(Value::List(keyed.into_iter().map(|(_, v)| v).collect()));
+                }
                 // If items are structs with a Comparable impl, use it (async insertion sort).
                 let cmp_task = items
                     .first()

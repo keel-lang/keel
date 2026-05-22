@@ -112,11 +112,26 @@ tags.join(" | ")
 
 ### sort — natural ordering
 
-Returns a new sorted list. Integers, floats, and strings are compared by value; all other element types are left in place relative to each other.
+Returns a new sorted list. Integers, floats, and strings are compared by value. Structs with `impl Comparable` are sorted by their `compare` method.
 
 ```keel
 [3, 1, 4, 1, 5].sort()            # [1, 1, 3, 4, 5]
 ["cherry", "apple", "banana"].sort()  # ["apple", "banana", "cherry"]
+```
+
+### sort(by:) — sort by key function
+
+Pass an optional `by:` key function to `.sort()` — consistent with the `min(by:)` / `max(by:)` pattern. The key must return an `int`, `float`, or `str`. Ascending only; negate numeric keys for descending.
+
+```keel
+type Product { name: str, price: float, rating: float }
+
+# Sort by a single field
+by_price  = products.sort(by: p => p.price)          # cheapest first
+by_name   = products.sort(by: p => p.name)           # alphabetical
+
+# Descending — negate the key
+by_rating = products.sort(by: p => 0.0 - p.rating)  # highest rated first
 ```
 
 ### reverse — flip order

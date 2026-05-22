@@ -6,6 +6,18 @@
 
 ## Unreleased
 
+### `list.sort(by: key_fn)`
+
+`.sort()` now accepts an optional `by:` key function, consistent with `min(by:)` / `max(by:)`. No `impl Comparable` needed.
+
+```keel
+by_price  = products.sort(by: p => p.price)          # cheapest first
+by_name   = products.sort(by: p => p.name)           # alphabetical
+by_rating = products.sort(by: p => 0.0 - p.rating)  # highest rated first
+```
+
+The key function must return `int`, `float`, or `str`. Ascending only; negate numeric keys for descending.
+
 ### String interpolation format specifiers
 
 Slots now accept an optional format spec after a colon: `{expr:spec}`.
