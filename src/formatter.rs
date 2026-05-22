@@ -982,9 +982,13 @@ impl Fmt {
                         }
                     }
                 }
-                StringPart::Interpolation(e) => {
+                StringPart::Interpolation(e, spec) => {
                     s.push('{');
                     s.push_str(&self.expr_str(e));
+                    if let Some(sp) = spec {
+                        s.push(':');
+                        s.push_str(sp);
+                    }
                     s.push('}');
                 }
             }

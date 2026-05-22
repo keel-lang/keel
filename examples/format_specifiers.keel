@@ -1,0 +1,28 @@
+agent Reporter {
+    @on_start {
+        pi = 3.14159265
+        score = 0.9
+        label = "accuracy"
+        n = 42
+
+        # Float precision
+        Io.show("pi = {pi:.4f}")          # pi = 3.1416
+        Io.show("score = {score:.1f}")    # score = 0.9
+
+        # int auto-promoted to float
+        Io.show("n as float = {n:.2f}")   # n as float = 42.00
+
+        # Alignment / padding
+        Io.show("{label:>12}: {score:.2f}")    # right-align label in 12 chars
+        Io.show("{label:<12}: {score:.2f}")    # left-align label in 12 chars
+        Io.show("{label:^12}")                  # center in 12 chars
+
+        # Build a simple table
+        headers = ["Name", "Score", "Rank"]
+        Io.show("{headers[0]:<10} {headers[1]:>8} {headers[2]:>6}")
+        Io.show("{"Alice":<10} {0.98:>8.3f} {1:>6}")
+        Io.show("{"Bob":<10} {0.74:>8.3f} {2:>6}")
+    }
+}
+
+run(Reporter)

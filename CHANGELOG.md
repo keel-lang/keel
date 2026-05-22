@@ -10,7 +10,24 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%%
+
+### Added
+
+- **String interpolation format specifiers.** Slots now accept a Python-style format spec after a colon: `{expr:spec}`. Supported forms:
+
+  ```keel
+  pi = 3.14159
+  Io.show("{pi:.2f}")       # → "3.14"
+  Io.show("{pi:>10.2f}")    # → "      3.14"
+  Io.show("{"hi":<8}!")     # → "hi      !"
+  Io.show("{"hi":^8}")      # → "   hi   "
+  n = 42
+  Io.show("{n:.2f}")        # → "42.00"  (int auto-promoted to float)
+  Io.show("{n:6}")          # → "    42" (bare width = right-align)
+  ```
+
+  All specs may combine alignment (`<`, `>`, `^`) with a width and/or precision (`.Nf`). Named arguments inside the slot (`{f(key: v):>10}`) are not confused with the spec separator because the colon is only treated as a spec delimiter at outermost bracket depth. A malformed spec is a runtime error.
 
 ---
 

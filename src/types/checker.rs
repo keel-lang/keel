@@ -1244,7 +1244,7 @@ impl Checker {
 
             Expr::StringLit(parts) => {
                 for p in parts {
-                    if let StringPart::Interpolation(e) = p {
+                    if let StringPart::Interpolation(e, _spec) = p {
                         self.infer_expr(e, scope);
                     }
                 }

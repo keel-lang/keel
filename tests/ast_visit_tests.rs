@@ -73,7 +73,7 @@ impl Visitor for Counts {
             Expr::StringLit(parts) => {
                 self.saw_string_interpolation |= parts
                     .iter()
-                    .any(|part| matches!(part, StringPart::Interpolation(_)));
+                    .any(|part| matches!(part, StringPart::Interpolation(..)));
             }
             Expr::NullFieldAccess(_, _) => self.saw_null_field_access = true,
             Expr::NullAssert(_) => self.saw_null_assert = true,

@@ -34,6 +34,13 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Type checker: operator type compatibility | [x] | Binary expressions (`+`, `-`, `%=`, etc.) don't validate that operand types are compatible — `"x" + 5` passes the checker and fails at runtime. Needs a `check_binop(lhs_ty, op, rhs_ty)` pass applied uniformly to all `BinOp` and `AugAssign` sites. |
 | Variadic parameters (`...param: T`) | [x] | Declaration, `list[T]` inside body, `...expr` spread at call sites; named args follow naturally via positional/named dispatch | Unblocks `min`/`max` prelude functions |
 | Bytecode compiler (`keel build`) | [ ] | Deferred post-v0.1 — tree-walking interpreter covers all alpha workloads |
+| String interpolation format specifiers (`:.2f`, `>10`, `<10`) | [x] | `{expr:spec}` — float precision (`:.Nf`), width alignment (`:<N`, `:>N`, `:^N`), bare width (`:N`); specs may combine (`{x:>10.2f}`); colon detected at outermost bracket depth so named args are not confused with the spec separator |
+| Enum `Stringable` — auto-derive `to_str` from variant name | [ ] | Unit-only enums (`type Signal = buy \| sell \| hold`) cannot appear in `"{signal}"` string interpolation without an explicit `when` conversion. Allow `impl Stringable for MyEnum` with variant name as the default string, or auto-derive it for unit-only enums. |
+| `int.to_float()` value method + binop promotion rules | [ ] | No typed int→float conversion exists. `float / int` (e.g. `window.sum() / period`) is unchecked today and coerces at runtime; once `check_binop` enforcement lands those sites will fail. Add `.to_float()` to `int` value methods alongside `.abs()`/`.floor()`/`.ceil()`/`.round()`, and document that `float op int` promotes the int. |
+| `list.sort_by(key_fn)` — sort with custom key | [ ] | `.sort()` is natural order only. Sorting by a computed field or rank requires `impl Comparable` boilerplate per type. Add `.sort_by(fn: (T) -> any) -> list[T]`, mirroring the `by:` parameter already on `min`/`max`. |
+| Struct spread-update expression (`{ ...base, field: new }`) | [ ] | Updating one field of a struct requires re-stating every other field in a new literal — no update shorthand exists. Add spread-update syntax: `{ ...record, price: fill_price }` copies all fields from `record` then overrides `price`. |
+| Struct / map / tuple pattern matching in `when` | [ ] | `when` covers enum variants, rich variant destructuring, wildcards, and literal values. Matching against a struct's field layout (`when r { { side: buy, quantity } => … }`) is unimplemented. Promoted from "Deferred post-v0.1". |
+| `use "./file.keel"` — module import runtime support | [ ] | `UseStmt` is parsed (parser [x]) but no ROADMAP entry confirms the interpreter resolves and executes imported files. Multi-agent projects outgrow a single file quickly. Confirm runtime resolution, test symbol imports and relative paths, document circular-import behaviour. |
 
 ### Agent model
 
@@ -47,6 +54,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `readonly` state field modifier | [x] | Compiler + runtime enforcement; assignment to readonly field is an error |
 | `Agent.send` / `Agent.delegate` | [x] | |
 | `Agent.broadcast(team, data)` | [x] | Fans out to every live agent in the named `@team` |
+| Type-safe `Agent.delegate` — symbol form | [ ] | `Agent.delegate(Foo, "handle", arg)` passes the handler name as a string literal; handler renames silently break call sites with no compile-time check. Add `Agent.delegate(Foo.handle, arg)` dot-access form so the reference is a resolved symbol the checker can validate. |
 
 ### Attributes
 
@@ -78,7 +86,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Memory` | [x] | `remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON) | Vector-store backend (semantic search) is v0.2 |
 | `Control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
 | `Async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
-| `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | — |
+| `Cache` | [~] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | `Cache.get` return type undocumented — at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `Cache.get(key) -> dynamic?` to SPEC §3 so users know the stored type is preserved and a narrow cast (`as T`) recovers it. |
 | `String value methods` | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed | — |
 | `File` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
 | Numeric value methods | [x] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
@@ -91,11 +99,15 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Equatable` interface | [x] | `task equals(self, other) -> bool`; method-only, `==` stays structural | — |
 | `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `Json.stringify` | — |
 | `Iterable` interface | [x] | `task items(self) -> list[T]`; struct usable in `for` loop | Not a generator; materialises full list; concrete `list[T]` return type accepted |
-| `Json` | [x] | `parse`, `stringify` | — |
-| `Time` | [x] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
+| `Json` | [~] | `parse`, `stringify` | `Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel. |
+| `Time` | [~] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | `epoch_ms() -> int` missing — returns the current time as Unix milliseconds (integer); needed for exchange API auth, time-series storage, and any protocol requiring an epoch integer. Implement via `chrono::Utc::now().timestamp_millis()`. |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Crypto` | [x] | `sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)` | Cryptographic primitives; distinct from `Random` (PRNG) |
+| `Math` | [ ] | — | Transcendental and power functions: `sqrt(x)`, `pow(x, y)`, `log(x)`, `log2(x)`, `log10(x)`, `exp(x)`, `sin(x)`, `cos(x)`, `tan(x)`. Currently absent; only `.abs()/.floor()/.ceil()/.round()` exist on values. Blocks Bollinger Bands (`sqrt`), log returns (`log`), and any non-linear computation. Constants: `Math.PI`, `Math.E`. |
+| `Csv` | [ ] | — | `Csv.parse(str) -> list[list[str]]`, `Csv.parse_headers(str) -> list[map[str, str]]`, `Csv.stringify(rows) -> str`. LLMs frequently emit CSV; exchange price-history APIs return CSV. Promoted from "Deferred post-v0.1". |
+| `Yaml` | [ ] | — | `Yaml.parse(str) -> dynamic`, `Yaml.stringify(value) -> str`. YAML is the dominant config and agent-definition format. Promoted from "Deferred post-v0.1". |
+| `Shell` | [ ] | — | `Shell.run(cmd: str) -> { stdout: str, stderr: str, exit_code: int }`. Universal tool bridge — lets agents call CLIs, data pipelines, and external scripts. Promoted from "Deferred post-v0.1". Sandboxing model (`@tools [Shell]` gating) to be defined before ship. |
 
 ### CLI
 
@@ -127,12 +139,12 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 - **Vector-store `Memory` backend.** Current persistent store is a JSON file. Semantic search needs an embeddings pipeline and `VectorStore` interface — belongs in v0.2.
 - **Major dependency bumps** (`chumsky 0.9 → 1.0`, `imap 2 → 3`, `colored 2 → 3`, `lettre 0.11 → 0.12`) — batched for v0.2.
 - ~~**`while` loop.**~~ Shipped in v0.1.27. `Stmt::While`, lexer token, parser, type-checker, formatter, lint pass, and interpreter eval. `break`/`continue` work identically to `for` loops.
-- **Structural pattern matching.** `when` matches enum variant tags, rich variant destructuring, wildcards, and literal values (int, float, str, bool). The remaining gap is struct/map/tuple shape matching — matching against a struct's field layout or a map's key set. That transform would make agent decision code exhaustiveness-checked decision tables; significant scope, best specced post-v0.1.
+- ~~**Structural pattern matching (struct/map/tuple shape).**~~ Promoted to v0.1.x planned — see Core language table. Enum variant matching, rich destructuring, wildcards, and literal matching remain [x].
 - **Variadic functions** — shipped in v0.1.25 (see core language table).
 - **Lazy sequences / generators.** Everything is eagerly materialized. Extending `Range`'s lazy evaluation to a general iterator protocol would make large-dataset pipelines memory-efficient.
-- **String format specifiers** (`"{ value:.2f }"`). Agents spend most of their time formatting text; a minimal subset (`.2f`, `>10`, `<10`) would cover 90% of needs.
-- **CSV / YAML serialization.** LLMs frequently emit and consume CSV; YAML is the dominant config format. A `Csv` and `Yaml` namespace alongside `Json` rounds out the serialization story.
-- **Subprocess / shell-out.** A `Shell.run(cmd)` primitive is the universal tool bridge. Deferred to avoid adding an OS-shell dependency to the v0.1 binary surface; revisit when the sandboxed execution model is clearer.
+- ~~**String format specifiers** (`"{ value:.2f }"`)~~. Promoted to v0.1.x planned — see Core language table.
+- ~~**CSV / YAML serialization.**~~ Promoted to v0.1.x planned — see `Csv` / `Yaml` in Stdlib namespaces table.
+- ~~**Subprocess / shell-out.**~~ Promoted to v0.1.x planned — see `Shell` in Stdlib namespaces table.
 
 ---
 

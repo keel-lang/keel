@@ -120,7 +120,9 @@ pub enum Expr {
 #[derive(Debug, Clone)]
 pub enum StringPart {
     Literal(String),
-    Interpolation(Box<Expr>),
+    /// Expression plus an optional raw format spec (the part after `:` inside `{}`).
+    /// e.g. `{pi:.2f}` → spec = `Some(".2f")`, `{x}` → spec = `None`.
+    Interpolation(Box<Expr>, Option<String>),
 }
 
 #[derive(Debug, Clone)]

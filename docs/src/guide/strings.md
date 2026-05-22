@@ -113,6 +113,52 @@ padded = "42".pad(6)               # "    42"
 zeroed = "42".pad(6, char: "0")   # "000042"
 ```
 
+## Format specifiers
+
+A slot may include a format spec after a colon — `{expr:spec}` — for precise number formatting and text alignment. The spec uses a Python-style mini-language.
+
+### Float precision
+
+```keel
+pi = 3.14159
+Io.show("{pi:.2f}")     # → "3.14"
+Io.show("{pi:.4f}")     # → "3.1416"
+
+n = 42
+Io.show("{n:.2f}")      # → "42.00"  (int auto-promoted to float)
+```
+
+### Width and alignment
+
+| Spec | Alignment | Example |
+|------|-----------|---------|
+| `:<N` | Left-align, space-padded to N chars | `{"hi":<8}` → `"hi      "` |
+| `:>N` | Right-align, space-padded to N chars | `{42:>8}` → `"      42"` |
+| `:^N` | Center, space-padded to N chars | `{"hi":^8}` → `"   hi   "` |
+| `:N` | Bare width — right-align shorthand | `{42:8}` → `"      42"` |
+
+### Combining alignment and precision
+
+```keel
+price = 19.5
+Io.show("{price:>10.2f}")    # → "     19.50"
+Io.show("{price:<10.2f}")    # → "19.50     "
+```
+
+### Building tables
+
+```keel
+Io.show("{"Name":<12} {"Score":>8}")
+Io.show("{"Alice":<12} {0.975:>8.3f}")
+Io.show("{"Bob":<12} {0.742:>8.3f}")
+# →
+# Name          Score
+# Alice         0.975
+# Bob           0.742
+```
+
+Named arguments inside a slot are not confused with the format spec — `{f(key: v):>10}` parses `f(key: v)` as the expression and `>10` as the spec, because the separator colon is only detected at outermost bracket depth.
+
 ## `Stringable` interface — custom interpolation
 
 By default, only primitive values (`str`, `int`, `float`, `bool`) and built-in types (`Uuid`, `datetime`) can be used inside `"{...}"` interpolation slots. To make your own struct type work in interpolation, implement the `Stringable` interface:

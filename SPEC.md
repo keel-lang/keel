@@ -80,7 +80,7 @@ Keel uses a **structural type system with full inference** as its design target.
 |---|---|---|
 | `int` | `42` | 64-bit integer |
 | `float` | `3.14` | 64-bit float |
-| `str` | `"hello"` | UTF-8, interpolation `{expr}`, escapes `\n \t \r \" \\ \{ \}` |
+| `str` | `"hello"` | UTF-8, interpolation `{expr}` or `{expr:spec}`, escapes `\n \t \r \" \\ \{ \}` |
 | `bool` | `true`, `false` | |
 | `none` | `none` | Unit type / absence value |
 | `duration` | `5.minutes`, `2.hours` | Duration literals |
@@ -93,6 +93,18 @@ Keel uses a **structural type system with full inference** as its design target.
 **`none` semantics.** `none` is both the unit type and the nullable-empty value. `none?` is equivalent to `none`. The tuple unit `()` is equivalent to `none`.
 
 **Multi-line strings.** Triple-quoted `"""..."""` preserves newlines and indentation. Same interpolation and escape rules.
+
+**Format specifiers.** An interpolation slot may include a format spec after a colon: `{expr:spec}`. The spec is a Python-style mini-language:
+
+| Spec | Effect | Example |
+|---|---|---|
+| `:.Nf` | Float with N decimal places (auto-promotes `int` → `float`) | `{pi:.2f}` → `"3.14"` |
+| `:>N` | Right-align in N chars, space-padded | `{n:>8}` → `"      42"` |
+| `:<N` | Left-align in N chars, space-padded | `{s:<8}` → `"hi      "` |
+| `:^N` | Center in N chars, space-padded | `{s:^8}` → `"   hi   "` |
+| `:N` | Bare width — right-align shorthand | `{n:8}` → `"      42"` |
+
+Specs may combine alignment and precision: `{x:>10.2f}`. A malformed spec is a runtime error. The `:` that starts a spec must be at the outermost bracket depth, so named arguments inside the slot (e.g., `{f(key: v):>10}`) are not confused with the spec separator.
 
 ### 2.3 Collection types
 

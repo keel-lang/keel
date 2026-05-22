@@ -13,6 +13,113 @@ use super::stmt::StmtOutcome;
 use super::value::Value;
 use super::{eval_binary, is_pascal_case};
 
+/// Parsed components of a format spec string.
+struct ParsedSpec {
+    align: Option<char>,
+    width: Option<usize>,
+    precision: Option<usize>,
+    type_flag: Option<char>,
+}
+
+/// Returns true when the spec needs the raw numeric value (float coercion).
+/// Alignment-only specs do not — they work on the string representation.
+fn spec_needs_numeric(spec: &ParsedSpec) -> bool {
+    spec.type_flag == Some('f') || spec.precision.is_some()
+}
+
+fn parse_spec(spec: &str) -> miette::Result<ParsedSpec> {
+    let mut s = spec;
+
+    let align = if s.starts_with('<') {
+        s = &s[1..];
+        Some('<')
+    } else if s.starts_with('>') {
+        s = &s[1..];
+        Some('>')
+    } else if s.starts_with('^') {
+        s = &s[1..];
+        Some('^')
+    } else {
+        None
+    };
+
+    let width = if s.starts_with(|c: char| c.is_ascii_digit()) {
+        let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+        let w: usize = s[..end].parse().unwrap_or(0);
+        s = &s[end..];
+        Some(w)
+    } else {
+        None
+    };
+
+    let precision = if s.starts_with('.') {
+        s = &s[1..];
+        let end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+        let p: usize = s[..end].parse().unwrap_or(0);
+        s = &s[end..];
+        Some(p)
+    } else {
+        None
+    };
+
+    let type_flag = if s == "f" { Some('f') } else { None };
+    if !s.is_empty() && type_flag.is_none() {
+        return Err(runtime_error(format!(
+            "unknown format spec type `{s}` in `:{spec}`"
+        )));
+    }
+
+    Ok(ParsedSpec { align, width, precision, type_flag })
+}
+
+fn apply_padding(s: String, ps: &ParsedSpec) -> String {
+    match (ps.width, ps.align) {
+        (Some(w), Some('<')) => format!("{:<width$}", s, width = w),
+        (Some(w), Some('>')) => format!("{:>width$}", s, width = w),
+        (Some(w), Some('^')) => format!("{:^width$}", s, width = w),
+        (Some(w), None) => format!("{:>width$}", s, width = w),
+        _ => s,
+    }
+}
+
+/// Apply a raw format spec string (the part after `:` in `{expr:spec}`) to a value
+/// and a pre-computed string representation of that value (from `to_str()` dispatch).
+///
+/// Supported grammar: `[align][width][.precision][type]`
+///   align     = `<` | `>` | `^`   (space fill only — custom fill chars like `*>10` are not supported)
+///   width     = integer
+///   precision = `.` integer
+///   type      = `f`
+///
+/// `base_str` is used for alignment-only specs. Float/precision specs bypass it and
+/// coerce the raw numeric value directly, so both paths produce the same result for
+/// numeric types while ensuring user-defined `to_str()` impls are respected for
+/// alignment specs on custom types.
+fn apply_format_spec(v: &Value, base_str: String, spec: &str) -> miette::Result<String> {
+    let ps = parse_spec(spec)?;
+
+    let formatted = if spec_needs_numeric(&ps) {
+        // Float formatting: coerce int → float if needed.
+        let f = match v {
+            Value::Float(f) => *f,
+            Value::Integer(i) => *i as f64,
+            other => {
+                return Err(runtime_error(format!(
+                    "format spec `:{spec}` requires a float or int, got {}",
+                    other.type_name()
+                )))
+            }
+        };
+        let prec = ps.precision.unwrap_or(6);
+        format!("{:.prec$}", f, prec = prec)
+    } else {
+        // Alignment-only: use the caller-resolved string (respects to_str() impls).
+        base_str
+    };
+
+    Ok(apply_padding(formatted, &ps))
+}
+
 impl Interpreter {
     pub fn eval_expr<'a>(
         &'a mut self,
@@ -31,19 +138,26 @@ impl Interpreter {
                     for p in parts {
                         match p {
                             StringPart::Literal(s) => out.push_str(s),
-                            StringPart::Interpolation(e) => {
+                            StringPart::Interpolation(e, spec) => {
                                 let v = self.eval_expr(e, env).await?;
                                 if matches!(v, Value::EarlyReturn(_)) {
                                     return Ok(v);
                                 }
-                                // Prefer to_str via method dispatch (covers built-ins,
-                                // Uuid, and user impl blocks); fall back to Display.
-                                let s = match self
+                                // Always resolve to_str() via method dispatch first so
+                                // user-defined impl Stringable blocks are respected.
+                                // Format specs receive this string for alignment; float
+                                // specs bypass it and coerce the raw numeric value.
+                                let base = match self
                                     .call_method_on_value(v.clone(), "to_str", vec![], env)
                                     .await
                                 {
                                     Ok(Value::String(s)) => s,
                                     _ => v.to_display_string(),
+                                };
+                                let s = if let Some(raw_spec) = spec {
+                                    apply_format_spec(&v, base, raw_spec)?
+                                } else {
+                                    base
                                 };
                                 out.push_str(&s);
                             }

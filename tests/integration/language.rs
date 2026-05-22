@@ -2639,3 +2639,216 @@ run_test()
     assert!(stdout.contains('7'), "7: {stdout}");
     assert!(stdout.contains('8'), "8: {stdout}");
 }
+
+// ---------------------------------------------------------------------------
+// Format specifiers in string interpolation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn format_spec_float_precision() {
+    let src = r#"
+agent A {
+    @on_start {
+        pi = 3.14159
+        Io.show("{pi:.2f}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("3.14"),
+        "expected '3.14' in stdout:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("3.1415"),
+        "unexpected extra precision in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_int_as_float() {
+    let src = r#"
+agent A {
+    @on_start {
+        n = 42
+        Io.show("{n:.2f}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("42.00"),
+        "expected '42.00' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_right_align() {
+    let src = r#"
+agent A {
+    @on_start {
+        n = 7
+        Io.show("{n:>5}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("    7"),
+        "expected right-aligned '    7' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_left_align() {
+    let src = r#"
+agent A {
+    @on_start {
+        s = "hi"
+        Io.show("{s:<6}!")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("hi    !"),
+        "expected left-aligned 'hi    !' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_center_align() {
+    let src = r#"
+agent A {
+    @on_start {
+        s = "hi"
+        Io.show("{s:^6}!")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("  hi  !"),
+        "expected centered '  hi  !' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_combined_align_and_precision() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 3.14159
+        Io.show("{x:>10.2f}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("      3.14"),
+        "expected right-aligned '      3.14' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_named_arg_colon_not_confused_with_spec() {
+    let src = r#"
+task greet(name: str) -> str {
+    "hello {name}"
+}
+agent A {
+    @on_start {
+        Io.show(greet(name: "world"))
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("hello world"),
+        "expected 'hello world' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_bare_width_right_aligns() {
+    let src = r#"
+agent A {
+    @on_start {
+        n = 5
+        Io.show("{n:4}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("   5"),
+        "expected right-aligned '   5' in stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_alignment_respects_custom_to_str() {
+    // Alignment specs must call to_str() via impl dispatch, not fall back to
+    // to_display_string(), so {x:>10} and {x} produce the same base string.
+    let src = r#"
+type Tag { value: str }
+impl Stringable for Tag {
+    task to_str(self) -> str {
+        "[{self.value}]"
+    }
+}
+agent A {
+    @on_start {
+        t: Tag = { value: "ok" }
+        Io.show("{t}")
+        Io.show("{t:>8}")
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("[ok]"),
+        "expected '[ok]' from bare interp:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("    [ok]"),
+        "expected '    [ok]' from aligned interp (custom to_str must be respected):\n{stdout}"
+    );
+}
+
+#[test]
+fn format_spec_unknown_type_flag_is_runtime_error() {
+    let src = r#"
+agent A {
+    @on_start {
+        pi = 3.14
+        Io.show("{pi:.2x}")
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected runtime error for unknown format spec type");
+    assert!(
+        stderr.contains("unknown format spec type"),
+        "expected 'unknown format spec type' in stderr:\n{stderr}"
+    );
+}

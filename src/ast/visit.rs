@@ -195,7 +195,7 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
             for part in parts {
                 match part {
                     StringPart::Literal(_) => {}
-                    StringPart::Interpolation(expr) => v.visit_expr(expr),
+                    StringPart::Interpolation(expr, _spec) => v.visit_expr(expr),
                 }
             }
         }

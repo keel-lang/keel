@@ -116,3 +116,25 @@ run(Bot)
 "#,
     );
 }
+
+#[test]
+fn idempotent_format_specifiers() {
+    assert_idempotent(
+        r#"
+agent A {
+  @on_start {
+    pi = 3.14159
+    n = 7
+    s = "hello"
+    Io.show("{pi:.2f}")
+    Io.show("{n:>10}")
+    Io.show("{s:<10}")
+    Io.show("{s:^10}")
+    Io.show("{n:>10.2f}")
+  }
+}
+
+run(A)
+"#,
+    );
+}

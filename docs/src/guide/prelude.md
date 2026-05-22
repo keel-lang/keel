@@ -25,8 +25,8 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Email` | 🟡 | IMAP/SMTP: `fetch`, `send`, `archive` |
 | `File` | ✅ | Filesystem: `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` |
 | `String value methods` | ✅ | Regex and formatting directly on string values: matches, extract, find_all, sub, truncate, pad |
-| `Json` | ✅ | JSON: `parse`, `stringify` |
-| `Cache` | ✅ | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |
+| `Json` | 🟡 | JSON: `parse`, `stringify` |
+| `Cache` | 🟡 | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
 | `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
 | `Memory` | ✅ | Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\|persistent\|none` (default: session). Persistent mode writes `~/.keel/memory/<stem>_<hash12>/<agent>.json`. |
@@ -34,7 +34,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Async` | ✅ | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | ✅ | `retry`, `with_timeout`, `with_deadline` |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
-| `Time` | ✅ | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
+| `Time` | 🟡 | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
 | `Random` | ✅ | Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness. |
 | `Uuid` | ✅ | UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`. |
 | `Crypto` | ✅ | Cryptographic primitives: fixed safe SHA-2 hash/HMAC methods, `token`, `random_bytes`. |

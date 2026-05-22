@@ -6,6 +6,23 @@
 
 ## Unreleased
 
+### String interpolation format specifiers
+
+Slots now accept an optional format spec after a colon: `{expr:spec}`.
+
+```keel
+pi = 3.14159
+Io.show("{pi:.2f}")        # → "3.14"
+Io.show("{pi:>10.2f}")     # → "      3.14"
+Io.show("{"hi":<8}!")      # → "hi      !"
+Io.show("{"hi":^8}")       # → "   hi   "
+n = 42
+Io.show("{n:.2f}")         # → "42.00"  (int auto-promoted to float)
+Io.show("{n:8}")           # → "      42" (bare width = right-align)
+```
+
+See the [String Interpolation guide](guide/strings.md) for the full spec.
+
 ---
 
 ## v0.1.27 — 2026-05-21

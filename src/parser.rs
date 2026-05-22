@@ -1738,9 +1738,11 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
                     expr_text.push(c);
                 }
             }
-            parts.push(StringPart::Interpolation(Box::new(parse_interp_expr(
-                &expr_text,
-            ))));
+            let (expr_src, fmt_spec) = split_format_spec(&expr_text);
+            parts.push(StringPart::Interpolation(
+                Box::new(parse_interp_expr(expr_src)),
+                fmt_spec.map(|s| s.to_string()),
+            ));
         } else {
             current.push(ch);
         }
@@ -1753,6 +1755,41 @@ fn parse_interpolation(raw: &str) -> Vec<StringPart> {
         parts.push(StringPart::Literal(String::new()));
     }
     parts
+}
+
+/// Split `"expr:spec"` into `("expr", Some("spec"))`, respecting brace/bracket/paren depth
+/// so colons inside named-argument calls or struct literals are not treated as the
+/// format-spec separator.  Returns `(full_text, None)` when no bare colon is found.
+fn split_format_spec(text: &str) -> (&str, Option<&str>) {
+    let mut depth: i32 = 0;
+    let mut in_str = false;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if in_str {
+            if c == '\\' {
+                chars.next(); // skip escaped char
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '{' | '(' | '[' => depth += 1,
+            '}' | ')' | ']' => depth -= 1,
+            ':' if depth == 0 => {
+                let expr_part = text[..i].trim();
+                let spec_part = text[i + 1..].trim();
+                if !spec_part.is_empty() {
+                    return (expr_part, Some(spec_part));
+                }
+                // bare trailing colon with no spec — treat as no spec
+                return (text, None);
+            }
+            _ => {}
+        }
+    }
+    (text, None)
 }
 
 fn parse_interp_expr(text: &str) -> Expr {

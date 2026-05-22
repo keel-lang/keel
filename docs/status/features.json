@@ -159,9 +159,9 @@
     },
     {
       "name": "Cache",
-      "status": "shipped",
+      "status": "partial",
       "implemented_ops": "`set` (optional TTL), `get`, `delete`, `clear` — process-scoped",
-      "gaps": "—",
+      "gaps": "`Cache.get` return type undocumented — at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `Cache.get(key) -> dynamic?` to SPEC §3 so users know the stored type is preserved and a narrow cast (`as T`) recovers it.",
       "purpose": "In-memory process-scoped cache: `set`, `get`, `delete`, `clear`"
     },
     {
@@ -180,9 +180,9 @@
     },
     {
       "name": "Json",
-      "status": "shipped",
+      "status": "partial",
       "implemented_ops": "`parse`, `stringify`",
-      "gaps": "—",
+      "gaps": "`Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel.",
       "purpose": "JSON: `parse`, `stringify`"
     },
     {
@@ -201,9 +201,9 @@
     },
     {
       "name": "Time",
-      "status": "shipped",
+      "status": "partial",
       "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week`",
-      "gaps": "—",
+      "gaps": "`epoch_ms() -> int` missing — returns the current time as Unix milliseconds (integer); needed for exchange API auth, time-series storage, and any protocol requiring an epoch integer. Implement via `chrono::Utc::now().timestamp_millis()`.",
       "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`."
     },
     {
