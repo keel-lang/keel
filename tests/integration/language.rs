@@ -2405,6 +2405,25 @@ run_test()
 }
 
 #[test]
+fn enum_variant_interpolates_as_variant_name() {
+    let src = r#"
+type Signal = buy | sell | hold
+
+agent A {
+  @on_start {
+    s: Signal = Signal.buy
+    Io.show("{s}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, _) = run_inline(src, true);
+    assert!(ok, "expected ok");
+    assert!(stdout.contains("buy"), "expected 'buy' in stdout:\n{stdout}");
+}
+
+#[test]
 fn impl_stringable_explicit_to_str_call() {
     let src = r#"
 type Color {
