@@ -17,6 +17,10 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(Value::String(interp.runtime.clock.now_utc().to_rfc3339_opts(SecondsFormat::Millis, true)))
             }
         }),
+        "epoch_ms" => |interp, _args| Box::pin(async move {
+            let ms = interp.runtime.clock.now_utc().timestamp_millis();
+            Ok(Value::Integer(ms))
+        }),
         "parse" => |_i, args| Box::pin(async move {
             use chrono::SecondsFormat;
             let s = positional(&args, 0)
@@ -106,11 +110,27 @@ mod tests {
     }
 
     #[test]
-    fn namespace_has_now_and_parse() {
+    fn namespace_has_now_parse_and_epoch_ms() {
         let ns = namespace();
         assert_eq!(ns.name, "Time");
         assert!(ns.methods.contains_key("now"));
         assert!(ns.methods.contains_key("parse"));
+        assert!(ns.methods.contains_key("epoch_ms"));
+    }
+
+    #[tokio::test]
+    async fn epoch_ms_returns_unix_millis() {
+        let ns = namespace();
+        let mut interp = interp_at("2024-01-15T10:30:00.500Z");
+        let method = ns.methods.get("epoch_ms").unwrap();
+        let result = method(&mut interp, vec![]).await;
+        match result.unwrap() {
+            Value::Integer(ms) => {
+                // 2024-01-15T10:30:00.500Z = 1705314600500 ms since epoch
+                assert_eq!(ms, 1705314600500);
+            }
+            other => panic!("expected int, got {other:?}"),
+        }
     }
 
     #[tokio::test]

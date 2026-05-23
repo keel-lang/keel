@@ -1354,6 +1354,7 @@ now      = Time.now()                          # UTC, millisecond precision
 ny       = Time.now(tz: "America/New_York")    # offset-shifted RFC 3339
 parsed   = Time.parse("2026-05-01T09:00:00Z") # datetime? — none if bad/no TZ
 coerced  = Time.parse("2026-05-01", tz: "UTC") # naive + tz: → datetime?
+ts       = Time.epoch_ms()                     # int — ms since Unix epoch
 
 p = parsed.parts()   # {year, month, day, hour, minute, second, millisecond, tz}
 s = parsed.format(as: "%Y-%m-%d")  # str? — none if receiver is not a datetime
@@ -1371,6 +1372,7 @@ ago      = Time.now() - 1.hour
 | `Time.now(tz: name)` | `datetime` | Offset-shifted; IANA name e.g. `"America/New_York"` |
 | `Time.parse(str)` | `datetime?` | Accepts RFC 3339 with explicit TZ offset; returns `none` on failure |
 | `Time.parse(str, tz: name)` | `datetime?` | Coerces a naive string into the given timezone |
+| `Time.epoch_ms()` | `int` | Unix timestamp in milliseconds (suitable for JS interop, BIGINT columns, signed payloads) |
 
 ### Methods (on value)
 

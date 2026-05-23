@@ -14,6 +14,12 @@ All notable changes to Keel.
 
 ### Added
 
+- **`Time.epoch_ms()`.** Returns the current Unix timestamp as an `int` in milliseconds. Useful for JS interop (`Date.now()` equivalence), database `BIGINT` columns, and signed payloads where a raw numeric timestamp is required.
+
+  ```keel
+  ms = Time.epoch_ms()   # e.g. 1705314600500
+  ```
+
 - **`as T` coercions and `typeof()`.** `expr as T` now performs real runtime coercions instead of being a no-op. Supported: `int ↔ float` (truncates toward zero), `int`/`float`/`bool → str`, `str → int`/`float`/`bool` (raises on invalid input), `none → any` (raises), `dynamic` pass-through for `Ai.prompt`/`Json.parse` narrowing. A new prelude function `typeof(x) -> str` returns the runtime type name — `"int"`, `"float"`, `"str"`, `"bool"`, `"none"`, `"list"`, `"map"`, `"duration"`, `"Uuid"`, or the declared struct/enum name.
 
   ```keel

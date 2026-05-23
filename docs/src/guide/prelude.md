@@ -34,7 +34,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Async` | ✅ | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
 | `Control` | ✅ | `retry`, `with_timeout`, `with_deadline` |
 | `Env` | ✅ | Environment: `get(name)`, `require(name)` |
-| `Time` | 🟡 | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
+| `Time` | 🟡 | Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`, `epoch_ms()` → `int`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`. |
 | `Random` | ✅ | Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness. |
 | `Uuid` | ✅ | UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`. |
 | `Crypto` | ✅ | Cryptographic primitives: fixed safe SHA-2 hash/HMAC methods, `token`, `random_bytes`. |

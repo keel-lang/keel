@@ -6,6 +6,14 @@
 
 ## Unreleased
 
+### `Time.epoch_ms()`
+
+Returns the current Unix timestamp as an `int` in milliseconds — the Keel equivalent of JS `Date.now()`. Useful for database `BIGINT` columns, signed payloads, and any context where a raw numeric timestamp is more ergonomic than an RFC 3339 string.
+
+```keel
+ms = Time.epoch_ms()   # e.g. 1705314600500
+```
+
 ### `as T` coercions and `typeof()`
 
 `expr as T` now performs real runtime coercions. `typeof(x)` is a new prelude function returning the runtime type name.

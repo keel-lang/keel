@@ -1744,6 +1744,7 @@ impl Checker {
                         match method.as_str() {
                             "now" => return Ty::Datetime,
                             "parse" => return Ty::Nullable(Box::new(Ty::Datetime)),
+                            "epoch_ms" => return Ty::Int,
                             _ => {}
                         }
                     }
