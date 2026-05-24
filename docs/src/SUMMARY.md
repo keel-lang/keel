@@ -29,6 +29,7 @@
 - [Schedule (time & cron)](./guide/scheduling.md)
 - [Email & Http (connections)](./guide/connections.md)
 - [Filesystem](./guide/filesystem.md)
+- [Shell (subprocess)](./guide/shell.md)
 - [Strings & Cache (text & memory)](./guide/strings.md)
 
 # CLI Reference

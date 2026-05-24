@@ -6,6 +6,27 @@
 
 ## Unreleased
 
+### `Shell` namespace — subprocess bridge
+
+Agents can now invoke external commands and capture their output via `Shell.run`. The command is passed to `/bin/sh -c`, so pipes, redirects, and shell builtins work as expected. Requires `@tools [Shell]`.
+
+```keel
+agent Builder {
+    @tools [Shell]
+
+    @on_start {
+        r = Shell.run("cargo test --quiet 2>&1")
+        if r.exit_code != 0 {
+            raise "tests failed:\n{r.stdout}"
+        }
+        Io.show("all tests passed")
+    }
+}
+run(Builder)
+```
+
+`Shell.run` returns `{ stdout: str, stderr: str, exit_code: int }`. A non-zero exit code is not automatically an error — check it and raise yourself if needed. Spawn failures (e.g. `/bin/sh` not in `PATH`) do raise. Optional named args: `stdin: str` (piped to the process) and `cwd: str` (working directory).
+
 ### `Math` namespace
 
 Transcendental and power functions are now available under the `Math` namespace. All functions accept `int` or `float` and return `float`. Domain errors (`Math.sqrt(-1)`, `Math.log(0)`) raise at runtime and can be caught with `try/catch`.

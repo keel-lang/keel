@@ -107,7 +107,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Math` | [x] | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()` | All return `float`; accept `int` or `float` input; domain errors raise |
 | `Csv` | [ ] | — | `Csv.parse(str) -> list[list[str]]`, `Csv.parse_headers(str) -> list[map[str, str]]`, `Csv.stringify(rows) -> str`. LLMs frequently emit CSV; exchange price-history APIs return CSV. Promoted from "Deferred post-v0.1". |
 | `Yaml` | [ ] | — | `Yaml.parse(str) -> dynamic`, `Yaml.stringify(value) -> str`. YAML is the dominant config and agent-definition format. Promoted from "Deferred post-v0.1". |
-| `Shell` | [ ] | — | `Shell.run(cmd: str) -> { stdout: str, stderr: str, exit_code: int }`. Universal tool bridge — lets agents call CLIs, data pipelines, and external scripts. Promoted from "Deferred post-v0.1". Sandboxing model (`@tools [Shell]` gating) to be defined before ship. |
+| `Shell` | [x] | `run(cmd, stdin:?, cwd:?) -> { stdout, stderr, exit_code }` | `/bin/sh -c` invocation; spawn failure raises; non-zero exit returned in struct. Gated by `@tools [Shell]`. |
 
 ### CLI
 
@@ -144,7 +144,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 - **Lazy sequences / generators.** Everything is eagerly materialized. Extending `Range`'s lazy evaluation to a general iterator protocol would make large-dataset pipelines memory-efficient.
 - ~~**String format specifiers** (`"{ value:.2f }"`)~~. Promoted to v0.1.x planned — see Core language table.
 - ~~**CSV / YAML serialization.**~~ Promoted to v0.1.x planned — see `Csv` / `Yaml` in Stdlib namespaces table.
-- ~~**Subprocess / shell-out.**~~ Promoted to v0.1.x planned — see `Shell` in Stdlib namespaces table.
+- ~~**Subprocess / shell-out.**~~ Shipped in v0.1.x — see `Shell` in Stdlib namespaces table.
 
 ---
 

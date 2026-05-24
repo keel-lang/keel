@@ -1,0 +1,35 @@
+## Shell namespace — subprocess bridge example
+##
+## Demonstrates Shell.run: capturing stdout, handling non-zero exit codes,
+## and passing stdin to a child process.
+##
+## Requires: @tools [Shell]
+
+agent ShellDemo {
+    @tools [Shell]
+
+    @on_start {
+        # Basic command — pipe and builtins work via /bin/sh -c
+        r = Shell.run("echo 'hello from shell'")
+        Io.show("exit_code={r.exit_code}")
+        Io.show("stdout={r.stdout}")
+
+        # Non-zero exit code returned in struct, not raised
+        fail = Shell.run("exit 1")
+        if fail.exit_code != 0 {
+            Io.show("command failed with code {fail.exit_code}")
+        }
+
+        # Pass stdin to the child process
+        wc = Shell.run("wc -c", stdin: "hello")
+        Io.show("byte count: {wc.stdout}")
+
+        # Set the working directory
+        ls = Shell.run("ls *.keel", cwd: "examples")
+        Io.show("keel files: {ls.stdout}")
+
+        stop(self)
+    }
+}
+
+run(ShellDemo)

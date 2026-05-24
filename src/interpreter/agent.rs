@@ -79,6 +79,7 @@ impl Interpreter {
         {
             let prev = self.current_agent.take();
             self.current_agent = Some(inst.clone());
+            self.evaluate_tools_for_turn().await?;
             let mut env = Environment::new();
             self.exec_block(&body, &mut env).await?;
             self.current_agent = prev;

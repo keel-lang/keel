@@ -145,16 +145,19 @@ impl Interpreter {
         args: Vec<CallArgValue>,
     ) -> Result<Value> {
         // Check @tools capability gating if we're in an agent context.
-        if let Some(agent_mutex) = &self.current_agent {
-            let allowed = agent_mutex
-                .lock()
-                .allowed_tools
-                .as_ref()
-                .map(|a| a.allows(ns_name, method));
-            if allowed == Some(false) {
-                return Err(runtime_error(format!(
-                    "CapabilityError: `{ns_name}.{method}` is not allowed by @tools"
-                )));
+        // __global is always allowed — it holds agent lifecycle builtins (run, stop).
+        if ns_name != "__global" {
+            if let Some(agent_mutex) = &self.current_agent {
+                let allowed = agent_mutex
+                    .lock()
+                    .allowed_tools
+                    .as_ref()
+                    .map(|a| a.allows(ns_name, method));
+                if allowed == Some(false) {
+                    return Err(runtime_error(format!(
+                        "CapabilityError: `{ns_name}.{method}` is not allowed by @tools"
+                    )));
+                }
             }
         }
 

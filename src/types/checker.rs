@@ -209,7 +209,7 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto", "Math",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto", "Math", "Shell",
         ] {
             prelude.insert(n.to_string());
         }
@@ -2279,6 +2279,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
         name.as_str(),
         "Ai" | "Io"
             | "Http"
+            | "Shell"
             | "Email"
             | "Search"
             | "Db"

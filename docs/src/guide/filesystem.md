@@ -91,3 +91,7 @@ File.remove(tmp)
 | `File.glob(pattern)` | `list[str]` | empty list if no match |
 | `File.mktemp()` | `str` | temp file path; caller removes it |
 | `File.mktemp(dir: true)` | `str` | temp directory path; caller removes it |
+
+---
+
+For subprocess execution, see [Shell — subprocess bridge](./shell.md).

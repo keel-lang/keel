@@ -19,6 +19,7 @@ mod math;
 mod random;
 mod schedule;
 mod search;
+mod shell;
 mod time;
 pub(crate) mod uuid;
 
@@ -28,7 +29,7 @@ pub(crate) fn install(interp: &mut Interpreter) {
     }
 }
 
-fn namespaces() -> [Namespace; 21] {
+fn namespaces() -> [Namespace; 22] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -51,5 +52,6 @@ fn namespaces() -> [Namespace; 21] {
         uuid::namespace(),
         crypto::namespace(),
         math::namespace(),
+        shell::namespace(),
     ]
 }

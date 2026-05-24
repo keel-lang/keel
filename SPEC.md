@@ -369,6 +369,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Uuid` | UUID generation | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
 | `Crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
 | `Math` | Transcendental and power functions | `PI()`, `E()`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x)`, `log2(x)`, `log10(x)`, `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)` |
+| `Shell` | Subprocess bridge | `run(cmd, stdin:?, cwd:?) -> { stdout, stderr, exit_code }` |
 
 ### 3.3 Prelude free functions
 
@@ -1533,10 +1534,64 @@ Crypto.random_bytes(16)                       # list[int] of 16 bytes
 
 ---
 
-## 16. Escape Hatches
+## 16. Shell — Subprocess Bridge
+
+`Shell` lets agents invoke external commands and capture their output. It is gated by `@tools [Shell]` — an agent must declare the capability before any `Shell.run` call is allowed.
+
+### `Shell.run`
+
+```
+Shell.run(cmd: str, stdin: str? = none, cwd: str? = none) -> { stdout: str, stderr: str, exit_code: int }
+```
+
+`cmd` is passed to `/bin/sh -c`, so pipes, redirects, and shell builtins work as expected.
+
+| Argument | Type | Notes |
+|---|---|---|
+| `cmd` | `str` | Shell command (positional, required) |
+| `stdin:` | `str?` | Text piped to the process's standard input |
+| `cwd:` | `str?` | Working directory for the process (defaults to the interpreter's working directory) |
+
+**Return value** — always a map with three keys:
+
+| Key | Type | Notes |
+|---|---|---|
+| `stdout` | `str` | Captured standard output (UTF-8; invalid bytes replaced with `?`) |
+| `stderr` | `str` | Captured standard error |
+| `exit_code` | `int` | Exit code; `0` on success, non-zero on failure; `-1` if the OS cannot report one |
+
+**Error semantics:**
+
+- If `/bin/sh` cannot be spawned (e.g. missing in `PATH`), `Shell.run` **raises** at runtime.
+- A non-zero exit code is **not** an error — it is returned in `exit_code`. The caller decides whether to raise.
+
+```keel
+agent Builder {
+    @tools [Shell]
+
+    @on_start {
+        r = Shell.run("cargo test --quiet 2>&1")
+        if r.exit_code != 0 {
+            raise "build failed:\n{r.stdout}"
+        }
+        Io.show("Tests passed.")
+    }
+}
+run(Builder)
+```
+
+**Capability gating:** `@tools` restricts an agent to the listed namespaces. If an agent declares `@tools [Io]` but not `Shell`, any `Shell.run` call raises `CapabilityError` at runtime. An agent with no `@tools` declaration is unrestricted. This gating is process-level, not OS-level — future releases may add stricter sandboxing.
+
+**Environment isolation:** The subprocess runs with a clean environment. Only `PATH`, `HOME`, `SHELL`, `TMPDIR`, `USER`, and `LANG` are forwarded from the keel process. All other variables — including secrets, API keys, or credentials present in the keel process environment — are not visible to the shell command. To read the keel process environment from within a script, use `Env.*` instead.
+
+**Security note:** `cmd` is passed directly to `/bin/sh -c`. Never interpolate untrusted user input into `cmd` without sanitisation.
+
+---
+
+## 17. Escape Hatches
 
 
-### 16.1 `Ai.prompt` — raw LLM access
+### 17.1 `Ai.prompt` — raw LLM access
 
 ```keel
 score = Ai.prompt(
@@ -1549,7 +1604,7 @@ score = Ai.prompt(
 
 `Ai.prompt(...)` **must be followed by `as T`**. A bare `Ai.prompt(...)` that tries to use the result is a compile error. Use `as dynamic` to explicitly opt out of typing.
 
-### 16.2 `Http.request` — raw HTTP
+### 17.2 `Http.request` — raw HTTP
 
 ```keel
 r = Http.request(
@@ -1562,7 +1617,7 @@ r = Http.request(
 # r: HttpResponse?
 ```
 
-### 16.3 `Db.query` — raw SQL
+### 17.3 `Db.query` — raw SQL
 
 ```keel
 rows = Db.query(
@@ -1572,7 +1627,7 @@ rows = Db.query(
 # rows: list[dynamic]
 ```
 
-### 16.4 `extern` — call external code
+### 17.4 `extern` — call external code
 
 ```keel
 extern task tokenize(text: str) -> list[str] from "nlp_utils"
@@ -1584,9 +1639,9 @@ tokens = tokenize(document.body)
 
 ---
 
-## 17. Environment & Configuration
+## 18. Environment & Configuration
 
-### 17.1 Environment variables
+### 18.1 Environment variables
 
 ```keel
 api_key = Env.require("OPENAI_API_KEY")   # fails at startup if missing
@@ -1595,7 +1650,7 @@ db_url  = Env.get("DATABASE_URL")          # str? — none if missing
 
 `Env` is a prelude namespace backed by the host environment.
 
-### 17.2 Configuration file
+### 18.2 Configuration file
 
 `keel.config` (YAML) is loaded by the runtime at startup and populates default attribute values:
 
@@ -1613,7 +1668,7 @@ log:
 
 ---
 
-## 18. Modules & Imports
+## 19. Modules & Imports
 
 ```keel
 use "./email_utils.keel"               # import a local file
@@ -1625,7 +1680,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 
 ---
 
-## 19. Operators
+## 20. Operators
 
 | Operator | Meaning |
 |---|---|
@@ -1674,7 +1729,7 @@ none as int         # raises: cannot cast none to int
 
 ---
 
-## 20. Execution Model
+## 21. Execution Model
 
 Keel runs on the **Keel Runtime** (Rust, Tokio).
 
@@ -1699,7 +1754,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 
 ---
 
-## 21. Compile-Time Errors
+## 22. Compile-Time Errors
 
 | Error | Severity |
 |---|---|
@@ -1724,7 +1779,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 22. Lint Rules (`keel lint`)
+## 23. Lint Rules (`keel lint`)
 
 `keel lint` checks for style and best-practice issues that are not type errors. The program may still run; lint warnings indicate dead code or likely misuse patterns.
 
@@ -1739,7 +1794,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 23. IDE Contract
+## 24. IDE Contract
 
 Every feature is designed for tooling.
 
@@ -1761,7 +1816,7 @@ Every feature is designed for tooling.
 
 ---
 
-## 24. Formal Grammar (PEG summary, condensed)
+## 25. Formal Grammar (PEG summary, condensed)
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
@@ -1855,7 +1910,7 @@ That keeps the parser small, type inference uniform (no hard-coded primitive sig
 
 ---
 
-## 25. What's Next
+## 26. What's Next
 
 v0.1 is the initial alpha. `keel run` accepts only the surface described in this document.
 

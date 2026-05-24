@@ -14,6 +14,27 @@ All notable changes to Keel.
 
 ### Added
 
+- **`Shell` namespace — subprocess bridge.** `Shell.run(cmd, stdin:?, cwd:?)` executes a shell command and returns `{ stdout: str, stderr: str, exit_code: int }`. The command is passed to `/bin/sh -c`, so pipes and redirects work as expected. Spawn failures raise; a non-zero exit code is returned in the struct and is not itself an error. Gated by `@tools [Shell]`. The subprocess runs with an isolated environment: only `PATH`, `HOME`, `SHELL`, `TMPDIR`, `USER`, and `LANG` are forwarded; secrets and other process-level variables are not exposed.
+
+  ```keel
+  agent DataPipeline {
+      @tools [Shell]
+
+      @on_start {
+          r = Shell.run("wc -l < data/records.csv")
+          Io.show("record count: {r.stdout.strip()}")
+
+          out = Shell.run("python3 transform.py", cwd: "scripts")
+          if out.exit_code != 0 {
+              raise "transform failed: {out.stderr}"
+          }
+
+          Shell.run("echo hello world", stdin: "unused\n")
+      }
+  }
+  run(DataPipeline)
+  ```
+
 - **`Math` namespace.** Transcendental and power functions: `sqrt`, `pow`, `exp`, `log` (natural), `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`. Constants `Math.PI()` and `Math.E()`. All functions accept `int` or `float` and return `float`. Domain errors (e.g. `Math.sqrt(-1)`, `Math.log(0)`) raise at runtime.
 
   ```keel
