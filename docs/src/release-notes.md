@@ -6,6 +6,34 @@
 
 ## Unreleased
 
+### `Math` namespace
+
+Transcendental and power functions are now available under the `Math` namespace. All functions accept `int` or `float` and return `float`. Domain errors (`Math.sqrt(-1)`, `Math.log(0)`) raise at runtime and can be caught with `try/catch`.
+
+```keel
+h   = Math.sqrt(Math.pow(3, 2) + Math.pow(4, 2))  # 5.0
+ln2 = Math.log(2)                                   # ≈ 0.693
+s   = Math.sin(Math.PI() / 6.0)                    # 0.5
+```
+
+| Function | Returns | Notes |
+|---|---|---|
+| `Math.PI()` | `float` | π |
+| `Math.E()` | `float` | e |
+| `Math.sqrt(x)` | `float` | Raises if `x < 0` |
+| `Math.pow(x, y)` | `float` | |
+| `Math.exp(x)` | `float` | e^x |
+| `Math.log(x)` | `float` | Natural log; raises if `x ≤ 0` |
+| `Math.log2(x)` | `float` | Raises if `x ≤ 0` |
+| `Math.log10(x)` | `float` | Raises if `x ≤ 0` |
+| `Math.sin(x)` | `float` | Radians |
+| `Math.cos(x)` | `float` | Radians |
+| `Math.tan(x)` | `float` | Radians |
+| `Math.asin(x)` | `float` | Raises if `x ∉ [-1, 1]` |
+| `Math.acos(x)` | `float` | Raises if `x ∉ [-1, 1]` |
+| `Math.atan(x)` | `float` | Radians |
+| `Math.atan2(y, x)` | `float` | Two positional args |
+
 ### `Time.epoch_ms()`
 
 Returns the current Unix timestamp as an `int` in milliseconds — the Keel equivalent of JS `Date.now()`. Useful for database `BIGINT` columns, signed payloads, and any context where a raw numeric timestamp is more ergonomic than an RFC 3339 string.

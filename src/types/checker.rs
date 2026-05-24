@@ -209,7 +209,7 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto", "Math",
         ] {
             prelude.insert(n.to_string());
         }
@@ -1784,6 +1784,15 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Math" {
+                        match method.as_str() {
+                            "PI" | "E" | "sqrt" | "pow" | "exp" | "log" | "log2" | "log10"
+                            | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "atan2" => {
+                                return Ty::Float;
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -2287,6 +2296,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "Random"
             | "Uuid"
             | "Crypto"
+            | "Math"
     ) {
         return Some(format!("namespace `{name}`"));
     }

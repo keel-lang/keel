@@ -14,6 +14,14 @@ All notable changes to Keel.
 
 ### Added
 
+- **`Math` namespace.** Transcendental and power functions: `sqrt`, `pow`, `exp`, `log` (natural), `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`. Constants `Math.PI()` and `Math.E()`. All functions accept `int` or `float` and return `float`. Domain errors (e.g. `Math.sqrt(-1)`, `Math.log(0)`) raise at runtime.
+
+  ```keel
+  h   = Math.sqrt(Math.pow(3, 2) + Math.pow(4, 2))   # 5.0
+  deg = 45.0
+  s   = Math.sin(deg * Math.PI() / 180.0)             # ≈ 0.707
+  ```
+
 - **`Time.epoch_ms()`.** Returns the current Unix timestamp as an `int` in milliseconds. Useful for JS interop (`Date.now()` equivalence), database `BIGINT` columns, and signed payloads where a raw numeric timestamp is required.
 
   ```keel

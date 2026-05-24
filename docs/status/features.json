@@ -202,9 +202,9 @@
     {
       "name": "Time",
       "status": "partial",
-      "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week`",
-      "gaps": "`epoch_ms() -> int` missing — returns the current time as Unix milliseconds (integer); needed for exchange API auth, time-series storage, and any protocol requiring an epoch integer. Implement via `chrono::Utc::now().timestamp_millis()`.",
-      "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`."
+      "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week`",
+      "gaps": "—",
+      "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`, `epoch_ms()` → `int`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`."
     },
     {
       "name": "Random",
@@ -226,6 +226,13 @@
       "implemented_ops": "`sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)`",
       "gaps": "Cryptographic primitives; distinct from `Random` (PRNG)",
       "purpose": "Cryptographic primitives: fixed safe SHA-2 hash/HMAC methods, `token`, `random_bytes`."
+    },
+    {
+      "name": "Math",
+      "status": "shipped",
+      "implemented_ops": "`sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()`",
+      "gaps": "All return `float`; accept `int` or `float` input; domain errors raise",
+      "purpose": "Transcendentals: `sqrt`, `pow`, `exp`, `log` (natural), `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`. Constants: `PI()`, `E()`. All return `float`. Domain errors raise."
     }
   ],
   "cli": [

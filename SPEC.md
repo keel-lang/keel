@@ -368,6 +368,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Random` | Pseudo-random generation | `float()`, `int(min:, max:)`, `bool()` |
 | `Uuid` | UUID generation | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
 | `Crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
+| `Math` | Transcendental and power functions | `PI()`, `E()`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x)`, `log2(x)`, `log10(x)`, `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)` |
 
 ### 3.3 Prelude free functions
 
@@ -994,7 +995,7 @@ when action {
 }
 ```
 
-**Tuple and struct patterns, `where` guards** — see §23 grammar for the full form.
+**Tuple and struct patterns, `where` guards** — see §24 grammar for the full form.
 
 **Non-enum matching (primitives, strings):** wildcard `_` is **required** (the compiler can't prove exhaustiveness on unbounded types).
 
@@ -1410,9 +1411,48 @@ if deadline > Time.now() {
 
 ---
 
-## 14. Random, Uuid, and Crypto
+## 14. Math
 
-### 14.1 `Random` — pseudo-random generation
+The `Math` namespace provides transcendental and power functions. All functions accept `int` or `float` arguments and always return `float`. The value-level methods `.abs()`, `.floor()`, `.ceil()`, `.round()` remain on the value itself (e.g. `(-3).abs()`) and are not duplicated here.
+
+```keel
+h   = Math.sqrt(Math.pow(3, 2) + Math.pow(4, 2))  # 5.0  (Pythagoras)
+ln2 = Math.log(2)                                   # ≈ 0.693
+deg = 45.0
+rad = deg * Math.PI() / 180.0
+s   = Math.sin(rad)                                 # ≈ 0.707
+```
+
+### Constants
+
+| Call | Returns | Value |
+|---|---|---|
+| `Math.PI()` | `float` | π ≈ 3.14159265358979 |
+| `Math.E()` | `float` | e ≈ 2.71828182845905 |
+
+### Functions
+
+| Call | Returns | Notes |
+|---|---|---|
+| `Math.sqrt(x)` | `float` | Square root; raises if `x < 0` |
+| `Math.pow(x, y)` | `float` | `x` raised to the power `y` |
+| `Math.exp(x)` | `float` | e^x |
+| `Math.log(x)` | `float` | Natural logarithm (ln); raises if `x ≤ 0` |
+| `Math.log2(x)` | `float` | Base-2 logarithm; raises if `x ≤ 0` |
+| `Math.log10(x)` | `float` | Base-10 logarithm; raises if `x ≤ 0` |
+| `Math.sin(x)` | `float` | Sine (radians) |
+| `Math.cos(x)` | `float` | Cosine (radians) |
+| `Math.tan(x)` | `float` | Tangent (radians) |
+| `Math.asin(x)` | `float` | Arc-sine (radians); raises if `x ∉ [-1, 1]` |
+| `Math.acos(x)` | `float` | Arc-cosine (radians); raises if `x ∉ [-1, 1]` |
+| `Math.atan(x)` | `float` | Arc-tangent (radians) |
+| `Math.atan2(y, x)` | `float` | `atan(y/x)` with correct quadrant; two positional args |
+
+---
+
+## 15. Random, Uuid, and Crypto
+
+### 15.1 `Random` — pseudo-random generation
 
 `Random` produces non-cryptographic pseudo-random values. Use it for simulation, sampling, games, and any context where security is not a concern.
 
@@ -1428,7 +1468,7 @@ Random.int(min: 1, max: 6)  # dice roll
 Random.bool()               # true or false
 ```
 
-### 14.2 `Uuid` — UUID generation
+### 15.2 `Uuid` — UUID generation
 
 `Uuid` is a distinct type (not `str`). It implements `Stringable` so it interpolates cleanly.
 
@@ -1459,7 +1499,7 @@ Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479") # Uuid?
 id.format(as: "simple")                            # "f47ac10b58cc4372a5670e02b2c3d479"
 ```
 
-### 14.3 `Crypto` — cryptographic primitives
+### 15.3 `Crypto` — cryptographic primitives
 
 `Crypto` provides security-grade operations backed by a CSPRNG. It is **distinct from `Random`** — use `Crypto` wherever the output affects security (tokens, signatures, key derivation).
 
@@ -1493,10 +1533,10 @@ Crypto.random_bytes(16)                       # list[int] of 16 bytes
 
 ---
 
-## 15. Escape Hatches
+## 16. Escape Hatches
 
 
-### 15.1 `Ai.prompt` — raw LLM access
+### 16.1 `Ai.prompt` — raw LLM access
 
 ```keel
 score = Ai.prompt(
@@ -1509,7 +1549,7 @@ score = Ai.prompt(
 
 `Ai.prompt(...)` **must be followed by `as T`**. A bare `Ai.prompt(...)` that tries to use the result is a compile error. Use `as dynamic` to explicitly opt out of typing.
 
-### 15.2 `Http.request` — raw HTTP
+### 16.2 `Http.request` — raw HTTP
 
 ```keel
 r = Http.request(
@@ -1522,7 +1562,7 @@ r = Http.request(
 # r: HttpResponse?
 ```
 
-### 15.3 `Db.query` — raw SQL
+### 16.3 `Db.query` — raw SQL
 
 ```keel
 rows = Db.query(
@@ -1532,7 +1572,7 @@ rows = Db.query(
 # rows: list[dynamic]
 ```
 
-### 15.4 `extern` — call external code
+### 16.4 `extern` — call external code
 
 ```keel
 extern task tokenize(text: str) -> list[str] from "nlp_utils"
@@ -1544,9 +1584,9 @@ tokens = tokenize(document.body)
 
 ---
 
-## 16. Environment & Configuration
+## 17. Environment & Configuration
 
-### 15.1 Environment variables
+### 17.1 Environment variables
 
 ```keel
 api_key = Env.require("OPENAI_API_KEY")   # fails at startup if missing
@@ -1555,7 +1595,7 @@ db_url  = Env.get("DATABASE_URL")          # str? — none if missing
 
 `Env` is a prelude namespace backed by the host environment.
 
-### 15.2 Configuration file
+### 17.2 Configuration file
 
 `keel.config` (YAML) is loaded by the runtime at startup and populates default attribute values:
 
@@ -1573,7 +1613,7 @@ log:
 
 ---
 
-## 17. Modules & Imports
+## 18. Modules & Imports
 
 ```keel
 use "./email_utils.keel"               # import a local file
@@ -1585,7 +1625,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 
 ---
 
-## 18. Operators
+## 19. Operators
 
 | Operator | Meaning |
 |---|---|
@@ -1634,7 +1674,7 @@ none as int         # raises: cannot cast none to int
 
 ---
 
-## 19. Execution Model
+## 20. Execution Model
 
 Keel runs on the **Keel Runtime** (Rust, Tokio).
 
@@ -1659,7 +1699,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 
 ---
 
-## 20. Compile-Time Errors
+## 21. Compile-Time Errors
 
 | Error | Severity |
 |---|---|
@@ -1684,7 +1724,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 21. Lint Rules (`keel lint`)
+## 22. Lint Rules (`keel lint`)
 
 `keel lint` checks for style and best-practice issues that are not type errors. The program may still run; lint warnings indicate dead code or likely misuse patterns.
 
@@ -1699,7 +1739,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 22. IDE Contract
+## 23. IDE Contract
 
 Every feature is designed for tooling.
 
@@ -1721,7 +1761,7 @@ Every feature is designed for tooling.
 
 ---
 
-## 23. Formal Grammar (PEG summary, condensed)
+## 24. Formal Grammar (PEG summary, condensed)
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
@@ -1815,7 +1855,7 @@ That keeps the parser small, type inference uniform (no hard-coded primitive sig
 
 ---
 
-## 24. What's Next
+## 25. What's Next
 
 v0.1 is the initial alpha. `keel run` accepts only the surface described in this document.
 
