@@ -10,7 +10,7 @@ use super::environment::Environment;
 use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
 use super::stmt::StmtOutcome;
-use super::value::Value;
+use super::value::{MapKey, Value};
 use super::{eval_binary, is_pascal_case};
 
 /// Parsed components of a format spec string.
@@ -171,9 +171,9 @@ impl Interpreter {
                 Expr::SelfAccess(field) => {
                     // impl block receiver: `self` bound in local env as a Map or Struct
                     if let Some(v) = env.get("self").cloned() {
-                        return match v {
-                            Value::Map(ref m) | Value::Struct(_, ref m) => {
-                                m.get(field).cloned().ok_or_else(|| {
+                        return match &v {
+                            Value::Map(_) | Value::Struct(_, _) => {
+                                v.get_str_field(field).cloned().ok_or_else(|| {
                                     runtime_error(format!("impl receiver has no field `{field}`"))
                                 })
                             }
@@ -254,8 +254,8 @@ impl Interpreter {
                             }
                             Ok(Value::EnumVariant(ns_name.clone(), field.clone(), None))
                         }
-                        Value::Map(m) | Value::Struct(_, m) => {
-                            if let Some(v) = m.get(field) {
+                        Value::Map(_) | Value::Struct(_, _) => {
+                            if let Some(v) = obj_v.get_str_field(field) {
                                 return Ok(v.clone());
                             }
                             // Fall through to property-style method call.
@@ -302,7 +302,13 @@ impl Interpreter {
                     let mut m = HashMap::new();
                     for (k, v) in fields {
                         let val = self.eval_expr(v, env).await?;
-                        m.insert(k.clone(), val);
+                        let key = match k {
+                            crate::ast::MapLitKey::Ident(s)
+                            | crate::ast::MapLitKey::Str(s) => MapKey::Str(s.clone()),
+                            crate::ast::MapLitKey::Int(n) => MapKey::Int(*n),
+                            crate::ast::MapLitKey::Bool(b) => MapKey::Bool(*b),
+                        };
+                        m.insert(key, val);
                     }
                     Ok(Value::Map(m))
                 }
@@ -311,6 +317,17 @@ impl Interpreter {
                     let base_val = self.eval_expr(base, env).await?;
                     match base_val {
                         Value::Struct(type_name, mut fields) => {
+                            if let Some(schema) = self.struct_types.get(&type_name) {
+                                for (k, _) in overrides.iter() {
+                                    if !schema.iter().any(|(f, _)| f == k) {
+                                        return Err(runtime_error(format!(
+                                            "unknown field `{}` in spread-update — \
+                                             not a field of `{}`",
+                                            k, type_name
+                                        )));
+                                    }
+                                }
+                            }
                             for (k, v) in overrides {
                                 let val = self.eval_expr(v, env).await?;
                                 fields.insert(k.clone(), val);
@@ -320,7 +337,7 @@ impl Interpreter {
                         Value::Map(mut fields) => {
                             for (k, v) in overrides {
                                 let val = self.eval_expr(v, env).await?;
-                                fields.insert(k.clone(), val);
+                                fields.insert(MapKey::Str(k.clone()), val);
                             }
                             Ok(Value::Map(fields))
                         }
@@ -476,6 +493,16 @@ impl Interpreter {
                 Expr::Index { object, index } => {
                     let obj = self.eval_expr(object, env).await?;
                     let idx = self.eval_expr(index, env).await?;
+                    if let Value::Map(m) = obj {
+                        let key = crate::interpreter::value::MapKey::from_value(&idx)
+                            .ok_or_else(|| {
+                                runtime_error(format!(
+                                    "map key must be str, int, or bool, got {}",
+                                    idx.type_name()
+                                ))
+                            })?;
+                        return Ok(m.get(&key).cloned().unwrap_or(Value::None));
+                    }
                     let i = match &idx {
                         Value::Integer(n) => *n,
                         other => {

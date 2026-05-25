@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{CallArgValue, Interpreter, Namespace};
 use crate::runtime::convert::json_to_value;
 use crate::runtime::namespace::{find_arg, ns, positional, throw_typed_error};
@@ -95,7 +95,9 @@ pub(crate) fn namespace() -> Namespace {
             let (schema, target_type): (Vec<(String, String)>, Option<String>) =
                 match find_arg(&args, "schema") {
                     Some(Value::Map(m)) => (
-                        m.iter().map(|(k, v)| (k.clone(), v.to_display_string())).collect(),
+                        m.iter()
+                            .map(|(k, v)| (k.to_string(), v.to_display_string()))
+                            .collect(),
                         None,
                     ),
                     _ => match find_arg(&args, "as") {
@@ -122,8 +124,9 @@ pub(crate) fn namespace() -> Namespace {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
                         let v = json_to_value(&parsed);
                         let v = if let Some(tn) = target_type
-                            && let Value::Map(fields) = v
+                            && let Value::Map(m) = v
                         {
+                            let fields = m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
                             Value::Struct(tn, fields)
                         } else {
                             v
@@ -159,7 +162,9 @@ pub(crate) fn namespace() -> Namespace {
                 }
                 Ok(Some(map)) => {
                     let mut out = HashMap::new();
-                    for (k, v) in map { out.insert(k, Value::String(v)); }
+                    for (k, v) in map {
+                        out.insert(MapKey::Str(k), Value::String(v));
+                    }
                     Ok(Value::Map(out))
                 }
                 Ok(None) => Ok(Value::None),
@@ -184,9 +189,9 @@ pub(crate) fn namespace() -> Namespace {
             match llm.decide(role.as_deref(), &rules, &input, &options, &model).await {
                 Ok(Some((choice, reason))) => {
                     let mut m = HashMap::new();
-                    m.insert("choice".to_string(), Value::String(choice));
-                    m.insert("reason".to_string(), Value::String(reason));
-                    m.insert("confidence".to_string(), Value::Float(1.0));
+                    m.insert(MapKey::Str("choice".into()), Value::String(choice));
+                    m.insert(MapKey::Str("reason".into()), Value::String(reason));
+                    m.insert(MapKey::Str("confidence".into()), Value::Float(1.0));
                     Ok(Value::Map(m))
                 }
                 Ok(None) => Ok(Value::None),
@@ -258,7 +263,7 @@ fn extract_criteria(args: &[CallArgValue]) -> Vec<(String, String)> {
                     Value::EnumVariant(_, variant, _) => variant.clone(),
                     other => other.to_display_string(),
                 };
-                (k.clone(), variant_name)
+                (k.to_string(), variant_name)
             })
             .collect(),
         _ => Vec::new(),

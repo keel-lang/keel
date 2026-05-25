@@ -4,7 +4,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 use crate::interpreter::Namespace;
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::namespace::{find_arg, ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
@@ -69,9 +69,9 @@ pub(crate) fn namespace() -> Namespace {
             let exit_code = output.status.code().unwrap_or(-1) as i64;
 
             let mut result = HashMap::new();
-            result.insert("stdout".to_string(), Value::String(stdout_str));
-            result.insert("stderr".to_string(), Value::String(stderr_str));
-            result.insert("exit_code".to_string(), Value::Integer(exit_code));
+            result.insert(MapKey::Str("stdout".into()), Value::String(stdout_str));
+            result.insert(MapKey::Str("stderr".into()), Value::String(stderr_str));
+            result.insert(MapKey::Str("exit_code".into()), Value::Integer(exit_code));
 
             Ok(Value::Map(result))
         }),
@@ -103,10 +103,14 @@ mod tests {
         match result {
             Value::Map(m) => {
                 assert_eq!(
-                    m.get("stdout").map(|v| v.to_display_string()),
+                    m.get(&MapKey::Str("stdout".into()))
+                        .map(|v| v.to_display_string()),
                     Some("hello\n".to_string())
                 );
-                assert_eq!(m.get("exit_code"), Some(&Value::Integer(0)));
+                assert_eq!(
+                    m.get(&MapKey::Str("exit_code".into())),
+                    Some(&Value::Integer(0))
+                );
             }
             other => panic!("expected map, got {other:?}"),
         }
@@ -124,7 +128,10 @@ mod tests {
         let result = method(&mut interp, args).await.expect("run should succeed");
         match result {
             Value::Map(m) => {
-                assert_eq!(m.get("exit_code"), Some(&Value::Integer(42)));
+                assert_eq!(
+                    m.get(&MapKey::Str("exit_code".into())),
+                    Some(&Value::Integer(42))
+                );
             }
             other => panic!("expected map, got {other:?}"),
         }
@@ -163,14 +170,17 @@ mod tests {
         match result {
             Value::Map(m) => {
                 let stdout = m
-                    .get("stdout")
+                    .get(&MapKey::Str("stdout".into()))
                     .map(|v| v.to_display_string())
                     .unwrap_or_default();
                 // macOS resolves /var/folders/... symlinks; compare canonicalized paths.
                 let got = std::fs::canonicalize(stdout.trim()).expect("canonicalize stdout");
                 let want = std::fs::canonicalize(&dir_path).expect("canonicalize dir");
                 assert_eq!(got, want, "subprocess cwd should match requested dir");
-                assert_eq!(m.get("exit_code"), Some(&Value::Integer(0)));
+                assert_eq!(
+                    m.get(&MapKey::Str("exit_code".into())),
+                    Some(&Value::Integer(0))
+                );
             }
             other => panic!("expected map, got {other:?}"),
         }
@@ -195,7 +205,8 @@ mod tests {
         match result {
             Value::Map(m) => {
                 assert_eq!(
-                    m.get("stdout").map(|v| v.to_display_string()),
+                    m.get(&MapKey::Str("stdout".into()))
+                        .map(|v| v.to_display_string()),
                     Some("hello from stdin".to_string())
                 );
             }

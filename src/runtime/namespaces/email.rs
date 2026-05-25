@@ -1,5 +1,5 @@
 use crate::interpreter::Namespace;
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::namespace::{find_arg, ns, positional};
 use crate::runtime::{context, email};
 
@@ -26,14 +26,20 @@ pub(crate) fn namespace() -> Namespace {
             // Positional 0 is the message body (str or Map with .body).
             let (body, inferred_subject) = match positional(&args, 0) {
                 Some(Value::Map(m)) => (
-                    m.get("body").map(|v| v.to_display_string()).unwrap_or_default(),
-                    m.get("subject").map(|v| v.to_display_string()),
+                    m.get(&MapKey::Str("body".into()))
+                        .map(|v| v.to_display_string())
+                        .unwrap_or_default(),
+                    m.get(&MapKey::Str("subject".into()))
+                        .map(|v| v.to_display_string()),
                 ),
                 Some(v) => (v.to_display_string(), None),
                 None => return Err(miette::miette!("Email.send: missing message body")),
             };
             let to = match find_arg(&args, "to") {
-                Some(Value::Map(m)) => m.get("from").map(|v| v.to_display_string()).unwrap_or_default(),
+                Some(Value::Map(m)) => m
+                    .get(&MapKey::Str("from".into()))
+                    .map(|v| v.to_display_string())
+                    .unwrap_or_default(),
                 Some(v) => v.to_display_string(),
                 None => return Err(miette::miette!("Email.send: missing `to:` argument")),
             };
@@ -56,9 +62,11 @@ pub(crate) fn namespace() -> Namespace {
                 return Ok(Value::None);
             };
             let uid = match positional(&args, 0) {
-                Some(Value::Map(m)) => match m.get("uid") {
+                Some(Value::Map(m)) => match m.get(&MapKey::Str("uid".into())) {
                     Some(Value::Integer(u)) if *u > 0 => *u as u32,
-                    _ => return Err(miette::miette!("Email.archive: message has no UID — was it returned by Email.fetch?")),
+                    _ => return Err(miette::miette!(
+                        "Email.archive: message has no UID — was it returned by Email.fetch?"
+                    )),
                 },
                 _ => return Err(miette::miette!("Email.archive: expected an email map argument")),
             };

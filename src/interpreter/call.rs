@@ -107,7 +107,10 @@ impl Interpreter {
                 && self.struct_types.contains_key(type_name.as_str())
             {
                 match v {
-                    Value::Map(fields) => Value::Struct(type_name.clone(), fields),
+                    Value::Map(m) => {
+                        let fields = m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+                        Value::Struct(type_name.clone(), fields)
+                    }
                     other => other,
                 }
             } else {
@@ -123,7 +126,11 @@ impl Interpreter {
                         if self.struct_types.contains_key(type_name.as_str()) =>
                     {
                         match v {
-                            Value::Map(fields) => Value::Struct(type_name.clone(), fields),
+                            Value::Map(m) => {
+                                let fields =
+                                    m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+                                Value::Struct(type_name.clone(), fields)
+                            }
                             other => other,
                         }
                     }
@@ -224,43 +231,63 @@ impl Interpreter {
     }
 
     /// Extract @limits from an agent's attributes.
-    /// Returns a map with timeout (seconds as f64), max_tokens (i64), max_cost (f64).
+    /// Returns (timeout_secs, max_tokens, max_cost).
     pub fn agent_limits(
         &self,
         agent: &AgentDef,
     ) -> Option<(Option<f64>, Option<i64>, Option<f64>)> {
         for attr in &agent.attributes {
-            if attr.name == "limits"
-                && let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body
-            {
+            if attr.name == "limits" {
                 let mut timeout = None;
                 let mut max_tokens = None;
                 let mut max_cost = None;
 
-                for (key, expr) in fields {
-                    match key.as_str() {
-                        "timeout" => {
-                            if let Expr::Duration { value, unit } = expr
-                                && let Expr::Integer(n) = value.as_ref()
-                            {
-                                let secs = Value::duration_seconds(*n, *unit);
-                                timeout = Some(secs);
-                            }
+                // Process a single (key-name, expr) pair into the limit slots.
+                // Base fields are visited first; overrides win on duplicates.
+                let mut apply = |key: &str, expr: &Expr| match key {
+                    "timeout" => {
+                        if let Expr::Duration { value, unit } = expr
+                            && let Expr::Integer(n) = value.as_ref()
+                        {
+                            timeout = Some(Value::duration_seconds(*n, *unit));
                         }
-                        "max_tokens" => {
-                            if let Expr::Integer(n) = expr {
-                                max_tokens = Some(*n);
-                            }
-                        }
-                        "max_cost" => {
-                            if let Expr::Float(f) = expr {
-                                max_cost = Some(*f);
-                            } else if let Expr::Integer(n) = expr {
-                                max_cost = Some(*n as f64);
-                            }
-                        }
-                        _ => {}
                     }
+                    "max_tokens" => {
+                        if let Expr::Integer(n) = expr {
+                            max_tokens = Some(*n);
+                        }
+                    }
+                    "max_cost" => {
+                        if let Expr::Float(f) = expr {
+                            max_cost = Some(*f);
+                        } else if let Expr::Integer(n) = expr {
+                            max_cost = Some(*n as f64);
+                        }
+                    }
+                    _ => {}
+                };
+
+                match &attr.body {
+                    AttributeBody::Expr(Expr::StructLit(f)) => {
+                        for (k, expr) in f {
+                            if let Some(name) = k.as_str() {
+                                apply(name, expr);
+                            }
+                        }
+                    }
+                    AttributeBody::Expr(Expr::StructSpreadUpdate { base, overrides }) => {
+                        if let Expr::StructLit(base_fields) = base.as_ref() {
+                            for (k, expr) in base_fields {
+                                if let Some(name) = k.as_str() {
+                                    apply(name, expr);
+                                }
+                            }
+                        }
+                        for (k, expr) in overrides {
+                            apply(k.as_str(), expr);
+                        }
+                    }
+                    _ => continue,
                 }
 
                 if timeout.is_some() || max_tokens.is_some() || max_cost.is_some() {

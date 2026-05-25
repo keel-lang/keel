@@ -286,7 +286,7 @@ agent Bot {
             match &limits.body {
                 AttributeBody::Expr(Expr::StructLit(fields)) => {
                     assert_eq!(fields.len(), 2);
-                    assert_eq!(fields[0].0, "max_cost_per_request");
+                    assert_eq!(fields[0].0.as_str(), Some("max_cost_per_request"));
                 }
                 other => panic!("expected StructLit, got {:?}", other),
             }

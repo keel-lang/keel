@@ -3,6 +3,47 @@ use std::fmt;
 
 use crate::ast::{DurationUnit, LambdaBody, LambdaParam, TaskDecl};
 
+/// Hashable map key — valid key types for `map[K, V]`.
+/// `float` is intentionally excluded: NaN violates the Hash/Eq contract.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum MapKey {
+    Str(String),
+    Int(i64),
+    Bool(bool),
+}
+
+impl MapKey {
+    /// Convert a runtime `Value` to a `MapKey`, returning `None` if the value
+    /// cannot be used as a map key (e.g. float, list, none).
+    pub fn from_value(v: &Value) -> Option<Self> {
+        match v {
+            Value::String(s) => Some(MapKey::Str(s.clone())),
+            Value::Integer(n) => Some(MapKey::Int(*n)),
+            Value::Bool(b) => Some(MapKey::Bool(*b)),
+            _ => None,
+        }
+    }
+
+    /// Convert this key back into the corresponding `Value`.
+    pub fn to_value(&self) -> Value {
+        match self {
+            MapKey::Str(s) => Value::String(s.clone()),
+            MapKey::Int(n) => Value::Integer(*n),
+            MapKey::Bool(b) => Value::Bool(*b),
+        }
+    }
+}
+
+impl fmt::Display for MapKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MapKey::Str(s) => write!(f, "{s}"),
+            MapKey::Int(n) => write!(f, "{n}"),
+            MapKey::Bool(b) => write!(f, "{b}"),
+        }
+    }
+}
+
 /// Runtime value representation for the Keel interpreter.
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -16,12 +57,13 @@ pub enum Value {
     List(Vec<Value>),
     /// Lazy inclusive integer range — stores only lo and hi, never materializes.
     Range(i64, i64),
-    /// Anonymous map literal — keys are always strings
-    Map(HashMap<String, Value>),
+    /// Anonymous map literal — keys are str, int, or bool (`MapKey`).
+    Map(HashMap<MapKey, Value>),
     /// Type-tagged struct instance: (declared_type_name, fields).
     /// Created when a Map literal is bound with a known struct type annotation,
     /// passed to/from a typed task param, or returned from Ai.extract.
     /// Enables O(1) impl-method dispatch instead of field-set subset matching.
+    /// Struct fields are always string-keyed.
     Struct(String, HashMap<String, Value>),
 
     /// An enum variant: (type_name, variant_name, optional rich fields).
@@ -109,6 +151,38 @@ impl Value {
         }
     }
 
+    /// Look up a string-named field on either a `Map` (by `MapKey::Str`) or a
+    /// `Struct` (by its string field name). Returns `None` for any other variant.
+    pub fn get_str_field(&self, field: &str) -> Option<&Value> {
+        match self {
+            Value::Map(m) => m.get(&MapKey::Str(field.to_string())),
+            Value::Struct(_, fields) => fields.get(field),
+            _ => None,
+        }
+    }
+
+    /// Convert this `Map` into a `HashMap<String, Value>` by extracting only the
+    /// `MapKey::Str` entries. Returns `None` if any key is not a string (in
+    /// practice this only arises when a non-string-key map is accidentally
+    /// promoted — the type checker prevents this in well-typed programs).
+    pub fn into_str_map(self) -> Option<HashMap<String, Value>> {
+        match self {
+            Value::Map(m) => {
+                let mut out = HashMap::with_capacity(m.len());
+                for (k, v) in m {
+                    match k {
+                        MapKey::Str(s) => {
+                            out.insert(s, v);
+                        }
+                        _ => return None,
+                    }
+                }
+                Some(out)
+            }
+            _ => None,
+        }
+    }
+
     pub fn duration_seconds(value: i64, unit: DurationUnit) -> f64 {
         match unit {
             DurationUnit::Milliseconds => value as f64 / 1000.0,
@@ -140,13 +214,27 @@ impl fmt::Display for Value {
                 write!(f, "]")
             }
             Value::Range(lo, hi) => write!(f, "{lo}..{hi}"),
-            Value::Map(fields) | Value::Struct(_, fields) => {
+            Value::Map(fields) => {
                 write!(f, "{{")?;
-                for (i, (k, v)) in fields.iter().enumerate() {
+                let mut pairs: Vec<(&MapKey, &Value)> = fields.iter().collect();
+                pairs.sort_by_key(|(k, _)| *k);
+                for (i, (k, v)) in pairs.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
                     }
                     write!(f, "{k}: {v}")?;
+                }
+                write!(f, "}}")
+            }
+            Value::Struct(_, fields) => {
+                write!(f, "{{")?;
+                let mut keys: Vec<&str> = fields.keys().map(|s| s.as_str()).collect();
+                keys.sort();
+                for (i, k) in keys.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{k}: {}", fields[*k])?;
                 }
                 write!(f, "}}")
             }
@@ -203,8 +291,22 @@ impl PartialEq for Value {
             (Value::Range(a1, a2), Value::Range(b1, b2)) => a1 == b1 && a2 == b2,
             (Value::Map(a), Value::Map(b)) => a == b,
             (Value::Struct(_, a), Value::Struct(_, b)) => a == b,
-            // Cross-comparison: fields-only equality regardless of tag
-            (Value::Map(a), Value::Struct(_, b)) | (Value::Struct(_, a), Value::Map(b)) => a == b,
+            // Cross-comparison: a string-keyed Map equals a Struct with the same fields.
+            (Value::Map(a), Value::Struct(_, b)) => {
+                a.len() == b.len()
+                    && a.iter().all(|(k, v)| {
+                        if let MapKey::Str(s) = k {
+                            b.get(s) == Some(v)
+                        } else {
+                            false
+                        }
+                    })
+            }
+            (Value::Struct(_, a), Value::Map(b)) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .all(|(k, v)| b.get(&MapKey::Str(k.clone())) == Some(v))
+            }
             (Value::EnumVariant(t1, v1, _), Value::EnumVariant(t2, v2, _)) => t1 == t2 && v1 == v2,
             (Value::Duration(a), Value::Duration(b)) => {
                 let tol = f64::EPSILON * a.abs().max(b.abs()).max(1.0);
@@ -236,7 +338,7 @@ mod tests {
         assert_eq!(Value::None.type_name(), "none");
         assert_eq!(Value::List(vec![]).type_name(), "list");
         assert_eq!(Value::Range(1, 5).type_name(), "list");
-        assert_eq!(Value::Map(HashMap::new()).type_name(), "map");
+        assert_eq!(Value::Map(std::collections::HashMap::new()).type_name(), "map");
         assert_eq!(
             Value::EnumVariant("T".into(), "v".into(), None).type_name(),
             "enum"
@@ -289,7 +391,7 @@ mod tests {
     #[test]
     fn is_truthy_wildcard_always_true() {
         // _ => true arm: Map, Duration, EnumVariant, etc.
-        assert!(Value::Map(HashMap::new()).is_truthy());
+        assert!(Value::Map(std::collections::HashMap::new()).is_truthy());
         assert!(Value::Duration(0.0).is_truthy());
         assert!(Value::EnumVariant("T".into(), "v".into(), None).is_truthy());
     }
@@ -379,11 +481,11 @@ mod tests {
     #[test]
     fn partial_eq_map() {
         let mut m1 = HashMap::new();
-        m1.insert("k".into(), Value::Integer(1));
+        m1.insert(MapKey::Str("k".into()), Value::Integer(1));
         let mut m2 = HashMap::new();
-        m2.insert("k".into(), Value::Integer(1));
+        m2.insert(MapKey::Str("k".into()), Value::Integer(1));
         let mut m3 = HashMap::new();
-        m3.insert("k".into(), Value::Integer(2));
+        m3.insert(MapKey::Str("k".into()), Value::Integer(2));
         assert_eq!(Value::Map(m1), Value::Map(m2.clone()));
         assert_ne!(Value::Map(m2), Value::Map(m3));
         assert_eq!(Value::Map(HashMap::new()), Value::Map(HashMap::new()));
@@ -427,7 +529,7 @@ mod tests {
     #[test]
     fn display_map() {
         let mut m = HashMap::new();
-        m.insert("k".into(), Value::Integer(1));
+        m.insert(MapKey::Str("k".into()), Value::Integer(1));
         assert_eq!(format!("{}", Value::Map(m)), "{k: 1}");
     }
 

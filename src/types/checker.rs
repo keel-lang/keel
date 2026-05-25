@@ -486,14 +486,15 @@ impl Checker {
                     .insert(t.name.clone(), vs.iter().map(|v| v.name.clone()).collect());
             }
             TypeDef::Struct(fields) => {
-                let f: Vec<_> = fields
-                    .iter()
-                    .map(|f| (f.name.clone(), self.resolve_type(&f.ty)))
-                    .collect();
+                let mut f = Vec::with_capacity(fields.len());
+                for field in fields {
+                    let ty = self.resolve_and_check_type(&field.ty);
+                    f.push((field.name.clone(), ty));
+                }
                 self.structs.insert(t.name.clone(), f);
             }
             TypeDef::Alias(ty) => {
-                let resolved = self.resolve_type(ty);
+                let resolved = self.resolve_and_check_type(ty);
                 self.aliases.insert(t.name.clone(), resolved);
             }
         }
@@ -564,6 +565,32 @@ impl Checker {
 
     fn resolve_type(&self, ty: &TypeExpr) -> Ty {
         self.resolve_type_with_env(ty, &HashMap::new())
+    }
+
+    /// Resolve a type and emit a compile-time error if it is `map[K, V]` with
+    /// an unsupported key type. Built-in hashable types are `str`, `int`, `bool`.
+    /// `float` is excluded because NaN violates the Hash/Eq contract.
+    fn resolve_and_check_type(&mut self, ty: &TypeExpr) -> Ty {
+        let resolved = self.resolve_type(ty);
+        if let Ty::Map(key_ty, _) = &resolved {
+            match key_ty.as_ref() {
+                Ty::Str | Ty::Int | Ty::Bool => {}
+                Ty::Float => self.err(
+                    "float is not a valid map key type — NaN violates hash equality; use int instead",
+                ),
+                Ty::Nullable(_) => {
+                    self.err("nullable types cannot be used as map keys")
+                }
+                Ty::Struct(_) | Ty::Enum(_, _) => self.err(
+                    "struct and enum keys are not yet supported as map keys \
+                     — implement `interface Hashable` (coming in v0.2); \
+                     use str, int, or bool",
+                ),
+                Ty::Unknown | Ty::Dynamic => {}
+                _ => self.err("map key type must be str, int, or bool"),
+            }
+        }
+        resolved
     }
 
     /// Resolve a type expression, substituting any names found in `env` (type
@@ -779,13 +806,16 @@ impl Checker {
     }
 
     fn check_task(&mut self, t: &TaskDecl) {
-        let declared_return = t.return_type.as_ref().map(|ty| self.resolve_type(ty));
+        let declared_return = t
+            .return_type
+            .as_ref()
+            .map(|ty| self.resolve_and_check_type(ty));
         let prev_return_ty = self.current_return_ty.take();
         self.current_return_ty = declared_return;
 
         let mut scope = self.fresh_scope();
         for p in &t.params {
-            let elem_ty = self.resolve_type(&p.ty);
+            let elem_ty = self.resolve_and_check_type(&p.ty);
             // Variadic params are visible inside the body as `list[T]`.
             let param_ty = if p.variadic {
                 Ty::List(Box::new(elem_ty))
@@ -817,7 +847,7 @@ impl Checker {
     fn check_on_handler(&mut self, h: &OnHandler) {
         let mut scope = self.fresh_scope();
         if let Some(p) = &h.param {
-            let param_ty = self.resolve_type(&p.ty);
+            let param_ty = self.resolve_and_check_type(&p.ty);
             self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
         self.check_block(&h.body, &mut scope);
@@ -865,7 +895,7 @@ impl Checker {
                 let inferred = self.infer_expr(value, scope);
                 let bound = match ty {
                     Some(t) => {
-                        let declared = self.resolve_type(t);
+                        let declared = self.resolve_and_check_type(t);
                         // Only check when declared type is concrete — Unknown
                         // means the checker couldn't resolve it (e.g. a named
                         // user-defined type), so a mismatch would be a false positive.
@@ -1344,18 +1374,68 @@ impl Checker {
             }
 
             Expr::StructLit(fields) => {
-                let mut inferred: Vec<(String, Ty)> = Vec::with_capacity(fields.len());
-                for (k, v) in fields {
-                    let ty = self.infer_expr(v, scope);
-                    inferred.push((k.clone(), ty));
+                use crate::ast::MapLitKey;
+                let has_int = fields.iter().any(|(k, _)| matches!(k, MapLitKey::Int(_)));
+                let has_bool = fields.iter().any(|(k, _)| matches!(k, MapLitKey::Bool(_)));
+                let has_str = fields
+                    .iter()
+                    .any(|(k, _)| matches!(k, MapLitKey::Ident(_) | MapLitKey::Str(_)));
+
+                if has_int || has_bool {
+                    if (has_int && has_bool) || (has_str && (has_int || has_bool)) {
+                        self.err(
+                            "map literal has mixed key types — all keys must be \
+                             the same type (str, int, or bool)"
+                                .to_string(),
+                        );
+                        for (_, v) in fields {
+                            self.infer_expr(v, scope);
+                        }
+                        return Ty::Unknown;
+                    }
+                    let key_ty = if has_int { Ty::Int } else { Ty::Bool };
+                    let mut val_ty = Ty::Unknown;
+                    for (_, v) in fields {
+                        let t = self.infer_expr(v, scope);
+                        if val_ty == Ty::Unknown {
+                            val_ty = t;
+                        } else {
+                            self.expect(&t, &val_ty, "map literal value");
+                        }
+                    }
+                    Ty::Map(Box::new(key_ty), Box::new(val_ty))
+                } else {
+                    let mut inferred: Vec<(String, Ty)> = Vec::with_capacity(fields.len());
+                    for (k, v) in fields {
+                        let ty = self.infer_expr(v, scope);
+                        inferred.push((k.as_str().unwrap_or("").to_string(), ty));
+                    }
+                    Ty::Struct(inferred)
                 }
-                Ty::Struct(inferred)
             }
 
             Expr::StructSpreadUpdate { base, overrides } => {
                 let base_ty = self.infer_expr(base, scope);
                 let base_fields = match base_ty.strip_nullable() {
                     Ty::Struct(fields) => fields.clone(),
+                    Ty::Map(key_ty, val_ty) => {
+                        let key_ty = key_ty.clone();
+                        let val_ty = val_ty.clone();
+                        let mut seen: std::collections::HashSet<&str> =
+                            std::collections::HashSet::new();
+                        for (k, v) in overrides {
+                            let vt = self.infer_expr(v, scope);
+                            self.expect(&vt, &val_ty, "spread-update map value");
+                            if !seen.insert(k.as_str()) {
+                                self.err(format!(
+                                    "duplicate key `{}` in spread-update — \
+                                     each key may only be overridden once",
+                                    k
+                                ));
+                            }
+                        }
+                        return Ty::Map(key_ty, val_ty);
+                    }
                     Ty::Unknown | Ty::Dynamic => {
                         for (_, v) in overrides {
                             self.infer_expr(v, scope);
@@ -1364,7 +1444,7 @@ impl Checker {
                     }
                     other => {
                         self.err(format!(
-                            "spread-update base must be a struct, got {}",
+                            "spread-update base must be a struct or map, got {}",
                             describe_ty(other)
                         ));
                         for (_, v) in overrides {
@@ -1374,8 +1454,18 @@ impl Checker {
                     }
                 };
                 let mut result_fields = base_fields.clone();
+                let mut seen: std::collections::HashSet<&str> =
+                    std::collections::HashSet::new();
                 for (k, v) in overrides {
                     let val_ty = self.infer_expr(v, scope);
+                    if !seen.insert(k.as_str()) {
+                        self.err(format!(
+                            "duplicate field `{}` in spread-update — \
+                             each field may only be overridden once",
+                            k
+                        ));
+                        continue;
+                    }
                     if let Some(pos) = result_fields.iter().position(|(f, _)| f == k) {
                         result_fields[pos] = (k.clone(), val_ty);
                     } else {
@@ -1454,15 +1544,31 @@ impl Checker {
             Expr::Index { object, index } => {
                 let obj_ty = self.infer_expr(object, scope);
                 let idx_ty = self.infer_expr(index, scope);
-                if !matches!(idx_ty.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
-                    self.err(format!(
-                        "subscript index must be int, got {}",
-                        describe_ty(&idx_ty)
-                    ));
-                }
                 match obj_ty.strip_nullable() {
-                    Ty::List(elem) => *elem.clone(),
-                    Ty::Str => Ty::Str,
+                    Ty::Map(key_ty, val_ty) => {
+                        let val_ty = val_ty.clone();
+                        self.expect(&idx_ty, &key_ty, "map subscript key");
+                        // Missing key returns none, so result is nullable.
+                        Ty::Nullable(val_ty)
+                    }
+                    Ty::List(elem) => {
+                        if !matches!(idx_ty.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                            self.err(format!(
+                                "subscript index must be int, got {}",
+                                describe_ty(&idx_ty)
+                            ));
+                        }
+                        *elem.clone()
+                    }
+                    Ty::Str => {
+                        if !matches!(idx_ty.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                            self.err(format!(
+                                "subscript index must be int, got {}",
+                                describe_ty(&idx_ty)
+                            ));
+                        }
+                        Ty::Str
+                    }
                     Ty::Unknown | Ty::Dynamic => Ty::Unknown,
                     other => {
                         self.err(format!(

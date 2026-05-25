@@ -30,7 +30,11 @@ impl Interpreter {
                             if self.struct_types.contains_key(name.as_str()) =>
                         {
                             match v {
-                                Value::Map(fields) => Value::Struct(name.clone(), fields),
+                                Value::Map(m) => {
+                                    let fields =
+                                        m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+                                    Value::Struct(name.clone(), fields)
+                                }
                                 other => other,
                             }
                         }
@@ -266,18 +270,19 @@ impl Interpreter {
                                     None => clause_type == "Error",
                                 };
                                 if matches {
-                                    let fields = match &typed {
-                                        Some((_, f)) => f.clone(),
+                                    let error_val = match &typed {
+                                        Some((type_name, f)) => {
+                                            Value::Struct(type_name.clone(), f.clone())
+                                        }
                                         None => {
                                             let mut m = HashMap::new();
                                             m.insert(
                                                 "message".to_string(),
                                                 Value::String(err.to_string()),
                                             );
-                                            m
+                                            Value::Struct("Error".to_string(), m)
                                         }
                                     };
-                                    let error_val = Value::Map(fields);
                                     env.push_scope();
                                     env.define(clause.name.clone(), error_val);
                                     let outcome = self.exec_block(&clause.body, env).await;

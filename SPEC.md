@@ -153,7 +153,9 @@ ch = word[0]   # str — "k"
 | `.contains(v)` | `bool` | |
 | `.zip(list[U])` | `list[(T, U)]` | stops at the shorter list |
 
-Maps expose `.count`, `.keys`, `.values`. Sets expose `.count`, `.contains(v)`, `.is_empty`.
+Maps expose `.count`, `.keys`, `.values`, `.get(k) → V?`, `.contains(k)`. Sets expose `.count`, `.contains(v)`, `.is_empty`.
+
+**Map key constraints:** The key type `K` in `map[K, V]` must be a hashable primitive — `str`, `int`, or `bool`. Using `float` is a compile-time error (NaN violates hash equality). Nullable types (`K?`) are rejected as keys. Struct and enum keys are not supported in v0.1; they will be enabled in v0.2 via `interface Hashable`. The runtime stores each distinct key type — `map[int, str]` has integer keys, `map[bool, str]` has boolean keys; `.keys()` returns values of the declared key type.
 
 **String methods:** `.len()` / `.length`, `.is_empty()`, `.contains(s)`, `.starts_with(s)`, `.ends_with(s)`, `.trim()`, `.trim_start()`, `.trim_end()`, `.upper()`, `.lower()`, `.repeat(n)`, `.slice(start, end?)`, `.index_of(needle)` → `int?`, `.split(sep)`, `.replace(old, new)`, `.to_int()` → `int?`, `.to_float()` → `float?`, `.to_str()`, `.truncate(max)` → `str`, `.pad(width, char?)` → `str`, `.matches(pattern)` → `bool`, `.extract(pattern)` → `str?`, `.find_all(pattern)` → `list[str]`, `.sub(pattern, replacement)` → `str`. Patterns (`matches`, `extract`, `find_all`, `sub`) use Rust `regex` crate syntax — no look-behind.
 
@@ -202,7 +204,7 @@ type Paginated[T] {
 }
 ```
 
-**Spread-update:** Create a new struct value that copies all fields from a base expression and overrides specific fields. The base must be a non-`none` struct or map value; the overrides must name fields that exist in the base.
+**Spread-update:** Create a new value that copies all fields from a base expression and overrides specific fields. The base must be a non-`none` struct or map value.
 
 ```keel
 type Order { id: str, status: str, amount: float }
@@ -210,13 +212,17 @@ type Order { id: str, status: str, amount: float }
 o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
 filled   = { ...o, status: "filled" }   # id and amount copied, status replaced
 copy     = { ...o }                     # full copy, no overrides
+
+# Also works on map[K, V] — keys are unrestricted, values must match the map's value type.
+m: map[str, int] = { "a": 1, "b": 2 }
+m2 = { ...m, "c": 3 }                  # adds key "c"; result is still map[str, int]
 ```
 
 Rules:
 - Exactly one `...base` spread, and it must appear first.
 - Zero or more `field: value` overrides follow, separated by commas or newlines.
-- Override field names must exist in the base struct; adding unknown fields is a type error.
-- The result has the same type tag as the base (so `impl` dispatch is preserved).
+- **Struct base:** override field names must exist in the base struct; unknown fields are a type error (and a runtime error on dynamic paths). The result preserves the base's type tag so `impl` dispatch continues to work.
+- **Map base:** any key may be added or overridden; override values must match the map's declared value type. The result is the same `map[K, V]` type.
 - Spreading `none` raises at runtime.
 
 ### 2.5 Enum types (algebraic data types)

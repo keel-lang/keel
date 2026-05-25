@@ -149,7 +149,7 @@ task t() {
 
 ### Spread-update
 
-To create a modified copy of a struct without repeating every field, use the `{ ...base, field: new }` syntax:
+To create a modified copy of a struct (or map) without repeating every field, use the `{ ...base, field: new }` syntax:
 
 ```keel
 type Order { id: str, status: str, amount: float }
@@ -162,11 +162,18 @@ copy     = { ...o }                     # full copy, no overrides
 Rules:
 - The `...base` spread must appear **first**, exactly once.
 - Zero or more `field: value` overrides follow, separated by commas or newlines.
-- Override field names must exist in the base struct — unknown fields are a **compile-time error**.
-- The result preserves the base's type tag, so `impl` dispatch continues to work.
 - Spreading a `none` value raises at runtime.
 
-Spread-update is especially useful when updating one field of a deeply nested struct or building configuration variants:
+**Struct base** — override field names must exist in the base struct; unknown fields are a compile-time error (and a runtime error on dynamic paths). The result preserves the base's type tag so `impl` dispatch continues to work.
+
+**Map base** — any key may be added or overridden freely (like Python's `{**d, "k": v}`); override values must match the map's declared value type. The result is the same `map[K, V]` type.
+
+```keel
+m: map[str, int] = { "a": 1, "b": 2 }
+m2 = { ...m, "c": 3 }   # adds key "c"; result is still map[str, int]
+```
+
+Spread-update is especially useful when updating one field of a struct or building configuration variants:
 
 ```keel
 type Config { host: str, port: int, debug: bool }
@@ -234,6 +241,18 @@ safe = Ai.classify(text, as: Urgency) ?? Urgency.medium   # Urgency
 nums = [1, 2, 3]                         # list[int]
 names = ["alice", "bob"]                  # list[str]
 info = {name: "Zied", role: "builder"}   # map[str, str]
+```
+
+**Map key types.** The key type `K` in `map[K, V]` must be a hashable primitive: `str`, `int`, or `bool`. Other types are compile-time errors:
+
+```keel
+scores:  map[str,  int]  = {alice: 100, bob: 95}   # valid
+lookup:  map[int,  str]  = {1: "one", 2: "two"}    # valid
+flags:   map[bool, str]  = {true: "on"}            # valid
+
+# bad: map[float, str]   — float is not hashable (NaN)
+# bad: map[str?,  int]   — nullable key type
+# bad: map[Point, str]   — struct keys require interface Hashable (v0.2)
 ```
 
 **Subscript access** (`list[i]`): integer index, returns `T`. Out-of-bounds and negative indices are runtime errors — use `len()` to guard or `try/catch` when the index may be invalid:

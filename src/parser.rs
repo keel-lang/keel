@@ -173,9 +173,27 @@ fn field_name() -> P<String> {
 }
 
 /// Map / struct-literal key: a field_name or a string literal (strings
-/// are raw-decoded into the key).
+/// are raw-decoded into the key).  Used for `StructSpreadUpdate` overrides,
+/// which are always identifier-shaped.
 fn map_key() -> P<String> {
     field_name().or(plain_string()).boxed()
+}
+
+/// Full map-literal key parser — extends `map_key` with integer and boolean
+/// literals so that `{1: "one"}` and `{true: "on"}` parse correctly.
+fn map_lit_key() -> P<MapLitKey> {
+    let ident_key = field_name().map(MapLitKey::Ident);
+    let str_key = plain_string().map(MapLitKey::Str);
+    let int_key = select! { Token::Integer(s) => s }
+        .try_map(|s, span| {
+            s.parse::<i64>()
+                .map(MapLitKey::Int)
+                .map_err(|_| Simple::custom(span, format!("integer key `{s}` overflows i64")))
+        });
+    let bool_key = just(Token::True)
+        .to(MapLitKey::Bool(true))
+        .or(just(Token::False).to(MapLitKey::Bool(false)));
+    ident_key.or(str_key).or(int_key).or(bool_key).boxed()
 }
 
 /// Decode `\n`, `\t`, `\\`, `\"`, `\{`, `\}` in a raw string literal (no
@@ -436,13 +454,13 @@ fn expr_parser() -> P<Expr> {
             });
 
         // ── Struct / map literal: `{key: expr, ...}` ────────────
-        // Keys may be identifiers, contextual keywords, or string
-        // literals (`{"foo": 1}`). The AST stores all as StructLit;
-        // the type checker resolves struct vs. map.
+        // Keys may be identifiers, contextual keywords, string literals,
+        // integer literals, or boolean literals.  The AST stores all as
+        // StructLit; the type checker resolves struct vs. map.
         let struct_lit = just(Token::LBrace)
             .ignore_then(newlines())
             .ignore_then(
-                map_key()
+                map_lit_key()
                     .then_ignore(just(Token::Colon))
                     .then_ignore(newlines())
                     .then(expr.clone())

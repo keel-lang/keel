@@ -195,19 +195,30 @@ impl Interpreter {
                 };
                 // Validate @limits fields — unimplemented ones are an error.
                 for attr in &def.attributes {
-                    if attr.name == "limits"
-                        && let AttributeBody::Expr(Expr::StructLit(fields)) = &attr.body
-                    {
-                        for (key, _) in fields {
-                            match key.as_str() {
-                                "timeout" | "max_tokens" | "max_cost" => {}
-                                other => {
-                                    return Err(runtime_error(format!(
-                                        "@limits: `{other}` is not supported in v0.1 — \
-                                         supported fields: `timeout`, `max_tokens`, `max_cost`"
-                                    )));
-                                }
-                            }
+                    if attr.name == "limits" {
+                        let check_field = |key: &str| -> bool {
+                            matches!(key, "timeout" | "max_tokens" | "max_cost")
+                        };
+                        let unknown_key: Option<String> = match &attr.body {
+                            AttributeBody::Expr(Expr::StructLit(f)) => f
+                                .iter()
+                                .filter_map(|(k, _)| k.as_str())
+                                .find(|k| !check_field(k))
+                                .map(|k| k.to_string()),
+                            AttributeBody::Expr(Expr::StructSpreadUpdate {
+                                overrides, ..
+                            }) => overrides
+                                .iter()
+                                .map(|(k, _)| k.as_str())
+                                .find(|k| !check_field(k))
+                                .map(|k| k.to_string()),
+                            _ => continue,
+                        };
+                        if let Some(key) = unknown_key {
+                            return Err(runtime_error(format!(
+                                "@limits: `{key}` is not supported in v0.1 — \
+                                 supported fields: `timeout`, `max_tokens`, `max_cost`"
+                            )));
                         }
                     }
                 }
@@ -293,7 +304,7 @@ mod tests {
         Expr::StructLit(
             fields
                 .into_iter()
-                .map(|(k, v)| (k.to_string(), v))
+                .map(|(k, v)| (crate::ast::MapLitKey::Ident(k.to_string()), v))
                 .collect(),
         )
     }
@@ -701,6 +712,43 @@ mod tests {
             })],
         });
         assert!(interp.register_decl(&decl).is_ok());
+    }
+
+    #[test]
+    fn agent_limits_spread_update_supported_overrides_ok() {
+        let mut interp = new_interp();
+        let decl = Decl::Agent(AgentDecl {
+            name: "Bot".into(),
+            items: vec![AgentItem::Attribute(AttributeDecl {
+                name: "limits".into(),
+                body: AttributeBody::Expr(Expr::StructSpreadUpdate {
+                    base: Box::new(Expr::Ident("base_limits".into())),
+                    overrides: vec![("max_tokens".into(), Expr::Integer(2048))],
+                }),
+            })],
+        });
+        assert!(interp.register_decl(&decl).is_ok());
+    }
+
+    #[test]
+    fn agent_limits_spread_update_unsupported_override_is_error() {
+        let mut interp = new_interp();
+        let decl = Decl::Agent(AgentDecl {
+            name: "Bot".into(),
+            items: vec![AgentItem::Attribute(AttributeDecl {
+                name: "limits".into(),
+                body: AttributeBody::Expr(Expr::StructSpreadUpdate {
+                    base: Box::new(Expr::Ident("base_limits".into())),
+                    overrides: vec![("retry_count".into(), Expr::Integer(3))],
+                }),
+            })],
+        });
+        let err = interp.register_decl(&decl).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("retry_count"),
+            "expected error mentioning retry_count, got: {msg}"
+        );
     }
 
     // ── register_decl: Stmt ─────────────────────────────────────────────

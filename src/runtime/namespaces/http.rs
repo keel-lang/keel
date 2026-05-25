@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crate::interpreter::Namespace;
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::convert::value_to_json;
 use crate::runtime::namespace::{find_arg, ns, positional};
 
@@ -39,20 +39,32 @@ pub(crate) fn namespace() -> Namespace {
                     let mut m = HashMap::new();
                     for a in &args {
                         if let Some(n) = &a.name {
-                            m.insert(n.clone(), a.value.clone());
+                            m.insert(MapKey::Str(n.clone()), a.value.clone());
                         }
                     }
                     m
                 }
             };
-            let method = cfg.get("method").map(|v| v.to_display_string()).unwrap_or_else(|| "GET".into());
-            let url = cfg.get("url").map(|v| v.to_display_string())
+            let method = cfg
+                .get(&MapKey::Str("method".into()))
+                .map(|v| v.to_display_string())
+                .unwrap_or_else(|| "GET".into());
+            let url = cfg
+                .get(&MapKey::Str("url".into()))
+                .map(|v| v.to_display_string())
                 .ok_or_else(|| miette::miette!("Http.request: missing `url`"))?;
-            let headers = cfg.get("headers").cloned().and_then(|v| match v {
-                Value::Map(m) => Some(m),
-                _ => None,
-            }).unwrap_or_default();
-            let body = cfg.get("json").or_else(|| cfg.get("body")).cloned();
+            let headers = cfg
+                .get(&MapKey::Str("headers".into()))
+                .cloned()
+                .and_then(|v| match v {
+                    Value::Map(m) => Some(m),
+                    _ => None,
+                })
+                .unwrap_or_default();
+            let body = cfg
+                .get(&MapKey::Str("json".into()))
+                .or_else(|| cfg.get(&MapKey::Str("body".into())))
+                .cloned();
             http_send(&method, &url, headers, body).await
         }),
         // Http.serve(port, handler) — start an HTTP server on the given port.
@@ -148,7 +160,7 @@ pub(crate) fn namespace() -> Namespace {
     })
 }
 
-fn map_from_arg(arg: Option<&Value>) -> HashMap<String, Value> {
+fn map_from_arg(arg: Option<&Value>) -> HashMap<MapKey, Value> {
     match arg {
         Some(Value::Map(m)) => m.clone(),
         _ => HashMap::new(),
@@ -158,7 +170,7 @@ fn map_from_arg(arg: Option<&Value>) -> HashMap<String, Value> {
 async fn http_send(
     method: &str,
     url: &str,
-    headers: HashMap<String, Value>,
+    headers: HashMap<MapKey, Value>,
     body: Option<Value>,
 ) -> miette::Result<Value> {
     let client = &*HTTP_CLIENT;
@@ -174,7 +186,7 @@ async fn http_send(
 
     let mut req = client.request(reqwest_method, url);
     for (k, v) in &headers {
-        req = req.header(k, v.to_display_string());
+        req = req.header(k.to_string(), v.to_display_string());
     }
     if let Some(b) = body {
         match b {
@@ -203,7 +215,7 @@ async fn http_send(
         .iter()
         .map(|(k, v)| {
             (
-                k.as_str().to_string(),
+                MapKey::Str(k.as_str().to_string()),
                 Value::String(v.to_str().unwrap_or("").to_string()),
             )
         })
@@ -211,11 +223,11 @@ async fn http_send(
     let body_text = response.text().await.unwrap_or_default();
 
     let mut result = HashMap::new();
-    result.insert("status".to_string(), Value::Integer(status));
-    result.insert("body".to_string(), Value::String(body_text));
-    result.insert("headers".to_string(), Value::Map(response_headers));
+    result.insert(MapKey::Str("status".into()), Value::Integer(status));
+    result.insert(MapKey::Str("body".into()), Value::String(body_text));
+    result.insert(MapKey::Str("headers".into()), Value::Map(response_headers));
     result.insert(
-        "is_ok".to_string(),
+        MapKey::Str("is_ok".into()),
         Value::Bool((200..300).contains(&status)),
     );
     Ok(Value::Map(result))
@@ -231,7 +243,7 @@ mod tests {
     #[test]
     fn map_from_arg_returns_map_when_given_map() {
         let mut m = HashMap::new();
-        m.insert("k".to_string(), Value::Integer(1));
+        m.insert(MapKey::Str("k".into()), Value::Integer(1));
         let result = map_from_arg(Some(&Value::Map(m.clone())));
         assert_eq!(result, m);
     }
@@ -328,7 +340,7 @@ mod tests {
         assert_eq!(extract_status(&result), 404);
         let is_ok = match &result {
             Value::Map(m) => m
-                .get("is_ok")
+                .get(&MapKey::Str("is_ok".into()))
                 .map(|v| matches!(v, Value::Bool(true)))
                 .unwrap_or(true),
             _ => true,
@@ -369,7 +381,7 @@ mod tests {
     fn extract_body(v: &Value) -> String {
         match v {
             Value::Map(m) => m
-                .get("body")
+                .get(&MapKey::Str("body".into()))
                 .map(|v| v.to_display_string())
                 .unwrap_or_default(),
             _ => String::new(),
@@ -378,7 +390,10 @@ mod tests {
 
     fn extract_status(v: &Value) -> i64 {
         match v {
-            Value::Map(m) => m.get("status").and_then(|v| v.as_int()).unwrap_or(0),
+            Value::Map(m) => m
+                .get(&MapKey::Str("status".into()))
+                .and_then(|v| v.as_int())
+                .unwrap_or(0),
             _ => 0,
         }
     }

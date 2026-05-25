@@ -3,7 +3,7 @@ use std::io::{self, Write};
 
 use colored::Colorize;
 
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::context::EnvProvider;
 
 /// Display a notification to the user (non-blocking).
@@ -28,13 +28,16 @@ pub fn show_with_repl(value: &Value, repl_mode: bool) {
     match value {
         Value::Map(fields) => {
             // Determine the longest key for alignment
-            let max_key = fields.keys().map(|k| k.len()).max().unwrap_or(0);
+            let max_key = fields.keys().map(|k| k.to_string().len()).max().unwrap_or(0);
             println!("  {}", "┌".dimmed());
-            for (key, val) in fields {
+            let mut pairs: Vec<(&MapKey, &Value)> = fields.iter().collect();
+            pairs.sort_by_key(|(k, _)| *k);
+            for (key, val) in pairs {
+                let key_str = key.to_string();
                 println!(
                     "  {} {:width$}  {}",
                     "│".dimmed(),
-                    key.bright_white().bold(),
+                    key_str.bright_white().bold(),
                     format_display_value(val),
                     width = max_key
                 );
@@ -70,9 +73,9 @@ pub fn show_with_repl(value: &Value, repl_mode: bool) {
 
 /// Render a list of maps as a table.
 fn show_table(items: &[Value]) {
-    // Collect all column names in insertion order, O(1) membership check.
-    let mut columns: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
+    // Collect all column keys in insertion order, O(1) membership check.
+    let mut columns: Vec<MapKey> = Vec::new();
+    let mut seen: HashSet<MapKey> = HashSet::new();
     for item in items {
         if let Value::Map(fields) = item {
             for key in fields.keys() {
@@ -88,7 +91,7 @@ fn show_table(items: &[Value]) {
     }
 
     // Calculate column widths
-    let mut widths: Vec<usize> = columns.iter().map(|c| c.len()).collect();
+    let mut widths: Vec<usize> = columns.iter().map(|c| c.to_string().len()).collect();
     for item in items {
         if let Value::Map(fields) = item {
             for (i, col) in columns.iter().enumerate() {
@@ -114,7 +117,7 @@ fn show_table(items: &[Value]) {
     let header: Vec<String> = columns
         .iter()
         .enumerate()
-        .map(|(i, c)| format!("{:width$}", c, width = widths[i]))
+        .map(|(i, c)| format!("{:width$}", c.to_string(), width = widths[i]))
         .collect();
     let separator: Vec<String> = widths.iter().map(|w| "─".repeat(*w)).collect();
 
@@ -159,7 +162,9 @@ fn format_display_value(val: &Value) -> String {
             format!("[{}]", inner.join(", "))
         }
         Value::Map(fields) => {
-            let inner: Vec<String> = fields
+            let mut pairs: Vec<(&MapKey, &Value)> = fields.iter().collect();
+            pairs.sort_by_key(|(k, _)| *k);
+            let inner: Vec<String> = pairs
                 .iter()
                 .map(|(k, v)| format!("{}: {}", k, format_display_value(v)))
                 .collect();
@@ -209,6 +214,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::interpreter::value::MapKey;
 
     fn strip_ansi(input: &str) -> String {
         let mut out = String::new();
@@ -261,8 +267,8 @@ mod tests {
     #[test]
     fn format_display_value_formats_structured_values() {
         let mut map = HashMap::new();
-        map.insert("name".to_string(), Value::String("Ada".into()));
-        map.insert("age".to_string(), Value::Integer(42));
+        map.insert(MapKey::Str("name".into()), Value::String("Ada".into()));
+        map.insert(MapKey::Str("age".into()), Value::Integer(42));
 
         let list = Value::List(vec![
             Value::String("x".into()),

@@ -2,6 +2,38 @@
 
 use super::{Block, TypeExpr};
 
+/// A key in a struct/map literal, carrying the original syntactic form.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MapLitKey {
+    /// Bareword key: `{foo: 1}`.
+    Ident(String),
+    /// Quoted string key: `{"foo": 1}`.
+    Str(String),
+    /// Integer key: `{1: "one"}`.
+    Int(i64),
+    /// Boolean key: `{true: "on"}`.
+    Bool(bool),
+}
+
+impl MapLitKey {
+    /// Returns the string value for `Ident` and `Str` keys; `None` for `Int`/`Bool`.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            MapLitKey::Ident(s) | MapLitKey::Str(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Display string for error messages and formatting.
+    pub fn display(&self) -> String {
+        match self {
+            MapLitKey::Ident(s) | MapLitKey::Str(s) => s.clone(),
+            MapLitKey::Int(n) => n.to_string(),
+            MapLitKey::Bool(b) => b.to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     // ── Literals ─────────────────────────────────────────────────────
@@ -26,8 +58,8 @@ pub enum Expr {
     SelfRef,
 
     // ── Compound literals ────────────────────────────────────────────
-    /// `{key: value, ...}`
-    StructLit(Vec<(String, Expr)>),
+    /// `{key: value, ...}` — keys carry their syntactic form via `MapLitKey`.
+    StructLit(Vec<(MapLitKey, Expr)>),
     /// `{ ...base, field: val, ... }` — copy all fields from base, override specified ones.
     StructSpreadUpdate {
         base: Box<Expr>,

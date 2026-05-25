@@ -14,7 +14,7 @@ All notable changes to Keel.
 
 ### Added
 
-- **Struct spread-update expression `{ ...base, field: new }`.** Copies all fields from a base struct value and overrides the specified fields, producing a new value of the same type. The base must appear first, preceded by `...`; zero or more `field: value` overrides follow. The type tag is preserved — `impl` dispatch continues to work on the result. Override field names that don't exist on the base are a compile-time error.
+- **Struct spread-update expression `{ ...base, field: new }`.** Copies all fields from a base struct or map value and overrides the specified fields. The base must appear first, preceded by `...`; zero or more `field: value` overrides follow. For struct bases the type tag is preserved (`impl` dispatch continues to work) and unknown override fields are a compile-time error (also enforced at runtime on dynamic paths). For `map[K, V]` bases any key may be added or overridden freely; override values must match the map's value type. Duplicate overrides are a compile-time error.
 
   ```keel
   type Order { id: str, status: str, amount: float }
@@ -79,6 +79,19 @@ All notable changes to Keel.
   typeof("hello")     # "str"
   ```
 
+- **Typed map keys — `map[K, V]` now enforces hashable key types at compile time.** Map keys must be `str`, `int`, or `bool`. Using `float` as a key type is a compile-time error (NaN violates hash equality). Nullable key types (`str?`) are rejected. Struct and enum keys are not supported in v0.1; they are deferred to v0.2 behind `interface Hashable`. The runtime map representation changed from string-only keys to a `MapKey` union, so `map[int, str]` and `map[bool, str]` maps work correctly at runtime.
+
+  ```keel
+  # Valid key types
+  scores:   map[str,  int]  = {alice: 100, bob: 95}
+  lookup:   map[int,  str]  = {1: "one", 2: "two"}
+  flags:    map[bool, str]  = {true: "on", false: "off"}
+
+  # Compile-time errors
+  # bad1: map[float, str]  = {}    # float is not a valid map key type
+  # bad2: map[str?,  int]  = {}    # nullable type cannot be a map key
+  ```
+
 - **`list.sort(by: key_fn)` — sort with a key function.** The existing `.sort()` now accepts an optional `by:` named argument, consistent with the `min(by:)` / `max(by:)` prelude pattern. Sort any list by a computed key without needing `impl Comparable`. The key function must return an `int`, `float`, or `str`. Ascending only; descending is achieved by negating numeric keys.
 
   ```keel
@@ -109,6 +122,32 @@ All notable changes to Keel.
   ```
 
   All specs may combine alignment (`<`, `>`, `^`) with a width and/or precision (`.Nf`). Named arguments inside the slot (`{f(key: v):>10}`) are not confused with the spec separator because the colon is only treated as a spec delimiter at outermost bracket depth. A malformed spec is a runtime error.
+
+### Fixed
+
+- **Map subscript `m["key"]` now works at runtime and passes the type checker.** `Expr::Index` was missing a `Value::Map` arm in the interpreter; the type checker also only accepted `int` indices. Both are fixed: `map[K, V][key]` returns `V?` (the nullable value type, since a missing key returns `none`), and the key is type-checked against `K`.
+
+  ```keel
+  scores: map[str, int] = {alice: 90, bob: 85}
+  a    = scores["alice"]   # 90
+  miss = scores["nobody"]  # none
+  ```
+
+- **`type` declarations with `map[K, V]` fields now validate the key type at compile time.** `collect_type_decl` was calling `resolve_type` (which skips map-key validation) instead of `resolve_and_check_type`. A type alias or struct field like `scores: map[float, str]` now correctly produces a compile-time error.
+
+- **Duplicate keys in `{ ...m, k: v, k: w }` map spread-update are now a compile-time error.** The struct path already checked for duplicate overrides; the map path was missing the same guard.
+
+- **`@limits { ...DEFAULT, max_cost: 1.0 }` no longer silently drops the base fields.** `agent_limits()` was matching `StructSpreadUpdate` but only reading the `overrides` slice, discarding any values in the base `StructLit`. Base fields are now processed first; overrides then replace them, matching the documented precedence.
+
+- **`map[int, V]` and `map[bool, V]` literals now parse correctly.** The parser only accepted identifier and string keys, making integer and boolean keys unreachable despite the type checker and runtime supporting them. `map_key()` now also accepts `Token::Integer` and `Token::True`/`Token::False`, and `Expr::StructLit` carries a `MapLitKey` enum (`Ident | Str | Int | Bool`) instead of a plain `String`. The CHANGELOG examples in v0.1.27 (`{1: "one"}`, `{true: "on"}`) now actually parse and run.
+
+  ```keel
+  lookup: map[int,  str] = {1: "one", 2: "two"}
+  flags:  map[bool, str] = {true: "on", false: "off"}
+
+  v = lookup[1]       # "one"
+  w = flags[true]     # "on"
+  ```
 
 ---
 

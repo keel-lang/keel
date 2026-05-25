@@ -626,6 +626,27 @@ run Bot
     );
 }
 
+// ─── Map subscript ───────────────────────────────────────────────────────────
+
+#[test]
+fn run_map_subscript_str_key() {
+    run_ok(
+        r#"
+agent Bot {
+  role "map-subscript"
+  every 1.day {
+    scores: map[str, int] = {"alice": 90, "bob": 85}
+    a = scores["alice"]
+    miss = scores["nobody"]
+    notify user "a={a}, miss={miss}"
+  }
+}
+
+run Bot
+"#,
+    );
+}
+
 // ─── Return ──────────────────────────────────────────────────────────────────
 
 #[test]

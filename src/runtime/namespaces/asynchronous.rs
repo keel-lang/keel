@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::Poll;
 
 use crate::interpreter::Namespace;
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
@@ -61,8 +61,8 @@ pub(crate) fn namespace() -> Namespace {
             interp.runtime.insert_async_task(handle_id, handle);
 
             let mut handle_map = HashMap::new();
-            handle_map.insert("_id".to_string(), Value::Integer(handle_id as i64));
-            handle_map.insert("_status".to_string(), Value::String("pending".to_string()));
+            handle_map.insert(MapKey::Str("_id".into()), Value::Integer(handle_id as i64));
+            handle_map.insert(MapKey::Str("_status".into()), Value::String("pending".to_string()));
 
             Ok(Value::Map(handle_map))
         }),
@@ -142,7 +142,7 @@ fn async_handle_id(value: &Value) -> Option<u64> {
     let Value::Map(fields) = value else {
         return None;
     };
-    match fields.get("_id") {
+    match fields.get(&MapKey::Str("_id".into())) {
         Some(Value::Integer(id)) if *id >= 0 => Some(*id as u64),
         _ => None,
     }
@@ -191,7 +191,7 @@ mod tests {
     #[test]
     fn handle_id_extracts_positive_integer() {
         let mut fields = HashMap::new();
-        fields.insert("_id".to_string(), Value::Integer(42));
+        fields.insert(MapKey::Str("_id".into()), Value::Integer(42));
         let handle = Value::Map(fields);
         assert_eq!(async_handle_id(&handle), Some(42));
     }
@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn handle_id_ignores_negative() {
         let mut fields = HashMap::new();
-        fields.insert("_id".to_string(), Value::Integer(-1));
+        fields.insert(MapKey::Str("_id".into()), Value::Integer(-1));
         let handle = Value::Map(fields);
         assert_eq!(async_handle_id(&handle), None);
     }
@@ -207,7 +207,7 @@ mod tests {
     #[test]
     fn handle_id_rejects_non_integer_id() {
         let mut fields = HashMap::new();
-        fields.insert("_id".to_string(), Value::String("abc".into()));
+        fields.insert(MapKey::Str("_id".into()), Value::String("abc".into()));
         let handle = Value::Map(fields);
         assert_eq!(async_handle_id(&handle), None);
     }
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn handle_id_rejects_missing_id_key() {
         let mut fields = HashMap::new();
-        fields.insert("_status".to_string(), Value::String("done".into()));
+        fields.insert(MapKey::Str("_status".into()), Value::String("done".into()));
         let handle = Value::Map(fields);
         assert_eq!(async_handle_id(&handle), None);
     }
@@ -300,7 +300,7 @@ mod tests {
         let method = ns.methods.get("join_all").unwrap();
         // Fake handle with a valid _id that doesn't exist in the runtime
         let mut fields = HashMap::new();
-        fields.insert("_id".to_string(), Value::Integer(999));
+        fields.insert(MapKey::Str("_id".into()), Value::Integer(999));
         let fake_handle = Value::Map(fields);
         let result = method(&mut interp, vec![arg_val(Value::List(vec![fake_handle]))]).await;
         assert!(result.is_err());

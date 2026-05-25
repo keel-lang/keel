@@ -99,6 +99,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Equatable` interface | [x] | `task equals(self, other) -> bool`; method-only, `==` stays structural | — |
 | `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `Json.stringify` | — |
 | `Iterable` interface | [x] | `task items(self) -> list[T]`; struct usable in `for` loop | Not a generator; materialises full list; concrete `list[T]` return type accepted |
+| `Hashable` interface | [ ] | `interface Hashable { task hash(self) -> int; task equals(self, other: Self) -> bool }` — allows user-defined structs and enums to be used as `map[K, V]` keys; compiler validates K implements Hashable | Deferred to v0.2; in v0.1 only `str`, `int`, `bool` are valid map key types (float is rejected at compile time, nullable and struct/enum keys raise) |
 | `Json` | [~] | `parse`, `stringify` | `Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel. |
 | `Time` | [~] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |

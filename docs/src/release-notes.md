@@ -6,6 +6,23 @@
 
 ## Unreleased
 
+### Typed map keys — `map[K, V]` key types enforced at compile time
+
+Map keys must now be one of the three hashable primitive types: `str`, `int`, or `bool`. Using any other type as `K` is a compile-time error with an actionable message:
+
+```keel
+scores:  map[str,  int]  = {alice: 100}    # valid
+lookup:  map[int,  str]  = {1: "one"}      # valid
+flags:   map[bool, str]  = {true: "on"}   # valid
+
+# Type errors caught at compile time:
+# m: map[float, str]  — float is not a valid map key type (NaN violates hash equality; use int)
+# m: map[str?,  int]  — nullable types cannot be used as map keys
+# m: map[Point, str]  — struct/enum keys require interface Hashable (coming in v0.2)
+```
+
+The runtime map representation now stores keys as a typed union (`str | int | bool`), so `map[int, str]` and `map[bool, str]` maps work correctly at runtime — `.keys()` returns values of the declared key type.
+
 ### Struct spread-update `{ ...base, field: new }`
 
 Creating a modified copy of a struct no longer requires re-stating every field. Use the spread-update syntax to copy all fields from a base and override only the ones that changed:
@@ -22,7 +39,7 @@ base: Config = { host: "localhost", port: 8080, debug: false }
 prod = { ...base, host: "api.example.com" }
 ```
 
-The `...base` spread must appear first and can appear only once. Override field names must exist in the base struct (unknown fields are a compile-time error). The result preserves the base's type tag, so `impl` dispatch works on the returned value. Spreading a `none` value raises at runtime.
+The `...base` spread must appear first and can appear only once. For struct bases, override field names must exist in the base struct (unknown fields are a compile-time error, and a runtime error on dynamic paths). For map bases (`map[K, V]`), any key may be added or overridden freely — values must match the map's value type. The result preserves the base's type tag, so `impl` dispatch works on the returned value. Spreading a `none` value raises at runtime.
 
 ### `Shell` namespace — subprocess bridge
 

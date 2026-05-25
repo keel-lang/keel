@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use colored::Colorize;
 
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 
 /// Email connection configuration.
 #[derive(Debug, Clone)]
@@ -225,12 +225,12 @@ fn parse_email(raw: &[u8], uid: Option<u32>) -> Value {
     }
 
     let mut map = HashMap::new();
-    map.insert("from".to_string(), Value::String(from));
-    map.insert("subject".to_string(), Value::String(subject));
-    map.insert("body".to_string(), Value::String(body));
-    map.insert("unread".to_string(), Value::Bool(true));
+    map.insert(MapKey::Str("from".into()), Value::String(from));
+    map.insert(MapKey::Str("subject".into()), Value::String(subject));
+    map.insert(MapKey::Str("body".into()), Value::String(body));
+    map.insert(MapKey::Str("unread".into()), Value::Bool(true));
     if let Some(u) = uid {
-        map.insert("uid".to_string(), Value::Integer(u as i64));
+        map.insert(MapKey::Str("uid".into()), Value::Integer(u as i64));
     }
     Value::Map(map)
 }
@@ -241,7 +241,7 @@ mod tests {
 
     fn field<'a>(value: &'a Value, key: &str) -> &'a Value {
         match value {
-            Value::Map(map) => map.get(key).expect("field exists"),
+            Value::Map(map) => map.get(&MapKey::Str(key.to_string())).expect("field exists"),
             other => panic!("expected email map, got {}", other.type_name()),
         }
     }
@@ -323,8 +323,11 @@ mod tests {
             panic!("expected email map");
         };
 
-        assert!(!map.contains_key("uid"));
-        assert_eq!(map.get("body"), Some(&Value::String("Body".into())));
+        assert!(!map.contains_key(&MapKey::Str("uid".into())));
+        assert_eq!(
+            map.get(&MapKey::Str("body".into())),
+            Some(&Value::String("Body".into()))
+        );
     }
 
     #[test]

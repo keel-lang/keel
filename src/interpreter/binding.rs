@@ -9,17 +9,14 @@ use super::value::Value;
 fn bind_destructure(pat: &DestructPat, value: Value, env: &mut Environment) -> Result<()> {
     match pat {
         DestructPat::Struct(fields) => {
-            let map = match value {
-                Value::Map(m) | Value::Struct(_, m) => m,
-                other => {
-                    return Err(runtime_error(format!(
-                        "cannot destructure {} as a struct",
-                        other.type_name()
-                    )));
-                }
-            };
+            if !matches!(value, Value::Map(_) | Value::Struct(_, _)) {
+                return Err(runtime_error(format!(
+                    "cannot destructure {} as a struct",
+                    value.type_name()
+                )));
+            }
             for (source, local) in fields {
-                let v = map.get(source).cloned().unwrap_or(Value::None);
+                let v = value.get_str_field(source).cloned().unwrap_or(Value::None);
                 env.define(local.clone(), v);
             }
         }

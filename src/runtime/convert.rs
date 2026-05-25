@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::interpreter::value::Value;
+use crate::interpreter::value::{MapKey, Value};
 
 pub fn json_to_value(v: &serde_json::Value) -> Value {
     match v {
@@ -20,7 +20,7 @@ pub fn json_to_value(v: &serde_json::Value) -> Value {
         serde_json::Value::Object(obj) => {
             let mut m = HashMap::new();
             for (k, v) in obj {
-                m.insert(k.clone(), json_to_value(v));
+                m.insert(MapKey::Str(k.clone()), json_to_value(v));
             }
             Value::Map(m)
         }
@@ -39,7 +39,14 @@ pub fn value_to_json(v: &Value) -> serde_json::Value {
         Value::Uuid(id) => serde_json::Value::String(id.clone()),
         Value::EnumVariant(_, v, _) => serde_json::Value::String(v.clone()),
         Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
-        Value::Map(m) | Value::Struct(_, m) => {
+        Value::Map(m) => {
+            let mut obj = serde_json::Map::new();
+            for (k, v) in m {
+                obj.insert(k.to_string(), value_to_json(v));
+            }
+            serde_json::Value::Object(obj)
+        }
+        Value::Struct(_, m) => {
             let mut obj = serde_json::Map::new();
             for (k, v) in m {
                 obj.insert(k.clone(), value_to_json(v));
@@ -109,8 +116,11 @@ mod tests {
         let v = json_to_value(&serde_json::json!({"a": 1, "b": "x"}));
         match v {
             Value::Map(m) => {
-                assert_eq!(m.get("a"), Some(&Value::Integer(1)));
-                assert_eq!(m.get("b"), Some(&Value::String("x".to_string())));
+                assert_eq!(m.get(&MapKey::Str("a".into())), Some(&Value::Integer(1)));
+                assert_eq!(
+                    m.get(&MapKey::Str("b".into())),
+                    Some(&Value::String("x".to_string()))
+                );
             }
             other => panic!("expected Map, got {other:?}"),
         }

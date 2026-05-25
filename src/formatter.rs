@@ -619,7 +619,7 @@ impl Fmt {
                 } else {
                     let parts: Vec<String> = overrides
                         .iter()
-                        .map(|(k, v)| format!("{}: {}", map_key_form(k), self.expr_at(v, indent)))
+                        .map(|(k, v)| format!("{}: {}", k, self.expr_at(v, indent)))
                         .collect();
                     format!("{{ ...{}, {} }}", base_str, parts.join(", "))
                 }
@@ -1046,30 +1046,28 @@ impl Fmt {
 /// Emit a struct/map key as a bare identifier when it's a valid ident,
 /// or as a quoted string literal when it contains spaces or other
 /// non-identifier characters.
-fn map_key_form(k: &str) -> String {
-    let is_ident = !k.is_empty()
-        && k.chars()
-            .next()
-            .map(|c| c.is_ascii_alphabetic() || c == '_')
-            .unwrap_or(false)
-        && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-    if is_ident {
-        k.to_string()
-    } else {
-        let mut s = String::with_capacity(k.len() + 2);
-        s.push('"');
-        for ch in k.chars() {
-            match ch {
-                '\\' => s.push_str("\\\\"),
-                '"' => s.push_str("\\\""),
-                '\n' => s.push_str("\\n"),
-                '\t' => s.push_str("\\t"),
-                '\r' => s.push_str("\\r"),
-                c => s.push(c),
+fn map_key_form(k: &crate::ast::MapLitKey) -> String {
+    use crate::ast::MapLitKey;
+    match k {
+        MapLitKey::Ident(s) => s.clone(),
+        MapLitKey::Int(n) => n.to_string(),
+        MapLitKey::Bool(b) => b.to_string(),
+        MapLitKey::Str(s) => {
+            let mut out = String::with_capacity(s.len() + 2);
+            out.push('"');
+            for ch in s.chars() {
+                match ch {
+                    '\\' => out.push_str("\\\\"),
+                    '"' => out.push_str("\\\""),
+                    '\n' => out.push_str("\\n"),
+                    '\t' => out.push_str("\\t"),
+                    '\r' => out.push_str("\\r"),
+                    c => out.push(c),
+                }
             }
+            out.push('"');
+            out
         }
-        s.push('"');
-        s
     }
 }
 
