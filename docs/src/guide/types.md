@@ -147,6 +147,35 @@ task t() {
 }
 ```
 
+### Spread-update
+
+To create a modified copy of a struct without repeating every field, use the `{ ...base, field: new }` syntax:
+
+```keel
+type Order { id: str, status: str, amount: float }
+
+o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
+filled   = { ...o, status: "filled" }   # id and amount copied unchanged
+copy     = { ...o }                     # full copy, no overrides
+```
+
+Rules:
+- The `...base` spread must appear **first**, exactly once.
+- Zero or more `field: value` overrides follow, separated by commas or newlines.
+- Override field names must exist in the base struct — unknown fields are a **compile-time error**.
+- The result preserves the base's type tag, so `impl` dispatch continues to work.
+- Spreading a `none` value raises at runtime.
+
+Spread-update is especially useful when updating one field of a deeply nested struct or building configuration variants:
+
+```keel
+type Config { host: str, port: int, debug: bool }
+
+base: Config = { host: "localhost", port: 8080, debug: false }
+dev  = { ...base, debug: true }
+prod = { ...dev, host: "api.example.com", debug: false }
+```
+
 ## Nullable types
 
 Types are **non-nullable by default**. Append `?` to allow `none`:

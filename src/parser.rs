@@ -407,6 +407,34 @@ fn expr_parser() -> P<Expr> {
             .then_ignore(just(Token::RBracket))
             .map(Expr::ListLit);
 
+        // ── Struct spread-update: `{ ...base, field: val, ... }` ──
+        // Must be tried before struct_lit (both open with `{`).
+        // Exactly one spread at the front; zero or more overrides follow.
+        let struct_spread_update = just(Token::LBrace)
+            .ignore_then(newlines())
+            .ignore_then(just(Token::DotDotDot))
+            .ignore_then(newlines())
+            .ignore_then(expr.clone())
+            .then(
+                field_sep()
+                    .ignore_then(
+                        map_key()
+                            .then_ignore(just(Token::Colon))
+                            .then_ignore(newlines())
+                            .then(expr.clone())
+                            .separated_by(field_sep())
+                            .allow_trailing(),
+                    )
+                    .or_not()
+                    .map(|o| o.unwrap_or_default()),
+            )
+            .then_ignore(newlines())
+            .then_ignore(just(Token::RBrace))
+            .map(|(base, overrides)| Expr::StructSpreadUpdate {
+                base: Box::new(base),
+                overrides,
+            });
+
         // ── Struct / map literal: `{key: expr, ...}` ────────────
         // Keys may be identifiers, contextual keywords, or string
         // literals (`{"foo": 1}`). The AST stores all as StructLit;
@@ -567,6 +595,7 @@ fn expr_parser() -> P<Expr> {
             none_lit,
             str_expr,
             list_lit,
+            struct_spread_update,
             struct_lit,
             lambda_single,
             lambda_multi,

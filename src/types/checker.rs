@@ -1352,6 +1352,42 @@ impl Checker {
                 Ty::Struct(inferred)
             }
 
+            Expr::StructSpreadUpdate { base, overrides } => {
+                let base_ty = self.infer_expr(base, scope);
+                let base_fields = match base_ty.strip_nullable() {
+                    Ty::Struct(fields) => fields.clone(),
+                    Ty::Unknown | Ty::Dynamic => {
+                        for (_, v) in overrides {
+                            self.infer_expr(v, scope);
+                        }
+                        return Ty::Unknown;
+                    }
+                    other => {
+                        self.err(format!(
+                            "spread-update base must be a struct, got {}",
+                            describe_ty(other)
+                        ));
+                        for (_, v) in overrides {
+                            self.infer_expr(v, scope);
+                        }
+                        return Ty::Unknown;
+                    }
+                };
+                let mut result_fields = base_fields.clone();
+                for (k, v) in overrides {
+                    let val_ty = self.infer_expr(v, scope);
+                    if let Some(pos) = result_fields.iter().position(|(f, _)| f == k) {
+                        result_fields[pos] = (k.clone(), val_ty);
+                    } else {
+                        self.err(format!(
+                            "unknown field `{}` in spread-update — not present in base struct",
+                            k
+                        ));
+                    }
+                }
+                Ty::Struct(result_fields)
+            }
+
             Expr::ListLit(items) => {
                 let mut element_ty = Ty::Unknown;
                 for (i, e) in items.iter().enumerate() {

@@ -102,7 +102,8 @@ impl Visitor for Counts {
             | Expr::Call { .. }
             | Expr::MethodCall { .. }
             | Expr::WhenExpr { .. }
-            | Expr::Index { .. } => {}
+            | Expr::Index { .. }
+            | Expr::StructSpreadUpdate { .. } => {}
         }
         visit::walk_expr(self, expr);
     }

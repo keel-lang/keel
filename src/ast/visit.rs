@@ -208,6 +208,12 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
                 v.visit_expr(value);
             }
         }
+        Expr::StructSpreadUpdate { base, overrides } => {
+            v.visit_expr(base);
+            for (_, value) in overrides {
+                v.visit_expr(value);
+            }
+        }
         Expr::ListLit(items) | Expr::SetLit(items) | Expr::TupleLit(items) => {
             for item in items {
                 v.visit_expr(item);

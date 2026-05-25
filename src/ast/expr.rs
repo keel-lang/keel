@@ -28,6 +28,11 @@ pub enum Expr {
     // ── Compound literals ────────────────────────────────────────────
     /// `{key: value, ...}`
     StructLit(Vec<(String, Expr)>),
+    /// `{ ...base, field: val, ... }` — copy all fields from base, override specified ones.
+    StructSpreadUpdate {
+        base: Box<Expr>,
+        overrides: Vec<(String, Expr)>,
+    },
     /// `[expr, ...]`
     ListLit(Vec<Expr>),
     /// `set[expr, ...]`

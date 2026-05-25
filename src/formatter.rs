@@ -612,6 +612,18 @@ impl Fmt {
                     format!("{{ {} }}", parts.join(", "))
                 }
             }
+            Expr::StructSpreadUpdate { base, overrides } => {
+                let base_str = self.expr_at(base, indent);
+                if overrides.is_empty() {
+                    format!("{{ ...{} }}", base_str)
+                } else {
+                    let parts: Vec<String> = overrides
+                        .iter()
+                        .map(|(k, v)| format!("{}: {}", map_key_form(k), self.expr_at(v, indent)))
+                        .collect();
+                    format!("{{ ...{}, {} }}", base_str, parts.join(", "))
+                }
+            }
             Expr::ListLit(items) => {
                 let parts: Vec<String> = items.iter().map(|e| self.expr_str(e)).collect();
                 format!("[{}]", parts.join(", "))

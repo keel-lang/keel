@@ -307,6 +307,30 @@ impl Interpreter {
                     Ok(Value::Map(m))
                 }
 
+                Expr::StructSpreadUpdate { base, overrides } => {
+                    let base_val = self.eval_expr(base, env).await?;
+                    match base_val {
+                        Value::Struct(type_name, mut fields) => {
+                            for (k, v) in overrides {
+                                let val = self.eval_expr(v, env).await?;
+                                fields.insert(k.clone(), val);
+                            }
+                            Ok(Value::Struct(type_name, fields))
+                        }
+                        Value::Map(mut fields) => {
+                            for (k, v) in overrides {
+                                let val = self.eval_expr(v, env).await?;
+                                fields.insert(k.clone(), val);
+                            }
+                            Ok(Value::Map(fields))
+                        }
+                        other => Err(runtime_error(format!(
+                            "spread-update `{{...base}}` requires a struct or map, got {}",
+                            other.type_name()
+                        ))),
+                    }
+                }
+
                 Expr::ListLit(items) => {
                     let mut out = Vec::with_capacity(items.len());
                     for it in items {

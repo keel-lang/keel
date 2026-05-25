@@ -202,6 +202,23 @@ type Paginated[T] {
 }
 ```
 
+**Spread-update:** Create a new struct value that copies all fields from a base expression and overrides specific fields. The base must be a non-`none` struct or map value; the overrides must name fields that exist in the base.
+
+```keel
+type Order { id: str, status: str, amount: float }
+
+o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
+filled   = { ...o, status: "filled" }   # id and amount copied, status replaced
+copy     = { ...o }                     # full copy, no overrides
+```
+
+Rules:
+- Exactly one `...base` spread, and it must appear first.
+- Zero or more `field: value` overrides follow, separated by commas or newlines.
+- Override field names must exist in the base struct; adding unknown fields is a type error.
+- The result has the same type tag as the base (so `impl` dispatch is preserved).
+- Spreading `none` raises at runtime.
+
 ### 2.5 Enum types (algebraic data types)
 
 ```keel

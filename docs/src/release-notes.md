@@ -6,6 +6,24 @@
 
 ## Unreleased
 
+### Struct spread-update `{ ...base, field: new }`
+
+Creating a modified copy of a struct no longer requires re-stating every field. Use the spread-update syntax to copy all fields from a base and override only the ones that changed:
+
+```keel
+type Order { id: str, status: str, amount: float }
+
+o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
+filled   = { ...o, status: "filled" }   # id and amount unchanged
+copy     = { ...o }                     # full copy
+
+type Config { host: str, port: int, debug: bool }
+base: Config = { host: "localhost", port: 8080, debug: false }
+prod = { ...base, host: "api.example.com" }
+```
+
+The `...base` spread must appear first and can appear only once. Override field names must exist in the base struct (unknown fields are a compile-time error). The result preserves the base's type tag, so `impl` dispatch works on the returned value. Spreading a `none` value raises at runtime.
+
 ### `Shell` namespace — subprocess bridge
 
 Agents can now invoke external commands and capture their output via `Shell.run`. The command is passed to `/bin/sh -c`, so pipes, redirects, and shell builtins work as expected. Requires `@tools [Shell]`.

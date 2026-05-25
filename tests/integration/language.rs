@@ -3355,3 +3355,170 @@ run(A)
     assert!(stdout.contains("duration"), "got: {stdout}");
     assert!(stdout.contains("Uuid"), "got: {stdout}");
 }
+
+// ---------------------------------------------------------------------------
+// Struct spread-update  { ...base, field: new }
+// ---------------------------------------------------------------------------
+
+#[test]
+fn struct_spread_update_single_field() {
+    let src = r#"
+type Order { id: str, status: str, amount: float }
+task run_test() {
+  o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
+  filled = { ...o, status: "filled" }
+  Io.show(filled.id)
+  Io.show(filled.status)
+  Io.show("{filled.amount}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("ord-1"), "id preserved: {stdout}");
+    assert!(stdout.contains("filled"), "status updated: {stdout}");
+    assert!(stdout.contains("9.99"), "amount preserved: {stdout}");
+}
+
+#[test]
+fn struct_spread_update_multiple_overrides() {
+    let src = r#"
+type Point { x: int, y: int, z: int }
+task run_test() {
+  p: Point = { x: 1, y: 2, z: 3 }
+  q = { ...p, x: 10, z: 30 }
+  Io.show("{q.x}")
+  Io.show("{q.y}")
+  Io.show("{q.z}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("10"), "x updated: {stdout}");
+    assert!(stdout.contains('2'), "y preserved: {stdout}");
+    assert!(stdout.contains("30"), "z updated: {stdout}");
+}
+
+#[test]
+fn struct_spread_update_no_overrides_is_copy() {
+    let src = r#"
+type Rec { a: int, b: str }
+task run_test() {
+  r: Rec = { a: 7, b: "hello" }
+  r2 = { ...r }
+  Io.show("{r2.a}")
+  Io.show(r2.b)
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('7'), "a: {stdout}");
+    assert!(stdout.contains("hello"), "b: {stdout}");
+}
+
+#[test]
+fn struct_spread_update_preserves_type_tag() {
+    let src = r#"
+type Item { name: str, price: float }
+task run_test() {
+  item: Item = { name: "Widget", price: 9.99 }
+  updated = { ...item, price: 4.99 }
+  Io.show(typeof(updated))
+  Io.show(updated.name)
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("Item"), "type tag preserved: {stdout}");
+    assert!(stdout.contains("Widget"), "name preserved: {stdout}");
+}
+
+#[test]
+fn struct_spread_update_chained() {
+    let src = r#"
+type Config { host: str, port: int, debug: bool }
+task run_test() {
+  base: Config = { host: "localhost", port: 8080, debug: false }
+  dev = { ...base, debug: true }
+  prod = { ...dev, host: "prod.example.com", debug: false }
+  Io.show(prod.host)
+  Io.show("{prod.port}")
+  Io.show("{prod.debug}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("prod.example.com"), "host: {stdout}");
+    assert!(stdout.contains("8080"), "port: {stdout}");
+    assert!(stdout.contains("false"), "debug: {stdout}");
+}
+
+#[test]
+fn struct_spread_update_unknown_field_is_type_error() {
+    let src = r#"
+type Rec { a: int }
+task run_test() {
+  r: Rec = { a: 1 }
+  bad = { ...r, nonexistent: 99 }
+  Io.show("{bad.a}")
+}
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected type error for unknown field");
+    assert!(
+        stderr.contains("nonexistent") || stderr.contains("unknown field"),
+        "got: {stderr}"
+    );
+}
+
+#[test]
+fn struct_spread_update_formatter_roundtrip() {
+    // Format a program containing spread-update twice; formatter must be idempotent.
+    let src = r#"
+type Point { x: int, y: int }
+task run_test() {
+  p: Point = { x: 1, y: 2 }
+  q = { ...p, x: 10 }
+  Io.show("{q.x}")
+}
+run_test()
+"#;
+    use keel_lang::formatter::format_program;
+    use keel_lang::lexer::lex;
+    use keel_lang::parser::parse;
+    use miette::NamedSource;
+    let named = NamedSource::new("t.keel", src.to_string());
+    let tokens = lex(src, &named).expect("lex");
+    let program = parse(tokens, src.len(), &named).expect("parse");
+    let once = format_program(&program);
+    let named2 = NamedSource::new("t.keel", once.clone());
+    let tokens2 = lex(&once, &named2).expect("lex 2");
+    let program2 = parse(tokens2, once.len(), &named2).expect("parse 2");
+    let twice = format_program(&program2);
+    assert_eq!(once, twice, "formatter not idempotent:\n--- once ---\n{once}\n--- twice ---\n{twice}");
+    assert!(once.contains("...p"), "spread not in formatted output: {once}");
+}
+
+#[test]
+fn struct_spread_update_untyped_map_base() {
+    // Untyped struct literals are Value::Map at runtime (not Value::Struct).
+    // Spread-update must work through the Value::Map branch, not just Value::Struct.
+    let src = r#"
+task run_test() {
+  r = { a: 1, b: "hello" }
+  q = { ...r, a: 99 }
+  Io.show("{q.a}")
+  Io.show(q.b)
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("99"), "a overridden: {stdout}");
+    assert!(stdout.contains("hello"), "b preserved: {stdout}");
+}

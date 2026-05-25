@@ -14,6 +14,20 @@ All notable changes to Keel.
 
 ### Added
 
+- **Struct spread-update expression `{ ...base, field: new }`.** Copies all fields from a base struct value and overrides the specified fields, producing a new value of the same type. The base must appear first, preceded by `...`; zero or more `field: value` overrides follow. The type tag is preserved — `impl` dispatch continues to work on the result. Override field names that don't exist on the base are a compile-time error.
+
+  ```keel
+  type Order { id: str, status: str, amount: float }
+
+  o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
+  filled   = { ...o, status: "filled" }   # id and amount unchanged
+  copy     = { ...o }                     # full copy
+
+  type Config { host: str, port: int, debug: bool }
+  base: Config = { host: "localhost", port: 8080, debug: false }
+  prod = { ...base, host: "api.example.com" }
+  ```
+
 - **`Shell` namespace — subprocess bridge.** `Shell.run(cmd, stdin:?, cwd:?)` executes a shell command and returns `{ stdout: str, stderr: str, exit_code: int }`. The command is passed to `/bin/sh -c`, so pipes and redirects work as expected. Spawn failures raise; a non-zero exit code is returned in the struct and is not itself an error. Gated by `@tools [Shell]`. The subprocess runs with an isolated environment: only `PATH`, `HOME`, `SHELL`, `TMPDIR`, `USER`, and `LANG` are forwarded; secrets and other process-level variables are not exposed.
 
   ```keel
