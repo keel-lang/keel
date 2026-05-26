@@ -212,7 +212,7 @@ impl Checker {
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
             "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto",
-            "Math", "Shell",
+            "Math", "Shell", "Csv",
         ] {
             prelude.insert(n.to_string());
         }
@@ -1943,6 +1943,21 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Csv" {
+                        match method.as_str() {
+                            "parse" => {
+                                return Ty::List(Box::new(Ty::List(Box::new(Ty::Str))));
+                            }
+                            "parse_records" => {
+                                return Ty::List(Box::new(Ty::Map(
+                                    Box::new(Ty::Str),
+                                    Box::new(Ty::Str),
+                                )));
+                            }
+                            "stringify" => return Ty::Str,
+                            _ => {}
+                        }
+                    }
                 }
                 let obj_ty = self.infer_expr(object, scope);
                 match (obj_ty.strip_nullable(), method.as_str()) {
@@ -2455,6 +2470,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
             | "Uuid"
             | "Crypto"
             | "Math"
+            | "Csv"
     ) {
         return Some(format!("namespace `{name}`"));
     }

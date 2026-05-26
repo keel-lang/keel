@@ -14,6 +14,19 @@ All notable changes to Keel.
 
 ### Added
 
+- **`Csv` namespace — CSV serialization.** Three functions cover the full round-trip: `Csv.parse(text)` returns `list[list[str]]` (every row as a list of strings); `Csv.parse_records(text)` returns `list[map[str, str]]` using the first row as header keys; `Csv.stringify(rows)` converts `list[list[str]]` back to RFC 4180–compliant CSV text. Cells containing commas, quotes, or newlines are automatically quoted. No `@tools` annotation required.
+
+  ```keel
+  raw    = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9"
+  trades = Csv.parse_records(raw)
+  for trade in trades {
+      Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+  }
+
+  rows = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
+  text = Csv.stringify(rows)
+  ```
+
 - **`Db` namespace — SQLite-backed durable storage.** `Db.connect(url)` opens a SQLite database and returns a connection value; `.query(sql, params?)` runs a SELECT and returns `list[map[str, dynamic]]`; `.exec(sql, params?)` runs INSERT/UPDATE/DELETE and returns the rows-affected count. Connection URLs use `sqlite://` prefix (`sqlite://trades.db`, `sqlite:///abs/path.db`, `sqlite://:memory:`). Parameterized queries use `?` placeholders with a list of values. SQLite is bundled into the binary — no system library required. Other schemes (`postgres://`, `mysql://`) raise a clear "only sqlite:// is supported in v0.1" error.
 
   ```keel

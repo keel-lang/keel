@@ -1,0 +1,26 @@
+agent CsvDemo {
+    @on_start {
+        # Parse raw CSV into list[list[str]]
+        raw = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9\nSOL,150,9999.0"
+        rows = Csv.parse(raw)
+        Log.info("total rows (including header): {rows.len()}")
+
+        # Use parse_records to get list[map[str, str]] keyed by column name
+        trades = Csv.parse_records(raw)
+        for trade in trades {
+            Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+        }
+
+        # Build new rows and stringify back to CSV
+        out_rows = [["symbol", "price_usd"]]
+        for trade in trades {
+            out_rows.push([trade["symbol"], trade["price"]])
+        }
+        csv_text = Csv.stringify(out_rows)
+        Io.show(csv_text)
+
+        stop(self)
+    }
+}
+
+run(CsvDemo)

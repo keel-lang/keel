@@ -30,6 +30,7 @@
 - [Email & Http (connections)](./guide/connections.md)
 - [Filesystem](./guide/filesystem.md)
 - [Shell (subprocess)](./guide/shell.md)
+- [Csv (serialization)](./guide/csv.md)
 - [Strings & Cache (text & memory)](./guide/strings.md)
 
 # CLI Reference

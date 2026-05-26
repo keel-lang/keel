@@ -6,6 +6,25 @@
 
 ## Unreleased
 
+### `Csv` namespace — CSV serialization
+
+Three functions cover the full round-trip. No `@tools` annotation required.
+
+- `Csv.parse(text) -> list[list[str]]` — every row as a list of strings; the caller decides whether to treat the first row as headers.
+- `Csv.parse_records(text) -> list[map[str, str]]` — first row becomes header keys; remaining rows become maps.
+- `Csv.stringify(rows) -> str` — converts `list[list[str]]` to RFC 4180 CSV; cells containing commas, quotes, or newlines are automatically quoted.
+
+```keel
+raw    = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9"
+trades = Csv.parse_records(raw)
+for trade in trades {
+    Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+}
+
+rows = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
+text = Csv.stringify(rows)
+```
+
 ---
 
 ## v0.1.28 — 2026-05-26

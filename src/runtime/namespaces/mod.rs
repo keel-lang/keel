@@ -6,6 +6,7 @@ mod asynchronous;
 mod cache;
 mod control;
 mod crypto;
+mod csv;
 mod db;
 mod email;
 mod env;
@@ -29,7 +30,7 @@ pub(crate) fn install(interp: &mut Interpreter) {
     }
 }
 
-fn namespaces() -> [Namespace; 22] {
+fn namespaces() -> [Namespace; 23] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -53,5 +54,6 @@ fn namespaces() -> [Namespace; 22] {
         crypto::namespace(),
         math::namespace(),
         shell::namespace(),
+        csv::namespace(),
     ]
 }

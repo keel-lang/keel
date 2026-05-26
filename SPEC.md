@@ -430,6 +430,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Uuid` | UUID generation | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
 | `Crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
 | `Math` | Transcendental and power functions | `PI()`, `E()`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x)`, `log2(x)`, `log10(x)`, `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)` |
+| `Csv` | CSV serialization | `parse(text)`, `parse_records(text)`, `stringify(rows)` |
 | `Shell` | Subprocess bridge | `run(cmd, stdin:?, cwd:?) -> { stdout, stderr, exit_code }` |
 
 ### 3.3 Prelude free functions
@@ -1512,7 +1513,48 @@ s   = Math.sin(rad)                                 # ≈ 0.707
 
 ---
 
-## 15. Random, Uuid, and Crypto
+## 15. Csv
+
+The `Csv` namespace parses and produces RFC 4180–compliant CSV text. It is always available — no `@tools` annotation required.
+
+```keel
+raw = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9"
+
+# Raw parse — list[list[str]], first row is whatever the input contains
+rows = Csv.parse(raw)         # [["symbol","price","volume"], ["BTC","67000","1234.5"], …]
+
+# Header parse — list[map[str, str]], first row becomes map keys
+trades = Csv.parse_records(raw)   # [{symbol: "BTC", price: "67000", …}, …]
+for trade in trades {
+    Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+}
+
+# Stringify — list[list[str]] → CSV string (include a header row as the first inner list)
+out = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
+text = Csv.stringify(out)
+```
+
+### Functions
+
+| Call | Returns | Notes |
+|---|---|---|
+| `Csv.parse(text: str)` | `list[list[str]]` | Parse CSV; every cell is a `str`. Raises `CsvError` on malformed input. |
+| `Csv.parse_records(text: str)` | `list[map[str, str]]` | First row becomes header keys; remaining rows become maps. Returns `[]` when only a header row is present. |
+| `Csv.stringify(rows: list[list[str]])` | `str` | Convert rows to CSV text. Each inner list is one row; cell values are coerced to `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list. |
+
+### Notes
+
+- `Csv.stringify` only accepts `list[list[str]]`. To convert `list[map[str, str]]` to CSV, project the fields you want into lists first:
+  ```keel
+  lines = trades.map(t => [t["symbol"], t["price"]])
+  text  = Csv.stringify([["symbol", "price"]] + lines)
+  ```
+- Empty input to `Csv.parse` returns `[]`.
+- `Csv.parse_records` with only a header row (no data rows) returns `[]`.
+
+---
+
+## 16. Random, Uuid, and Crypto
 
 ### 15.1 `Random` — pseudo-random generation
 
@@ -1595,7 +1637,7 @@ Crypto.random_bytes(16)                       # list[int] of 16 bytes
 
 ---
 
-## 16. Shell — Subprocess Bridge
+## 17. Shell — Subprocess Bridge
 
 `Shell` lets agents invoke external commands and capture their output. It is gated by `@tools [Shell]` — an agent must declare the capability before any `Shell.run` call is allowed.
 
@@ -1649,7 +1691,7 @@ run(Builder)
 
 ---
 
-## 17. Escape Hatches
+## 18. Escape Hatches
 
 
 ### 17.1 `Ai.prompt` — raw LLM access
@@ -1700,7 +1742,7 @@ tokens = tokenize(document.body)
 
 ---
 
-## 18. Environment & Configuration
+## 19. Environment & Configuration
 
 ### 18.1 Environment variables
 
@@ -1729,7 +1771,7 @@ log:
 
 ---
 
-## 19. Modules & Imports
+## 20. Modules & Imports
 
 ```keel
 use "./email_utils.keel"               # import a local file
@@ -1741,7 +1783,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 
 ---
 
-## 20. Operators
+## 21. Operators
 
 | Operator | Meaning |
 |---|---|
@@ -1790,7 +1832,7 @@ none as int         # raises: cannot cast none to int
 
 ---
 
-## 21. Execution Model
+## 22. Execution Model
 
 Keel runs on the **Keel Runtime** (Rust, Tokio).
 
@@ -1815,7 +1857,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 
 ---
 
-## 22. Compile-Time Errors
+## 23. Compile-Time Errors
 
 | Error | Severity |
 |---|---|
@@ -1840,7 +1882,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 23. Lint Rules (`keel lint`)
+## 24. Lint Rules (`keel lint`)
 
 `keel lint` checks for style and best-practice issues that are not type errors. The program may still run; lint warnings indicate dead code or likely misuse patterns.
 
@@ -1855,7 +1897,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 
 ---
 
-## 24. IDE Contract
+## 25. IDE Contract
 
 Every feature is designed for tooling.
 
@@ -1877,7 +1919,7 @@ Every feature is designed for tooling.
 
 ---
 
-## 25. Formal Grammar (PEG summary, condensed)
+## 26. Formal Grammar (PEG summary, condensed)
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
@@ -1971,7 +2013,7 @@ That keeps the parser small, type inference uniform (no hard-coded primitive sig
 
 ---
 
-## 26. What's Next
+## 27. What's Next
 
 v0.1 is the initial alpha. `keel run` accepts only the surface described in this document.
 

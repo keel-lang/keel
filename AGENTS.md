@@ -66,6 +66,20 @@ keel lsp                 # language server (stdin/stdout)
 
 Say "release" or "ship a release" to run the shared release workflow in `.agents/skills/release/SKILL.md`. Claude should delegate to the `release-engineer` agent (`.claude/agents/release-engineer.md`), which wraps that shared checklist. Codex should use the `release` skill directly. Both tools must walk through every step and gate on explicit confirmation before committing, pushing, or tagging.
 
+## Namespace implementation checklist
+
+When writing a new stdlib namespace method:
+- **Validate all structural preconditions on inputs**, not just presence/type. For any data
+  destined for a container: check uniqueness (map keys), non-empty (keys that will be
+  looked up by name), and width consistency (row vs. header column count). Never silently
+  drop, truncate, or overwrite data that violates the declared contract — raise an error.
+- **Strict type matching over coercive display.** If the declared contract says `list[str]`,
+  match on `Value::String` explicitly. `to_display_string()` as a catch-all silently accepts
+  wrong types and produces un-round-trippable output.
+- **Private helpers use generic error messages.** Never hardcode a specific public function
+  name in a shared helper's error string. If the caller identity matters for diagnostics,
+  accept `caller: &str` as a parameter.
+
 ## Reserved Keywords (v0.1)
 
 ```

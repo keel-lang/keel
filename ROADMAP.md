@@ -106,7 +106,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Db` | [x] | `connect(url)` → `DbConnection`, `db.query(sql, params?)` → `list[map[str,dynamic]]`, `db.exec(sql, params?)` → `int` | Multi-backend (Postgres, MySQL) deferred to v0.2 |
 | `Crypto` | [x] | `sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)` | Cryptographic primitives; distinct from `Random` (PRNG) |
 | `Math` | [x] | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()` | All return `float`; accept `int` or `float` input; domain errors raise |
-| `Csv` | [ ] | — | `Csv.parse(str) -> list[list[str]]`, `Csv.parse_headers(str) -> list[map[str, str]]`, `Csv.stringify(rows) -> str`. LLMs frequently emit CSV; exchange price-history APIs return CSV. Promoted from "Deferred post-v0.1". |
+| `Csv` | [x] | `parse`, `parse_records`, `stringify` | RFC 4180–compliant. `parse` → `list[list[str]]`; `parse_records` → `list[map[str, str]]` keyed by first row; `stringify` accepts `list[list[str]]` (include a header list as the first element if desired). Cells with commas, quotes, or newlines are auto-quoted. |
 | `Yaml` | [ ] | — | `Yaml.parse(str) -> dynamic`, `Yaml.stringify(value) -> str`. YAML is the dominant config and agent-definition format. Promoted from "Deferred post-v0.1". |
 | `Shell` | [x] | `run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }` | — |
 
