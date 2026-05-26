@@ -287,7 +287,7 @@ Tuples are structural, immutable. Single-element tuples are not a thing (`(str)`
 
 ### 2.9 The `dynamic` type (FFI/interop only)
 
-`dynamic` exists for untyped boundaries: `extern` returns, `prompt as dynamic`, raw SQL rows. It must always be explicitly written — there is no implicit path to `dynamic`.
+`dynamic` exists for untyped boundaries: `extern` returns, `prompt as dynamic`, raw SQL rows, and JSON/cache interop. It must always be explicitly written — there is no implicit path to `dynamic`.
 
 ```keel
 extern task parse_legacy(data: str) -> dynamic from "legacy"
@@ -297,6 +297,44 @@ info: MyStruct = raw as MyStruct      # narrow with runtime check
 ```
 
 `dynamic` defeats autocomplete and type checking. Narrow as early as possible. The compiler warns on `dynamic` use outside the explicit escape hatches.
+
+**`Json.parse` return-type semantics.** `Json.parse(s) -> dynamic` maps JSON onto Keel values as follows:
+
+| JSON type | Keel runtime value |
+|---|---|
+| object `{}` | field-accessible map — `parsed.fieldName` works at runtime |
+| array `[]` | `list[dynamic]` — index with `parsed[i]`, iterate with `for` |
+| number (integer) | `int` |
+| number (float) | `float` |
+| string | `str` |
+| boolean | `bool` |
+| null | `none` |
+
+Named-field access (`parsed.price`) resolves at runtime; a missing key raises rather than returning `none`. Narrow as early as possible with `as T` or by reading individual fields:
+
+```keel
+body = Http.get("https://api.example.com/ticker")?.body ?? ""
+data = Json.parse(body) as dynamic
+price  = (data.price as str).to_float() ?? 0.0  # str field → float
+volume = data.volume as int                      # int field
+rows   = data.candles as list[dynamic]           # array field
+for row in rows {
+  close = (row as list[dynamic])[4] as str       # nested array element
+}
+```
+
+**`Cache.get` return-type semantics.** `Cache.get(key: str) -> dynamic?` returns the stored value at its original type, or `none` if the key is absent or the entry has expired. The stored type is preserved exactly — a value written as `str` is read back as `str`, a value written as `int` is read back as `int`. Use `as T` to recover a concrete type:
+
+```keel
+Cache.set("price", "50000.12")
+raw = Cache.get("price")                # dynamic?
+if raw != none {
+  price = raw as str                    # "50000.12"
+}
+
+Cache.set("count", 42)
+n = (Cache.get("count") ?? 0) as int   # 42
+```
 
 ### 2.10 Built-in runtime types
 

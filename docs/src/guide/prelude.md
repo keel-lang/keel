@@ -147,6 +147,66 @@ bytes = Crypto.random_bytes(16)
 
 `Crypto` intentionally exposes fixed safe SHA-2 methods only. Legacy hashes such as MD5 and SHA-1, and string-selected hash algorithms, are not exposed.
 
+## Json
+
+`Json.parse` and `Json.stringify` bridge between Keel values and JSON strings.
+
+| Function | Signature | Returns |
+|---|---|---|
+| `Json.parse(s)` | `(str) -> dynamic` | Parsed JSON value |
+| `Json.stringify(value)` | `(any) -> str` | JSON string |
+
+**`Json.parse` return-type semantics.** The result is `dynamic` — the type is not known statically. At runtime, JSON types map to Keel values as follows:
+
+| JSON | Keel runtime value |
+|---|---|
+| object `{}` | field-accessible — `parsed.fieldName` works, raises on missing key |
+| array `[]` | `list[dynamic]` — indexable and iterable |
+| integer | `int` |
+| float | `float` |
+| string | `str` |
+| boolean | `bool` |
+| null | `none` |
+
+Narrow with `as T` as early as possible:
+
+```keel
+body = Http.get("https://api.example.com/ticker")?.body ?? ""
+data = Json.parse(body) as dynamic
+
+price  = (data.price as str).to_float() ?? 0.0
+volume = data.volume as int
+rows   = data.candles as list[dynamic]
+```
+
+**`Json.stringify`** serialises Keel structs, maps, lists, and primitives to JSON. If the value implements `Serializable`, its `to_json()` method is called instead of the default serialiser.
+
+## Cache
+
+`Cache` is a process-scoped in-memory key-value store with optional TTL. It is shared across all agents in the same process — a convenient way to pass state between agents without serialising to disk.
+
+| Function | Signature | Notes |
+|---|---|---|
+| `Cache.set(key, value)` | `(str, any) -> none` | Store any value |
+| `Cache.set(key, value, ttl:)` | `(str, any, ttl: duration) -> none` | Store with expiry |
+| `Cache.get(key)` | `(str) -> dynamic?` | `none` if absent or expired |
+| `Cache.delete(key)` | `(str) -> none` | Remove a key |
+| `Cache.clear()` | `() -> none` | Remove all keys |
+
+**`Cache.get` return-type semantics.** The return type is `dynamic?`. The stored type is preserved exactly — a value written as `str` is read back as `str`, a value written as `int` is read back as `int`. Use `as T` to recover a concrete type, and `??` to supply a default:
+
+```keel
+Cache.set("trading:halted", "true")
+halted_raw = Cache.get("trading:halted")      # dynamic?
+halted = if halted_raw == none { false } else { (halted_raw as str) == "true" }
+
+Cache.set("count", 0)
+n = (Cache.get("count") ?? 0) as int
+
+Cache.set("rate", 0.5, ttl: 30.seconds)
+rate = (Cache.get("rate") ?? 0.0) as float
+```
+
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces
