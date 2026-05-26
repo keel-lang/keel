@@ -69,7 +69,11 @@ fn install_typeof(interp: &mut Interpreter) {
         "typeof",
         Arc::new(|_interp: &mut Interpreter, args: Vec<CallArgValue>| {
             Box::pin(async move {
-                let val = args.into_iter().next().map(|a| a.value).unwrap_or(Value::None);
+                let val = args
+                    .into_iter()
+                    .next()
+                    .map(|a| a.value)
+                    .unwrap_or(Value::None);
                 let name = match &val {
                     Value::Struct(type_name, _) => type_name.clone(),
                     Value::EnumVariant(type_name, _, _) => type_name.clone(),

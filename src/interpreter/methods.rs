@@ -13,8 +13,12 @@ fn compare_keys(a: &Value, b: &Value) -> std::cmp::Ordering {
     match (a, b) {
         (Value::Integer(x), Value::Integer(y)) => x.cmp(y),
         (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Integer(x), Value::Float(y)) => (*x as f64).partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::Float(x), Value::Integer(y)) => x.partial_cmp(&(*y as f64)).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Integer(x), Value::Float(y)) => (*x as f64)
+            .partial_cmp(y)
+            .unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(x), Value::Integer(y)) => x
+            .partial_cmp(&(*y as f64))
+            .unwrap_or(std::cmp::Ordering::Equal),
         (Value::String(x), Value::String(y)) => x.cmp(y),
         _ => std::cmp::Ordering::Equal,
     }
@@ -561,7 +565,8 @@ impl Interpreter {
                     value: Value::List(items.clone()),
                 }];
                 call_args.extend(args.iter().filter(|a| a.name.is_some()).cloned());
-                self.call_namespace_method("__global", method, call_args).await
+                self.call_namespace_method("__global", method, call_args)
+                    .await
             }
             (Value::List(items), "join") => {
                 let sep = args
@@ -589,15 +594,20 @@ impl Interpreter {
                             .call_closure(
                                 &params,
                                 &body,
-                                vec![CallArgValue { name: None, value: item.clone() }],
+                                vec![CallArgValue {
+                                    name: None,
+                                    value: item.clone(),
+                                }],
                             )
                             .await?;
                         match &key {
                             Value::Integer(_) | Value::Float(_) | Value::String(_) => {}
-                            other => return Err(runtime_error(format!(
-                                "sort(by:): key function must return int, float, or str, got {}",
-                                other.type_name()
-                            ))),
+                            other => {
+                                return Err(runtime_error(format!(
+                                    "sort(by:): key function must return int, float, or str, got {}",
+                                    other.type_name()
+                                )));
+                            }
                         }
                         keyed.push((key, item));
                     }
@@ -704,24 +714,32 @@ impl Interpreter {
             (Value::Map(m), "keys") => {
                 let mut keys: Vec<&MapKey> = m.keys().collect();
                 keys.sort();
-                Ok(Value::List(keys.into_iter().map(|k| k.to_value()).collect()))
+                Ok(Value::List(
+                    keys.into_iter().map(|k| k.to_value()).collect(),
+                ))
             }
             (Value::Struct(_, m), "keys") => {
                 let mut keys: Vec<&str> = m.keys().map(|s| s.as_str()).collect();
                 keys.sort();
                 Ok(Value::List(
-                    keys.into_iter().map(|k| Value::String(k.to_string())).collect(),
+                    keys.into_iter()
+                        .map(|k| Value::String(k.to_string()))
+                        .collect(),
                 ))
             }
             (Value::Map(m), "values") => {
                 let mut keys: Vec<&MapKey> = m.keys().collect();
                 keys.sort();
-                Ok(Value::List(keys.into_iter().map(|k| m[k].clone()).collect()))
+                Ok(Value::List(
+                    keys.into_iter().map(|k| m[k].clone()).collect(),
+                ))
             }
             (Value::Struct(_, m), "values") => {
                 let mut keys: Vec<&str> = m.keys().map(|s| s.as_str()).collect();
                 keys.sort();
-                Ok(Value::List(keys.into_iter().map(|k| m[k].clone()).collect()))
+                Ok(Value::List(
+                    keys.into_iter().map(|k| m[k].clone()).collect(),
+                ))
             }
             (Value::Map(m), "get") => {
                 let key_val = args.first().map(|a| &a.value);
@@ -740,9 +758,7 @@ impl Interpreter {
                 Ok(m.get(&key).cloned().unwrap_or(Value::None))
             }
             (Value::Map(m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
-            (Value::Struct(_, m), "count" | "len" | "size") => {
-                Ok(Value::Integer(m.len() as i64))
-            }
+            (Value::Struct(_, m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
             (Value::Map(m), "is_empty") => Ok(Value::Bool(m.is_empty())),
             (Value::Struct(_, m), "is_empty") => Ok(Value::Bool(m.is_empty())),
             (Value::Map(m), "contains" | "has") => {
@@ -797,16 +813,28 @@ impl Interpreter {
                     Ok(dt) => {
                         let mut m = std::collections::HashMap::new();
                         m.insert(MapKey::Str("year".into()), Value::Integer(dt.year() as i64));
-                        m.insert(MapKey::Str("month".into()), Value::Integer(dt.month() as i64));
+                        m.insert(
+                            MapKey::Str("month".into()),
+                            Value::Integer(dt.month() as i64),
+                        );
                         m.insert(MapKey::Str("day".into()), Value::Integer(dt.day() as i64));
                         m.insert(MapKey::Str("hour".into()), Value::Integer(dt.hour() as i64));
-                        m.insert(MapKey::Str("minute".into()), Value::Integer(dt.minute() as i64));
-                        m.insert(MapKey::Str("second".into()), Value::Integer(dt.second() as i64));
+                        m.insert(
+                            MapKey::Str("minute".into()),
+                            Value::Integer(dt.minute() as i64),
+                        );
+                        m.insert(
+                            MapKey::Str("second".into()),
+                            Value::Integer(dt.second() as i64),
+                        );
                         m.insert(
                             MapKey::Str("millisecond".into()),
                             Value::Integer((dt.nanosecond() / 1_000_000) as i64),
                         );
-                        m.insert(MapKey::Str("tz".into()), Value::String(dt.offset().to_string()));
+                        m.insert(
+                            MapKey::Str("tz".into()),
+                            Value::String(dt.offset().to_string()),
+                        );
                         Ok(Value::Map(m))
                     }
                     Err(_) => Ok(Value::None),

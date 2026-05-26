@@ -108,7 +108,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Math` | [x] | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()` | All return `float`; accept `int` or `float` input; domain errors raise |
 | `Csv` | [ ] | — | `Csv.parse(str) -> list[list[str]]`, `Csv.parse_headers(str) -> list[map[str, str]]`, `Csv.stringify(rows) -> str`. LLMs frequently emit CSV; exchange price-history APIs return CSV. Promoted from "Deferred post-v0.1". |
 | `Yaml` | [ ] | — | `Yaml.parse(str) -> dynamic`, `Yaml.stringify(value) -> str`. YAML is the dominant config and agent-definition format. Promoted from "Deferred post-v0.1". |
-| `Shell` | [x] | `run(cmd, stdin:?, cwd:?) -> { stdout, stderr, exit_code }` | `/bin/sh -c` invocation; spawn failure raises; non-zero exit returned in struct. Gated by `@tools [Shell]`. |
+| `Shell` | [x] | `run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }` | — |
 
 ### CLI
 

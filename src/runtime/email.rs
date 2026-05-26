@@ -241,7 +241,9 @@ mod tests {
 
     fn field<'a>(value: &'a Value, key: &str) -> &'a Value {
         match value {
-            Value::Map(map) => map.get(&MapKey::Str(key.to_string())).expect("field exists"),
+            Value::Map(map) => map
+                .get(&MapKey::Str(key.to_string()))
+                .expect("field exists"),
             other => panic!("expected email map, got {}", other.type_name()),
         }
     }

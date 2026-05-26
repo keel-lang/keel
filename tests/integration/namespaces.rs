@@ -914,7 +914,10 @@ agent MathTest {
 run(MathTest)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("sqrt=2"), "sqrt failed: {stdout}");
     assert!(stdout.contains("pow=1024"), "pow failed: {stdout}");
     assert!(stdout.contains("log=1"), "log failed: {stdout}");
@@ -942,8 +945,14 @@ agent MathErr {
 run(MathErr)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("caught="), "expected error to be caught: {stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught="),
+        "expected error to be caught: {stdout}"
+    );
 }
 
 // ── Shell namespace ────────────────────────────────────────────────────────
@@ -963,9 +972,15 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("code=0"), "expected exit_code=0:\n{stdout}");
-    assert!(stdout.contains("out=hello"), "expected 'hello' in stdout:\n{stdout}");
+    assert!(
+        stdout.contains("out=hello"),
+        "expected 'hello' in stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -982,7 +997,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "non-zero exit should not raise\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "non-zero exit should not raise\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(stdout.contains("code=7"), "expected exit_code=7:\n{stdout}");
 }
 
@@ -1000,8 +1018,14 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("got=from-stdin"), "expected stdin forwarded:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("got=from-stdin"),
+        "expected stdin forwarded:\n{stdout}"
+    );
 }
 
 #[test]
@@ -1019,7 +1043,10 @@ agent A {
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected CapabilityError when Shell excluded from @tools");
+    assert!(
+        !ok,
+        "expected CapabilityError when Shell excluded from @tools"
+    );
     assert!(
         stderr.contains("CapabilityError"),
         "expected CapabilityError in stderr:\n{stderr}"
@@ -1046,9 +1073,18 @@ run(A)
 "#;
     let (ok, stdout, stderr) =
         run_inline_with_env(src, &[("KEEL_TEST_SHELL_VAR", "hello-from-env")]);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("env=hello-from-env"), "Env.require should still see the var:\n{stdout}");
-    assert!(stdout.contains("shell_empty=true"), "Shell subprocess should not inherit custom var:\n{stdout}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("env=hello-from-env"),
+        "Env.require should still see the var:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("shell_empty=true"),
+        "Shell subprocess should not inherit custom var:\n{stdout}"
+    );
 }
 
 #[test]
@@ -1068,7 +1104,10 @@ agent A {
 run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
     assert!(
         stdout.contains("match=true"),
         "expected HOME to match between Env and Shell:\n{stdout}"

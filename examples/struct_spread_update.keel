@@ -1,29 +1,30 @@
-type Order { id: str, status: str, amount: float, filled_at: str }
-type Config { host: str, port: int, debug: bool }
+type Order {
+  id: str
+  status: str
+  amount: float
+  filled_at: str
+}
+
+type Config {
+  host: str
+  port: int
+  debug: bool
+}
 
 task process_order(o: Order) -> Order {
   return { ...o, status: "filled", filled_at: "2024-01-15T10:30:00Z" }
 }
 
 task run_test() {
-  pending: Order = {
-    id: "ord-42",
-    status: "pending",
-    amount: 250.00,
-    filled_at: "",
-  }
-
+  pending: Order = { id: "ord-42", status: "pending", amount: 250.0, filled_at: "" }
   filled = process_order(pending)
-
   Io.show("id:        {filled.id}")
   Io.show("status:    {filled.status}")
   Io.show("amount:    {filled.amount}")
   Io.show("filled_at: {filled.filled_at}")
-
   base: Config = { host: "localhost", port: 8080, debug: false }
-  dev  = { ...base, debug: true }
+  dev = { ...base, debug: true }
   prod = { ...dev, host: "api.example.com", debug: false }
-
   Io.show("prod host:  {prod.host}")
   Io.show("prod port:  {prod.port}")
   Io.show("prod debug: {prod.debug}")

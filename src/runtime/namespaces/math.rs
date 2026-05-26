@@ -10,11 +10,20 @@ fn as_num(v: &Value) -> Option<f64> {
     }
 }
 
-fn num_arg(args: &[crate::interpreter::CallArgValue], idx: usize, fn_name: &str) -> miette::Result<f64> {
+fn num_arg(
+    args: &[crate::interpreter::CallArgValue],
+    idx: usize,
+    fn_name: &str,
+) -> miette::Result<f64> {
     match positional(args, idx) {
-        None => Err(miette::miette!("Math.{fn_name}: expected a numeric argument at position {idx}, got nothing")),
+        None => Err(miette::miette!(
+            "Math.{fn_name}: expected a numeric argument at position {idx}, got nothing"
+        )),
         Some(v) => as_num(v).ok_or_else(|| {
-            miette::miette!("Math.{fn_name}: expected int or float at position {idx}, got {}", v.type_name())
+            miette::miette!(
+                "Math.{fn_name}: expected int or float at position {idx}, got {}",
+                v.type_name()
+            )
         }),
     }
 }
@@ -104,11 +113,18 @@ mod tests {
     use crate::interpreter::{CallArgValue, Interpreter};
 
     fn pos(v: Value) -> CallArgValue {
-        CallArgValue { name: None, value: v }
+        CallArgValue {
+            name: None,
+            value: v,
+        }
     }
 
-    fn float(f: f64) -> CallArgValue { pos(Value::Float(f)) }
-    fn int(i: i64) -> CallArgValue { pos(Value::Integer(i)) }
+    fn float(f: f64) -> CallArgValue {
+        pos(Value::Float(f))
+    }
+    fn int(i: i64) -> CallArgValue {
+        pos(Value::Integer(i))
+    }
 
     fn unpack(v: Value) -> f64 {
         match v {
@@ -125,8 +141,10 @@ mod tests {
     fn namespace_has_all_methods() {
         let ns = namespace();
         assert_eq!(ns.name, "Math");
-        for name in ["PI", "E", "sqrt", "pow", "exp", "log", "log2", "log10",
-                     "sin", "cos", "tan", "asin", "acos", "atan", "atan2"] {
+        for name in [
+            "PI", "E", "sqrt", "pow", "exp", "log", "log2", "log10", "sin", "cos", "tan", "asin",
+            "acos", "atan", "atan2",
+        ] {
             assert!(ns.methods.contains_key(name), "missing: {name}");
         }
     }
@@ -136,9 +154,9 @@ mod tests {
         let ns = namespace();
         let mut i = Interpreter::new();
         let pi = unpack(ns.methods["PI"](&mut i, vec![]).await.unwrap());
-        let e  = unpack(ns.methods["E"](&mut i, vec![]).await.unwrap());
+        let e = unpack(ns.methods["E"](&mut i, vec![]).await.unwrap());
         assert_eq!(pi, std::f64::consts::PI);
-        assert_eq!(e,  std::f64::consts::E);
+        assert_eq!(e, std::f64::consts::E);
     }
 
     #[tokio::test]
@@ -169,7 +187,11 @@ mod tests {
     async fn pow_two_to_ten() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let v = unpack(ns.methods["pow"](&mut i, vec![int(2), int(10)]).await.unwrap());
+        let v = unpack(
+            ns.methods["pow"](&mut i, vec![int(2), int(10)])
+                .await
+                .unwrap(),
+        );
         assert!(approx(v, 1024.0));
     }
 
@@ -177,7 +199,11 @@ mod tests {
     async fn log_of_e_is_one() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let v = unpack(ns.methods["log"](&mut i, vec![float(std::f64::consts::E)]).await.unwrap());
+        let v = unpack(
+            ns.methods["log"](&mut i, vec![float(std::f64::consts::E)])
+                .await
+                .unwrap(),
+        );
         assert!(approx(v, 1.0));
     }
 
@@ -219,7 +245,11 @@ mod tests {
     async fn tan_at_pi_over_four() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let v = unpack(ns.methods["tan"](&mut i, vec![float(std::f64::consts::PI / 4.0)]).await.unwrap());
+        let v = unpack(
+            ns.methods["tan"](&mut i, vec![float(std::f64::consts::PI / 4.0)])
+                .await
+                .unwrap(),
+        );
         assert!(approx(v, 1.0));
     }
 
@@ -253,7 +283,11 @@ mod tests {
     async fn atan2_y1_x1_is_pi_over_four() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let v = unpack(ns.methods["atan2"](&mut i, vec![float(1.0), float(1.0)]).await.unwrap());
+        let v = unpack(
+            ns.methods["atan2"](&mut i, vec![float(1.0), float(1.0)])
+                .await
+                .unwrap(),
+        );
         assert!(approx(v, std::f64::consts::PI / 4.0));
     }
 
@@ -277,7 +311,9 @@ mod tests {
     async fn num_arg_wrong_type_gives_descriptive_error() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let err = ns.methods["sqrt"](&mut i, vec![pos(Value::String("oops".into()))]).await.unwrap_err();
+        let err = ns.methods["sqrt"](&mut i, vec![pos(Value::String("oops".into()))])
+            .await
+            .unwrap_err();
         let msg = format!("{err:?}");
         assert!(msg.contains("str"), "expected type name in error: {msg}");
     }

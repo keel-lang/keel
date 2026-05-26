@@ -24,6 +24,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Http` | ✅ | HTTP client + server: `get`, `post`, `request`, `serve` |
 | `Email` | 🟡 | IMAP/SMTP: `fetch`, `send`, `archive` |
 | `File` | ✅ | Filesystem: `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` |
+| `Shell` | ✅ | Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [Shell]`. |
 | `String value methods` | ✅ | Regex and formatting directly on string values: matches, extract, find_all, sub, truncate, pad |
 | `Json` | 🟡 | JSON: `parse`, `stringify` |
 | `Cache` | 🟡 | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |

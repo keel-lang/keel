@@ -28,7 +28,11 @@ pub fn show_with_repl(value: &Value, repl_mode: bool) {
     match value {
         Value::Map(fields) => {
             // Determine the longest key for alignment
-            let max_key = fields.keys().map(|k| k.to_string().len()).max().unwrap_or(0);
+            let max_key = fields
+                .keys()
+                .map(|k| k.to_string().len())
+                .max()
+                .unwrap_or(0);
             println!("  {}", "┌".dimmed());
             let mut pairs: Vec<(&MapKey, &Value)> = fields.iter().collect();
             pairs.sort_by_key(|(k, _)| *k);

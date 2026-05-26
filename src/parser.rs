@@ -184,12 +184,11 @@ fn map_key() -> P<String> {
 fn map_lit_key() -> P<MapLitKey> {
     let ident_key = field_name().map(MapLitKey::Ident);
     let str_key = plain_string().map(MapLitKey::Str);
-    let int_key = select! { Token::Integer(s) => s }
-        .try_map(|s, span| {
-            s.parse::<i64>()
-                .map(MapLitKey::Int)
-                .map_err(|_| Simple::custom(span, format!("integer key `{s}` overflows i64")))
-        });
+    let int_key = select! { Token::Integer(s) => s }.try_map(|s, span| {
+        s.parse::<i64>()
+            .map(MapLitKey::Int)
+            .map_err(|_| Simple::custom(span, format!("integer key `{s}` overflows i64")))
+    });
     let bool_key = just(Token::True)
         .to(MapLitKey::Bool(true))
         .or(just(Token::False).to(MapLitKey::Bool(false)));

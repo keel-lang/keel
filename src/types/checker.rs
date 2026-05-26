@@ -209,7 +209,8 @@ impl Checker {
         // Prelude namespaces
         for n in [
             "Ai", "Io", "Http", "Email", "Search", "Db", "Memory", "Schedule", "Async", "Control",
-            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto", "Math", "Shell",
+            "Env", "Time", "Log", "Agent", "Cache", "File", "Json", "Random", "Uuid", "Crypto",
+            "Math", "Shell",
         ] {
             prelude.insert(n.to_string());
         }
@@ -1454,8 +1455,7 @@ impl Checker {
                     }
                 };
                 let mut result_fields = base_fields.clone();
-                let mut seen: std::collections::HashSet<&str> =
-                    std::collections::HashSet::new();
+                let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for (k, v) in overrides {
                     let val_ty = self.infer_expr(v, scope);
                     if !seen.insert(k.as_str()) {
@@ -1547,7 +1547,7 @@ impl Checker {
                 match obj_ty.strip_nullable() {
                     Ty::Map(key_ty, val_ty) => {
                         let val_ty = val_ty.clone();
-                        self.expect(&idx_ty, &key_ty, "map subscript key");
+                        self.expect(&idx_ty, key_ty, "map subscript key");
                         // Missing key returns none, so result is nullable.
                         Ty::Nullable(val_ty)
                     }

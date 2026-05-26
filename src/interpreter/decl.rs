@@ -205,13 +205,13 @@ impl Interpreter {
                                 .filter_map(|(k, _)| k.as_str())
                                 .find(|k| !check_field(k))
                                 .map(|k| k.to_string()),
-                            AttributeBody::Expr(Expr::StructSpreadUpdate {
-                                overrides, ..
-                            }) => overrides
-                                .iter()
-                                .map(|(k, _)| k.as_str())
-                                .find(|k| !check_field(k))
-                                .map(|k| k.to_string()),
+                            AttributeBody::Expr(Expr::StructSpreadUpdate { overrides, .. }) => {
+                                overrides
+                                    .iter()
+                                    .map(|(k, _)| k.as_str())
+                                    .find(|k| !check_field(k))
+                                    .map(|k| k.to_string())
+                            }
                             _ => continue,
                         };
                         if let Some(key) = unknown_key {

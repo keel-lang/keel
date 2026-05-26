@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.28 — 2026-05-26
+
 ### Typed map keys — `map[K, V]` key types enforced at compile time
 
 Map keys must now be one of the three hashable primitive types: `str`, `int`, or `bool`. Using any other type as `K` is a compile-time error with an actionable message:

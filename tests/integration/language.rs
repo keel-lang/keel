@@ -988,7 +988,11 @@ run_test()
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
-    let names: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let names: Vec<&str> = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(names, vec!["a", "c"], "min/max by key: {stdout}");
 }
 
@@ -1043,7 +1047,10 @@ run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, true);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("1 1 2 3 4 5 9"), "sort_by identity: {stdout}");
+    assert!(
+        stdout.contains("1 1 2 3 4 5 9"),
+        "sort_by identity: {stdout}"
+    );
 }
 
 #[test]
@@ -1065,7 +1072,11 @@ run_test()
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
-    let names: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let names: Vec<&str> = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(names, vec!["a", "b", "c"], "sort_by score: {stdout}");
 }
 
@@ -1084,7 +1095,10 @@ run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, true);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("apple banana cherry"), "sort_by str: {stdout}");
+    assert!(
+        stdout.contains("apple banana cherry"),
+        "sort_by str: {stdout}"
+    );
 }
 
 #[test]
@@ -2375,7 +2389,10 @@ run(A)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstderr: {stderr}");
-    assert!(stdout.contains("none"), "expected none for missing key, got:\n{stdout}");
+    assert!(
+        stdout.contains("none"),
+        "expected none for missing key, got:\n{stdout}"
+    );
 }
 
 // ─── while loop (v0.1.27) ────────────────────────────────────────────────────
@@ -2542,7 +2559,10 @@ run(A)
 "#;
     let (ok, stdout, _) = run_inline(src, true);
     assert!(ok, "expected ok");
-    assert!(stdout.contains("buy"), "expected 'buy' in stdout:\n{stdout}");
+    assert!(
+        stdout.contains("buy"),
+        "expected 'buy' in stdout:\n{stdout}"
+    );
 }
 
 #[test]
@@ -3622,8 +3642,14 @@ run_test()
     let tokens2 = lex(&once, &named2).expect("lex 2");
     let program2 = parse(tokens2, once.len(), &named2).expect("parse 2");
     let twice = format_program(&program2);
-    assert_eq!(once, twice, "formatter not idempotent:\n--- once ---\n{once}\n--- twice ---\n{twice}");
-    assert!(once.contains("...p"), "spread not in formatted output: {once}");
+    assert_eq!(
+        once, twice,
+        "formatter not idempotent:\n--- once ---\n{once}\n--- twice ---\n{twice}"
+    );
+    assert!(
+        once.contains("...p"),
+        "spread not in formatted output: {once}"
+    );
 }
 
 #[test]
@@ -3680,7 +3706,10 @@ task run_test() {
 run_test()
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected runtime error for unknown field on dynamic base");
+    assert!(
+        !ok,
+        "expected runtime error for unknown field on dynamic base"
+    );
     assert!(
         stderr.contains("phantom") || stderr.contains("unknown field"),
         "got: {stderr}"
@@ -3719,7 +3748,10 @@ task run_test() {
 run_test()
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected type error for wrong value type in map spread-update");
+    assert!(
+        !ok,
+        "expected type error for wrong value type in map spread-update"
+    );
     assert!(
         stderr.contains("str") || stderr.contains("int") || stderr.contains("expected"),
         "got: {stderr}"

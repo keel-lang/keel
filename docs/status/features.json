@@ -233,6 +233,13 @@
       "implemented_ops": "`sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()`",
       "gaps": "All return `float`; accept `int` or `float` input; domain errors raise",
       "purpose": "Transcendentals: `sqrt`, `pow`, `exp`, `log` (natural), `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`. Constants: `PI()`, `E()`. All return `float`. Domain errors raise."
+    },
+    {
+      "name": "Shell",
+      "status": "shipped",
+      "implemented_ops": "`run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }`",
+      "gaps": "—",
+      "purpose": "Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [Shell]`."
     }
   ],
   "cli": [

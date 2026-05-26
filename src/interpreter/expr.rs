@@ -69,7 +69,12 @@ fn parse_spec(spec: &str) -> miette::Result<ParsedSpec> {
         )));
     }
 
-    Ok(ParsedSpec { align, width, precision, type_flag })
+    Ok(ParsedSpec {
+        align,
+        width,
+        precision,
+        type_flag,
+    })
 }
 
 fn apply_padding(s: String, ps: &ParsedSpec) -> String {
@@ -107,7 +112,7 @@ fn apply_format_spec(v: &Value, base_str: String, spec: &str) -> miette::Result<
                 return Err(runtime_error(format!(
                     "format spec `:{spec}` requires a float or int, got {}",
                     other.type_name()
-                )))
+                )));
             }
         };
         let prec = ps.precision.unwrap_or(6);
@@ -303,8 +308,9 @@ impl Interpreter {
                     for (k, v) in fields {
                         let val = self.eval_expr(v, env).await?;
                         let key = match k {
-                            crate::ast::MapLitKey::Ident(s)
-                            | crate::ast::MapLitKey::Str(s) => MapKey::Str(s.clone()),
+                            crate::ast::MapLitKey::Ident(s) | crate::ast::MapLitKey::Str(s) => {
+                                MapKey::Str(s.clone())
+                            }
                             crate::ast::MapLitKey::Int(n) => MapKey::Int(*n),
                             crate::ast::MapLitKey::Bool(b) => MapKey::Bool(*b),
                         };
@@ -494,13 +500,14 @@ impl Interpreter {
                     let obj = self.eval_expr(object, env).await?;
                     let idx = self.eval_expr(index, env).await?;
                     if let Value::Map(m) = obj {
-                        let key = crate::interpreter::value::MapKey::from_value(&idx)
-                            .ok_or_else(|| {
+                        let key = crate::interpreter::value::MapKey::from_value(&idx).ok_or_else(
+                            || {
                                 runtime_error(format!(
                                     "map key must be str, int, or bool, got {}",
                                     idx.type_name()
                                 ))
-                            })?;
+                            },
+                        )?;
                         return Ok(m.get(&key).cloned().unwrap_or(Value::None));
                     }
                     let i = match &idx {
@@ -718,9 +725,7 @@ fn apply_cast(val: Value, ty: &TypeExpr) -> Result<Value> {
             return apply_cast(val, inner);
         }
         _ => {
-            return Err(runtime_error(format!(
-                "cannot cast to {ty:?}"
-            )));
+            return Err(runtime_error(format!("cannot cast to {ty:?}")));
         }
     };
 
@@ -744,12 +749,16 @@ fn apply_cast(val: Value, ty: &TypeExpr) -> Result<Value> {
         (Value::Bool(b), "str") => Ok(Value::String(b.to_string())),
 
         // str -> numeric
-        (Value::String(s), "int") => s.trim().parse::<i64>().map(Value::Integer).map_err(|_| {
-            runtime_error(format!("cannot cast \"{s}\" to int"))
-        }),
-        (Value::String(s), "float") => s.trim().parse::<f64>().map(Value::Float).map_err(|_| {
-            runtime_error(format!("cannot cast \"{s}\" to float"))
-        }),
+        (Value::String(s), "int") => s
+            .trim()
+            .parse::<i64>()
+            .map(Value::Integer)
+            .map_err(|_| runtime_error(format!("cannot cast \"{s}\" to int"))),
+        (Value::String(s), "float") => s
+            .trim()
+            .parse::<f64>()
+            .map(Value::Float)
+            .map_err(|_| runtime_error(format!("cannot cast \"{s}\" to float"))),
         (Value::String(s), "bool") => match s.trim() {
             "true" => Ok(Value::Bool(true)),
             "false" => Ok(Value::Bool(false)),
@@ -762,7 +771,9 @@ fn apply_cast(val: Value, ty: &TypeExpr) -> Result<Value> {
             if is_valid_uuid(&s) {
                 Ok(Value::Uuid(s))
             } else {
-                Err(runtime_error(format!("cannot cast \"{s}\" to Uuid: invalid UUID format")))
+                Err(runtime_error(format!(
+                    "cannot cast \"{s}\" to Uuid: invalid UUID format"
+                )))
             }
         }
 

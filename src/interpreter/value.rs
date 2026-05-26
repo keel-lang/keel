@@ -338,7 +338,10 @@ mod tests {
         assert_eq!(Value::None.type_name(), "none");
         assert_eq!(Value::List(vec![]).type_name(), "list");
         assert_eq!(Value::Range(1, 5).type_name(), "list");
-        assert_eq!(Value::Map(std::collections::HashMap::new()).type_name(), "map");
+        assert_eq!(
+            Value::Map(std::collections::HashMap::new()).type_name(),
+            "map"
+        );
         assert_eq!(
             Value::EnumVariant("T".into(), "v".into(), None).type_name(),
             "enum"

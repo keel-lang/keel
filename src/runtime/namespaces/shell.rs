@@ -50,13 +50,13 @@ pub(crate) fn namespace() -> Namespace {
                 .spawn()
                 .map_err(|e| miette::miette!("Shell.run: failed to spawn `/bin/sh`: {e}"))?;
 
-            if let Some(input) = stdin_input {
-                if let Some(mut stdin_pipe) = child.stdin.take() {
-                    stdin_pipe
-                        .write_all(input.as_bytes())
-                        .await
-                        .map_err(|e| miette::miette!("Shell.run: failed to write stdin: {e}"))?;
-                }
+            if let Some(input) = stdin_input
+                && let Some(mut stdin_pipe) = child.stdin.take()
+            {
+                stdin_pipe
+                    .write_all(input.as_bytes())
+                    .await
+                    .map_err(|e| miette::miette!("Shell.run: failed to write stdin: {e}"))?;
             }
 
             let output = child

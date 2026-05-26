@@ -10,7 +10,13 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%%
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.28] — 2026-05-26
+
+Struct spread-update, typed map keys, Shell/Math namespaces, and string format specifiers
 
 ### Added
 
