@@ -2,19 +2,19 @@
   "legend": {
     "shipped": {
       "roadmap": "[x]",
-      "docs": "✅"
+      "docs": "\u2705"
     },
     "partial": {
       "roadmap": "[~]",
-      "docs": "🟡"
+      "docs": "\ud83d\udfe1"
     },
     "planned": {
       "roadmap": "[ ]",
-      "docs": "⏳"
+      "docs": "\u23f3"
     },
     "deferred": {
       "roadmap": "[ ]",
-      "docs": "⏳"
+      "docs": "\u23f3"
     }
   },
   "attributes": [
@@ -46,7 +46,7 @@
       "name": "@tools [...]",
       "tier": "stdlib",
       "status": "shipped",
-      "notes": "Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17)"
+      "notes": "Capability gating \u2014 unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17)"
     },
     {
       "name": "@memory persistent\\|session\\|none",
@@ -85,61 +85,61 @@
       "status": "partial",
       "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json)",
       "gaps": "`embed` deferred to v0.2 (requires pluggable provider registry); `Ai.install(provider)` not registered",
-      "purpose": "LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳"
+      "purpose": "LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` \u00b7 `embed` \u23f3"
     },
     {
       "name": "Io",
       "status": "shipped",
       "implemented_ops": "`notify`, `show`, `ask`, `confirm`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Human interaction: `ask`, `confirm`, `notify`, `show`"
     },
     {
       "name": "Schedule",
       "status": "shipped",
       "implemented_ops": "`every`, `after`, `at`, `cron`, `sleep`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Time-based scheduling: `every`, `after`, `at`, `cron`, `sleep`"
     },
     {
       "name": "Email",
       "status": "partial",
       "implemented_ops": "`fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback)",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "IMAP/SMTP: `fetch`, `send`, `archive`"
     },
     {
       "name": "Http",
       "status": "shipped",
       "implemented_ops": "`get`, `post`, `request`, `serve` (webhook listener)",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "HTTP client + server: `get`, `post`, `request`, `serve`"
     },
     {
       "name": "Env",
       "status": "shipped",
       "implemented_ops": "`get`, `require`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Environment: `get(name)`, `require(name)`"
     },
     {
       "name": "Log",
       "status": "shipped",
       "implemented_ops": "`info`, `warn`, `error`, `debug`, `set_level`, `level`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Structured logging: `info`, `warn`, `error`, `debug`, plus `set_level`, `level`. Threshold default is `info`; raise via `--log-level debug`, `KEEL_LOG_LEVEL=debug`, or `Log.set_level(\"debug\")` at runtime."
     },
     {
       "name": "Agent",
       "status": "shipped",
       "implemented_ops": "`run`, `stop`, `send`, `delegate`, `broadcast`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "`run`, `stop`, `send`, `delegate`, `broadcast`"
     },
     {
       "name": "Memory",
       "status": "shipped",
-      "implemented_ops": "`remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON)",
+      "implemented_ops": "`remember`, `recall`, `forget` \u2014 session (default) or persistent (file-backed JSON)",
       "gaps": "Vector-store backend (semantic search) is v0.2",
       "purpose": "Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\\|persistent\\|none` (default: session). Persistent mode writes `~/.keel/memory/<stem>_<hash12>/<agent>.json`."
     },
@@ -147,70 +147,70 @@
       "name": "Control",
       "status": "shipped",
       "implemented_ops": "`retry`, `with_timeout`, `with_deadline` (v0.1.6)",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "`retry`, `with_timeout`, `with_deadline`"
     },
     {
       "name": "Async",
       "status": "shipped",
       "implemented_ops": "`spawn`, `join_all`, `select`, `sleep` (v0.1.7)",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Structured concurrency: `spawn`, `join_all`, `select`, `sleep`"
     },
     {
       "name": "Cache",
       "status": "partial",
-      "implemented_ops": "`set` (optional TTL), `get`, `delete`, `clear` — process-scoped",
-      "gaps": "`Cache.get` return type undocumented — at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `Cache.get(key) -> dynamic?` to SPEC §3 so users know the stored type is preserved and a narrow cast (`as T`) recovers it.",
+      "implemented_ops": "`set` (optional TTL), `get`, `delete`, `clear` \u2014 process-scoped",
+      "gaps": "`Cache.get` return type undocumented \u2014 at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `Cache.get(key) -> dynamic?` to SPEC \u00a73 so users know the stored type is preserved and a narrow cast (`as T`) recovers it.",
       "purpose": "In-memory process-scoped cache: `set`, `get`, `delete`, `clear`"
     },
     {
       "name": "String value methods",
       "status": "shipped",
-      "implemented_ops": "`.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed",
-      "gaps": "—",
+      "implemented_ops": "`.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` \u2014 all string ops on the value; `Str` namespace removed",
+      "gaps": "\u2014",
       "purpose": "Regex and formatting directly on string values: matches, extract, find_all, sub, truncate, pad"
     },
     {
       "name": "File",
       "status": "shipped",
       "implemented_ops": "`read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Filesystem: `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`"
     },
     {
       "name": "Json",
       "status": "partial",
       "implemented_ops": "`parse`, `stringify`",
-      "gaps": "`Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel.",
+      "gaps": "`Json.parse` return-type semantics undocumented \u2014 at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC \u00a73 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel.",
       "purpose": "JSON: `parse`, `stringify`"
     },
     {
       "name": "Search",
       "status": "partial",
-      "implemented_ops": "—",
+      "implemented_ops": "\u2014",
       "gaps": "Registered; all methods raise a clear \"planned for v0.2\" error",
-      "purpose": "Web search providers: `web(query)` — registered; raises \"planned for v0.2\" error"
+      "purpose": "Web search providers: `web(query)` \u2014 registered; raises \"planned for v0.2\" error"
     },
     {
       "name": "Db",
-      "status": "partial",
-      "implemented_ops": "—",
-      "gaps": "Registered; all methods raise a clear \"planned for v0.2\" error",
-      "purpose": "SQL: `connect`, `query`, `exec` — registered; raises \"planned for v0.2\" error"
+      "status": "shipped",
+      "implemented_ops": "`connect(url)` \u2192 `DbConnection`, `db.query(sql, params?)` \u2192 `list[map[str,dynamic]]`, `db.exec(sql, params?)` \u2192 `int`",
+      "gaps": "Multi-backend (Postgres, MySQL) deferred to v0.2",
+      "purpose": "SQLite: `connect(url)` \u2192 `DbConnection`; `db.query(sql, params?)` \u2192 `list[map[str,dynamic]]`; `db.exec(sql, params?)` \u2192 `int`"
     },
     {
       "name": "Time",
       "status": "partial",
-      "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week`",
-      "gaps": "—",
-      "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`, `epoch_ms()` → `int`. Methods on value: `dt.parts()` → map, `dt.format(as: pattern)` → `str?`. Duration literals: `500.ms` … `1.week`. Operators: `dt ± dur → dt`, `dt - dt → duration`, `<`/`>` comparison. Naive strings rejected — use RFC 3339 or `tz:`."
+      "implemented_ops": "`now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt \u00b1 dur`, `dt - dt \u2192 duration`; `500.ms` \u2026 `1.week`",
+      "gaps": "\u2014",
+      "purpose": "Factories: `now()`, `now(tz: name)`, `parse(str)`, `parse(str, tz: name)`, `epoch_ms()` \u2192 `int`. Methods on value: `dt.parts()` \u2192 map, `dt.format(as: pattern)` \u2192 `str?`. Duration literals: `500.ms` \u2026 `1.week`. Operators: `dt \u00b1 dur \u2192 dt`, `dt - dt \u2192 duration`, `<`/`>` comparison. Naive strings rejected \u2014 use RFC 3339 or `tz:`."
     },
     {
       "name": "Random",
       "status": "shipped",
       "implemented_ops": "`Random.float()`, `Random.int(min:, max:)`, `Random.bool()`",
-      "gaps": "—",
+      "gaps": "\u2014",
       "purpose": "Pseudo-random generation: `float()`, `int(min:, max:)`, `bool()`. Use `Crypto` for security-sensitive randomness."
     },
     {
@@ -237,8 +237,8 @@
     {
       "name": "Shell",
       "status": "shipped",
-      "implemented_ops": "`run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }`",
-      "gaps": "—",
+      "implemented_ops": "`run(cmd, stdin:?, cwd:?)` \u2192 `{ stdout: str, stderr: str, exit_code: int }`",
+      "gaps": "\u2014",
       "purpose": "Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [Shell]`."
     }
   ],

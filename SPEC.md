@@ -416,7 +416,7 @@ The Keel standard library lives in a set of namespaces that are **auto-imported 
 | `Http` | HTTP client | `get`, `post`, `request` |
 | `Email` | IMAP/SMTP | `fetch`, `send`, `archive` |
 | `Search` | Web search providers | `web(query)`, custom providers via interface |
-| `Db` | SQL databases | `connect`, `query`, `exec` |
+| `Db` | SQLite databases | `connect(url) -> DbConnection`, `db.query(sql, params?) -> list[map[str,dynamic]]`, `db.exec(sql, params?) -> int` |
 | `Memory` | Per-agent key-value store | `remember(key, value)`, `recall(key) -> Value?`, `forget(key)` |
 | `File` | Local filesystem | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` |
 | `Schedule` | Time-based scheduling | `every`, `after`, `at`, `cron` |

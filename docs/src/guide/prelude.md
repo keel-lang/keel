@@ -29,7 +29,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Json` | 🟡 | JSON: `parse`, `stringify` |
 | `Cache` | 🟡 | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
-| `Db` | 🟡 | SQL: `connect`, `query`, `exec` — registered; raises "planned for v0.2" error |
+| `Db` | ✅ | SQLite: `connect(url)` → `DbConnection`; `db.query(sql, params?)` → `list[map[str,dynamic]]`; `db.exec(sql, params?)` → `int` |
 | `Memory` | ✅ | Per-agent key-value store: `remember`, `recall`, `forget`. Scope set by `@memory session\|persistent\|none` (default: session). Persistent mode writes `~/.keel/memory/<stem>_<hash12>/<agent>.json`. |
 | `Schedule` | ✅ | Time-based scheduling: `every`, `after`, `at`, `cron`, `sleep` |
 | `Async` | ✅ | Structured concurrency: `spawn`, `join_all`, `select`, `sleep` |
@@ -147,6 +147,59 @@ bytes = Crypto.random_bytes(16)
 
 `Crypto` intentionally exposes fixed safe SHA-2 methods only. Legacy hashes such as MD5 and SHA-1, and string-selected hash algorithms, are not exposed.
 
+## Db
+
+`Db` provides SQLite-backed durable storage. `Db.connect` returns a connection value; `.query` and `.exec` are called directly on that value.
+
+| Operation | Signature | Returns |
+|---|---|---|
+| `Db.connect(url)` | `(str) -> DbConnection` | Open connection |
+| `db.query(sql)` | `(str) -> list[map[str,dynamic]]` | SELECT rows |
+| `db.query(sql, params)` | `(str, list) -> list[map[str,dynamic]]` | SELECT with `?` params |
+| `db.exec(sql)` | `(str) -> int` | INSERT/UPDATE/DELETE; rows affected |
+| `db.exec(sql, params)` | `(str, list) -> int` | With `?` params |
+
+**Connection URLs** use the `sqlite://` scheme:
+
+| URL | Opens |
+|---|---|
+| `sqlite://trades.db` | Relative path |
+| `sqlite:///tmp/trades.db` | Absolute path |
+| `sqlite://:memory:` | In-memory (tests, scratch) |
+
+Other schemes (`postgres://`, `mysql://`) raise a clear error — "only sqlite:// is supported in v0.1".
+
+**Row return type.** Each row is a `map[str, dynamic]`. Access fields by column name and narrow with `as T`:
+
+```keel
+db = Db.connect("sqlite://trades.db")
+
+db.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL, qty REAL)")
+db.exec("INSERT INTO trades VALUES (?, ?, ?, ?)", ["t1", "BTCUSDT", 67000.0, 0.01])
+
+rows = db.query("SELECT symbol, price, qty FROM trades WHERE symbol = ?", ["BTCUSDT"])
+for row in rows {
+    symbol = row["symbol"] as str
+    price  = row["price"]  as float
+    qty    = row["qty"]    as float
+    Log.info("{symbol} — {qty} @ {price:.2f}")
+}
+```
+
+**Multiple databases** in the same program — each `Db.connect` call returns an independent connection value:
+
+```keel
+trades    = Db.connect("sqlite://trades.db")
+analytics = Db.connect("sqlite://analytics.db")
+
+rows = trades.query("SELECT * FROM fills")
+analytics.exec("INSERT INTO daily_pnl VALUES (?)", [pnl])
+```
+
+**Parameterized queries.** Use `?` placeholders and pass a `list` as the second argument. Supported param types: `str`, `int`, `float`, `bool` (stored as `0`/`1`), `none` (NULL).
+
+> **v0.1 scope.** SQLite only. Postgres and MySQL support, along with a pluggable multi-backend registry, are planned for v0.2. Requires `@tools [Db]`.
+
 ## Json
 
 `Json.parse` and `Json.stringify` bridge between Keel values and JSON strings.
@@ -207,7 +260,7 @@ Cache.set("rate", 0.5, ttl: 30.seconds)
 rate = (Cache.get("rate") ?? 0.0) as float
 ```
 
-> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` and `Db` are registered and raise clear "planned for v0.2" errors; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
+> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` is registered and raises a clear "planned for v0.2" error; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces
 

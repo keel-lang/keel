@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::ast::{DurationUnit, LambdaBody, LambdaParam, TaskDecl};
+use crate::runtime::db_provider::DbConnectionHandle;
 
 /// Hashable map key — valid key types for `map[K, V]`.
 /// `float` is intentionally excluded: NaN violates the Hash/Eq contract.
@@ -90,6 +92,14 @@ pub enum Value {
     /// interpreter's namespace registry.
     Namespace(String),
 
+    /// An open database connection.
+    ///
+    /// Stores the original URL for display and a shared backend handle.
+    /// Cloning the value shares the same underlying connection (Arc).
+    /// Two `DbConnection` values are equal only when they share the same
+    /// `Arc` allocation (i.e., are the same connection object).
+    DbConnection(String, Arc<dyn DbConnectionHandle>),
+
     /// A top-level built-in (by name) — `run`, `stop`, etc.
     BuiltinFn(String),
 
@@ -119,6 +129,7 @@ impl Value {
             Value::AgentRef(_) => "agent",
             Value::Closure(_, _) => "closure",
             Value::Namespace(_) => "namespace",
+            Value::DbConnection(_, _) => "DbConnection",
             Value::BuiltinFn(_) => "builtin",
             Value::EarlyReturn(_) => "early_return",
         }
@@ -132,6 +143,7 @@ impl Value {
             Value::String(s) if s.is_empty() => false,
             Value::List(l) if l.is_empty() => false,
             Value::Range(lo, hi) if lo > hi => false,
+            Value::DbConnection(_, _) => true,
             Value::EarlyReturn(_) => false,
             _ => true,
         }
@@ -273,6 +285,7 @@ impl fmt::Display for Value {
                 write!(f, "<closure ({})>", names.join(", "))
             }
             Value::Namespace(name) => write!(f, "<namespace {name}>"),
+            Value::DbConnection(url, _) => write!(f, "<DbConnection {url}>"),
             Value::BuiltinFn(name) => write!(f, "<builtin {name}>"),
             Value::EarlyReturn(_) => write!(f, "<early-return>"),
         }
@@ -316,6 +329,7 @@ impl PartialEq for Value {
             (Value::Task(a, _), Value::Task(b, _)) => a == b,
             (Value::AgentRef(a), Value::AgentRef(b)) => a == b,
             (Value::Namespace(a), Value::Namespace(b)) => a == b,
+            (Value::DbConnection(_, a), Value::DbConnection(_, b)) => Arc::ptr_eq(a, b),
             (Value::BuiltinFn(a), Value::BuiltinFn(b)) => a == b,
             _ => false,
         }

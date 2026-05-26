@@ -10,7 +10,23 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%%
+
+### Added
+
+- **`Db` namespace — SQLite-backed durable storage.** `Db.connect(url)` opens a SQLite database and returns a connection value; `.query(sql, params?)` runs a SELECT and returns `list[map[str, dynamic]]`; `.exec(sql, params?)` runs INSERT/UPDATE/DELETE and returns the rows-affected count. Connection URLs use `sqlite://` prefix (`sqlite://trades.db`, `sqlite:///abs/path.db`, `sqlite://:memory:`). Parameterized queries use `?` placeholders with a list of values. SQLite is bundled into the binary — no system library required. Other schemes (`postgres://`, `mysql://`) raise a clear "only sqlite:// is supported in v0.1" error.
+
+  ```keel
+  db = Db.connect("sqlite://trades.db")
+
+  db.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL)")
+  db.exec("INSERT INTO trades VALUES (?, ?, ?)", ["t1", "BTCUSDT", 67000.0])
+
+  rows = db.query("SELECT symbol, price FROM trades WHERE symbol = ?", ["BTCUSDT"])
+  for row in rows {
+      Log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
+  }
+  ```
 
 ---
 

@@ -1,0 +1,51 @@
+## Simple trade ledger backed by SQLite.
+## Demonstrates Db.connect, db.exec, and db.query.
+
+agent LedgerAgent {
+    @role "Trade ledger — records fills and reports P&L"
+    @tools [Db, Log, Uuid, Time]
+
+    @on_start {
+        db = Db.connect("sqlite://:memory:")
+
+        db.exec("CREATE TABLE IF NOT EXISTS trades (
+            id          TEXT PRIMARY KEY,
+            symbol      TEXT NOT NULL,
+            side        TEXT NOT NULL,
+            quantity    REAL NOT NULL,
+            price       REAL NOT NULL,
+            executed_at TEXT NOT NULL
+        )")
+
+        # Record three fills
+        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{Uuid.v4()}", "BTCUSDT", "buy",  0.01, 67000.0, "{Time.now()}"])
+        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{Uuid.v4()}", "ETHUSDT", "buy",  0.5,   3500.0, "{Time.now()}"])
+        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{Uuid.v4()}", "BTCUSDT", "sell", 0.01, 68500.0, "{Time.now()}"])
+
+        # Report all trades
+        rows = db.query("SELECT symbol, side, quantity, price FROM trades ORDER BY executed_at")
+        for row in rows {
+            symbol   = row["symbol"]   as str
+            side     = row["side"]     as str
+            quantity = row["quantity"] as float
+            price    = row["price"]    as float
+            Log.info("[Ledger] {side} {quantity} {symbol} @ {price:.2f}")
+        }
+
+        # Simple P&L per symbol
+        pnl_rows = db.query("
+            SELECT symbol,
+                   SUM(CASE WHEN side='sell' THEN quantity*price ELSE 0 END) -
+                   SUM(CASE WHEN side='buy'  THEN quantity*price ELSE 0 END) AS pnl
+            FROM trades
+            GROUP BY symbol
+        ")
+        for r in pnl_rows {
+            symbol = r["symbol"] as str
+            pnl    = r["pnl"]    as float
+            Log.info("[P&L] {symbol}: {pnl:.2f} USD")
+        }
+    }
+}
+
+run(LedgerAgent)

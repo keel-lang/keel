@@ -852,10 +852,57 @@ impl Interpreter {
                     Err(_) => Ok(Value::None),
                 }
             }
+            // DbConnection methods — delegated to the DbConnectionHandle trait impl.
+            (Value::DbConnection(_, conn), "query") => {
+                let sql = db_sql_arg(&args, "query")?;
+                let params = db_list_params(&args, "query")?;
+                conn.query(sql, params).await.map(Value::List)
+            }
+
+            (Value::DbConnection(_, conn), "exec") => {
+                let sql = db_sql_arg(&args, "exec")?;
+                let params = db_list_params(&args, "exec")?;
+                conn.exec(sql, params).await.map(Value::Integer)
+            }
+
             _ => Err(runtime_error(format!(
                 "Method `{method}` not available on {}",
                 obj.type_name()
             ))),
+        }
+    }
+}
+
+/// Validate and extract the SQL string from the first call argument.
+fn db_sql_arg(args: &[CallArgValue], method: &str) -> miette::Result<String> {
+    match args.first().map(|a| &a.value) {
+        Some(Value::String(s)) => Ok(s.clone()),
+        Some(other) => Err(runtime_error(format!(
+            "DbConnection.{method}: SQL must be a str, got {}",
+            other.type_name()
+        ))),
+        None => Err(runtime_error(format!(
+            "DbConnection.{method}: missing SQL argument"
+        ))),
+    }
+}
+
+/// Extract the optional second argument as a list of `Value` params for `DbConnectionHandle`.
+///
+/// Errors if the argument is present but is not a list — a non-list param arg
+/// would silently drop all bindings and produce wrong query results.
+fn db_list_params(args: &[CallArgValue], method: &str) -> miette::Result<Vec<Value>> {
+    match args.get(1) {
+        None => Ok(vec![]),
+        Some(a) => {
+            if let Value::List(items) = &a.value {
+                Ok(items.clone())
+            } else {
+                Err(runtime_error(format!(
+                    "DbConnection.{method}: params must be a list, got {}",
+                    a.value.type_name()
+                )))
+            }
         }
     }
 }

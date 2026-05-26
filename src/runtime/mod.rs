@@ -14,6 +14,7 @@ use crate::interpreter::{CallArgValue, Interpreter};
 
 pub mod context;
 pub mod convert;
+pub mod db_provider;
 pub mod email;
 pub mod human;
 pub mod llm;

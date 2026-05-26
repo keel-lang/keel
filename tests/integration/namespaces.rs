@@ -19,21 +19,23 @@ run(A)
 }
 
 #[test]
-fn db_stub_raises_v2_error() {
+fn db_connect_query_exec_roundtrip() {
     let src = r#"
 agent A {
+    @tools [Db, Log]
     @on_start {
-        Db.query("SELECT 1")
+        db = Db.connect("sqlite://:memory:")
+        db.exec("CREATE TABLE kv (key TEXT, val TEXT)")
+        db.exec("INSERT INTO kv VALUES (?, ?)", ["hello", "world"])
+        rows = db.query("SELECT key, val FROM kv")
+        Log.info("{rows}")
     }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected non-zero exit for Db stub");
-    assert!(
-        stderr.contains("v0.2"),
-        "expected 'v0.2' in error message:\n{stderr}"
-    );
+    assert!(ok, "expected success:\n{stderr}");
+    assert!(stderr.contains("hello"), "expected row data in output:\n{stderr}");
 }
 
 #[test]

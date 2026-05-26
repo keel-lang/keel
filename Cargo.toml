@@ -41,6 +41,7 @@ fs2 = "0.4"
 parking_lot = "0.12"
 fastrand = "2.4"
 getrandom = "0.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 
 [dev-dependencies]

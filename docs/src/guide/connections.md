@@ -146,21 +146,26 @@ Http.serve(8080, (request) => {
 > The matching `on http_request(req) { ... }` handler on `Triage`
 > runs *with* `self.`, `@role`, `@rules`, and `@model` all wired up.
 
-## `Db` <span class="badge badge-soon">Coming soon</span>
+## `Db`
+
+`Db.connect` opens a SQLite database and returns a `DbConnection` value. All SQL is
+executed through that value. Requires `@tools [Db]`.
 
 ```keel
-db = Db.connect("postgres://localhost/mydb")
+db = Db.connect("sqlite://interactions.db")
 
-rows = Db.query(db,
+rows = db.query(
   "SELECT * FROM interactions WHERE contact = ? AND created_at > ?",
-  params: [email.from, 30.days.ago]
+  [email.from, 30.days.ago]
 )
-# rows: list[dynamic]
+# rows: list[map[str, dynamic]]
 
-Db.exec(db, "UPDATE status SET seen = true WHERE id = ?", params: [ticket.id])
+db.exec("UPDATE status SET seen = true WHERE id = ?", [ticket.id])
+# returns int — number of rows affected
 ```
 
-> **Status:** the `Db` namespace is registered as of v0.1.4 and raises a clear `"Db is planned for v0.2"` error instead of the generic "unknown method" crash. The SQL backend is tracked in [ROADMAP](../../ROADMAP.md).
+> **v0.1 scope.** SQLite only (`sqlite://path`, `sqlite:///abs/path`, `sqlite://:memory:`).
+> Postgres and MySQL support are planned for v0.2.
 
 ## Swapping the backend <span class="badge badge-soon">Coming soon</span>
 

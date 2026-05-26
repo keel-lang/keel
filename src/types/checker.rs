@@ -67,6 +67,8 @@ pub enum Ty {
     /// generic enums (e.g. `Pair[str, int]` → `Enum("Pair", [Str, Int])`).
     /// For non-generic enums the vec is empty.
     Enum(String, Vec<Ty>),
+    /// An open database connection returned by `Db.connect`.
+    DbConnection,
     /// Unresolved or unsupported — skip further checks.
     Unknown,
     Nullable(Box<Ty>),
@@ -1926,6 +1928,12 @@ impl Checker {
                             _ => {}
                         }
                     }
+                    if name == "Db" {
+                        match method.as_str() {
+                            "connect" => return Ty::DbConnection,
+                            _ => {}
+                        }
+                    }
                     if name == "Math" {
                         match method.as_str() {
                             "PI" | "E" | "sqrt" | "pow" | "exp" | "log" | "log2" | "log10"
@@ -1990,6 +1998,13 @@ impl Checker {
                     (Ty::Datetime, "format") => Ty::Nullable(Box::new(Ty::Str)),
                     (Ty::Uuid, "to_str" | "format") => Ty::Str,
                     (Ty::Uuid, "version") => Ty::Int,
+                    (Ty::DbConnection, "query") => {
+                        Ty::List(Box::new(Ty::Map(
+                            Box::new(Ty::Str),
+                            Box::new(Ty::Dynamic),
+                        )))
+                    }
+                    (Ty::DbConnection, "exec") => Ty::Int,
                     _ => Ty::Unknown,
                 }
             }
@@ -2665,6 +2680,7 @@ fn describe_ty(ty: &Ty) -> String {
         }
         Ty::Func(_, _) => "function".into(),
         Ty::Enum(name, _) => name.clone(),
+        Ty::DbConnection => "DbConnection".into(),
         Ty::Unknown => "unknown".into(),
         Ty::Nullable(inner) => format!("{}?", describe_ty(inner)),
         Ty::Dynamic => "dynamic".into(),

@@ -1747,3 +1747,42 @@ task t() {
         "`while` condition",
     );
 }
+
+// ─── Db namespace ────────────────────────────────────────────────────────────
+
+#[test]
+fn db_connect_is_valid() {
+    type_ok(
+        r#"
+task use_db() {
+    db = Db.connect("sqlite://:memory:")
+}
+"#,
+    );
+}
+
+#[test]
+fn db_query_result_supports_list_methods() {
+    type_ok(
+        r#"
+task use_db() {
+    db = Db.connect("sqlite://:memory:")
+    rows = db.query("SELECT 1", [])
+    n = rows.len()
+}
+"#,
+    );
+}
+
+#[test]
+fn db_exec_result_used_as_int() {
+    type_ok(
+        r#"
+task use_db() {
+    db = Db.connect("sqlite://:memory:")
+    affected = db.exec("DELETE FROM t", [])
+    ok = affected > 0
+}
+"#,
+    );
+}

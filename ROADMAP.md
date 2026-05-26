@@ -103,7 +103,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Json` | [~] | `parse`, `stringify` | `Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel. |
 | `Time` | [~] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
-| `Db` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
+| `Db` | [x] | `connect(url)` → `DbConnection`, `db.query(sql, params?)` → `list[map[str,dynamic]]`, `db.exec(sql, params?)` → `int` | Multi-backend (Postgres, MySQL) deferred to v0.2 |
 | `Crypto` | [x] | `sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)` | Cryptographic primitives; distinct from `Random` (PRNG) |
 | `Math` | [x] | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()` | All return `float`; accept `int` or `float` input; domain errors raise |
 | `Csv` | [ ] | — | `Csv.parse(str) -> list[list[str]]`, `Csv.parse_headers(str) -> list[map[str, str]]`, `Csv.stringify(rows) -> str`. LLMs frequently emit CSV; exchange price-history APIs return CSV. Promoted from "Deferred post-v0.1". |
