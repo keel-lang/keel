@@ -261,6 +261,65 @@ Cache.set("rate", 0.5, ttl: 30.seconds)
 rate = (Cache.get("rate") ?? 0.0) as float
 ```
 
+## Log
+
+`Log` writes structured messages at four severity levels. Output goes to stderr; messages below the current threshold are suppressed.
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `Log.debug(msg)` | `(any) -> none` | `none` | Verbose detail; suppressed at default `info` threshold |
+| `Log.info(msg)` | `(any) -> none` | `none` | Normal operational events |
+| `Log.warn(msg)` | `(any) -> none` | `none` | Recoverable anomalies |
+| `Log.error(msg)` | `(any) -> none` | `none` | Problems that need attention |
+| `Log.set_level(level)` | `(str) -> none` | `none` | Set threshold: `"debug"`, `"info"`, `"warn"`, or `"error"` |
+| `Log.level()` | `() -> str` | `str` | Return the current threshold as a string |
+
+The threshold can also be set before launch with `--log-level debug` (CLI flag) or `KEEL_LOG_LEVEL=debug` (env var). `Log.set_level` changes it at runtime.
+
+```keel
+Log.debug("cache miss for key {key}")
+Log.info("order filled: {order_id}")
+Log.warn("rate limit approaching: {remaining} calls left")
+Log.error("payment failed: {code}")
+
+Log.set_level("debug")
+current = Log.level()   # "debug"
+```
+
+## Search
+
+`Search` provides web and news search. Both methods return a list of `SearchResult` values.
+
+| Function | Signature | Returns |
+|---|---|---|
+| `Search.web(query)` | `(str) -> list[SearchResult]` | Web search results |
+| `Search.news(query)` | `(str) -> list[SearchResult]` | News search results |
+
+> **Status:** `Search` is registered in v0.1 and raises a clear "planned for v0.2" error at runtime. <span class="badge badge-soon">Coming soon</span>
+
+## Async
+
+`Async` provides structured concurrency — run multiple tasks in parallel and collect their results.
+
+| Function | Signature | Returns | Notes |
+|---|---|---|---|
+| `Async.spawn(block)` | `(() -> T) -> handle` | async handle | Start a concurrent task; returns immediately |
+| `Async.join_all(handles)` | `(list[handle]) -> list[dynamic]` | `list[dynamic]` | Wait for all handles; results in input order |
+| `Async.select(handles)` | `(list[handle]) -> dynamic` | `dynamic` | Return the result of the first handle to complete |
+
+```keel
+task1 = Async.spawn(() => { fetch_price("BTC") })
+task2 = Async.spawn(() => { fetch_price("ETH") })
+
+# Wait for both
+prices = Async.join_all([task1, task2])
+
+# Or race — whichever resolves first
+winner = Async.select([task1, task2])
+```
+
+`Async.select` cancels any handles that haven't completed yet once a winner is found.
+
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` is registered and raises a clear "planned for v0.2" error; `Ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
 
 ## Interfaces

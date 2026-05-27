@@ -12,6 +12,14 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Changed
+
+- **Single prelude catalog for checker, LSP, and docs.** All built-in namespace methods (Ai, Io, File, Http, Cache, Csv, Db, Math, Crypto, Uuid, and every other stdlib namespace — 23 in total) are now defined in one `prelude::catalog()` slice. The checker derives its return-type inference from the catalog; the LSP derives its completion list from the catalog. Prior to this change, each surface maintained an independent hand-written list that drifted silently on every new method. A `catalog_covers_all_runtime_namespaces` consistency test enforces that the runtime and the catalog remain in sync.
+
+  This change also **improves type inference** for methods that previously returned `Unknown` — `Memory.recall`, `Log.level`, `Shell.run`, `Email.send`, `Email.archive`, `Schedule.sleep`, and every `Log.*` method now infer their correct return types.
+
+  **Breaking:** `memory_agent.keel` example updated — `Memory.recall` now correctly types as `str?`, so the implicit `str + int` in the counter example is replaced with an explicit `prev.to_int() + 1`. Any user code that added an integer to a `Memory.recall` result without conversion will now produce a checker type error; fix by calling `.to_int()` on the recalled string.
+
 ### Fixed
 
 - **Interface conformance is now checked identically by `keel check` and `keel run`.** The checker and runtime maintained separate `TypeExpr`-to-string helpers that had already diverged: the checker collapsed `Struct` and `Generic` return types to the string `"unknown"` and accepted anything, while the runtime stringified them fully and could reject programs the checker had passed. Both phases now delegate to a single typed `signature_satisfies` function in the new `types::interface` module. `Struct` and `Generic` return types require an exact structural match; `dynamic` remains the explicit wildcard. Type aliases are resolved before comparison so `type Timestamp = datetime` and `datetime` are treated as the same type.

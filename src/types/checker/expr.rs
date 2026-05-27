@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use crate::ast::*;
+use crate::types::prelude::{self, BuiltinResult};
 use crate::types::scope::Scope;
 use crate::types::ty::{describe_ty, Ty};
 
@@ -702,21 +703,29 @@ impl Checker {
                         }
                         return Ty::None_;
                     }
-                    if name == "Ai"
-                        && method == "classify"
-                        && let Some(as_arg) = args.iter().find(|a| a.name.as_deref() == Some("as"))
-                        && let Expr::Ident(enum_name) = &as_arg.value
-                        && self.enum_variants.contains_key(enum_name)
-                    {
-                        let base = Ty::Enum(enum_name.clone(), vec![]);
-                        return Ty::Nullable(Box::new(base));
-                    }
-                    if name == "Ai" {
-                        match method.as_str() {
-                            "draft" | "summarize" | "translate" | "prompt" => {
-                                return Ty::Nullable(Box::new(Ty::Str));
+                    // Resolve namespace method return types from the catalog.
+                    // This replaces the former hand-maintained per-namespace
+                    // match arms and ensures checker, LSP, and docs stay in sync.
+                    if let Some(entry) = prelude::catalog_method(name, method.as_str()) {
+                        return match entry.result {
+                            BuiltinResult::Fixed(spec) => prelude::ty_from_spec(spec),
+                            BuiltinResult::AiClassify => {
+                                // Return `Nullable(Enum(as:))` when the `as:`
+                                // argument names a known enum type; otherwise
+                                // fall back to Unknown.
+                                if let Some(as_arg) =
+                                    args.iter().find(|a| a.name.as_deref() == Some("as"))
+                                    && let Expr::Ident(enum_name) = &as_arg.value
+                                    && self.enum_variants.contains_key(enum_name)
+                                {
+                                    Ty::Nullable(Box::new(Ty::Enum(enum_name.clone(), vec![])))
+                                } else {
+                                    Ty::Unknown
+                                }
                             }
-                            "extract" | "decide" => {
+                            BuiltinResult::AiExtract => {
+                                // Return `Nullable(resolve_type(as:))` when
+                                // the `as:` argument names a resolvable type.
                                 let inner = args
                                     .iter()
                                     .find(|a| a.name.as_deref() == Some("as"))
@@ -728,106 +737,10 @@ impl Checker {
                                         }
                                     })
                                     .unwrap_or(Ty::Unknown);
-                                return Ty::Nullable(Box::new(inner));
+                                Ty::Nullable(Box::new(inner))
                             }
-                            _ => {}
-                        }
-                    }
-                    if name == "Io" {
-                        match method.as_str() {
-                            "ask" => return Ty::Str,
-                            "confirm" => return Ty::Bool,
-                            "notify" | "show" => return Ty::None_,
-                            _ => {}
-                        }
-                    }
-                    if name == "Env" {
-                        match method.as_str() {
-                            "get" => return Ty::Nullable(Box::new(Ty::Str)),
-                            "require" => return Ty::Str,
-                            _ => {}
-                        }
-                    }
-                    if name == "Time" {
-                        match method.as_str() {
-                            "now" => return Ty::Datetime,
-                            "parse" => return Ty::Nullable(Box::new(Ty::Datetime)),
-                            "epoch_ms" => return Ty::Int,
-                            _ => {}
-                        }
-                    }
-                    if name == "File" {
-                        match method.as_str() {
-                            "read" => return Ty::Str,
-                            "write" | "mkdir" | "remove" | "copy" | "move" => return Ty::None_,
-                            "exists" => return Ty::Bool,
-                            "list" | "glob" => return Ty::List(Box::new(Ty::Str)),
-                            "mktemp" => return Ty::Str,
-                            _ => {}
-                        }
-                    }
-                    if name == "Random" {
-                        match method.as_str() {
-                            "float" => return Ty::Float,
-                            "int" => return Ty::Int,
-                            "bool" => return Ty::Bool,
-                            _ => {}
-                        }
-                    }
-                    if name == "Uuid" {
-                        match method.as_str() {
-                            "v4" | "v7" | "v5" => return Ty::Uuid,
-                            "parse" => return Ty::Nullable(Box::new(Ty::Uuid)),
-                            _ => {}
-                        }
-                    }
-                    if name == "Crypto" {
-                        match method.as_str() {
-                            "sha224" | "sha256" | "sha384" | "sha512" | "sha512_224"
-                            | "sha512_256" | "hmac_sha224" | "hmac_sha256" | "hmac_sha384"
-                            | "hmac_sha512" | "hmac_sha512_224" | "hmac_sha512_256" | "token" => {
-                                return Ty::Str;
-                            }
-                            "random_bytes" => return Ty::List(Box::new(Ty::Int)),
-                            _ => {}
-                        }
-                    }
-                    if name == "Db" && method.as_str() == "connect" {
-                        return Ty::DbConnection;
-                    }
-                    if name == "Math" {
-                        match method.as_str() {
-                            "PI" | "E" | "sqrt" | "pow" | "exp" | "log" | "log2" | "log10"
-                            | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "atan2" => {
-                                return Ty::Float;
-                            }
-                            _ => {}
-                        }
-                    }
-                    if name == "Json" {
-                        match method.as_str() {
-                            "parse" => return Ty::Dynamic,
-                            "stringify" => return Ty::Str,
-                            _ => {}
-                        }
-                    }
-                    if name == "Cache" && method.as_str() == "get" {
-                        return Ty::Nullable(Box::new(Ty::Dynamic));
-                    }
-                    if name == "Csv" {
-                        match method.as_str() {
-                            "parse" => {
-                                return Ty::List(Box::new(Ty::List(Box::new(Ty::Str))));
-                            }
-                            "parse_records" => {
-                                return Ty::List(Box::new(Ty::Map(
-                                    Box::new(Ty::Str),
-                                    Box::new(Ty::Str),
-                                )));
-                            }
-                            "stringify" => return Ty::Str,
-                            _ => {}
-                        }
+                            BuiltinResult::Unknown => Ty::Unknown,
+                        };
                     }
                 }
                 let obj_ty = self.infer_expr(object, scope);

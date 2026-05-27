@@ -69,6 +69,29 @@ Schedule.cron("0 9-17 * * 1-5", () => {
 
 > **Status:** `Schedule.cron` is wired for standard 5-field cron expressions with numeric fields and runs from inside an agent lifecycle or handler context.
 
+## `Schedule.sleep` — pause execution
+
+`Schedule.sleep` suspends the current agent (or task) for a given duration without blocking the runtime event loop:
+
+```keel
+Schedule.sleep(2.seconds)
+Schedule.sleep(500.ms)
+```
+
+Use `Schedule.sleep` inside an agent body to introduce deliberate delays between steps — for example, a polling loop with backoff:
+
+```keel
+agent Poller {
+  @on_start {
+    for i in 1..10 {
+      result = fetch_status()
+      if result.ready { stop(self) }
+      Schedule.sleep(5.seconds)
+    }
+  }
+}
+```
+
 ## Inside an agent
 
 A schedule typically lives in an `@on_start` lifecycle attribute so it's set up once when the agent starts:

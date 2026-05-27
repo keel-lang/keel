@@ -244,6 +244,18 @@ stop(self)                        # self-stop from inside the agent
 
 `run` and `stop` are prelude functions re-exported at the top level. Inside an agent body, bare `self` resolves to the current agent reference, so `stop(self)` is equivalent to `stop(MyAgent)` without hard-coding the name.
 
+The `Agent` namespace exposes the same operations with an explicit prefix:
+
+| Function | Equivalent | Notes |
+|---|---|---|
+| `Agent.run(name)` | `run(name)` | Start a named agent |
+| `Agent.stop(name)` | `stop(name)` | Gracefully stop a running agent |
+| `Agent.send(name, data)` | — | Post a message to an agent's mailbox |
+| `Agent.delegate(symbol, data)` | — | Invoke a typed handler and await the result |
+| `Agent.broadcast(team, data)` | — | Fan out an event to all agents on a team |
+
+Use the `Agent.*` form when you need to start or stop agents whose names are only known at runtime (e.g., dynamically spawned workers).
+
 > **Status:** `run(Agent)` and `stop(Agent)` are wired. `run(Agent, background: true)` <span class="badge badge-soon">Coming soon</span> — v0.1 treats every `run` as foreground and uses the event loop for non-blocking behavior.
 
 ## Composition over monoliths

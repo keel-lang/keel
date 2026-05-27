@@ -16,6 +16,7 @@ use tower_lsp::{Client, LanguageServer, LspService, Server};
 use crate::lexer::{self, Span};
 use crate::parser;
 use crate::types::checker;
+use crate::types::prelude;
 
 pub async fn start() {
     let stdin = tokio::io::stdin();
@@ -115,100 +116,27 @@ impl LanguageServer for Backend {
     async fn completion(&self, _params: CompletionParams) -> Result<Option<CompletionResponse>> {
         let mut completions = Vec::new();
 
-        // Get prelude namespace suggestions
-        let namespaces = vec![
-            "Ai", "Io", "Schedule", "Email", "Http", "Env", "Log", "Agent", "Control", "Async",
-            "Memory", "Search", "Db", "Time", "File", "Json", "Cache", "Random", "Uuid", "Crypto",
-        ];
-
-        for ns in namespaces {
-            completions.push(CompletionItem {
-                label: ns.to_string(),
-                kind: Some(CompletionItemKind::MODULE),
-                ..CompletionItem::default()
-            });
+        // Namespace completions — derived from the catalog so they stay in
+        // sync with the runtime and checker automatically.
+        let mut seen_ns = std::collections::HashSet::new();
+        for entry in prelude::catalog() {
+            if seen_ns.insert(entry.namespace) {
+                completions.push(CompletionItem {
+                    label: entry.namespace.to_string(),
+                    kind: Some(CompletionItemKind::MODULE),
+                    ..CompletionItem::default()
+                });
+            }
         }
 
-        // Get prelude methods suggestions
-        let methods = vec![
-            // Ai
-            ("classify", "Ai method"),
-            ("summarize", "Ai method"),
-            ("draft", "Ai method"),
-            ("extract", "Ai method"),
-            ("translate", "Ai method"),
-            ("decide", "Ai method"),
-            ("prompt", "Ai method"),
-            // Io
-            ("notify", "Io method"),
-            ("show", "Io method"),
-            ("ask", "Io method"),
-            ("confirm", "Io method"),
-            // Schedule
-            ("every", "Schedule method"),
-            ("after", "Schedule method"),
-            ("at", "Schedule method"),
-            ("cron", "Schedule method"),
-            ("sleep", "Schedule method"),
-            // File
-            ("read", "File method"),
-            ("write", "File method"),
-            ("exists", "File method"),
-            ("list", "File method"),
-            // Json
-            ("parse", "Json method"),
-            ("stringify", "Json method"),
-            // Async
-            ("spawn", "Async method"),
-            ("join_all", "Async method"),
-            ("select", "Async method"),
-            // Control
-            ("retry", "Control method"),
-            ("with_timeout", "Control method"),
-            ("with_deadline", "Control method"),
-            // Agent
-            ("run", "Agent method"),
-            ("stop", "Agent method"),
-            ("send", "Agent method"),
-            ("delegate", "Agent method"),
-            ("broadcast", "Agent method"),
-            // Cache
-            ("set", "Cache method"),
-            ("get", "Cache method"),
-            ("delete", "Cache method"),
-            ("clear", "Cache method"),
-            // Random
-            ("float", "Random method"),
-            ("int", "Random method"),
-            ("bool", "Random method"),
-            // Uuid
-            ("v4", "Uuid method"),
-            ("v7", "Uuid method"),
-            ("v5", "Uuid method"),
-            ("parse", "Uuid method"),
-            ("version", "Uuid method"),
-            // Crypto
-            ("sha224", "Crypto method"),
-            ("sha256", "Crypto method"),
-            ("sha384", "Crypto method"),
-            ("sha512", "Crypto method"),
-            ("sha512_224", "Crypto method"),
-            ("sha512_256", "Crypto method"),
-            ("hmac_sha224", "Crypto method"),
-            ("hmac_sha256", "Crypto method"),
-            ("hmac_sha384", "Crypto method"),
-            ("hmac_sha512", "Crypto method"),
-            ("hmac_sha512_224", "Crypto method"),
-            ("hmac_sha512_256", "Crypto method"),
-            ("token", "Crypto method"),
-            ("random_bytes", "Crypto method"),
-        ];
-
-        for (method, kind) in methods {
+        // Method completions — one entry per catalog method, labeled
+        // "Namespace method" so the user knows which namespace it belongs to.
+        for entry in prelude::catalog() {
             completions.push(CompletionItem {
-                label: method.to_string(),
+                label: entry.name.to_string(),
                 kind: Some(CompletionItemKind::FUNCTION),
-                detail: Some(kind.to_string()),
+                detail: Some(format!("{} method", entry.namespace)),
+                documentation: Some(Documentation::String(entry.doc.to_string())),
                 ..CompletionItem::default()
             });
         }
@@ -884,11 +812,20 @@ task t() {
             labels.contains(&"classify"),
             "should contain method classify"
         );
-        // Regression (D1): `now` is a prelude identifier, not a reserved keyword.
+        // Regression (D1): `now` is a method (Time.now), not a reserved keyword.
+        // It must appear with kind FUNCTION, never as a KEYWORD completion.
+        let now_as_keyword = items.iter().any(|i| {
+            i.label == "now" && i.kind == Some(CompletionItemKind::KEYWORD)
+        });
         assert!(
-            !labels.contains(&"now"),
-            "`now` must not appear in keyword completions:\n{labels:?}"
+            !now_as_keyword,
+            "`now` must not appear as a keyword completion:\n{labels:?}"
         );
+        // Confirm it does appear — correctly — as a method completion.
+        let now_as_method = items.iter().any(|i| {
+            i.label == "now" && i.kind == Some(CompletionItemKind::FUNCTION)
+        });
+        assert!(now_as_method, "`now` should appear as a method completion (Time.now)");
     }
 
     #[tokio::test]
