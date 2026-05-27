@@ -911,7 +911,7 @@ impl Checker {
                     }
                     None => {
                         if self.strict
-                            && matches!(inferred, Ty::Unknown)
+                            && matches!(inferred, Ty::Unknown | Ty::Dynamic)
                             && let Binding::Ident(name) = binding
                         {
                             self.err(format!(
@@ -1940,6 +1940,19 @@ impl Checker {
                             | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "atan2" => {
                                 return Ty::Float;
                             }
+                            _ => {}
+                        }
+                    }
+                    if name == "Json" {
+                        match method.as_str() {
+                            "parse" => return Ty::Dynamic,
+                            "stringify" => return Ty::Str,
+                            _ => {}
+                        }
+                    }
+                    if name == "Cache" {
+                        match method.as_str() {
+                            "get" => return Ty::Nullable(Box::new(Ty::Dynamic)),
                             _ => {}
                         }
                     }

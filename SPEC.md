@@ -298,7 +298,7 @@ info: MyStruct = raw as MyStruct      # narrow with runtime check
 
 `dynamic` defeats autocomplete and type checking. Narrow as early as possible. The compiler warns on `dynamic` use outside the explicit escape hatches.
 
-**`Json.parse` return-type semantics.** `Json.parse(s) -> dynamic` maps JSON onto Keel values as follows:
+**`Json.parse` return-type semantics.** `Json.parse(s)` returns an untyped value — the type checker does not infer a precise return type. Narrow with `as T` before use. The JSON-to-Keel runtime mapping is:
 
 | JSON type | Keel runtime value |
 |---|---|

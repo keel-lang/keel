@@ -236,8 +236,23 @@ Cache.clear()                        # flush everything
 | Method | Returns | Notes |
 |--------|---------|-------|
 | `Cache.set(key, value, ttl?)` | `none` | `ttl` is a duration literal; omit for no expiry |
-| `Cache.get(key)` | `Value?` | `none` if missing or expired |
+| `Cache.get(key)` | `dynamic?` | `none` if missing or expired; stored type preserved |
 | `Cache.delete(key)` | `none` | No-op if key doesn't exist |
 | `Cache.clear()` | `none` | Flushes all entries |
+
+### `Cache.get` return type
+
+`Cache.get` returns `dynamic?` — `none` when the key is absent or expired, otherwise the value at its original type. A value stored as `str` comes back as `str`; a value stored as `int` comes back as `int`. Use `as T` to narrow to a concrete type:
+
+```keel
+Cache.set("price", "50000.12")
+raw = Cache.get("price")        # dynamic?
+if raw != none {
+  price = raw as str            # "50000.12"
+}
+
+Cache.set("count", 42)
+n = (Cache.get("count") ?? 0) as int   # 42
+```
 
 > **Scope:** `Cache` is process-wide (all agents share one store) and cleared on restart. `Memory` is per-agent and optionally persistent. Use `Cache` for rate-limiting tokens, deduplication keys, or short-lived shared results; use `Memory` for per-agent state that should survive across runs.

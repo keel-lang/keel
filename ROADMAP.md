@@ -86,7 +86,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Memory` | [x] | `remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON) | Vector-store backend (semantic search) is v0.2 |
 | `Control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
 | `Async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
-| `Cache` | [~] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | `Cache.get` return type undocumented — at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `Cache.get(key) -> dynamic?` to SPEC §3 so users know the stored type is preserved and a narrow cast (`as T`) recovers it. |
+| `Cache` | [x] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | `Cache.get(key) -> dynamic?` — stored type preserved; `none` if absent or expired; narrow with `as T`. Documented in SPEC §2.9 and `docs/src/guide/strings.md`. |
 | `String value methods` | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed | — |
 | `File` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
 | Numeric value methods | [x] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
@@ -100,7 +100,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `Json.stringify` | — |
 | `Iterable` interface | [x] | `task items(self) -> list[T]`; struct usable in `for` loop | Not a generator; materialises full list; concrete `list[T]` return type accepted |
 | `Hashable` interface | [ ] | `interface Hashable { task hash(self) -> int; task equals(self, other: Self) -> bool }` — allows user-defined structs and enums to be used as `map[K, V]` keys; compiler validates K implements Hashable | Deferred to v0.2; in v0.1 only `str`, `int`, `bool` are valid map key types (float is rejected at compile time, nullable and struct/enum keys raise) |
-| `Json` | [~] | `parse`, `stringify` | `Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel. |
+| `Json` | [x] | `parse`, `stringify` | `Json.parse` return type is untyped (checker returns `Unknown`) — JSON-to-Keel runtime mapping documented in SPEC §2.9 and `docs/src/guide/json.md`. `Json.stringify` supports `Serializable` interface override. |
 | `Time` | [~] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
 | `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
 | `Db` | [x] | `connect(url)` → `DbConnection`, `db.query(sql, params?)` → `list[map[str,dynamic]]`, `db.exec(sql, params?)` → `int` | Multi-backend (Postgres, MySQL) deferred to v0.2 |
