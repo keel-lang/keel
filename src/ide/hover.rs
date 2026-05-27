@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::ide::symbols::ident_at_offset;
 use crate::types::checker::Checker;
 use crate::types::scope::Scope;
-use crate::types::ty::{describe_ty, Ty};
+use crate::types::ty::{describe_ty, Ty, UnknownReason};
 
 /// Resolve the inferred type for the identifier at `offset` (UTF-8 byte
 /// offset into `text`). Returns `None` if the cursor is not on an
@@ -99,7 +99,7 @@ pub(crate) fn insert_binding(
                     .iter()
                     .find(|(n, _)| n == source)
                     .map(|(_, t)| t.clone())
-                    .unwrap_or(Ty::Unknown);
+                    .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                 out.insert(local.clone(), field_ty);
             }
         }
@@ -109,7 +109,7 @@ pub(crate) fn insert_binding(
                 _ => vec![],
             };
             for (i, name) in names.iter().enumerate() {
-                let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown);
+                let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                 out.insert(name.clone(), t);
             }
         }
@@ -193,7 +193,7 @@ pub(crate) fn collect_stmt_bindings(
             let iter_ty = c.infer_expr(iter, &mut scope);
             let elem = match iter_ty.strip_nullable() {
                 Ty::List(inner) => *inner.clone(),
-                _ => Ty::Unknown,
+                _ => Ty::Unknown(UnknownReason::InferenceLimitation),
             };
             insert_binding(binding, elem, c, out);
             for (s, _) in body {

@@ -8,7 +8,7 @@
 //! - [`infer_binary`] — infers the result type of a binary expression.
 
 use crate::ast::BinOp;
-use crate::types::ty::{describe_ty, Ty};
+use crate::types::ty::{describe_ty, Ty, UnknownReason};
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -39,13 +39,14 @@ fn op_symbol(op: BinOp) -> &'static str {
 /// Validate that `op` can be applied to operands of type `l` and `r`.
 ///
 /// Returns `Some(message)` when the combination is invalid, `None` when it is
-/// valid.  `Ty::Unknown` and `Ty::Dynamic` operands are always accepted so
-/// that an earlier type error does not produce a cascade of binary-op errors.
+/// valid.  Opaque operands (`Unknown`, `Dynamic`, `Error`, `Unresolved`) are
+/// always accepted so that an earlier type error does not produce a cascade
+/// of binary-op errors.
 pub(crate) fn check_binop(op: BinOp, l: &Ty, r: &Ty) -> Option<String> {
     let lb = l.strip_nullable();
     let rb = r.strip_nullable();
 
-    if matches!(lb, Ty::Unknown | Ty::Dynamic) || matches!(rb, Ty::Unknown | Ty::Dynamic) {
+    if lb.is_opaque() || rb.is_opaque() {
         return None;
     }
 
@@ -124,7 +125,8 @@ pub(crate) fn infer_binary(op: BinOp, l: &Ty, r: &Ty) -> Ty {
             (Ty::Float, Ty::Int) | (Ty::Int, Ty::Float) => Ty::Float,
             (Ty::Str, Ty::Str) if matches!(op, Add) => Ty::Str,
             (Ty::List(le), Ty::List(_)) if matches!(op, Add) => Ty::List(le.clone()),
-            _ => Ty::Unknown,
+            // Operand combination not statically resolvable — shallow-inference fallback.
+            _ => Ty::Unknown(UnknownReason::InferenceLimitation),
         },
         Eq | Neq | Lt | Gt | Lte | Gte => Ty::Bool,
         And | Or => Ty::Bool,

@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use crate::ast::*;
 use crate::lexer::Span;
 use crate::types::scope::Scope;
-use crate::types::ty::{describe_ty, Ty};
+use crate::types::ty::{describe_ty, Ty, UnknownReason};
 
 use super::{binop::check_binop, Checker};
 
@@ -63,9 +63,9 @@ impl Checker {
             Binding::Destruct(DestructPat::Struct(fields)) => {
                 let struct_fields: Vec<(String, Ty)> = match ty.strip_nullable() {
                     Ty::Struct(f) => f.clone(),
-                    Ty::Unknown | Ty::Dynamic => {
+                    other if other.is_opaque() => {
                         for (_, local) in fields {
-                            scope.define(local.clone(), Ty::Unknown);
+                            scope.define(local.clone(), Ty::Unknown(UnknownReason::InferenceLimitation));
                         }
                         return;
                     }
@@ -75,7 +75,7 @@ impl Checker {
                             describe_ty(other)
                         ));
                         for (_, local) in fields {
-                            scope.define(local.clone(), Ty::Unknown);
+                            scope.define(local.clone(), Ty::Unknown(UnknownReason::InferenceLimitation));
                         }
                         return;
                     }
@@ -87,7 +87,7 @@ impl Checker {
                         .map(|(_, t)| t.clone())
                         .unwrap_or_else(|| {
                             self.err(format!("field `{source}` not found in struct"));
-                            Ty::Unknown
+                            Ty::Error
                         });
                     scope.define(local.clone(), field_ty);
                 }
@@ -95,9 +95,9 @@ impl Checker {
             Binding::Destruct(DestructPat::Tuple(names)) => {
                 let elem_tys: Vec<Ty> = match ty.strip_nullable() {
                     Ty::Tuple(items) => items.clone(),
-                    Ty::Unknown | Ty::Dynamic => {
+                    other if other.is_opaque() => {
                         for name in names {
-                            scope.define(name.clone(), Ty::Unknown);
+                            scope.define(name.clone(), Ty::Unknown(UnknownReason::InferenceLimitation));
                         }
                         return;
                     }
@@ -107,7 +107,7 @@ impl Checker {
                             describe_ty(other)
                         ));
                         for name in names {
-                            scope.define(name.clone(), Ty::Unknown);
+                            scope.define(name.clone(), Ty::Error);
                         }
                         return;
                     }
@@ -120,7 +120,7 @@ impl Checker {
                     ));
                 }
                 for (i, name) in names.iter().enumerate() {
-                    let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown);
+                    let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                     scope.define(name.clone(), t);
                 }
             }
@@ -158,7 +158,8 @@ impl Checker {
         let implicit_ty = self.block_type(&t.body, &mut scope);
         if last_is_expr
             && let Some(expected) = &self.current_return_ty.clone()
-            && !matches!(expected, Ty::None_ | Ty::Unknown | Ty::Dynamic)
+            && !matches!(expected, Ty::None_)
+            && !expected.is_opaque()
         {
             self.expect(&implicit_ty, expected, "implicit return");
         }
@@ -190,7 +191,7 @@ impl Checker {
                 for entry in entries {
                     if let Some(cond) = &entry.condition {
                         let ty = self.infer_expr(cond, &mut scope);
-                        if !matches!(ty, Ty::Bool | Ty::Unknown) {
+                        if !matches!(ty, Ty::Bool) && !ty.is_opaque() {
                             self.err(format!(
                                 "`when` guard on `{}` must be a bool expression",
                                 entry.namespace
@@ -222,19 +223,23 @@ impl Checker {
                 let bound = match ty {
                     Some(t) => {
                         let declared = self.resolve_and_check_type(t);
-                        // Only check when declared type is concrete — Unknown
-                        // means the checker couldn't resolve it (e.g. a named
-                        // user-defined type), so a mismatch would be a false positive.
+                        // Only check when declared type is concrete — an opaque
+                        // type means the checker couldn't resolve it (e.g. an
+                        // unrecognised named type), so a mismatch here would be
+                        // a false positive.
                         if let Binding::Ident(name) = binding
-                            && !matches!(declared, Ty::Unknown | Ty::Dynamic)
+                            && !declared.is_opaque()
                         {
                             self.expect(&inferred, &declared, &format!("`{name}`"));
                         }
                         declared
                     }
                     None => {
+                        // In strict mode, warn when the inferred type is Unknown
+                        // (any reason) — the user should add an annotation.
+                        // Dynamic is intentional and never warned about.
                         if self.strict
-                            && matches!(inferred, Ty::Unknown | Ty::Dynamic)
+                            && matches!(inferred, Ty::Unknown(_))
                             && let Binding::Ident(name) = binding
                         {
                             self.err(format!(
@@ -275,7 +280,8 @@ impl Checker {
                 if let Some(e) = opt {
                     let actual = self.infer_expr(e, scope);
                     if let Some(expected) = self.current_return_ty.clone()
-                        && !matches!(expected, Ty::None_ | Ty::Unknown | Ty::Dynamic)
+                        && !matches!(expected, Ty::None_)
+                        && !expected.is_opaque()
                     {
                         self.expect(&actual, &expected, "return value");
                     }
@@ -290,7 +296,10 @@ impl Checker {
                 let iter_ty = self.infer_expr(iter, scope);
                 let element_ty = match iter_ty.strip_nullable() {
                     Ty::List(inner) => *inner.clone(),
-                    Ty::Unknown | Ty::Dynamic => Ty::Unknown,
+                    other if other.is_opaque() => {
+                        // Iterable type is opaque — element type is also opaque.
+                        other.clone()
+                    }
                     Ty::Struct(fields) => {
                         // Allow iterating over a struct that implements Iterable.
                         // Find the struct's type name by matching its field set.
@@ -302,15 +311,15 @@ impl Checker {
                             schema_names == field_names && self.iterable_types.contains(type_name)
                         });
                         if is_iterable {
-                            Ty::Unknown
+                            Ty::Unknown(UnknownReason::InferenceLimitation)
                         } else {
                             self.err("`for` expects a list, got struct".to_string());
-                            Ty::Unknown
+                            Ty::Error
                         }
                     }
                     other => {
                         self.err(format!("`for` expects a list, got {}", describe_ty(other)));
-                        Ty::Unknown
+                        Ty::Error
                     }
                 };
                 scope.push();
@@ -359,7 +368,7 @@ impl Checker {
                     self.err(format!(
                         "augmented assignment to undefined variable `{name}`"
                     ));
-                    Ty::Unknown
+                    Ty::Error
                 });
                 let rhs_ty = self.infer_expr(rhs, scope);
                 if let Some(msg) = check_binop(*op, &var_ty, &rhs_ty) {
@@ -452,8 +461,10 @@ impl Checker {
                     }
                 }
             }
-            Ty::Unknown | Ty::Dynamic => {
-                // Shallow inference: don't insist on wildcard for unknown subjects.
+            other if other.is_opaque() => {
+                // Opaque subject type (Unknown, Dynamic, Error, Unresolved) —
+                // don't insist on a wildcard arm; shallow inference can't determine
+                // the variant set.
             }
             _ => {
                 if !has_wildcard {

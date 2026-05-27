@@ -733,7 +733,7 @@ agent Bot {
         ("session_id", "str"),
         ("loop_score", "int"),
         ("copied_name", "str"),
-        ("caught_error", "unknown"),
+        ("caught_error", "Error"),  // resolved as Unresolved("Error") — shows declared name
         ("recovered", "str"),
     ];
 
@@ -1865,5 +1865,54 @@ agent Boss {
 run(Boss)
 "#,
         "agent `Worker` has no handler `typo`",
+    );
+}
+
+// ─── Map literal value-type inference: opaque-first sentinel fix ─────────────
+//
+// Previously, `is_opaque()` was used as the "not yet set" sentinel for the
+// inferred value type, causing any legitimately opaque first value
+// (e.g. Json.parse → Unknown(ExternalDynamic)) to be overwritten by later
+// concrete entries.  The fix replaces the sentinel with Option<Ty>.
+//
+// Observable consequence: assigning `{1: Json.parse("{}"), 2: "x"}` to an
+// explicit `map[int, str]` binding used to pass (the buggy inference gave
+// map[int, str]).  After the fix the inferred type is map[int, Unknown] which
+// does not equal map[int, str], so the assignment is rejected.
+
+#[test]
+fn map_opaque_first_value_is_not_overwritten_by_concrete_second() {
+    // Before the fix: {1: Json.parse("{}"), 2: "x"} was inferred as
+    // map[int, str] because `is_opaque()` re-treated the first Unknown as
+    // "not yet set", letting the second (Str) overwrite it.  The assignment to
+    // `map[int, str]` therefore passed silently.
+    //
+    // After the fix: inferred type is map[int, Unknown(ExternalDynamic)].
+    // map[int, Unknown] ≠ map[int, str], so the annotated assignment is an
+    // error ("expected map[int, str], got map[int, …]").
+    expect_error(
+        r#"
+task go() -> int {
+  m: map[int, str] = {1: Json.parse("{}"), 2: "x"}
+  return 0
+}
+"#,
+        "expected",
+    );
+}
+
+#[test]
+fn map_concrete_first_opaque_second_accepts_the_opaque_entry() {
+    // When the first value is concrete (Str) the inferred value type is Str.
+    // The second opaque value (Json.parse → Unknown) is passed to `expect`
+    // against Str; because `actual.is_opaque()` is true, `expect` short-
+    // circuits with no error.  The assignment to map[int, str] should succeed.
+    type_ok(
+        r#"
+task go() -> int {
+  m: map[int, str] = {1: "x", 2: Json.parse("{}")}
+  return 0
+}
+"#,
     );
 }

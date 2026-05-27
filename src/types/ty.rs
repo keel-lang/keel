@@ -43,11 +43,38 @@ impl TypeError {
 // Types (resolved, not AST-level)
 // ---------------------------------------------------------------------------
 
+/// The reason the checker could not infer or resolve a type.
+///
+/// Used by [`Ty::Unknown`] to distinguish checker limitations from external
+/// dynamism, enabling precise strict-mode diagnostics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UnknownReason {
+    /// The checker has not yet implemented inference for this construct.
+    ///
+    /// Like all `Unknown(_)` reasons, this fires a "cannot infer type" error
+    /// in strict mode (`keel check --strict`).
+    UnsupportedFeature(&'static str),
+    /// A built-in namespace method whose return type depends on runtime
+    /// context (LLM outputs, JSON payloads, external API responses, etc.).
+    ExternalDynamic,
+    /// Shallow inference: the checker could not propagate the type cheaply.
+    InferenceLimitation,
+}
+
 /// The resolved type assigned to every expression by the checker.
 ///
-/// Variants map 1-to-1 to Keel surface types with two escape hatches:
-/// `Unknown` (type could not be determined cheaply — no error reported) and
-/// `Dynamic` (explicitly typed `dynamic` — suppresses all type mismatches).
+/// Concrete variants map 1-to-1 to Keel surface types.  Four escape hatches
+/// handle situations where the type is absent or unknowable:
+///
+/// | Variant | Meaning | Generates cascade errors? |
+/// |---|---|---|
+/// | `Dynamic` | User-written `dynamic` annotation | No |
+/// | `Unknown(reason)` | Checker limitation or external dynamism | No |
+/// | `Error` | An error was already reported at this site | No |
+/// | `Unresolved(name)` | Type name written but never declared | No |
+///
+/// All four are considered *opaque* (see [`Ty::is_opaque`]) and suppress
+/// further diagnostics so a single root error does not flood output.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ty {
     Int,
@@ -64,24 +91,58 @@ pub enum Ty {
     Struct(Vec<(String, Ty)>),
     Tuple(Vec<Ty>),
     Func(Vec<Ty>, Box<Ty>),
-    /// Enum type. The second field carries the resolved type arguments for
-    /// generic enums (e.g. `Pair[str, int]` → `Enum("Pair", [Str, Int])`).
+    /// Enum type.  The second field carries resolved type arguments for
+    /// generic enums (`Pair[str, int]` → `Enum("Pair", [Str, Int])`).
     /// For non-generic enums the vec is empty.
     Enum(String, Vec<Ty>),
     /// An open database connection returned by `Db.connect`.
     DbConnection,
-    /// Unresolved or unsupported — skip further checks.
-    Unknown,
-    Nullable(Box<Ty>),
+    /// Explicitly typed `dynamic` — the user opted out of static typing.
+    ///
+    /// Accepted everywhere without generating warnings even in strict mode.
     Dynamic,
+    /// An error was already reported at this expression site.
+    ///
+    /// Suppresses cascade errors so a single root cause does not flood
+    /// the diagnostic output.
+    Error,
+    /// A named type that was written in source but was never declared.
+    ///
+    /// Kept silent (no new diagnostic is emitted on creation) to preserve
+    /// existing behaviour.  Downstream checks treat it like `Error`.
+    Unresolved(String),
+    /// The checker could not determine the type for the given reason.
+    ///
+    /// See [`UnknownReason`] for the full taxonomy.  In strict mode
+    /// (`keel check --strict`), **any** `Unknown(_)` binding triggers a
+    /// "cannot infer type" error.  [`Dynamic`] is never flagged — it
+    /// represents an intentional programmer choice, not a checker gap.
+    Unknown(UnknownReason),
+    Nullable(Box<Ty>),
 }
 
 impl Ty {
+    /// Strip a `Nullable` wrapper, returning the inner type.
+    ///
+    /// Returns `self` unchanged for all non-nullable variants.
     pub(crate) fn strip_nullable(&self) -> &Ty {
         match self {
             Ty::Nullable(inner) => inner,
             _ => self,
         }
+    }
+
+    /// Returns `true` when the type encodes an inference gap or prior error.
+    ///
+    /// Opaque types suppress cascade diagnostics and are accepted in any
+    /// position where a concrete type is expected.  The four opaque variants
+    /// are `Dynamic`, `Unknown(_)`, `Error`, and `Unresolved(_)`.
+    #[inline]
+    pub(crate) fn is_opaque(&self) -> bool {
+        matches!(
+            self,
+            Ty::Dynamic | Ty::Unknown(_) | Ty::Error | Ty::Unresolved(_)
+        )
     }
 }
 
@@ -111,8 +172,10 @@ pub(crate) fn describe_ty(ty: &Ty) -> String {
         Ty::Func(_, _) => "function".into(),
         Ty::Enum(name, _) => name.clone(),
         Ty::DbConnection => "DbConnection".into(),
-        Ty::Unknown => "unknown".into(),
-        Ty::Nullable(inner) => format!("{}?", describe_ty(inner)),
         Ty::Dynamic => "dynamic".into(),
+        Ty::Error => "unknown".into(),
+        Ty::Unresolved(name) => name.clone(),
+        Ty::Unknown(_) => "unknown".into(),
+        Ty::Nullable(inner) => format!("{}?", describe_ty(inner)),
     }
 }

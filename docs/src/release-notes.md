@@ -6,6 +6,45 @@
 
 ## Unreleased
 
+### Richer type diagnostics — `Ty::Unknown` split
+
+The single overloaded `Unknown` fallback type has been replaced with four semantically distinct variants that give the checker, strict mode, and contributors a precise vocabulary for why a type is not known:
+
+| Variant | When it appears | Fires in `--strict`? |
+|---|---|---|
+| `dynamic` | Explicit `dynamic` annotation written by the programmer | **Never** |
+| `Unknown(ExternalDynamic)` | Namespace method whose return depends on runtime data (`Json.parse`, LLM outputs) | Yes |
+| `Unknown(InferenceLimitation)` | Checker cannot cheaply infer the type (agent refs, unannotated lambdas, dispatch fallthrough) | Yes |
+| `Unknown(UnsupportedFeature)` | Construct the checker does not yet implement | Yes |
+
+**User-visible change — `--strict` and `Json.parse`:**
+
+`keel check --strict` no longer warns on `dynamic`-annotated bindings; it only warns on
+`Unknown(_)` results. `let x: dynamic = Json.parse("{}")` is clean in strict mode because
+the programmer explicitly opted into the dynamic type. `let x = Json.parse("{}")` (unannotated)
+still fires `cannot infer type of 'x'` because the return type is now `Unknown(ExternalDynamic)`
+rather than `dynamic`.
+
+```keel
+# always clean — explicit dynamic annotation
+data: dynamic = Json.parse(raw)
+
+# clean in normal mode, flagged in --strict — unannotated binding
+data = Json.parse(raw)            # error in strict: cannot infer type of 'data'
+```
+
+Fix unannotated `Json.parse` bindings with an explicit annotation or cast:
+
+```keel
+# annotate as dynamic (accept at call site)
+data: dynamic = Json.parse(raw)
+
+# or narrow immediately to a concrete type
+data = Json.parse(raw) as Payload
+```
+
+---
+
 ### Type-safe `Agent.delegate` symbol form
 
 Handler references are now first-class compile-time expressions.

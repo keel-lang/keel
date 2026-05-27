@@ -18,7 +18,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::{Binding, Param, TaskSig, TypeExpr};
-use crate::types::ty::Ty;
+use crate::types::ty::{Ty, UnknownReason};
 
 // ---------------------------------------------------------------------------
 // TySpec — heap-free type representation for static catalog entries
@@ -90,7 +90,9 @@ pub(crate) fn ty_from_spec(spec: TySpec) -> Ty {
             Box::new(Ty::Str),
             Box::new(Ty::Dynamic),
         ))),
-        TySpec::Unknown => Ty::Unknown,
+        // Runtime-dynamic: the return type depends on external data (JSON
+        // payloads, LLM outputs, etc.) and cannot be determined statically.
+        TySpec::Unknown => Ty::Unknown(UnknownReason::ExternalDynamic),
     }
 }
 
@@ -572,7 +574,11 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Json",
         name: "parse",
         params: &[BuiltinParam { name: "s", ty: TySpec::Str, optional: false }],
-        result: BuiltinResult::Fixed(TySpec::Dynamic),
+        // Return type is externally dynamic — the JSON structure depends on runtime
+        // input and is not statically known.  Uses Unknown(ExternalDynamic) so that
+        // `keel check --strict` can flag unannotated bindings.  Users who want to
+        // silence the warning should annotate explicitly: `let x: dynamic = Json.parse(...)`.
+        result: BuiltinResult::Unknown,
         doc: "Parse a JSON string into a dynamic value.",
     },
     BuiltinMethod {

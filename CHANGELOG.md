@@ -14,6 +14,21 @@ All notable changes to Keel.
 
 ### Changed
 
+- **`Ty::Unknown` split into four semantically distinct variants.** The bare `Unknown` variant has been replaced with `Unknown(UnknownReason)`, `Error`, `Unresolved(String)`, and the already-existing `Dynamic`. Each variant carries a precise meaning:
+
+  | Variant | When produced | Strict-mode warning? |
+  |---|---|---|
+  | `Dynamic` | User-written `dynamic` annotation | Never |
+  | `Unknown(ExternalDynamic)` | Namespace method whose return type depends on runtime input (LLM outputs, `Json.parse`, etc.) | Yes |
+  | `Unknown(InferenceLimitation)` | Checker cannot cheaply infer the type (agent refs, unannotated lambdas, shallow dispatch fallthrough) | Yes |
+  | `Unknown(UnsupportedFeature)` | Construct the checker does not yet implement | Yes |
+  | `Error` | An error was already emitted at this site; suppresses cascade diagnostics | No |
+  | `Unresolved(name)` | A type name was used but never declared | No |
+
+  **User-visible change:** `keel check --strict` no longer warns on `dynamic`-annotated bindings; it only warns on `Unknown(_)` results. `let x: dynamic = Json.parse("{}")` is now always clean in strict mode; `let x = Json.parse("{}")` (unannotated) still fires the "cannot infer type of `x`" diagnostic. `Json.parse` now returns `Unknown(ExternalDynamic)` rather than `Dynamic`, so unannotated bindings are still flagged.
+
+  Internally, the new `Ty::is_opaque()` helper replaces scattered `matches!(t, Ty::Unknown | Ty::Dynamic)` patterns across checker, binop, resolve, and IDE hover modules.
+
 - **Single prelude catalog for checker, LSP, and docs.** All built-in namespace methods (Ai, Io, File, Http, Cache, Csv, Db, Math, Crypto, Uuid, and every other stdlib namespace — 23 in total) are now defined in one `prelude::catalog()` slice. The checker derives its return-type inference from the catalog; the LSP derives its completion list from the catalog. Prior to this change, each surface maintained an independent hand-written list that drifted silently on every new method. A `catalog_covers_all_runtime_namespaces` consistency test enforces that the runtime and the catalog remain in sync.
 
   This change also **improves type inference** for methods that previously returned `Unknown` — `Memory.recall`, `Log.level`, `Shell.run`, `Email.send`, `Email.archive`, `Schedule.sleep`, and every `Log.*` method now infer their correct return types.

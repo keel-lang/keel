@@ -100,6 +100,76 @@ run(A)
     );
 }
 
+#[test]
+fn strict_mode_accepts_explicit_dynamic_annotation() {
+    use std::io::Write;
+    // An explicit `dynamic` annotation is an intentional programmer choice —
+    // it must never trigger a --strict error, even though Json.parse returns
+    // Unknown(ExternalDynamic) when unannotated.
+    let src = r#"
+agent A {
+  @on_start {
+    data: dynamic = Json.parse("{}")
+    Io.show("{data}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let output = Command::new(keel_binary())
+        .args(["check", "--strict", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run keel check --strict");
+    assert!(
+        output.status.success(),
+        "strict check should accept explicit `dynamic` annotation\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+// ─── P2: map literal value-type inference with opaque first element ─────────
+
+/// When the first value is concrete the type is pinned; a subsequent opaque
+/// value is silently accepted by `expect`'s opaque short-circuit and does not
+/// pollute the inferred value type.  The whole map literal should pass strict.
+#[test]
+fn strict_mode_accepts_map_concrete_first_opaque_second() {
+    use std::io::Write;
+    // First entry pins val_ty = Str. Second entry is Unknown(ExternalDynamic);
+    // `expect(Unknown, Str, ...)` short-circuits on opaque actual → no error.
+    // Strict passes because the inferred map type is fully concrete: map[int,str].
+    let src = r#"
+agent A {
+  @on_start {
+    m = {1: "x", 2: Json.parse("{}")}
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let output = Command::new(keel_binary())
+        .args(["check", "--strict", path.to_str().unwrap()])
+        .output()
+        .expect("failed to run keel check --strict");
+    assert!(
+        output.status.success(),
+        "strict should accept map with concrete-first, opaque-second values\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 // ─── v0.1.17: readonly state fields ────────────────────────────────────────
 
 #[test]

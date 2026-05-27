@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use crate::ast::*;
 use crate::types::prelude::{self, BuiltinResult};
 use crate::types::scope::Scope;
-use crate::types::ty::{describe_ty, Ty};
+use crate::types::ty::{describe_ty, Ty, UnknownReason};
 
 use super::{
     binop::{check_binop, infer_binary},
@@ -46,23 +46,27 @@ impl Checker {
                     );
                 }
                 if self.agents.contains_key(name) {
-                    return Ty::Unknown; // AgentRef placeholder
+                    // Agent identifier used as a value — the type of an agent
+                    // reference is not tracked statically.
+                    return Ty::Unknown(UnknownReason::InferenceLimitation);
                 }
                 if self.enum_variants.contains_key(name)
                     || self.structs.contains_key(name)
                     || self.aliases.contains_key(name)
                     || self.prelude.contains(name)
                 {
-                    return Ty::Unknown;
+                    // Type-level or namespace identifier used as an expression —
+                    // no value-level type is available.
+                    return Ty::Unknown(UnknownReason::InferenceLimitation);
                 }
                 self.err(format!("undefined: `{name}`"));
-                Ty::Unknown
+                Ty::Error
             }
 
             Expr::SelfAccess(field) => {
                 let Some(agent_name) = self.current_agent.clone() else {
                     self.err(format!("`self.{field}` used outside an agent"));
-                    return Ty::Unknown;
+                    return Ty::Error;
                 };
                 if let Some(t) = self
                     .agents
@@ -72,10 +76,12 @@ impl Checker {
                     return t.clone();
                 }
                 self.err(format!("agent `{agent_name}` has no state field `{field}`"));
-                Ty::Unknown
+                Ty::Error
             }
 
-            Expr::SelfRef => Ty::Unknown,
+            // The type of `self` (the agent reference itself) is not tracked
+            // statically — only `self.field` and `self.task(...)` are resolved.
+            Expr::SelfRef => Ty::Unknown(UnknownReason::InferenceLimitation),
 
             Expr::FieldAccess(obj, field) => {
                 // Enum variant shortcut: `Urgency.medium`.
@@ -92,7 +98,8 @@ impl Checker {
                         {
                             return Ty::Uuid;
                         }
-                        return Ty::Unknown;
+                        // Field access on a prelude namespace — not a value-level type.
+                        return Ty::Unknown(UnknownReason::InferenceLimitation);
                     }
                     // Agent handler reference: `Foo.process` — validate the handler exists.
                     if let Some(agent) = self.agents.get(name) {
@@ -110,7 +117,9 @@ impl Checker {
                                 }
                             ));
                         }
-                        return Ty::Unknown; // handler-ref placeholder
+                        // Handler references are used as delegate targets,
+                        // not as typed values.
+                        return Ty::Unknown(UnknownReason::InferenceLimitation);
                     }
                 }
                 let obj_ty = self.infer_expr(obj, scope);
@@ -119,8 +128,8 @@ impl Checker {
                         .iter()
                         .find(|(n, _)| n == field)
                         .map(|(_, t)| t.clone())
-                        .unwrap_or(Ty::Unknown),
-                    _ => Ty::Unknown,
+                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
+                    _ => Ty::Unknown(UnknownReason::InferenceLimitation),
                 }
             }
 
@@ -131,8 +140,8 @@ impl Checker {
                         .iter()
                         .find(|(n, _)| n == field)
                         .map(|(_, t)| t.clone())
-                        .unwrap_or(Ty::Unknown),
-                    _ => Ty::Unknown,
+                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
+                    _ => Ty::Unknown(UnknownReason::InferenceLimitation),
                 };
                 Ty::Nullable(Box::new(field_ty))
             }
@@ -163,18 +172,22 @@ impl Checker {
                         for (_, v) in fields {
                             self.infer_expr(v, scope);
                         }
-                        return Ty::Unknown;
+                        return Ty::Error;
                     }
                     let key_ty = if has_int { Ty::Int } else { Ty::Bool };
-                    let mut val_ty = Ty::Unknown;
+                    // Use Option<Ty> as the "not yet set" sentinel.  A plain
+                    // is_opaque() check would re-treat a legitimately opaque
+                    // first value (e.g. Json.parse → Unknown) as "unset" and
+                    // let subsequent entries overwrite it silently.
+                    let mut val_ty: Option<Ty> = None;
                     for (_, v) in fields {
                         let t = self.infer_expr(v, scope);
-                        if val_ty == Ty::Unknown {
-                            val_ty = t;
-                        } else {
-                            self.expect(&t, &val_ty, "map literal value");
+                        match val_ty {
+                            None => val_ty = Some(t),
+                            Some(ref vt) => self.expect(&t, vt, "map literal value"),
                         }
                     }
+                    let val_ty = val_ty.unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                     Ty::Map(Box::new(key_ty), Box::new(val_ty))
                 } else {
                     let mut inferred: Vec<(String, Ty)> = Vec::with_capacity(fields.len());
@@ -208,11 +221,14 @@ impl Checker {
                         }
                         return Ty::Map(key_ty, val_ty);
                     }
-                    Ty::Unknown | Ty::Dynamic => {
+                    other if other.is_opaque() => {
+                        // Base type is opaque — infer overrides for side-effects
+                        // but propagate the opaque kind as the result.
+                        let result = other.clone();
                         for (_, v) in overrides {
                             self.infer_expr(v, scope);
                         }
-                        return Ty::Unknown;
+                        return result;
                     }
                     other => {
                         self.err(format!(
@@ -222,7 +238,7 @@ impl Checker {
                         for (_, v) in overrides {
                             self.infer_expr(v, scope);
                         }
-                        return Ty::Unknown;
+                        return Ty::Error;
                     }
                 };
                 let mut result_fields = base_fields.clone();
@@ -250,7 +266,8 @@ impl Checker {
             }
 
             Expr::ListLit(items) => {
-                let mut element_ty = Ty::Unknown;
+                // Empty list — element type is indeterminate until used.
+                let mut element_ty = Ty::Unknown(UnknownReason::InferenceLimitation);
                 for (i, e) in items.iter().enumerate() {
                     let ty = self.infer_expr(e, scope);
                     if i == 0 {
@@ -261,7 +278,8 @@ impl Checker {
             }
 
             Expr::SetLit(items) => {
-                let mut element_ty = Ty::Unknown;
+                // Empty set — element type is indeterminate until used.
+                let mut element_ty = Ty::Unknown(UnknownReason::InferenceLimitation);
                 for (i, e) in items.iter().enumerate() {
                     let ty = self.infer_expr(e, scope);
                     if i == 0 {
@@ -290,10 +308,10 @@ impl Checker {
                     UnOp::Neg => match t.strip_nullable() {
                         Ty::Int => Ty::Int,
                         Ty::Float => Ty::Float,
-                        Ty::Unknown | Ty::Dynamic => Ty::Unknown,
+                        other if other.is_opaque() => other.clone(),
                         other => {
                             self.err(format!("cannot negate {}", describe_ty(other)));
-                            Ty::Unknown
+                            Ty::Error
                         }
                     },
                     UnOp::Not => Ty::Bool,
@@ -307,7 +325,7 @@ impl Checker {
                 // inner type of x (or fallback's type when x is Unknown).
                 match l_ty {
                     Ty::Nullable(inner) => *inner,
-                    Ty::Unknown | Ty::Dynamic => r_ty,
+                    other if other.is_opaque() => r_ty,
                     other => other,
                 }
             }
@@ -323,7 +341,8 @@ impl Checker {
                         Ty::Nullable(val_ty)
                     }
                     Ty::List(elem) => {
-                        if !matches!(idx_ty.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                        let idx_base = idx_ty.strip_nullable();
+                        if !matches!(idx_base, Ty::Int) && !idx_base.is_opaque() {
                             self.err(format!(
                                 "subscript index must be int, got {}",
                                 describe_ty(&idx_ty)
@@ -332,7 +351,8 @@ impl Checker {
                         *elem.clone()
                     }
                     Ty::Str => {
-                        if !matches!(idx_ty.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                        let idx_base = idx_ty.strip_nullable();
+                        if !matches!(idx_base, Ty::Int) && !idx_base.is_opaque() {
                             self.err(format!(
                                 "subscript index must be int, got {}",
                                 describe_ty(&idx_ty)
@@ -340,14 +360,14 @@ impl Checker {
                         }
                         Ty::Str
                     }
-                    Ty::Unknown | Ty::Dynamic => Ty::Unknown,
+                    other if other.is_opaque() => Ty::Unknown(UnknownReason::InferenceLimitation),
                     other => {
                         self.err(format!(
                             "subscript `[i]` is not supported on {}; \
                              lists and strings support subscript access",
                             describe_ty(other)
                         ));
-                        Ty::Unknown
+                        Ty::Error
                     }
                 }
             }
@@ -355,10 +375,12 @@ impl Checker {
             Expr::Range(start, end) => {
                 let s = self.infer_expr(start, scope);
                 let e = self.infer_expr(end, scope);
-                if !matches!(s.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                let sb = s.strip_nullable();
+                if !matches!(sb, Ty::Int) && !sb.is_opaque() {
                     self.err(format!("range start must be int, got {}", describe_ty(&s)));
                 }
-                if !matches!(e.strip_nullable(), Ty::Int | Ty::Unknown | Ty::Dynamic) {
+                let eb = e.strip_nullable();
+                if !matches!(eb, Ty::Int) && !eb.is_opaque() {
                     self.err(format!("range end must be int, got {}", describe_ty(&e)));
                 }
                 Ty::List(Box::new(Ty::Int))
@@ -378,7 +400,7 @@ impl Checker {
                 if let Expr::SelfAccess(task_name) = callee.as_ref() {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{task_name}(...)` used outside an agent"));
-                        return Ty::Unknown;
+                        return Ty::Error;
                     };
                     let Some(sig) = self
                         .agents
@@ -387,7 +409,7 @@ impl Checker {
                         .cloned()
                     else {
                         self.err(format!("agent `{agent_name}` has no task `{task_name}`"));
-                        return Ty::Unknown;
+                        return Ty::Error;
                     };
                     let expected = sig.params.len();
                     let positional = args
@@ -505,7 +527,8 @@ impl Checker {
                         .zip(arg_tys.iter())
                         .find(|(a, _)| a.name.as_deref() == Some("by"))
                         .map(|(_, ty)| ty)
-                        && !matches!(by_ty, Ty::Func(..) | Ty::Unknown | Ty::Dynamic)
+                        && !matches!(by_ty, Ty::Func(..))
+                        && !by_ty.is_opaque()
                     {
                         self.err(format!(
                             "`{name}`: `by:` must be a function, got `{}`",
@@ -528,7 +551,8 @@ impl Checker {
                         })
                         .collect();
                     let elem_ty = match positional_tys.as_slice() {
-                        [] => Ty::Unknown,
+                        // No positional args — element type is indeterminate.
+                        [] => Ty::Unknown(UnknownReason::InferenceLimitation),
                         [Ty::List(inner)] => *inner.clone(),
                         [single] => single.clone(),
                         slice if slice.iter().all(|t| self.types_match(t, &slice[0])) => {
@@ -540,13 +564,14 @@ impl Checker {
                                 "`{name}`: arguments must all have the same type, got {}",
                                 types.join(", ")
                             ));
-                            Ty::Unknown
+                            Ty::Error
                         }
                     };
                     return Ty::Nullable(Box::new(elem_ty));
                 }
                 let _ = self.infer_expr(callee, scope);
-                Ty::Unknown
+                // Callee type not resolved — return type is also indeterminate.
+                Ty::Unknown(UnknownReason::InferenceLimitation)
             }
 
             Expr::MethodCall {
@@ -562,7 +587,7 @@ impl Checker {
                 if matches!(object.as_ref(), Expr::SelfRef) {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{method}(...)` used outside an agent"));
-                        return Ty::Unknown;
+                        return Ty::Error;
                     };
                     let Some(sig) = self
                         .agents
@@ -571,7 +596,7 @@ impl Checker {
                         .cloned()
                     else {
                         self.err(format!("agent `{agent_name}` has no task `{method}`"));
-                        return Ty::Unknown;
+                        return Ty::Error;
                     };
                     let expected = sig.params.len();
                     let positional = args
@@ -605,7 +630,7 @@ impl Checker {
                         self.err(format!(
                             "direct agent task calls like `{name}.{method}(...)` are unsupported; use `self.{method}(...)` inside that agent or mailbox APIs such as `Agent.send(...)` / `Agent.delegate(...)`"
                         ));
-                        return Ty::Unknown;
+                        return Ty::Error;
                     }
                     // Validate Agent.delegate call sites at compile time.
                     //
@@ -712,7 +737,7 @@ impl Checker {
                             BuiltinResult::AiClassify => {
                                 // Return `Nullable(Enum(as:))` when the `as:`
                                 // argument names a known enum type; otherwise
-                                // fall back to Unknown.
+                                // the classification target is unknown.
                                 if let Some(as_arg) =
                                     args.iter().find(|a| a.name.as_deref() == Some("as"))
                                     && let Expr::Ident(enum_name) = &as_arg.value
@@ -720,7 +745,7 @@ impl Checker {
                                 {
                                     Ty::Nullable(Box::new(Ty::Enum(enum_name.clone(), vec![])))
                                 } else {
-                                    Ty::Unknown
+                                    Ty::Unknown(UnknownReason::InferenceLimitation)
                                 }
                             }
                             BuiltinResult::AiExtract => {
@@ -733,13 +758,14 @@ impl Checker {
                                         if let Expr::Ident(type_name) = &a.value {
                                             self.resolve_type(&TypeExpr::Named(type_name.clone()))
                                         } else {
-                                            Ty::Unknown
+                                            Ty::Unknown(UnknownReason::InferenceLimitation)
                                         }
                                     })
-                                    .unwrap_or(Ty::Unknown);
+                                    .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                                 Ty::Nullable(Box::new(inner))
                             }
-                            BuiltinResult::Unknown => Ty::Unknown,
+                            // Runtime-dynamic: return type depends on external context.
+                            BuiltinResult::Unknown => Ty::Unknown(UnknownReason::ExternalDynamic),
                         };
                     }
                 }
@@ -748,7 +774,7 @@ impl Checker {
                     (Ty::List(elem), "push" | "filter" | "sort" | "reverse" | "take" | "skip") => {
                         Ty::List(elem.clone())
                     }
-                    (Ty::List(_), "flatten") => Ty::List(Box::new(Ty::Unknown)),
+                    (Ty::List(_), "flatten") => Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation))),
                     (Ty::List(_), "len" | "count") => Ty::Int,
                     (Ty::List(_), "is_empty") => Ty::Bool,
                     (Ty::List(_), "contains" | "any" | "all") => Ty::Bool,
@@ -761,14 +787,14 @@ impl Checker {
                                     "`.zip()` expects a list argument, got {}",
                                     describe_ty(other)
                                 ));
-                                Ty::Unknown
+                                Ty::Error
                             }
-                            None => Ty::Unknown,
+                            None => Ty::Unknown(UnknownReason::InferenceLimitation),
                         };
                         Ty::List(Box::new(Ty::Tuple(vec![*elem_a.clone(), elem_b])))
                     }
-                    (Ty::List(_), "map") => Ty::List(Box::new(Ty::Unknown)),
-                    (Ty::List(_), "reduce" | "sum" | "min" | "max") => Ty::Unknown,
+                    (Ty::List(_), "map") => Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation))),
+                    (Ty::List(_), "reduce" | "sum" | "min" | "max") => Ty::Unknown(UnknownReason::InferenceLimitation),
                     (Ty::List(_), "join") => Ty::Str,
                     (Ty::Str, "len" | "count" | "length") => Ty::Int,
                     (
@@ -793,7 +819,9 @@ impl Checker {
                     (Ty::Map(_, _), "contains" | "has") => Ty::Bool,
                     (Ty::Int, "abs" | "floor" | "ceil" | "round") => Ty::Int,
                     (Ty::Float, "abs" | "floor" | "ceil" | "round") => Ty::Float,
-                    (Ty::Datetime, "parts") => Ty::Unknown,
+                    // Datetime.parts returns a struct whose fields depend on the
+                    // locale/format — not yet modelled statically.
+                    (Ty::Datetime, "parts") => Ty::Unknown(UnknownReason::InferenceLimitation),
                     (Ty::Datetime, "format") => Ty::Nullable(Box::new(Ty::Str)),
                     (Ty::Uuid, "to_str" | "format") => Ty::Str,
                     (Ty::Uuid, "version") => Ty::Int,
@@ -801,7 +829,8 @@ impl Checker {
                         Ty::List(Box::new(Ty::Map(Box::new(Ty::Str), Box::new(Ty::Dynamic))))
                     }
                     (Ty::DbConnection, "exec") => Ty::Int,
-                    _ => Ty::Unknown,
+                    // Method not in the static dispatch table — shallow inference.
+                    _ => Ty::Unknown(UnknownReason::InferenceLimitation),
                 }
             }
 
@@ -823,15 +852,15 @@ impl Checker {
                 // In that case propagate the other branch's type. When both
                 // are concrete, verify they match.
                 match (&then_ty, &else_ty) {
-                    (Ty::None_, other)
-                        if !matches!(other, Ty::None_ | Ty::Unknown | Ty::Dynamic) =>
-                    {
+                    (Ty::None_, other) if !other.is_opaque() && !matches!(other, Ty::None_) => {
                         other.clone()
                     }
                     (_, Ty::None_) => then_ty,
                     _ => {
-                        if !matches!(then_ty, Ty::Unknown | Ty::Dynamic | Ty::None_)
-                            && !matches!(else_ty, Ty::Unknown | Ty::Dynamic | Ty::None_)
+                        if !then_ty.is_opaque()
+                            && !matches!(then_ty, Ty::None_)
+                            && !else_ty.is_opaque()
+                            && !matches!(else_ty, Ty::None_)
                         {
                             self.expect(
                                 &else_ty,
@@ -873,8 +902,8 @@ impl Checker {
                     scope.pop();
                     match (&result_ty, &arm_ty) {
                         (Ty::None_, _) => result_ty = arm_ty,
-                        (_, Ty::None_ | Ty::Unknown | Ty::Dynamic) => {}
-                        _ if matches!(result_ty, Ty::Unknown | Ty::Dynamic) => {}
+                        (_, _) if arm_ty.is_opaque() || matches!(arm_ty, Ty::None_) => {}
+                        _ if result_ty.is_opaque() => {}
                         _ => {
                             self.expect(
                                 &arm_ty,
@@ -890,22 +919,25 @@ impl Checker {
             Expr::Lambda { params, body } => {
                 scope.push();
                 for p in params {
-                    let ty =
-                        p.ty.as_ref()
-                            .map(|t| self.resolve_type(t))
-                            .unwrap_or(Ty::Unknown);
+                    // Unannotated lambda parameters — type inference is not yet
+                    // implemented; bind as InferenceLimitation to avoid cascade errors.
+                    let ty = p
+                        .ty
+                        .as_ref()
+                        .map(|t| self.resolve_type(t))
+                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                     scope.define(p.name.clone(), ty);
                 }
                 let ret = match body {
                     LambdaBody::Expr(e) => self.infer_expr(e, scope),
                     LambdaBody::Block(b) => {
-                        let mut last = Ty::Unknown;
+                        let mut last = Ty::Unknown(UnknownReason::InferenceLimitation);
                         for (s, s_span) in b {
                             last = match s {
                                 Stmt::Expr(e) => self.infer_expr(e, scope),
                                 other => {
                                     self.check_stmt(other, s_span.clone(), scope);
-                                    Ty::Unknown
+                                    Ty::Unknown(UnknownReason::InferenceLimitation)
                                 }
                             };
                         }
@@ -919,7 +951,7 @@ impl Checker {
                         .map(|p| {
                             p.ty.as_ref()
                                 .map(|t| self.resolve_type(t))
-                                .unwrap_or(Ty::Unknown)
+                                .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation))
                         })
                         .collect(),
                     Box::new(ret),

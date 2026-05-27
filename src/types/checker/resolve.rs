@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::ast::*;
-use crate::types::ty::Ty;
+use crate::types::ty::{Ty, UnknownReason};
 
 use super::Checker;
 
@@ -36,7 +36,9 @@ impl Checker {
                      — implement `interface Hashable` (coming in v0.2); \
                      use str, int, or bool",
                 ),
-                Ty::Unknown | Ty::Dynamic => {}
+                // Opaque types (Unknown, Dynamic, Error, Unresolved) pass through;
+                // the original error, if any, was already reported.
+                key if key.is_opaque() => {}
                 _ => self.err("map key type must be str, int, or bool"),
             }
         }
@@ -68,7 +70,11 @@ impl Checker {
                         } else if let Some(t) = self.aliases.get(n) {
                             t.clone()
                         } else {
-                            Ty::Unknown
+                            // The name is unrecognised — return Unresolved so
+                            // downstream checks suppress cascade errors silently.
+                            // No new diagnostic is emitted here; the caller site
+                            // may already have reported the problem.
+                            Ty::Unresolved(n.clone())
                         }
                     }
                 }
@@ -137,7 +143,12 @@ impl Checker {
                         }
                     };
                 }
-                Ty::Unknown
+                // Generic declaration not found or type-arg count mismatch —
+                // the construct is recognised but instantiation is not yet
+                // implemented for this configuration.
+                Ty::Unknown(UnknownReason::UnsupportedFeature(
+                    "generic type instantiation",
+                ))
             }
             TypeExpr::Dynamic => Ty::Dynamic,
         }
@@ -241,28 +252,28 @@ impl Checker {
         _idx: usize,
     ) -> Ty {
         let Ty::Enum(enum_name, type_args) = subject_ty.strip_nullable() else {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
         if type_args.is_empty() {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         }
         let Some((type_params, type_def)) = self.generic_decls.get(enum_name) else {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
         let TypeDef::RichEnum(variants) = type_def else {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
         let Some(variant) = variants.iter().find(|v| v.name == variant_name) else {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
         let Some(fields) = &variant.fields else {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
         let Some(field) = fields.iter().find(|f| f.name == binding) else {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
         if type_params.len() != type_args.len() {
-            return Ty::Unknown;
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
         }
         let env: HashMap<String, Ty> = type_params
             .iter()

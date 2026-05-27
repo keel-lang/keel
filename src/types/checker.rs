@@ -31,7 +31,6 @@ pub use crate::ide::symbols::{
 use crate::types::prelude::{builtin_interfaces, prelude_names};
 use crate::types::scope::Scope;
 use crate::types::ty::describe_ty;
-use binop::{check_binop, infer_binary};
 
 // ---------------------------------------------------------------------------
 // Per-task / per-handler info
@@ -267,9 +266,10 @@ impl Checker {
 
     /// Structural type equality (ignoring nullability wrapping differences).
     fn types_match(&self, a: &Ty, b: &Ty) -> bool {
+        if a.is_opaque() || b.is_opaque() {
+            return true;
+        }
         match (a, b) {
-            (Ty::Unknown, _) | (_, Ty::Unknown) => true,
-            (Ty::Dynamic, _) | (_, Ty::Dynamic) => true,
             (Ty::Int, Ty::Int)
             | (Ty::Float, Ty::Float)
             | (Ty::Str, Ty::Str)
@@ -309,10 +309,10 @@ impl Checker {
     }
 
     fn expect(&mut self, actual: &Ty, expected: &Ty, context: &str) {
-        if matches!(actual, Ty::Unknown | Ty::Dynamic) {
+        if actual.is_opaque() {
             return;
         }
-        if matches!(expected, Ty::Unknown | Ty::Dynamic) {
+        if expected.is_opaque() {
             return;
         }
 
@@ -349,7 +349,7 @@ impl Checker {
         // every field value matches V. This matches the surface syntax where
         // the same `{...}` form serves as both struct and map literal.
         if let (Ty::Struct(actual_fields), Ty::Map(key_ty, value_ty)) = (actual_base, expected_base)
-            && matches!(key_ty.as_ref(), Ty::Str | Ty::Unknown | Ty::Dynamic)
+            && (matches!(key_ty.as_ref(), Ty::Str) || key_ty.is_opaque())
         {
             for (name, act_ty) in actual_fields {
                 self.expect(act_ty, value_ty, &format!("{context}[{name}]"));
@@ -357,7 +357,7 @@ impl Checker {
             return;
         }
 
-        if actual_base != expected_base && !matches!(actual_base, Ty::Unknown | Ty::Dynamic) {
+        if actual_base != expected_base && !actual_base.is_opaque() {
             self.err(format!(
                 "{context}: expected {}, got {}",
                 describe_ty(expected),

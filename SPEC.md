@@ -298,7 +298,7 @@ info: MyStruct = raw as MyStruct      # narrow with runtime check
 
 `dynamic` defeats autocomplete and type checking. Narrow as early as possible. The compiler warns on `dynamic` use outside the explicit escape hatches.
 
-**`Json.parse` return-type semantics.** `Json.parse(s)` returns an untyped value — the type checker does not infer a precise return type. Narrow with `as T` before use. The JSON-to-Keel runtime mapping is:
+**`Json.parse` return-type semantics.** `Json.parse(s)` returns an untyped value — the type checker does not infer a precise return type. Narrow with `as T` before use, or annotate the binding as `dynamic` to opt out of static typing at that site. The JSON-to-Keel runtime mapping is:
 
 | JSON type | Keel runtime value |
 |---|---|
@@ -322,6 +322,18 @@ for row in rows {
   close = (row as list[dynamic])[4] as str       # nested array element
 }
 ```
+
+In strict mode (`keel check --strict`), an unannotated `Json.parse` binding is flagged because its type cannot be statically inferred. Two accepted escape hatches silence the warning:
+
+```keel
+# Cast form — annotate the cast target
+data = Json.parse(body) as dynamic
+
+# Annotation form — declare the binding type explicitly
+data: dynamic = Json.parse(body)
+```
+
+Both are accepted by strict mode because `dynamic` is an intentional programmer choice, not a checker gap. `Unknown` (an unannotated, un-narrowed result) is what triggers the strict diagnostic.
 
 **`Cache.get` return-type semantics.** `Cache.get(key: str) -> dynamic?` returns the stored value at its original type, or `none` if the key is absent or the entry has expired. The stored type is preserved exactly — a value written as `str` is read back as `str`, a value written as `int` is read back as `int`. Use `as T` to recover a concrete type:
 

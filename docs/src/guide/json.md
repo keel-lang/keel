@@ -47,7 +47,7 @@ Json.stringify(o)   # {"id":"ord-1","amount":99.50}
 
 ## `Json.parse(text)`
 
-Parses a JSON string. The type checker does not infer a precise return type — treat the result as untyped and narrow with `as T` before using it. The JSON-to-Keel type mapping at runtime is:
+Parses a JSON string. The type checker does not infer a precise return type — treat the result as untyped and narrow with `as T` or annotate as `dynamic` before using it. The JSON-to-Keel type mapping at runtime is:
 
 | JSON type | Keel runtime value |
 |---|---|
@@ -75,5 +75,9 @@ for row in rows {
   close = (row as list[dynamic])[4] as str
 }
 ```
+
+> **Strict mode:** `keel check --strict` flags unannotated `Json.parse` bindings because the
+> return type cannot be inferred statically. Add `data: dynamic = Json.parse(...)` (explicit
+> `dynamic` annotation, always clean) or cast immediately to a concrete type with `as T`.
 
 > **Tip:** narrow immediately after parsing. Keeping values as `dynamic` throughout a program defeats the type checker and suppresses autocomplete.
