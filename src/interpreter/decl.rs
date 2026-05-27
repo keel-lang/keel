@@ -3,6 +3,7 @@ use std::sync::Arc;
 use miette::Result;
 
 use crate::ast::{AgentItem, AttributeBody, Binding, Decl, Expr, TypeDef, TypeExpr};
+use crate::types::interface::{self as iface, Signature};
 
 use super::runtime_error;
 use super::state::{AgentDef, Interpreter};
@@ -25,7 +26,7 @@ impl Interpreter {
                     TypeDef::Struct(fields) => {
                         let schema = fields
                             .iter()
-                            .map(|f| (f.name.clone(), type_expr_to_string(&f.ty)))
+                            .map(|f| (f.name.clone(), type_display_str(&f.ty)))
                             .collect();
                         self.struct_types.insert(t.name.clone(), schema);
                     }
@@ -102,18 +103,38 @@ impl Interpreter {
                                     got_params.len()
                                 )));
                             }
-                            // Return-type check.
-                            let req_ret = sig
-                                .return_type
-                                .as_ref()
-                                .map(type_expr_to_string)
-                                .unwrap_or_else(|| "none".to_string());
-                            let got_ret = got_method
-                                .return_type
-                                .as_ref()
-                                .map(type_expr_to_string)
-                                .unwrap_or_else(|| "none".to_string());
-                            if !return_types_match(&req_ret, &got_ret) {
+                            // Return-type check — use the shared typed
+                            // conformance function so the runtime and the
+                            // static checker always agree.
+                            let env = &self.type_env;
+                            let req_sig = Signature {
+                                params: vec![],
+                                ret: sig
+                                    .return_type
+                                    .as_ref()
+                                    .map(|te| iface::resolve_type_expr(te, env))
+                                    .unwrap_or(crate::types::checker::Ty::None_),
+                            };
+                            let got_sig = Signature {
+                                params: vec![],
+                                ret: got_method
+                                    .return_type
+                                    .as_ref()
+                                    .map(|te| iface::resolve_type_expr(te, env))
+                                    .unwrap_or(crate::types::checker::Ty::None_),
+                            };
+                            if !iface::signature_satisfies(&req_sig, &got_sig) {
+                                // Re-derive display strings for the error message.
+                                let req_ret = sig
+                                    .return_type
+                                    .as_ref()
+                                    .map(type_display_str)
+                                    .unwrap_or_else(|| "none".to_string());
+                                let got_ret = got_method
+                                    .return_type
+                                    .as_ref()
+                                    .map(type_display_str)
+                                    .unwrap_or_else(|| "none".to_string());
                                 return Err(runtime_error(format!(
                                     "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_ret}` but returns `{got_ret}`",
                                     sig.name
@@ -233,33 +254,37 @@ impl Interpreter {
     }
 }
 
-fn type_expr_to_string(te: &TypeExpr) -> String {
+/// Produce a human-readable display string for a [`TypeExpr`] — used for
+/// `struct_types` field schema storage and for error messages.  The conformance
+/// decision itself is made by [`crate::types::interface::signature_satisfies`],
+/// not by comparing these strings.
+fn type_display_str(te: &TypeExpr) -> String {
     match te {
         TypeExpr::Named(n) => n.clone(),
-        TypeExpr::Nullable(inner) => format!("{}?", type_expr_to_string(inner)),
-        TypeExpr::List(inner) => format!("[{}]", type_expr_to_string(inner)),
+        TypeExpr::Nullable(inner) => format!("{}?", type_display_str(inner)),
+        TypeExpr::List(inner) => format!("[{}]", type_display_str(inner)),
         TypeExpr::Map(k, v) => format!(
             "map[{}, {}]",
-            type_expr_to_string(k),
-            type_expr_to_string(v)
+            type_display_str(k),
+            type_display_str(v)
         ),
-        TypeExpr::Set(inner) => format!("set[{}]", type_expr_to_string(inner)),
+        TypeExpr::Set(inner) => format!("set[{}]", type_display_str(inner)),
         TypeExpr::Tuple(items) => {
-            let parts: Vec<_> = items.iter().map(type_expr_to_string).collect();
+            let parts: Vec<_> = items.iter().map(type_display_str).collect();
             format!("({})", parts.join(", "))
         }
         TypeExpr::Func(params, ret) => {
-            let ps: Vec<_> = params.iter().map(type_expr_to_string).collect();
-            format!("({}) -> {}", ps.join(", "), type_expr_to_string(ret))
+            let ps: Vec<_> = params.iter().map(type_display_str).collect();
+            format!("({}) -> {}", ps.join(", "), type_display_str(ret))
         }
         TypeExpr::Generic(name, args) => {
-            let as_: Vec<_> = args.iter().map(type_expr_to_string).collect();
+            let as_: Vec<_> = args.iter().map(type_display_str).collect();
             format!("{}[{}]", name, as_.join(", "))
         }
         TypeExpr::Struct(fields) => {
             let fs: Vec<_> = fields
                 .iter()
-                .map(|f| format!("{}: {}", f.name, type_expr_to_string(&f.ty)))
+                .map(|f| format!("{}: {}", f.name, type_display_str(&f.ty)))
                 .collect();
             format!("{{{}}}", fs.join(", "))
         }
@@ -267,24 +292,6 @@ fn type_expr_to_string(te: &TypeExpr) -> String {
     }
 }
 
-/// Return true when the required interface return type `req` is satisfied by
-/// the concrete return type `got`.  Plain equality is the common case; the
-/// extra arms handle built-in covariant wildcards used by Iterable et al.
-fn return_types_match(req: &str, got: &str) -> bool {
-    // Exact match.
-    if req == got {
-        return true;
-    }
-    // `dynamic` in the interface sig accepts anything.
-    if req == "dynamic" {
-        return true;
-    }
-    // `[dynamic]` (i.e. `list[dynamic]`) in the interface sig accepts any list.
-    if req == "[dynamic]" && got.starts_with('[') {
-        return true;
-    }
-    false
-}
 
 #[cfg(test)]
 mod tests {
@@ -762,48 +769,48 @@ mod tests {
         assert_eq!(interp.globals.len(), prev_count);
     }
 
-    // ── type_expr_to_string ─────────────────────────────────────────────
+    // ── type_display_str ─────────────────────────────────────────────
 
     #[test]
     fn type_named() {
-        assert_eq!(type_expr_to_string(&named_ty("str")), "str");
-        assert_eq!(type_expr_to_string(&named_ty("Urgency")), "Urgency");
+        assert_eq!(type_display_str(&named_ty("str")), "str");
+        assert_eq!(type_display_str(&named_ty("Urgency")), "Urgency");
     }
 
     #[test]
     fn type_nullable() {
         let te = TypeExpr::Nullable(Box::new(named_ty("str")));
-        assert_eq!(type_expr_to_string(&te), "str?");
+        assert_eq!(type_display_str(&te), "str?");
     }
 
     #[test]
     fn type_list() {
         let te = TypeExpr::List(Box::new(named_ty("int")));
-        assert_eq!(type_expr_to_string(&te), "[int]");
+        assert_eq!(type_display_str(&te), "[int]");
     }
 
     #[test]
     fn type_map() {
         let te = TypeExpr::Map(Box::new(named_ty("str")), Box::new(named_ty("int")));
-        assert_eq!(type_expr_to_string(&te), "map[str, int]");
+        assert_eq!(type_display_str(&te), "map[str, int]");
     }
 
     #[test]
     fn type_set() {
         let te = TypeExpr::Set(Box::new(named_ty("str")));
-        assert_eq!(type_expr_to_string(&te), "set[str]");
+        assert_eq!(type_display_str(&te), "set[str]");
     }
 
     #[test]
     fn type_tuple() {
         let te = TypeExpr::Tuple(vec![named_ty("str"), named_ty("int"), named_ty("bool")]);
-        assert_eq!(type_expr_to_string(&te), "(str, int, bool)");
+        assert_eq!(type_display_str(&te), "(str, int, bool)");
     }
 
     #[test]
     fn type_tuple_single_element() {
         let te = TypeExpr::Tuple(vec![named_ty("str")]);
-        assert_eq!(type_expr_to_string(&te), "(str)");
+        assert_eq!(type_display_str(&te), "(str)");
     }
 
     #[test]
@@ -812,25 +819,25 @@ mod tests {
             vec![named_ty("str"), named_ty("int")],
             Box::new(named_ty("bool")),
         );
-        assert_eq!(type_expr_to_string(&te), "(str, int) -> bool");
+        assert_eq!(type_display_str(&te), "(str, int) -> bool");
     }
 
     #[test]
     fn type_func_no_params() {
         let te = TypeExpr::Func(vec![], Box::new(named_ty("str")));
-        assert_eq!(type_expr_to_string(&te), "() -> str");
+        assert_eq!(type_display_str(&te), "() -> str");
     }
 
     #[test]
     fn type_generic() {
         let te = TypeExpr::Generic("Result".into(), vec![named_ty("str"), named_ty("int")]);
-        assert_eq!(type_expr_to_string(&te), "Result[str, int]");
+        assert_eq!(type_display_str(&te), "Result[str, int]");
     }
 
     #[test]
     fn type_generic_no_args() {
         let te = TypeExpr::Generic("List".into(), vec![]);
-        assert_eq!(type_expr_to_string(&te), "List[]");
+        assert_eq!(type_display_str(&te), "List[]");
     }
 
     #[test]
@@ -845,26 +852,26 @@ mod tests {
                 ty: named_ty("str"),
             },
         ]);
-        assert_eq!(type_expr_to_string(&te), "{body: str, from: str}");
+        assert_eq!(type_display_str(&te), "{body: str, from: str}");
     }
 
     #[test]
     fn type_struct_empty() {
         let te = TypeExpr::Struct(vec![]);
-        assert_eq!(type_expr_to_string(&te), "{}");
+        assert_eq!(type_display_str(&te), "{}");
     }
 
     #[test]
     fn type_dynamic() {
-        assert_eq!(type_expr_to_string(&TypeExpr::Dynamic), "dynamic");
+        assert_eq!(type_display_str(&TypeExpr::Dynamic), "dynamic");
     }
 
-    // ── type_expr_to_string: nested/composed ────────────────────────────
+    // ── type_display_str: nested/composed ────────────────────────────
 
     #[test]
     fn type_nested_nullable_list() {
         let te = TypeExpr::List(Box::new(TypeExpr::Nullable(Box::new(named_ty("str")))));
-        assert_eq!(type_expr_to_string(&te), "[str?]");
+        assert_eq!(type_display_str(&te), "[str?]");
     }
 
     #[test]
@@ -873,13 +880,13 @@ mod tests {
             Box::new(named_ty("str")),
             Box::new(TypeExpr::List(Box::new(named_ty("int")))),
         );
-        assert_eq!(type_expr_to_string(&te), "map[str, [int]]");
+        assert_eq!(type_display_str(&te), "map[str, [int]]");
     }
 
     #[test]
     fn type_nested_func_returning_func() {
         let ret = TypeExpr::Func(vec![named_ty("int")], Box::new(named_ty("bool")));
         let te = TypeExpr::Func(vec![named_ty("str")], Box::new(ret));
-        assert_eq!(type_expr_to_string(&te), "(str) -> (int) -> bool");
+        assert_eq!(type_display_str(&te), "(str) -> (int) -> bool");
     }
 }

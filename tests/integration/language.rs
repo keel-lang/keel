@@ -2782,6 +2782,109 @@ run_test()
     assert!(stdout.contains("16"), "got: {stdout}");
 }
 
+// ─── Interface conformance: checker/runtime agreement ────────────────────────
+//
+// Regression tests for the soundness hole where `keel check` passed a program
+// that `keel run` then rejected (or vice versa) on the same conformance rule.
+// Both phases now delegate to `types::interface::signature_satisfies`.
+
+#[test]
+fn impl_generic_return_type_mismatch_caught_by_checker() {
+    // Before the fix, checker collapsed Generic to "unknown" and passed this;
+    // only the runtime caught it.  Now both phases must reject it.
+    let src = r#"
+interface R {
+  task f(self) -> Result[str, int]
+}
+type Foo { x: str }
+impl R for Foo {
+  task f(self) -> Result[bool, str] { "wrong" }
+}
+task run_test() { Io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed — generic return type mismatch");
+    assert!(
+        stderr.contains("Result") || stderr.contains("return"),
+        "expected conformance error, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_generic_return_type_exact_match_passes() {
+    let src = r#"
+interface R {
+  task f(self) -> Result[str, int]
+}
+type Foo { x: str }
+impl R for Foo {
+  task f(self) -> Result[str, int] { "ok" }
+}
+task run_test() { Io.show("ok") }
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "should have passed\nstdout: {stdout}\nstderr: {stderr}");
+}
+
+#[test]
+fn impl_struct_return_type_mismatch_caught_by_checker() {
+    // Before the fix, checker collapsed Struct to "unknown" and passed this.
+    let src = r#"
+interface S {
+  task f(self) -> {name: str}
+}
+type Bar { x: int }
+impl S for Bar {
+  task f(self) -> {age: int} { { age: 42 } }
+}
+task run_test() { Io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed — struct return type mismatch");
+    assert!(
+        stderr.contains("return") || stderr.contains("name") || stderr.contains("age"),
+        "expected conformance error, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_struct_return_type_exact_match_passes() {
+    let src = r#"
+interface S {
+  task f(self) -> {name: str}
+}
+type Baz { x: int }
+impl S for Baz {
+  task f(self) -> {name: str} { { name: "hello" } }
+}
+task run_test() { Io.show("ok") }
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "should have passed\nstdout: {stdout}\nstderr: {stderr}");
+}
+
+#[test]
+fn impl_dynamic_return_type_accepts_any_concrete() {
+    // `dynamic` in the interface return type is an explicit wildcard.
+    let src = r#"
+interface Flexible {
+  task get(self) -> dynamic
+}
+type Wrap { n: int }
+impl Flexible for Wrap {
+  task get(self) -> int { self.n }
+}
+task run_test() { Io.show("ok") }
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "dynamic should accept any concrete type\nstdout: {stdout}\nstderr: {stderr}");
+}
+
 #[test]
 fn serializable_to_json_used_by_json_stringify() {
     let src = r#"

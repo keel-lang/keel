@@ -12,6 +12,7 @@ use crate::ast::{
     AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, OnHandler, Param,
     StateField, StringPart, TaskDecl, TaskSig, TypeExpr,
 };
+use crate::types::interface::TypeEnv;
 
 use super::bind_value;
 use super::environment::Environment;
@@ -127,6 +128,9 @@ pub struct Interpreter {
     /// Known interfaces: interface_name → required method signatures.
     /// Pre-seeded with built-ins (Stringable); extended by `interface` declarations.
     pub(crate) interfaces: HashMap<String, Vec<TaskSig>>,
+    /// Type-resolution environment built from `type` declarations before any
+    /// `impl` conformance checks run.  Used by [`crate::types::interface`].
+    pub(crate) type_env: TypeEnv,
     /// Interface impl methods: type_name → method_name → TaskDecl.
     /// Populated from `impl Interface for Type { task method(self) -> R { ... } }`.
     pub(crate) impl_methods: HashMap<String, HashMap<String, TaskDecl>>,
@@ -179,6 +183,7 @@ impl Interpreter {
             struct_types: HashMap::with_capacity(16),
             interfaces: builtin_interfaces(),
             impl_methods: HashMap::with_capacity(16),
+            type_env: TypeEnv::new(),
             runtime,
             event_tx,
             event_rx: Some(event_rx),

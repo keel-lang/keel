@@ -14,6 +14,8 @@ All notable changes to Keel.
 
 ### Fixed
 
+- **Interface conformance is now checked identically by `keel check` and `keel run`.** The checker and runtime maintained separate `TypeExpr`-to-string helpers that had already diverged: the checker collapsed `Struct` and `Generic` return types to the string `"unknown"` and accepted anything, while the runtime stringified them fully and could reject programs the checker had passed. Both phases now delegate to a single typed `signature_satisfies` function in the new `types::interface` module. `Struct` and `Generic` return types require an exact structural match; `dynamic` remains the explicit wildcard. Type aliases are resolved before comparison so `type Timestamp = datetime` and `datetime` are treated as the same type.
+
 - **Declaration spans are now accurate.** Every top-level declaration (`task`, `agent`, `type`, `interface`, `impl`, `use`) now stores a real source byte span instead of the `0..0` placeholder that was hard-coded in `program_parser()`. Diagnostic tools and future lint passes can now point errors at the correct source location.
 
 ### Added

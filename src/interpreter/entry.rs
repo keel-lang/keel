@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use miette::{NamedSource, Result};
 
 use crate::ast::{Decl, Program};
+use crate::types::interface::TypeEnv;
 
 use super::environment::Environment;
 use super::state::{CallArgValue, Event, Interpreter};
@@ -41,7 +42,7 @@ pub async fn run_with_source_and_runtime(
 
 impl Interpreter {
     pub async fn execute(&mut self, program: Program) -> Result<()> {
-        // Pre-pass: register all interface declarations so that impl blocks
+        // Pre-pass 1: register all interface declarations so that impl blocks
         // can reference them regardless of source order.
         for (decl, _span) in &program.declarations {
             if let Decl::Interface(iface) = decl {
@@ -49,6 +50,18 @@ impl Interpreter {
                     .insert(iface.name.clone(), iface.methods.clone());
             }
         }
+
+        // Pre-pass 2: build the type-resolution environment from all `type`
+        // declarations so that `impl` conformance checks can resolve TypeExpr
+        // nodes to Ty values with proper alias expansion.
+        let mut type_env = TypeEnv::new();
+        type_env.collect_aliases(
+            program
+                .declarations
+                .iter()
+                .map(|(decl, _)| decl),
+        );
+        self.type_env = type_env;
 
         // Two-pass: register all declarations, then execute top-level statements.
         for (decl, _span) in &program.declarations {

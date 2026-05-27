@@ -9,3 +9,4 @@
 //! to reject bindings whose type the checker cannot resolve.
 
 pub mod checker;
+pub mod interface;

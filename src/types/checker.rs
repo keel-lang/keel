@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::*;
 use crate::lexer::Span;
+use crate::types::interface::{self as iface, Signature};
 
 // ---------------------------------------------------------------------------
 // Error shape
@@ -431,20 +432,39 @@ impl Checker {
                 ));
             }
 
-            // Return-type check.
-            let req_ret = sig
-                .return_type
-                .as_ref()
-                .map(type_expr_str)
-                .unwrap_or_else(|| "none".to_string());
-            let got_ret = got_method
-                .return_type
-                .as_ref()
-                .map(type_expr_str)
-                .unwrap_or_else(|| "none".to_string());
-            if !checker_return_types_match(&req_ret, &got_ret) {
+            // Return-type check — use the shared typed conformance function so
+            // that the checker and the runtime always apply identical rules.
+            let env = self.type_env();
+            let req_sig = Signature {
+                params: vec![],
+                ret: sig
+                    .return_type
+                    .as_ref()
+                    .map(|te| iface::resolve_type_expr(te, &env))
+                    .unwrap_or(Ty::None_),
+            };
+            let got_sig = Signature {
+                params: vec![],
+                ret: got_method
+                    .return_type
+                    .as_ref()
+                    .map(|te| iface::resolve_type_expr(te, &env))
+                    .unwrap_or(Ty::None_),
+            };
+            if !iface::signature_satisfies(&req_sig, &got_sig) {
+                // Re-derive display strings for the human-readable error message.
+                let req_str = sig
+                    .return_type
+                    .as_ref()
+                    .map(type_display_str)
+                    .unwrap_or_else(|| "none".to_string());
+                let got_str = got_method
+                    .return_type
+                    .as_ref()
+                    .map(type_display_str)
+                    .unwrap_or_else(|| "none".to_string());
                 self.err(format!(
-                    "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_ret}` but returns `{got_ret}`",
+                    "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_str}` but returns `{got_str}`",
                     sig.name
                 ));
             }
@@ -458,6 +478,15 @@ impl Checker {
                     method.name
                 ));
             }
+        }
+    }
+
+    /// Build a [`crate::types::interface::TypeEnv`] from this checker's already-
+    /// resolved alias table so that conformance checks share the same resolution
+    /// context as the runtime.
+    fn type_env(&self) -> iface::TypeEnv {
+        iface::TypeEnv {
+            aliases: self.aliases.clone(),
         }
     }
 
@@ -2932,45 +2961,41 @@ fn infer_binary(op: BinOp, l: &Ty, r: &Ty) -> Ty {
 // Interface helpers
 // ---------------------------------------------------------------------------
 
-/// Stringify a `TypeExpr` for conformance comparison — mirrors the logic in
-/// `interpreter::decl::type_expr_to_string` so the two checks stay in sync.
-fn type_expr_str(te: &TypeExpr) -> String {
+/// Produce a human-readable display string for a `TypeExpr` — used only for
+/// error messages in `check_impl_conformance`.  This is intentionally separate
+/// from the conformance logic: the typed comparison in
+/// [`crate::types::interface::signature_satisfies`] is the source of truth;
+/// this function only drives the "must return X but returns Y" message.
+fn type_display_str(te: &TypeExpr) -> String {
     match te {
         TypeExpr::Named(n) => n.clone(),
-        TypeExpr::Nullable(inner) => format!("{}?", type_expr_str(inner)),
-        TypeExpr::List(inner) => format!("[{}]", type_expr_str(inner)),
-        TypeExpr::Map(k, v) => format!("[{}: {}]", type_expr_str(k), type_expr_str(v)),
-        TypeExpr::Set(inner) => format!("set[{}]", type_expr_str(inner)),
+        TypeExpr::Nullable(inner) => format!("{}?", type_display_str(inner)),
+        TypeExpr::List(inner) => format!("list[{}]", type_display_str(inner)),
+        TypeExpr::Map(k, v) => {
+            format!("map[{}, {}]", type_display_str(k), type_display_str(v))
+        }
+        TypeExpr::Set(inner) => format!("set[{}]", type_display_str(inner)),
         TypeExpr::Tuple(items) => {
-            let parts: Vec<_> = items.iter().map(type_expr_str).collect();
+            let parts: Vec<_> = items.iter().map(type_display_str).collect();
             format!("({})", parts.join(", "))
         }
         TypeExpr::Func(params, ret) => {
-            let ps: Vec<_> = params.iter().map(type_expr_str).collect();
-            format!("({}) -> {}", ps.join(", "), type_expr_str(ret))
+            let ps: Vec<_> = params.iter().map(type_display_str).collect();
+            format!("({}) -> {}", ps.join(", "), type_display_str(ret))
+        }
+        TypeExpr::Generic(name, args) => {
+            let as_: Vec<_> = args.iter().map(type_display_str).collect();
+            format!("{}[{}]", name, as_.join(", "))
+        }
+        TypeExpr::Struct(fields) => {
+            let fs: Vec<_> = fields
+                .iter()
+                .map(|f| format!("{}: {}", f.name, type_display_str(&f.ty)))
+                .collect();
+            format!("{{{}}}", fs.join(", "))
         }
         TypeExpr::Dynamic => "dynamic".to_string(),
-        TypeExpr::Struct(_) | TypeExpr::Generic(_, _) => "unknown".to_string(),
     }
-}
-
-fn checker_return_types_match(req: &str, got: &str) -> bool {
-    if req == got {
-        return true;
-    }
-    // "unknown" covers Struct/Generic return types — accept any concrete type at v0.1.
-    if req == "unknown" {
-        return true;
-    }
-    // "dynamic" is TypeExpr::Dynamic — an explicit wildcard in interface signatures.
-    if req == "dynamic" {
-        return true;
-    }
-    // list[dynamic] or list[unknown] in an interface sig accept any list[T].
-    if (req == "[dynamic]" || req == "[unknown]") && got.starts_with('[') {
-        return true;
-    }
-    false
 }
 
 fn checker_builtin_interfaces() -> HashMap<String, Vec<crate::ast::TaskSig>> {
