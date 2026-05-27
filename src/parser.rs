@@ -1668,15 +1668,14 @@ fn program_parser() -> P<Program> {
         use_decl(),
         stmt_decl,
     ))
+    .map_with_span(|d, span| (d, span))
     .boxed();
 
     newlines()
         .ignore_then(decl.separated_by(sep()).allow_trailing())
         .then_ignore(newlines())
         .then_ignore(end())
-        .map(|declarations| Program {
-            declarations: declarations.into_iter().map(|d| (d, 0..0)).collect(),
-        })
+        .map(|declarations| Program { declarations })
         .boxed()
 }
 

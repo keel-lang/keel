@@ -12,6 +12,10 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Fixed
+
+- **Declaration spans are now accurate.** Every top-level declaration (`task`, `agent`, `type`, `interface`, `impl`, `use`) now stores a real source byte span instead of the `0..0` placeholder that was hard-coded in `program_parser()`. Diagnostic tools and future lint passes can now point errors at the correct source location.
+
 ### Added
 
 - **Type-safe `Agent.delegate` symbol form.** Handler references are now first-class expressions: `Agent.delegate(Worker.process, payload)` resolves `Worker.process` at compile time. The type checker validates that (1) `Worker` is a declared agent, (2) `process` is a declared `on` handler on that agent, and (3) `payload` matches the handler's declared parameter type when one is present. A misspelled handler name — `Agent.delegate(Worker.typo, data)` — is a compile-time error, not a silent runtime no-op.
