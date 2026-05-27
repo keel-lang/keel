@@ -12,6 +12,27 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- **Type-safe `Agent.delegate` symbol form.** Handler references are now first-class expressions: `Agent.delegate(Worker.process, payload)` resolves `Worker.process` at compile time. The type checker validates that (1) `Worker` is a declared agent, (2) `process` is a declared `on` handler on that agent, and (3) `payload` matches the handler's declared parameter type when one is present. A misspelled handler name — `Agent.delegate(Worker.typo, data)` — is a compile-time error, not a silent runtime no-op.
+
+  The existing string form `Agent.delegate(Worker, "process", payload)` remains valid; it is now also validated for plain string literals, closing the same class of rename-blindness bug in existing code. Both forms are accepted indefinitely for backward compatibility. Prefer the symbol form in new code.
+
+  ```keel
+  agent Worker {
+    on process(task: Task) {
+      Log.info("processing {task.id}")
+    }
+  }
+
+  agent Boss {
+    @on_start {
+      Agent.run(Worker)
+      Agent.delegate(Worker.process, my_task)   # ✓ compile-time–checked
+    }
+  }
+  ```
+
 ---
 
 ## [0.1.29] — 2026-05-27

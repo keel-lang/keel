@@ -85,6 +85,11 @@ pub enum Value {
     /// Reference to an agent by name
     AgentRef(String),
 
+    /// Typed reference to a specific handler on an agent: `Foo.handle`.
+    /// Produced by `FieldAccess(Ident("Foo"), "handle")` when `Foo` is a
+    /// registered agent. Consumed by `Agent.delegate` as the 2-arg symbol form.
+    AgentHandlerRef(String, String),
+
     /// A closure: (params, boxed body).
     Closure(Vec<LambdaParam>, Box<LambdaBody>),
 
@@ -127,6 +132,7 @@ impl Value {
             Value::Uuid(_) => "Uuid",
             Value::Task(_, _) => "task",
             Value::AgentRef(_) => "agent",
+            Value::AgentHandlerRef(_, _) => "agent_handler",
             Value::Closure(_, _) => "closure",
             Value::Namespace(_) => "namespace",
             Value::DbConnection(_, _) => "DbConnection",
@@ -280,6 +286,7 @@ impl fmt::Display for Value {
             Value::Uuid(id) => write!(f, "{id}"),
             Value::Task(name, _) => write!(f, "<task {name}>"),
             Value::AgentRef(name) => write!(f, "<agent {name}>"),
+            Value::AgentHandlerRef(agent, handler) => write!(f, "<handler {agent}.{handler}>"),
             Value::Closure(params, _) => {
                 let names: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
                 write!(f, "<closure ({})>", names.join(", "))
@@ -328,6 +335,9 @@ impl PartialEq for Value {
             (Value::Uuid(a), Value::Uuid(b)) => a == b,
             (Value::Task(a, _), Value::Task(b, _)) => a == b,
             (Value::AgentRef(a), Value::AgentRef(b)) => a == b,
+            (Value::AgentHandlerRef(a1, b1), Value::AgentHandlerRef(a2, b2)) => {
+                a1 == a2 && b1 == b2
+            }
             (Value::Namespace(a), Value::Namespace(b)) => a == b,
             (Value::DbConnection(_, a), Value::DbConnection(_, b)) => Arc::ptr_eq(a, b),
             (Value::BuiltinFn(a), Value::BuiltinFn(b)) => a == b,

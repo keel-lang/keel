@@ -967,6 +967,47 @@ and top-level scope. Agent-local tasks are not injected into bare-name lookup.
 `MyAgent.task(...)` is not a cross-agent call form; use `Agent.send`,
 `Agent.delegate`, or `Agent.broadcast` for mailbox-based coordination.
 
+### 6.8 `Agent.delegate` — type-safe handler dispatch
+
+`Agent.delegate` posts a named event to a target agent's mailbox. Two forms are supported:
+
+**Symbol form (preferred):** `Agent.delegate(TargetAgent.handlerName, data)`
+
+The handler reference `TargetAgent.handlerName` is resolved at compile time. The type
+checker verifies:
+1. `TargetAgent` is a declared agent.
+2. `handlerName` is a declared `on` handler on that agent.
+3. `data` matches the handler's declared parameter type (when the parameter is typed).
+
+```keel
+agent Worker {
+  on process(task: Task) {
+    Log.info("processing {task.id}")
+  }
+}
+
+agent Boss {
+  @on_start {
+    Agent.run(Worker)
+    Agent.delegate(Worker.process, my_task)   # ✓ type-checked at compile time
+    Agent.delegate(Worker.typo, my_task)      # ✗ compile error: no handler `typo`
+  }
+}
+```
+
+**String form (legacy):** `Agent.delegate(TargetAgent, "handlerName", data)`
+
+The handler name is a string literal. The type checker validates it when the string
+is a plain literal (no interpolation). Handler renames do not update string literals
+automatically — prefer the symbol form for all new code.
+
+```keel
+Agent.delegate(Worker, "process", my_task)   # checked when literal is plain
+```
+
+Both forms enqueue the event on the target agent's mailbox and return immediately;
+the handler runs later in the target's serialized context.
+
 ---
 
 ## 7. Lambdas and first-class functions

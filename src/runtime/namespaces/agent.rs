@@ -40,23 +40,42 @@ pub(crate) fn namespace() -> Namespace {
             })?;
             Ok(Value::None)
         }),
-        // Agent.delegate(target, task, args) — posts a named task event to
-        // target's mailbox. Unlike Agent.send, the task name is a positional
-        // arg rather than a named `event:` parameter.
+        // Agent.delegate — posts a named handler event to a target agent's mailbox.
+        //
+        // Symbol form (preferred): Agent.delegate(Foo.handle, data)
+        //   arg[0] = AgentHandlerRef(agent_name, handler_name)
+        //   arg[1] = data payload
+        //
+        // String form (legacy): Agent.delegate(Foo, "handle", data)
+        //   arg[0] = AgentRef(agent_name)
+        //   arg[1] = handler name as string
+        //   arg[2] = data payload
         "delegate" => |interp, args| Box::pin(async move {
-            let target = match args.first().map(|a| &a.value) {
-                Some(Value::AgentRef(name)) => name.clone(),
-                _ => return Err(miette::miette!("Agent.delegate: first arg must be an agent")),
+            let (target, event, data) = match args.first().map(|a| &a.value) {
+                Some(Value::AgentHandlerRef(agent_name, handler_name)) => {
+                    let data = args.get(1)
+                        .map(|a| a.value.clone())
+                        .unwrap_or(Value::None);
+                    (agent_name.clone(), handler_name.clone(), data)
+                }
+                Some(Value::AgentRef(name)) => {
+                    let handler = args.get(1)
+                        .map(|a| a.value.to_display_string())
+                        .unwrap_or_else(|| "message".to_string());
+                    let data = args.get(2)
+                        .map(|a| a.value.clone())
+                        .unwrap_or(Value::None);
+                    (name.clone(), handler, data)
+                }
+                _ => return Err(miette::miette!(
+                    "Agent.delegate: first argument must be an agent handler \
+                     (use `Agent.delegate(Foo.handle, data)`) or an agent \
+                     (use `Agent.delegate(Foo, \"handle\", data)`)"
+                )),
             };
-            let task_name = args.get(1)
-                .map(|a| a.value.to_display_string())
-                .unwrap_or_else(|| "message".to_string());
-            let data = args.get(2)
-                .map(|a| a.value.clone())
-                .unwrap_or(Value::None);
             interp.enqueue_event(crate::interpreter::Event::Dispatch {
                 agent_name: target,
-                event: task_name,
+                event,
                 data,
             })?;
             Ok(Value::None)

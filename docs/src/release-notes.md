@@ -6,6 +6,29 @@
 
 ## Unreleased
 
+### Type-safe `Agent.delegate` symbol form
+
+Handler references are now first-class compile-time expressions.
+
+**Symbol form** (new, preferred):
+
+```keel
+Agent.delegate(Worker.process, payload)
+```
+
+`Worker.process` is resolved at compile time. The checker validates that `process` is a
+declared `on` handler on `Worker` and that `payload` matches the handler's parameter type.
+A typo like `Worker.typo` is a compile-time error.
+
+**String form** (legacy, now also validated for plain literals):
+
+```keel
+Agent.delegate(Worker, "process", payload)
+```
+
+Both forms are accepted. Prefer the symbol form for new code — handler renames update
+the reference automatically.
+
 ---
 
 ## v0.1.29 — 2026-05-27

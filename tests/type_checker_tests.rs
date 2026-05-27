@@ -1786,3 +1786,84 @@ task use_db() {
 "#,
     );
 }
+
+// ─── Agent.delegate type checking ────────────────────────────────────────────
+
+#[test]
+fn valid_agent_delegate_symbol_form() {
+    type_ok(
+        r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.run(Worker)
+        Agent.delegate(Worker.process, "hello")
+    }
+}
+run(Boss)
+"#,
+    );
+}
+
+#[test]
+fn valid_agent_delegate_string_form_checks_handler() {
+    type_ok(
+        r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.delegate(Worker, "process", "payload")
+    }
+}
+run(Boss)
+"#,
+    );
+}
+
+#[test]
+fn error_agent_delegate_symbol_form_unknown_handler() {
+    expect_error(
+        r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.delegate(Worker.typo, "payload")
+    }
+}
+run(Boss)
+"#,
+        "agent `Worker` has no handler `typo`",
+    );
+}
+
+#[test]
+fn error_agent_delegate_string_form_unknown_handler() {
+    expect_error(
+        r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.delegate(Worker, "typo", "payload")
+    }
+}
+run(Boss)
+"#,
+        "agent `Worker` has no handler `typo`",
+    );
+}

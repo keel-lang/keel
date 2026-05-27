@@ -234,6 +234,13 @@ impl Interpreter {
                     {
                         return Ok(value);
                     }
+                    // Agent handler reference: `Foo.process` where Foo is a registered
+                    // agent. Produces an AgentHandlerRef consumed by Agent.delegate.
+                    if let Expr::Ident(name) = obj.as_ref()
+                        && self.agents.contains_key(name)
+                    {
+                        return Ok(Value::AgentHandlerRef(name.clone(), field.clone()));
+                    }
                     // Enum variant access: `Urgency.medium`. If `obj` is
                     // a bare identifier naming a registered type, produce
                     // an EnumVariant directly (don't evaluate `obj`, which

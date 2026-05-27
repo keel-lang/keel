@@ -163,6 +163,62 @@ run(Boss)
 }
 
 #[test]
+fn agent_delegate_symbol_form_dispatches_to_handler() {
+    let src = r#"
+agent Worker {
+    on process(data: str) {
+        Io.show("symbol-form: {data}")
+    }
+}
+
+agent Boss {
+    @on_start {
+        Agent.run(Worker)
+        Agent.delegate(Worker.process, "hello")
+    }
+}
+
+run(Boss)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("symbol-form: hello"),
+        "expected Worker.process handler to fire:\nstdout: {stdout}"
+    );
+}
+
+#[test]
+fn agent_delegate_symbol_form_forwards_correct_payload() {
+    // Verify the payload is the second arg (not shifted by a handler-name arg).
+    let src = r#"
+agent Printer {
+    on print(msg: str) {
+        Io.show(msg)
+    }
+}
+
+agent Sender {
+    @on_start {
+        Agent.run(Printer)
+        Agent.delegate(Printer.print, "hello-world")
+    }
+}
+
+run(Sender)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "stderr: {stderr}");
+    assert!(
+        stdout.contains("hello-world"),
+        "payload was not passed through:\nstdout: {stdout}"
+    );
+}
+
+#[test]
 fn agent_broadcast_dispatches_to_team_members() {
     let src = r#"
 agent Alpha {

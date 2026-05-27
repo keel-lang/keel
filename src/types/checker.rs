@@ -102,11 +102,10 @@ struct AgentInfo {
     readonly_fields: HashSet<String>,
     /// Task signatures exposed through explicit `self.task(...)` calls.
     tasks: HashMap<String, TaskSig>,
-    #[expect(
-        dead_code,
-        reason = "collected for planned cross-agent event handler validation"
-    )]
-    handlers: HashSet<String>,
+    /// Event handlers declared with `on event(param: T)`.
+    /// Value is `None` for parameterless handlers, `Some(ty)` when a typed
+    /// parameter was declared. Used to validate `Agent.delegate` call sites.
+    handlers: HashMap<String, Option<Ty>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +533,7 @@ impl Checker {
         let mut state_fields = HashMap::new();
         let mut readonly_fields = HashSet::new();
         let mut tasks = HashMap::new();
-        let mut handlers = HashSet::new();
+        let mut handlers = HashMap::new();
         for item in &a.items {
             match item {
                 AgentItem::State(fields) => {
@@ -549,7 +548,11 @@ impl Checker {
                     tasks.insert(t.name.clone(), self.task_sig(t));
                 }
                 AgentItem::On(h) => {
-                    handlers.insert(h.event.clone());
+                    let param_ty = h
+                        .param
+                        .as_ref()
+                        .map(|p| self.resolve_type(&p.ty));
+                    handlers.insert(h.event.clone(), param_ty);
                 }
                 AgentItem::Attribute(_) => {}
             }
@@ -1343,6 +1346,24 @@ impl Checker {
                         }
                         return Ty::Unknown;
                     }
+                    // Agent handler reference: `Foo.process` — validate the handler exists.
+                    if let Some(agent) = self.agents.get(name) {
+                        if !agent.handlers.contains_key(field) {
+                            self.err(format!(
+                                "agent `{name}` has no handler `{field}`; \
+                                 declared handlers: {}",
+                                if agent.handlers.is_empty() {
+                                    "none".to_string()
+                                } else {
+                                    agent.handlers.keys()
+                                        .map(|s| s.as_str())
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                }
+                            ));
+                        }
+                        return Ty::Unknown; // handler-ref placeholder
+                    }
                 }
                 let obj_ty = self.infer_expr(obj, scope);
                 match obj_ty.strip_nullable() {
@@ -1837,6 +1858,102 @@ impl Checker {
                             "direct agent task calls like `{name}.{method}(...)` are unsupported; use `self.{method}(...)` inside that agent or mailbox APIs such as `Agent.send(...)` / `Agent.delegate(...)`"
                         ));
                         return Ty::Unknown;
+                    }
+                    // Validate Agent.delegate call sites at compile time.
+                    //
+                    // Symbol form:  Agent.delegate(Foo.handle, data)
+                    //   — arg[0] is FieldAccess(Ident("Foo"), "handle")
+                    //   — arg[1] is the data; its type is checked against the handler param
+                    //
+                    // String form:  Agent.delegate(Foo, "handle", data)
+                    //   — arg[0] is Ident("Foo")
+                    //   — arg[1] is a plain string literal naming the handler
+                    //   — arg[2] is the data; its type is checked against the handler param
+                    if name == "Agent" && method == "delegate" {
+                        if let Some(first_arg) = args.first() {
+                            match &first_arg.value {
+                                // Symbol form: Foo.handle
+                                Expr::FieldAccess(obj_expr, handler_name) => {
+                                    if let Expr::Ident(agent_name) = obj_expr.as_ref()
+                                        && let Some(agent) = self.agents.get(agent_name)
+                                    {
+                                        // handler existence is already checked in FieldAccess
+                                        if let Some(data_arg) = args.get(1) {
+                                            if let Some(Some(param_ty)) =
+                                                agent.handlers.get(handler_name).cloned()
+                                            {
+                                                self.expect(
+                                                    &arg_tys[1],
+                                                    &param_ty,
+                                                    &format!(
+                                                        "argument to `{agent_name}.{handler_name}`"
+                                                    ),
+                                                );
+                                            }
+                                            let _ = data_arg; // already inferred in arg_tys
+                                        }
+                                    }
+                                }
+                                // String form: Foo, "handle"
+                                Expr::Ident(agent_name)
+                                    if self.agents.contains_key(agent_name) =>
+                                {
+                                    let agent_name = agent_name.clone();
+                                    if let Some(second_arg) = args.get(1) {
+                                        if let Expr::StringLit(parts) = &second_arg.value {
+                                            // Only check when the string is a plain literal
+                                            // (no interpolation) so we can resolve it statically.
+                                            let maybe_handler: Option<String> =
+                                                parts.iter().try_fold(
+                                                    String::new(),
+                                                    |acc, p| match p {
+                                                        crate::ast::StringPart::Literal(s) => {
+                                                            Some(acc + s)
+                                                        }
+                                                        _ => None,
+                                                    },
+                                                );
+                                            if let Some(handler_name) = maybe_handler {
+                                                let agent = self.agents.get(&agent_name).unwrap();
+                                                if !agent.handlers.contains_key(&handler_name) {
+                                                    self.err(format!(
+                                                        "agent `{agent_name}` has no handler \
+                                                         `{handler_name}`; declared handlers: {}",
+                                                        if agent.handlers.is_empty() {
+                                                            "none".to_string()
+                                                        } else {
+                                                            agent.handlers
+                                                                .keys()
+                                                                .map(|s| s.as_str())
+                                                                .collect::<Vec<_>>()
+                                                                .join(", ")
+                                                        }
+                                                    ));
+                                                } else if let Some(data_arg) = args.get(2) {
+                                                    if let Some(Some(param_ty)) = agent
+                                                        .handlers
+                                                        .get(&handler_name)
+                                                        .cloned()
+                                                    {
+                                                        self.expect(
+                                                            &arg_tys[2],
+                                                            &param_ty,
+                                                            &format!(
+                                                                "argument to \
+                                                                 `{agent_name}.{handler_name}`"
+                                                            ),
+                                                        );
+                                                    }
+                                                    let _ = data_arg;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        return Ty::None_;
                     }
                     if name == "Ai"
                         && method == "classify"

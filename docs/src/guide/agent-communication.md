@@ -61,12 +61,32 @@ sequenceDiagram
 
 ## Agent.delegate vs Agent.send
 
-`Agent.delegate(target, task, args)` posts a **named task event** to another agent:
+`Agent.delegate` posts a **named handler event** to another agent's mailbox.
+
+### Symbol form (preferred)
+
+```keel
+Agent.delegate(Processor.handle, payload)
+# Processor's `on handle` fires with payload
+```
+
+`Processor.handle` is a compile-time–resolved handler reference. The type checker
+validates that `handle` is a declared `on` handler on `Processor` and that `payload`
+matches the handler's parameter type. Misspelled handler names and wrong argument
+types are caught at compile time, not at runtime.
+
+### String form (legacy)
 
 ```keel
 Agent.delegate(Processor, "handle", payload)
 # Processor's `on handle` fires with payload
 ```
+
+The handler name is a string literal. The type checker validates it when the
+literal is plain (no interpolation). Both forms are accepted; prefer the symbol
+form for new code — handler renames update the symbol reference automatically.
+
+### Agent.send
 
 `Agent.send(target, data, event: "...")` posts a **data event** with explicit routing:
 
@@ -75,7 +95,9 @@ Agent.send(Processor, payload, event: "process")
 # Processor's `on process` fires with payload
 ```
 
-Both are non-blocking. Choose `delegate` when the receiver's task name is the event name; use `send` when you want more explicit control over the `event:` label.
+Both are non-blocking. Choose `delegate` when you want compile-time handler
+validation; use `send` when you need the `event:` label to be determined
+dynamically at runtime.
 
 Direct cross-agent calls such as `Worker.process(...)` are not part of the
 agent model. Inside an agent, call agent-owned helpers as `self.task(...)`.

@@ -54,7 +54,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `readonly` state field modifier | [x] | Compiler + runtime enforcement; assignment to readonly field is an error |
 | `Agent.send` / `Agent.delegate` | [x] | |
 | `Agent.broadcast(team, data)` | [x] | Fans out to every live agent in the named `@team` |
-| Type-safe `Agent.delegate` — symbol form | [ ] | `Agent.delegate(Foo, "handle", arg)` passes the handler name as a string literal; handler renames silently break call sites with no compile-time check. Add `Agent.delegate(Foo.handle, arg)` dot-access form so the reference is a resolved symbol the checker can validate. |
+| Type-safe `Agent.delegate` — symbol form | [x] | `Agent.delegate(Foo.handle, arg)` — `Foo.handle` is a compile-time–resolved handler reference; the checker validates the handler exists and the data arg matches the handler's parameter type. String form `Agent.delegate(Foo, "handle", arg)` is also validated for plain string literals. Both forms coexist for backward compatibility. |
 
 ### Attributes
 
