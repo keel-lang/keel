@@ -11,6 +11,7 @@
 
 pub mod ast;
 pub mod formatter;
+pub mod ide;
 pub mod interpreter;
 pub mod lexer;
 pub mod lint;

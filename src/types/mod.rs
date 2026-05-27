@@ -10,3 +10,6 @@
 
 pub mod checker;
 pub mod interface;
+pub mod prelude;
+pub mod scope;
+pub mod ty;
