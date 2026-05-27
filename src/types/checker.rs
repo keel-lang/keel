@@ -1928,11 +1928,8 @@ impl Checker {
                             _ => {}
                         }
                     }
-                    if name == "Db" {
-                        match method.as_str() {
-                            "connect" => return Ty::DbConnection,
-                            _ => {}
-                        }
+                    if name == "Db" && method.as_str() == "connect" {
+                        return Ty::DbConnection;
                     }
                     if name == "Math" {
                         match method.as_str() {
@@ -1950,11 +1947,8 @@ impl Checker {
                             _ => {}
                         }
                     }
-                    if name == "Cache" {
-                        match method.as_str() {
-                            "get" => return Ty::Nullable(Box::new(Ty::Dynamic)),
-                            _ => {}
-                        }
+                    if name == "Cache" && method.as_str() == "get" {
+                        return Ty::Nullable(Box::new(Ty::Dynamic));
                     }
                     if name == "Csv" {
                         match method.as_str() {
@@ -2027,10 +2021,7 @@ impl Checker {
                     (Ty::Uuid, "to_str" | "format") => Ty::Str,
                     (Ty::Uuid, "version") => Ty::Int,
                     (Ty::DbConnection, "query") => {
-                        Ty::List(Box::new(Ty::Map(
-                            Box::new(Ty::Str),
-                            Box::new(Ty::Dynamic),
-                        )))
+                        Ty::List(Box::new(Ty::Map(Box::new(Ty::Str), Box::new(Ty::Dynamic))))
                     }
                     (Ty::DbConnection, "exec") => Ty::Int,
                     _ => Ty::Unknown,

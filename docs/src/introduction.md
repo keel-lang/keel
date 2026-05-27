@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [v0.1.28](./release-notes.md)** — Struct spread-update, typed map keys, Shell/Math namespaces, and string format specifiers. [See what's new →](./release-notes.md)
+> **Latest: [0.1.29](./release-notes.md)** — CSV and SQLite support, plus JSON/Cache documentation. [See what's new →](./release-notes.md)
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

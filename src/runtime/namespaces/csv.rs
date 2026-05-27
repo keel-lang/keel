@@ -9,8 +9,8 @@ fn parse_csv(text: &str) -> miette::Result<Vec<Vec<String>>> {
         .from_reader(text.as_bytes());
     let mut rows = Vec::new();
     for result in rdr.records() {
-        let record = result
-            .map_err(|e| miette::miette!("CsvError: failed to read CSV record: {e}"))?;
+        let record =
+            result.map_err(|e| miette::miette!("CsvError: failed to read CSV record: {e}"))?;
         rows.push(record.iter().map(str::to_owned).collect());
     }
     Ok(rows)
@@ -146,7 +146,10 @@ mod tests {
     use crate::interpreter::{CallArgValue, Interpreter};
 
     fn pos(v: Value) -> CallArgValue {
-        CallArgValue { name: None, value: v }
+        CallArgValue {
+            name: None,
+            value: v,
+        }
     }
 
     fn str_val(s: &str) -> Value {
@@ -166,15 +169,16 @@ mod tests {
     async fn parse_returns_list_of_list_of_str() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let result = ns.methods["parse"](
-            &mut i,
-            vec![pos(str_val("a,b,c\n1,2,3"))],
-        )
-        .await
-        .unwrap();
-        let Value::List(rows) = result else { panic!("expected list") };
+        let result = ns.methods["parse"](&mut i, vec![pos(str_val("a,b,c\n1,2,3"))])
+            .await
+            .unwrap();
+        let Value::List(rows) = result else {
+            panic!("expected list")
+        };
         assert_eq!(rows.len(), 2);
-        let Value::List(ref row0) = rows[0] else { panic!("expected list row") };
+        let Value::List(ref row0) = rows[0] else {
+            panic!("expected list row")
+        };
         assert_eq!(row0.len(), 3);
         assert_eq!(row0[0], str_val("a"));
     }
@@ -183,14 +187,15 @@ mod tests {
     async fn parse_handles_quoted_fields() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let result = ns.methods["parse"](
-            &mut i,
-            vec![pos(str_val("\"hello, world\",plain"))],
-        )
-        .await
-        .unwrap();
-        let Value::List(rows) = result else { panic!("expected list") };
-        let Value::List(ref row) = rows[0] else { panic!() };
+        let result = ns.methods["parse"](&mut i, vec![pos(str_val("\"hello, world\",plain"))])
+            .await
+            .unwrap();
+        let Value::List(rows) = result else {
+            panic!("expected list")
+        };
+        let Value::List(ref row) = rows[0] else {
+            panic!()
+        };
         assert_eq!(row[0], str_val("hello, world"));
         assert_eq!(row[1], str_val("plain"));
     }
@@ -199,7 +204,9 @@ mod tests {
     async fn parse_empty_string_returns_empty_list() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let result = ns.methods["parse"](&mut i, vec![pos(str_val(""))]).await.unwrap();
+        let result = ns.methods["parse"](&mut i, vec![pos(str_val(""))])
+            .await
+            .unwrap();
         let Value::List(rows) = result else { panic!() };
         assert!(rows.is_empty());
     }
@@ -208,12 +215,10 @@ mod tests {
     async fn parse_records_keys_from_first_row() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let result = ns.methods["parse_records"](
-            &mut i,
-            vec![pos(str_val("name,score\nAlice,10\nBob,20"))],
-        )
-        .await
-        .unwrap();
+        let result =
+            ns.methods["parse_records"](&mut i, vec![pos(str_val("name,score\nAlice,10\nBob,20"))])
+                .await
+                .unwrap();
         let Value::List(rows) = result else { panic!() };
         assert_eq!(rows.len(), 2);
         let Value::Map(ref m) = rows[0] else { panic!() };
@@ -225,12 +230,9 @@ mod tests {
     async fn parse_records_only_row_returns_empty_list() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let result = ns.methods["parse_records"](
-            &mut i,
-            vec![pos(str_val("name,score"))],
-        )
-        .await
-        .unwrap();
+        let result = ns.methods["parse_records"](&mut i, vec![pos(str_val("name,score"))])
+            .await
+            .unwrap();
         let Value::List(rows) = result else { panic!() };
         assert!(rows.is_empty());
     }
@@ -243,7 +245,9 @@ mod tests {
             Value::List(vec![str_val("symbol"), str_val("price")]),
             Value::List(vec![str_val("BTC"), str_val("67000")]),
         ]);
-        let result = ns.methods["stringify"](&mut i, vec![pos(rows)]).await.unwrap();
+        let result = ns.methods["stringify"](&mut i, vec![pos(rows)])
+            .await
+            .unwrap();
         let Value::String(s) = result else { panic!() };
         assert!(s.contains("symbol"), "missing header: {s}");
         assert!(s.contains("BTC"), "missing data: {s}");
@@ -253,10 +257,10 @@ mod tests {
     async fn stringify_quotes_fields_with_commas() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let rows = Value::List(vec![
-            Value::List(vec![str_val("a,b"), str_val("plain")]),
-        ]);
-        let result = ns.methods["stringify"](&mut i, vec![pos(rows)]).await.unwrap();
+        let rows = Value::List(vec![Value::List(vec![str_val("a,b"), str_val("plain")])]);
+        let result = ns.methods["stringify"](&mut i, vec![pos(rows)])
+            .await
+            .unwrap();
         let Value::String(s) = result else { panic!() };
         assert!(s.contains("\"a,b\""), "expected quoting in: {s}");
     }
@@ -266,7 +270,9 @@ mod tests {
         let ns = namespace();
         let mut i = Interpreter::new();
         let rows = Value::List(vec![Value::String("not a row".into())]);
-        let err = ns.methods["stringify"](&mut i, vec![pos(rows)]).await.unwrap_err();
+        let err = ns.methods["stringify"](&mut i, vec![pos(rows)])
+            .await
+            .unwrap_err();
         assert!(format!("{err:?}").contains("CsvError"));
     }
 
@@ -280,44 +286,50 @@ mod tests {
         )
         .await
         .unwrap_err();
-        assert!(format!("{err:?}").contains("duplicate header"), "expected duplicate error: {err:?}");
+        assert!(
+            format!("{err:?}").contains("duplicate header"),
+            "expected duplicate error: {err:?}"
+        );
     }
 
     #[tokio::test]
     async fn parse_records_empty_header_name_raises() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let err = ns.methods["parse_records"](
-            &mut i,
-            vec![pos(str_val("name,,score\nAlice,,10"))],
-        )
-        .await
-        .unwrap_err();
-        assert!(format!("{err:?}").contains("must not be empty"), "expected empty-name error: {err:?}");
+        let err = ns.methods["parse_records"](&mut i, vec![pos(str_val("name,,score\nAlice,,10"))])
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("must not be empty"),
+            "expected empty-name error: {err:?}"
+        );
     }
 
     #[tokio::test]
     async fn parse_records_extra_cells_in_row_raises() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let err = ns.methods["parse_records"](
-            &mut i,
-            vec![pos(str_val("a,b\n1,2,3"))],
-        )
-        .await
-        .unwrap_err();
-        assert!(format!("{err:?}").contains("row has"), "expected over-wide row error: {err:?}");
+        let err = ns.methods["parse_records"](&mut i, vec![pos(str_val("a,b\n1,2,3"))])
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("row has"),
+            "expected over-wide row error: {err:?}"
+        );
     }
 
     #[tokio::test]
     async fn stringify_non_string_cell_raises() {
         let ns = namespace();
         let mut i = Interpreter::new();
-        let rows = Value::List(vec![
-            Value::List(vec![Value::Integer(42), str_val("ok")]),
-        ]);
-        let err = ns.methods["stringify"](&mut i, vec![pos(rows)]).await.unwrap_err();
-        assert!(format!("{err:?}").contains("expected str"), "expected type error: {err:?}");
+        let rows = Value::List(vec![Value::List(vec![Value::Integer(42), str_val("ok")])]);
+        let err = ns.methods["stringify"](&mut i, vec![pos(rows)])
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{err:?}").contains("expected str"),
+            "expected type error: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -325,9 +337,15 @@ mod tests {
         let ns = namespace();
         let mut i = Interpreter::new();
         let original = "name,score\r\nAlice,10\r\nBob,20\r\n";
-        let parsed = ns.methods["parse"](&mut i, vec![pos(str_val(original))]).await.unwrap();
-        let stringified = ns.methods["stringify"](&mut i, vec![pos(parsed)]).await.unwrap();
-        let Value::String(s) = stringified else { panic!() };
+        let parsed = ns.methods["parse"](&mut i, vec![pos(str_val(original))])
+            .await
+            .unwrap();
+        let stringified = ns.methods["stringify"](&mut i, vec![pos(parsed)])
+            .await
+            .unwrap();
+        let Value::String(s) = stringified else {
+            panic!()
+        };
         assert!(s.contains("Alice"), "roundtrip lost data: {s}");
         assert!(s.contains("name"), "roundtrip lost header: {s}");
     }

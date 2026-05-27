@@ -2,7 +2,7 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
-External connections live in stdlib namespaces. `Email` handles IMAP/SMTP. `Http` handles HTTP. `Db` is reserved for SQL. The interface boundary is planned so these backends can become swappable; v0.1 wires the default `Email` and `Http` transports only.
+External connections live in stdlib namespaces. `Email` handles IMAP/SMTP. `Http` handles HTTP. (See also [`Db` for SQLite access](./database.md).) The interface boundary is planned so these backends can become swappable; v0.1 wires the default `Email` and `Http` transports only.
 
 ## `Email`
 

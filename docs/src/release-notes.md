@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.29 — 2026-05-27
+
 ### `Csv` namespace — CSV serialization
 
 Three functions cover the full round-trip. No `@tools` annotation required.
@@ -24,6 +28,26 @@ for trade in trades {
 rows = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
 text = Csv.stringify(rows)
 ```
+
+### `Db` namespace — SQLite database access
+
+Query and modify SQLite databases. `Db.connect(url)` opens a database and returns a connection with `.query()` and `.exec()` methods. URLs use the `sqlite://` scheme.
+
+- `Db.connect(url: str) -> DbConnection` — opens a SQLite database
+- `DbConnection.query(sql, params?) -> list[map[str, dynamic]]` — SELECT queries return rows as maps
+- `DbConnection.exec(sql, params?) -> int` — INSERT/UPDATE/DELETE return affected row count
+
+```keel
+db = Db.connect("sqlite://trades.db")
+db.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL)")
+db.exec("INSERT INTO trades VALUES (?, ?, ?)", ["t1", "BTCUSDT", 67000.0])
+rows = db.query("SELECT symbol, price FROM trades WHERE symbol = ?", ["BTCUSDT"])
+for row in rows {
+    Log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
+}
+```
+
+SQLite is bundled into the binary. Other backends (Postgres, MySQL) are planned for v0.2.
 
 ---
 

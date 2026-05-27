@@ -35,7 +35,10 @@ run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(ok, "expected success:\n{stderr}");
-    assert!(stderr.contains("hello"), "expected row data in output:\n{stderr}");
+    assert!(
+        stderr.contains("hello"),
+        "expected row data in output:\n{stderr}"
+    );
 }
 
 #[test]

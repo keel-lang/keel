@@ -10,7 +10,12 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%%
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.29] — 2026-05-27
+
 
 ### Added
 

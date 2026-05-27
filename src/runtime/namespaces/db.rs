@@ -71,17 +71,14 @@ impl DbConnectionHandle for SqliteConnection {
                     .map(keel_to_rusqlite)
                     .collect::<miette::Result<_>>()?;
                 let mapped = stmt
-                    .query_map(
-                        rusqlite::params_from_iter(rusqlite_params.iter()),
-                        |row| {
-                            let mut map = HashMap::new();
-                            for (i, name) in col_names.iter().enumerate() {
-                                let rv: rusqlite::types::Value = row.get(i)?;
-                                map.insert(MapKey::Str(name.clone()), rusqlite_to_keel(rv));
-                            }
-                            Ok(Value::Map(map))
-                        },
-                    )
+                    .query_map(rusqlite::params_from_iter(rusqlite_params.iter()), |row| {
+                        let mut map = HashMap::new();
+                        for (i, name) in col_names.iter().enumerate() {
+                            let rv: rusqlite::types::Value = row.get(i)?;
+                            map.insert(MapKey::Str(name.clone()), rusqlite_to_keel(rv));
+                        }
+                        Ok(Value::Map(map))
+                    })
                     .map_err(|e| miette::miette!("Db.query ({url}): {e}"))?;
                 let rows: rusqlite::Result<Vec<Value>> = mapped.collect();
                 rows.map_err(|e| miette::miette!("Db.query ({url}): row error: {e}"))
@@ -198,9 +195,11 @@ pub(crate) fn rusqlite_to_keel(v: rusqlite::types::Value) -> Value {
         rusqlite::types::Value::Integer(n) => Value::Integer(n),
         rusqlite::types::Value::Real(f) => Value::Float(f),
         rusqlite::types::Value::Text(s) => Value::String(s),
-        rusqlite::types::Value::Blob(b) => {
-            Value::List(b.into_iter().map(|byte| Value::Integer(byte as i64)).collect())
-        }
+        rusqlite::types::Value::Blob(b) => Value::List(
+            b.into_iter()
+                .map(|byte| Value::Integer(byte as i64))
+                .collect(),
+        ),
         rusqlite::types::Value::Null => Value::None,
     }
 }
@@ -213,7 +212,10 @@ mod tests {
     use crate::interpreter::{CallArgValue, Interpreter};
 
     fn arg(v: Value) -> CallArgValue {
-        CallArgValue { name: None, value: v }
+        CallArgValue {
+            name: None,
+            value: v,
+        }
     }
 
     #[test]
@@ -296,10 +298,7 @@ mod tests {
         let handle = SqliteConnection::new(conn, "sqlite://:memory:".into());
 
         handle
-            .exec(
-                "CREATE TABLE t (k TEXT, v INTEGER)".into(),
-                vec![],
-            )
+            .exec("CREATE TABLE t (k TEXT, v INTEGER)".into(), vec![])
             .await
             .unwrap();
         handle
@@ -321,10 +320,7 @@ mod tests {
                 row.get(&MapKey::Str("k".into())),
                 Some(&Value::String("hello".into()))
             );
-            assert_eq!(
-                row.get(&MapKey::Str("v".into())),
-                Some(&Value::Integer(42))
-            );
+            assert_eq!(row.get(&MapKey::Str("v".into())), Some(&Value::Integer(42)));
         } else {
             panic!("expected a map row");
         }

@@ -27,6 +27,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `Shell` | ✅ | Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [Shell]`. |
 | `String value methods` | ✅ | Regex and formatting directly on string values: matches, extract, find_all, sub, truncate, pad |
 | `Json` | 🟡 | JSON: `parse`, `stringify` |
+| `Csv` | ✅ | CSV serialization: `parse`, `parse_records`, `stringify` — RFC 4180 compliant |
 | `Cache` | 🟡 | In-memory process-scoped cache: `set`, `get`, `delete`, `clear` |
 | `Search` | 🟡 | Web search providers: `web(query)` — registered; raises "planned for v0.2" error |
 | `Db` | ✅ | SQLite: `connect(url)` → `DbConnection`; `db.query(sql, params?)` → `list[map[str,dynamic]]`; `db.exec(sql, params?)` → `int` |

@@ -53,9 +53,7 @@ pub fn value_to_json(v: &Value) -> serde_json::Value {
             }
             serde_json::Value::Object(obj)
         }
-        Value::DbConnection(url, _) => {
-            serde_json::Value::String(format!("<DbConnection {url}>"))
-        }
+        Value::DbConnection(url, _) => serde_json::Value::String(format!("<DbConnection {url}>")),
         _ => serde_json::Value::Null,
     }
 }

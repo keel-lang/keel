@@ -32,6 +32,7 @@
 - [Shell (subprocess)](./guide/shell.md)
 - [Json (serialization)](./guide/json.md)
 - [Csv (serialization)](./guide/csv.md)
+- [Database (SQLite)](./guide/database.md)
 - [Strings & Cache (text & memory)](./guide/strings.md)
 
 # CLI Reference
