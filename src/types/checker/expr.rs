@@ -29,8 +29,16 @@ impl Checker {
 
             Expr::StringLit(parts) => {
                 for p in parts {
-                    if let StringPart::Interpolation(e, _spec) = p {
-                        self.infer_expr(e, scope);
+                    match p {
+                        StringPart::Interpolation(e, _spec) => {
+                            self.infer_expr(e, scope);
+                        }
+                        StringPart::ParseError(raw) => {
+                            self.err(format!(
+                                "invalid expression in string interpolation: `{raw}`"
+                            ));
+                        }
+                        StringPart::Literal(_) => {}
                     }
                 }
                 Ty::Str

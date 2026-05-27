@@ -143,6 +143,13 @@ impl Interpreter {
                     for p in parts {
                         match p {
                             StringPart::Literal(s) => out.push_str(s),
+                            // ParseError slots should have been rejected by the type checker.
+                            // Treat them as a runtime error defensively.
+                            StringPart::ParseError(raw) => {
+                                return Err(runtime_error(format!(
+                                    "invalid expression in string interpolation: `{raw}`"
+                                )));
+                            }
                             StringPart::Interpolation(e, spec) => {
                                 let v = self.eval_expr(e, env).await?;
                                 if matches!(v, Value::EarlyReturn(_)) {

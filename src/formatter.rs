@@ -1003,6 +1003,13 @@ impl Fmt {
                     }
                     s.push('}');
                 }
+                // Preserve the raw slot text so `keel fmt` round-trips
+                // broken source without data loss.
+                StringPart::ParseError(raw) => {
+                    s.push('{');
+                    s.push_str(raw);
+                    s.push('}');
+                }
             }
         }
         s.push('"');

@@ -117,10 +117,15 @@ pub(super) fn parse_interpolation(raw: &str) -> Vec<StringPart> {
                 }
             }
             let (expr_src, fmt_spec) = split_format_spec(&expr_text);
-            parts.push(StringPart::Interpolation(
-                Box::new(parse_interp_expr(expr_src)),
-                fmt_spec.map(|s| s.to_string()),
-            ));
+            match parse_interp_expr(expr_src) {
+                Ok(expr) => parts.push(StringPart::Interpolation(
+                    Box::new(expr),
+                    fmt_spec.map(|s| s.to_string()),
+                )),
+                // Store the full slot text (before the format-spec split) so
+                // the formatter can reconstruct `{expr:spec}` without data loss.
+                Err(()) => parts.push(StringPart::ParseError(expr_text.clone())),
+            }
         } else {
             current.push(ch);
         }
@@ -170,10 +175,85 @@ fn split_format_spec(text: &str) -> (&str, Option<&str>) {
     (text, None)
 }
 
-fn parse_interp_expr(text: &str) -> Expr {
+/// Merge `Integer(n) Ident("_digits…")` and `Float(n) Ident("_digits…")`
+/// pairs that result from lexing digit-group separators.
+///
+/// The logos regex `[0-9]+` stops at `_`, so `1_000_000` lexes as
+/// `Integer("1") Ident("_000_000")`.  This function fuses those pairs
+/// into a single `Integer("1000000")` token while leaving identifiers
+/// (`x1_2`), string literals (`"1_2"`), and all other tokens untouched.
+///
+/// The merged token inherits the *start* of the integer/float span and the
+/// *end* of the last fused identifier span so downstream error reporting
+/// remains approximately correct.
+fn merge_numeric_separator_tokens(
+    raw: Vec<(Token, std::ops::Range<usize>)>,
+) -> Vec<(Token, std::ops::Range<usize>)> {
+    let mut result: Vec<(Token, std::ops::Range<usize>)> = Vec::with_capacity(raw.len());
+    let mut iter = raw.into_iter().peekable();
+
+    while let Some((tok, span)) = iter.next() {
+        match tok {
+            Token::Integer(ref digits) | Token::Float(ref digits) => {
+                let is_int = matches!(tok, Token::Integer(_));
+                let mut merged = digits.clone();
+                let mut end = span.end;
+
+                // Consume any trailing `_NNN` identifier continuations.
+                loop {
+                    match iter.peek() {
+                        Some((Token::Ident(s), _)) if is_digit_separator_tail(s) => {
+                            let (tail_tok, tail_span) = iter.next().unwrap();
+                            let Token::Ident(tail) = tail_tok else {
+                                unreachable!()
+                            };
+                            // Append only the digit characters, stripping underscores.
+                            for ch in tail.chars().filter(|c| c.is_ascii_digit()) {
+                                merged.push(ch);
+                            }
+                            end = tail_span.end;
+                        }
+                        _ => break,
+                    }
+                }
+
+                let merged_tok = if is_int {
+                    Token::Integer(merged)
+                } else {
+                    Token::Float(merged)
+                };
+                result.push((merged_tok, span.start..end));
+            }
+            other => result.push((other, span)),
+        }
+    }
+    result
+}
+
+/// Returns `true` when `s` looks like a digit-separator tail: starts with
+/// `_`, contains at least one ASCII digit, and the remainder is all digits
+/// or underscores.  For example `_000`, `_000_000`.
+fn is_digit_separator_tail(s: &str) -> bool {
+    let after_leading = match s.strip_prefix('_') {
+        Some(rest) => rest,
+        None => return false,
+    };
+    !after_leading.is_empty()
+        && after_leading
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '_')
+        && after_leading.chars().any(|c| c.is_ascii_digit())
+}
+
+/// Parse a single interpolation slot expression.
+///
+/// Returns `Ok(expr)` on success, `Err(())` when the slot text is not a valid
+/// expression.  The caller is responsible for recording a `StringPart::ParseError`
+/// so the type checker can surface a diagnostic.
+fn parse_interp_expr(text: &str) -> Result<Expr, ()> {
     let text = text.trim();
     if text.is_empty() {
-        return Expr::StringLit(vec![StringPart::Literal(String::new())]);
+        return Ok(Expr::StringLit(vec![StringPart::Literal(String::new())]));
     }
 
     // Lex the interpolation content directly via logos, bypassing the
@@ -184,16 +264,45 @@ fn parse_interp_expr(text: &str) -> Expr {
         .collect();
 
     if raw.is_empty() {
-        return Expr::Ident(text.to_string());
+        return Err(());
     }
+
+    // Fuse digit-group-separator pairs such as `Integer("1") Ident("_000")`
+    // that arise because the logos integer regex `[0-9]+` does not match `_`.
+    // This operates on token payloads only, so string literals (`"1_2"`),
+    // plain identifiers (`x1_2`), and all other tokens are unaffected.
+    let raw = merge_numeric_separator_tokens(raw);
+
+    // `from` is a reserved keyword that `field_name()` also accepts as a
+    // struct-field name, so it can appear as a local variable after
+    // destructuring (e.g. `{from, subject} = email`).  The expression
+    // parser only recognises `Token::Ident` for variable references, so
+    // normalise `Token::From` here so that `{from}` in a slot resolves to
+    // `Expr::Ident("from")` rather than a parse failure.
+    //
+    // Only `from` is remapped — other contextual keywords like `as` (`as`
+    // cast operator), `in` (containment), and `set` (set-literal) have
+    // expression-level roles and must stay as keyword tokens.
+    let raw = raw
+        .into_iter()
+        .map(|(tok, span)| {
+            let normalized = match tok {
+                Token::From => Token::Ident("from".to_string()),
+                other => other,
+            };
+            (normalized, span)
+        })
+        .collect::<Vec<_>>();
 
     let tokens = normalize_newlines(raw);
     let eoi = text.len()..text.len() + 1;
     let stream = Stream::from_iter(eoi, tokens.into_iter());
 
-    // On parse failure, fall back to treating the whole slot as an identifier
-    // so a bad expression never silently produces a corrupt AST node.
+    // Require the entire slot to be consumed so that a trailing stray
+    // token (e.g. `1 +` — missing right operand) is reported as a parse
+    // failure rather than silently accepted as `1`.
     expr_parser()
+        .then_ignore(end())
         .parse(stream)
-        .unwrap_or_else(|_| Expr::Ident(text.to_string()))
+        .map_err(|_| ())
 }

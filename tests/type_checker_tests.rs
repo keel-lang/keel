@@ -1931,6 +1931,87 @@ run(Boss)
     );
 }
 
+// ─── String interpolation parse errors (issue #14) ──────────────────────────
+
+#[test]
+fn error_malformed_interpolation_incomplete_binary_op() {
+    // Canonical {…} syntax: stray + without right operand.
+    expect_error(
+        r#"task go() { x = "{1 +}" }"#,
+        "invalid expression in string interpolation",
+    );
+}
+
+#[test]
+fn error_malformed_interpolation_stray_token() {
+    // Unlexable characters in slot → empty token stream → ParseError.
+    expect_error(
+        r#"task go() { x = "{@@@}" }"#,
+        "invalid expression in string interpolation",
+    );
+}
+
+#[test]
+fn valid_interpolation_simple_ident_unaffected() {
+    type_ok(
+        r#"
+task go(name: str) -> str {
+    "{name}"
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_interpolation_expression_unaffected() {
+    type_ok(
+        r#"
+task go(a: int, b: int) -> str {
+    "{a + b}"
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_interpolation_digit_separator_unaffected() {
+    // 1_000_000 must be treated as the integer 1000000, not parsed as
+    // Integer("1") followed by a stray identifier.
+    type_ok(
+        r#"
+task go(ms: int) -> str {
+    "{ms > 1_000_000_000}"
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_interpolation_underscore_ident_unaffected() {
+    // An identifier like x1_2 must NOT have its underscore stripped;
+    // it must resolve as the variable x1_2, not x12.
+    type_ok(
+        r#"
+task go(x1_2: int) -> str {
+    "{x1_2}"
+}
+"#,
+    );
+}
+
+#[test]
+fn valid_interpolation_string_literal_underscore_unaffected() {
+    // A string literal "1_2" inside a slot must not have its underscore
+    // stripped; it must remain the string "1_2".
+    type_ok(
+        r#"
+task go() -> str {
+    "{"1_2"}"
+}
+"#,
+    );
+}
+
 // ─── Map literal value-type inference: opaque-first sentinel fix ─────────────
 //
 // Previously, `is_opaque()` was used as the "not yet set" sentinel for the

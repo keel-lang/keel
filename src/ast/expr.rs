@@ -160,6 +160,12 @@ pub enum StringPart {
     /// Expression plus an optional raw format spec (the part after `:` inside `{}`).
     /// e.g. `{pi:.2f}` → spec = `Some(".2f")`, `{x}` → spec = `None`.
     Interpolation(Box<Expr>, Option<String>),
+    /// The interpolation slot could not be parsed.
+    ///
+    /// Carries the raw slot text so the formatter can round-trip broken
+    /// source without data loss.  The type checker reports a diagnostic
+    /// whenever this variant appears.
+    ParseError(String),
 }
 
 #[derive(Debug, Clone)]

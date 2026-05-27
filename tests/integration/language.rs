@@ -749,6 +749,59 @@ run(A)
 }
 
 // ---------------------------------------------------------------------------
+// Interpolation regressions (issue #14)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn interp_underscore_ident_is_not_mangled() {
+    // An identifier like x1_2 must resolve as the variable x1_2 at runtime,
+    // not as x12 (which would be undefined).
+    let src = r#"
+agent A {
+  @on_start {
+    x1_2 = "hello"
+    Io.show("{x1_2}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("hello"),
+        "underscore ident not resolved correctly: {stdout}"
+    );
+}
+
+#[test]
+fn interp_digit_separator_in_numeric_literal() {
+    // 1_000 in an interpolation slot must be treated as the integer 1000.
+    let src = r#"
+agent A {
+  @on_start {
+    n = 2000
+    Io.show("{n > 1_000}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("true"),
+        "digit separator comparison gave wrong result: {stdout}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // v0.1.14 — if guards (for loops and when arms)
 // ---------------------------------------------------------------------------
 

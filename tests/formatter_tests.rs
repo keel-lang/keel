@@ -138,3 +138,35 @@ run(A)
 "#,
     );
 }
+
+// ─── Malformed interpolation round-trip (issue #14) ──────────────────────────
+
+#[test]
+fn malformed_interpolation_with_spec_round_trips() {
+    // A broken slot that has a format spec must round-trip intact.
+    // The formatter must emit {1 +:>10}, not drop the spec.
+    let src = "task go() { x = \"{1 +:>10}\" }\n";
+    let formatted = format_source(src);
+    assert!(
+        formatted.contains("{1 +:>10}"),
+        "format spec lost from broken slot; got: {formatted:?}"
+    );
+    // Idempotence: formatting again must not change the output.
+    let twice = format_source(&formatted);
+    assert_eq!(
+        formatted, twice,
+        "formatter not idempotent on broken slot with spec"
+    );
+}
+
+#[test]
+fn underscore_ident_not_mangled_by_formatter() {
+    // An identifier like x1_2 must survive a format round-trip unchanged.
+    let src = "task go(x1_2: int) -> str { \"{x1_2}\" }\n";
+    let formatted = format_source(src);
+    assert!(
+        formatted.contains("x1_2"),
+        "underscore identifier mangled by formatter; got: {formatted:?}"
+    );
+    assert_idempotent(src);
+}
