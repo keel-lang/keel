@@ -11,5 +11,6 @@
 pub mod checker;
 pub mod interface;
 pub mod prelude;
+pub(crate) mod resolve;
 pub mod scope;
 pub mod ty;

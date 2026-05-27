@@ -183,6 +183,69 @@ agent Counter {
     );
 }
 
+// ─── Errors: scope isolation for block-owning statements ────────────────────
+
+#[test]
+fn error_if_body_binding_does_not_leak() {
+    // A name bound inside an `if` body must not be visible after the block.
+    expect_error(
+        r#"
+task main() {
+  if true {
+    x = 1
+  }
+  Io.show(x)
+}
+"#,
+        "undefined: `x`",
+    );
+}
+
+#[test]
+fn error_while_body_binding_does_not_leak() {
+    // A name bound inside a `while` body must not be visible after the block.
+    expect_error(
+        r#"
+task main() {
+  while false {
+    y = 1
+  }
+  Io.show(y)
+}
+"#,
+        "undefined: `y`",
+    );
+}
+
+#[test]
+fn error_try_body_binding_does_not_leak() {
+    // A name bound inside the `try` body must not be visible after the block.
+    expect_error(
+        r#"
+task main() {
+  try {
+    z = 1
+  } catch e: Error { }
+  Io.show(z)
+}
+"#,
+        "undefined: `z`",
+    );
+}
+
+#[test]
+fn error_param_default_with_undefined_name() {
+    // Undefined names in parameter default expressions must be caught.
+    expect_error(
+        r#"
+task main(x: int = missing) {
+  Io.show(x)
+}
+"#,
+        "undefined: `missing`",
+    );
+}
+
 // ─── Errors: exhaustiveness ─────────────────────────────────────────────────
 
 #[test]
@@ -733,7 +796,7 @@ agent Bot {
         ("session_id", "str"),
         ("loop_score", "int"),
         ("copied_name", "str"),
-        ("caught_error", "Error"),  // resolved as Unresolved("Error") — shows declared name
+        ("caught_error", "Error"), // resolved as Unresolved("Error") — shows declared name
         ("recovered", "str"),
     ];
 

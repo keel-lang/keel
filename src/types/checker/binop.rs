@@ -8,7 +8,7 @@
 //! - [`infer_binary`] — infers the result type of a binary expression.
 
 use crate::ast::BinOp;
-use crate::types::ty::{describe_ty, Ty, UnknownReason};
+use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 // ---------------------------------------------------------------------------
 // Internal helpers

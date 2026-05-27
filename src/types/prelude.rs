@@ -82,14 +82,12 @@ pub(crate) fn ty_from_spec(spec: TySpec) -> Ty {
         TySpec::ListOfStr => Ty::List(Box::new(Ty::Str)),
         TySpec::ListOfInt => Ty::List(Box::new(Ty::Int)),
         TySpec::ListOfListOfStr => Ty::List(Box::new(Ty::List(Box::new(Ty::Str)))),
-        TySpec::ListOfMapStrStr => Ty::List(Box::new(Ty::Map(
-            Box::new(Ty::Str),
-            Box::new(Ty::Str),
-        ))),
-        TySpec::ListOfMapStrDynamic => Ty::List(Box::new(Ty::Map(
-            Box::new(Ty::Str),
-            Box::new(Ty::Dynamic),
-        ))),
+        TySpec::ListOfMapStrStr => {
+            Ty::List(Box::new(Ty::Map(Box::new(Ty::Str), Box::new(Ty::Str))))
+        }
+        TySpec::ListOfMapStrDynamic => {
+            Ty::List(Box::new(Ty::Map(Box::new(Ty::Str), Box::new(Ty::Dynamic))))
+        }
         // Runtime-dynamic: the return type depends on external data (JSON
         // payloads, LLM outputs, etc.) and cannot be determined statically.
         TySpec::Unknown => Ty::Unknown(UnknownReason::ExternalDynamic),
@@ -253,28 +251,44 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Io",
         name: "ask",
-        params: &[BuiltinParam { name: "prompt", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "prompt",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Ask the user a question and return the response as a string.",
     },
     BuiltinMethod {
         namespace: "Io",
         name: "confirm",
-        params: &[BuiltinParam { name: "prompt", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "prompt",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Bool),
         doc: "Ask the user to confirm a choice and return true or false.",
     },
     BuiltinMethod {
         namespace: "Io",
         name: "notify",
-        params: &[BuiltinParam { name: "message", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Show a notification to the user.",
     },
     BuiltinMethod {
         namespace: "Io",
         name: "show",
-        params: &[BuiltinParam { name: "value", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "value",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Display a value to the user.",
     },
@@ -282,14 +296,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Env",
         name: "get",
-        params: &[BuiltinParam { name: "key", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::NullableStr),
         doc: "Get an environment variable, returning none if it is unset.",
     },
     BuiltinMethod {
         namespace: "Env",
         name: "require",
-        params: &[BuiltinParam { name: "key", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Get an environment variable, raising an error if it is unset.",
     },
@@ -311,7 +333,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Time",
         name: "parse",
-        params: &[BuiltinParam { name: "s", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::NullableDatetime),
         doc: "Parse a datetime string, returning none on failure.",
     },
@@ -319,7 +345,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "File",
         name: "read",
-        params: &[BuiltinParam { name: "path", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Read a file and return its contents as a string.",
     },
@@ -327,8 +357,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "File",
         name: "write",
         params: &[
-            BuiltinParam { name: "path", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "content", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "path",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "content",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Write a string to a file, creating or overwriting it.",
@@ -336,28 +374,44 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "File",
         name: "exists",
-        params: &[BuiltinParam { name: "path", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Bool),
         doc: "Return true if the path exists on the filesystem.",
     },
     BuiltinMethod {
         namespace: "File",
         name: "list",
-        params: &[BuiltinParam { name: "path", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::ListOfStr),
         doc: "List the entries in a directory.",
     },
     BuiltinMethod {
         namespace: "File",
         name: "mkdir",
-        params: &[BuiltinParam { name: "path", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Create a directory and all intermediate parents.",
     },
     BuiltinMethod {
         namespace: "File",
         name: "remove",
-        params: &[BuiltinParam { name: "path", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Remove a file or directory.",
     },
@@ -365,8 +419,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "File",
         name: "copy",
         params: &[
-            BuiltinParam { name: "src", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "dst", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "src",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "dst",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Copy a file from src to dst.",
@@ -374,7 +436,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "File",
         name: "glob",
-        params: &[BuiltinParam { name: "pattern", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "pattern",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::ListOfStr),
         doc: "Return file paths that match a glob pattern.",
     },
@@ -382,8 +448,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "File",
         name: "move",
         params: &[
-            BuiltinParam { name: "src", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "dst", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "src",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "dst",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Move (rename) a file from src to dst.",
@@ -407,8 +481,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Random",
         name: "int",
         params: &[
-            BuiltinParam { name: "min", ty: TySpec::Int, optional: false },
-            BuiltinParam { name: "max", ty: TySpec::Int, optional: false },
+            BuiltinParam {
+                name: "min",
+                ty: TySpec::Int,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "max",
+                ty: TySpec::Int,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Int),
         doc: "Return a random integer in the inclusive range [min, max].",
@@ -439,8 +521,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Uuid",
         name: "v5",
         params: &[
-            BuiltinParam { name: "ns", ty: TySpec::Uuid, optional: false },
-            BuiltinParam { name: "name", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "ns",
+                ty: TySpec::Uuid,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "name",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Uuid),
         doc: "Generate a deterministic UUID v5 from a namespace UUID and a name.",
@@ -448,7 +538,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Uuid",
         name: "parse",
-        params: &[BuiltinParam { name: "s", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::NullableUuid),
         doc: "Parse a UUID string, returning none on failure.",
     },
@@ -456,42 +550,66 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Crypto",
         name: "sha224",
-        params: &[BuiltinParam { name: "data", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the SHA-224 hex digest of a string.",
     },
     BuiltinMethod {
         namespace: "Crypto",
         name: "sha256",
-        params: &[BuiltinParam { name: "data", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the SHA-256 hex digest of a string.",
     },
     BuiltinMethod {
         namespace: "Crypto",
         name: "sha384",
-        params: &[BuiltinParam { name: "data", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the SHA-384 hex digest of a string.",
     },
     BuiltinMethod {
         namespace: "Crypto",
         name: "sha512",
-        params: &[BuiltinParam { name: "data", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the SHA-512 hex digest of a string.",
     },
     BuiltinMethod {
         namespace: "Crypto",
         name: "sha512_224",
-        params: &[BuiltinParam { name: "data", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the SHA-512/224 hex digest of a string.",
     },
     BuiltinMethod {
         namespace: "Crypto",
         name: "sha512_256",
-        params: &[BuiltinParam { name: "data", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the SHA-512/256 hex digest of a string.",
     },
@@ -499,8 +617,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Crypto",
         name: "hmac_sha224",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "data", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the HMAC-SHA-224 hex digest.",
@@ -509,8 +635,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Crypto",
         name: "hmac_sha256",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "data", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the HMAC-SHA-256 hex digest.",
@@ -519,8 +653,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Crypto",
         name: "hmac_sha384",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "data", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the HMAC-SHA-384 hex digest.",
@@ -529,8 +671,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Crypto",
         name: "hmac_sha512",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "data", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the HMAC-SHA-512 hex digest.",
@@ -539,8 +689,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Crypto",
         name: "hmac_sha512_224",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "data", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the HMAC-SHA-512/224 hex digest.",
@@ -549,8 +707,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Crypto",
         name: "hmac_sha512_256",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "data", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Return the HMAC-SHA-512/256 hex digest.",
@@ -558,14 +724,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Crypto",
         name: "token",
-        params: &[BuiltinParam { name: "len", ty: TySpec::Int, optional: false }],
+        params: &[BuiltinParam {
+            name: "len",
+            ty: TySpec::Int,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Generate a random URL-safe token of the given byte length.",
     },
     BuiltinMethod {
         namespace: "Crypto",
         name: "random_bytes",
-        params: &[BuiltinParam { name: "len", ty: TySpec::Int, optional: false }],
+        params: &[BuiltinParam {
+            name: "len",
+            ty: TySpec::Int,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::ListOfInt),
         doc: "Generate cryptographically random bytes as a list of integers.",
     },
@@ -573,7 +747,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Json",
         name: "parse",
-        params: &[BuiltinParam { name: "s", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         // Return type is externally dynamic — the JSON structure depends on runtime
         // input and is not statically known.  Uses Unknown(ExternalDynamic) so that
         // `keel check --strict` can flag unannotated bindings.  Users who want to
@@ -584,7 +762,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Json",
         name: "stringify",
-        params: &[BuiltinParam { name: "value", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "value",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Serialize a value to a JSON string.",
     },
@@ -593,8 +775,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Cache",
         name: "set",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "value", ty: TySpec::Dynamic, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "value",
+                ty: TySpec::Dynamic,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Store a value in the in-process cache.",
@@ -602,14 +792,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Cache",
         name: "get",
-        params: &[BuiltinParam { name: "key", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::NullableDynamic),
         doc: "Retrieve a cached value, returning none if absent.",
     },
     BuiltinMethod {
         namespace: "Cache",
         name: "delete",
-        params: &[BuiltinParam { name: "key", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Remove a key from the cache.",
     },
@@ -624,21 +822,33 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Csv",
         name: "parse",
-        params: &[BuiltinParam { name: "s", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::ListOfListOfStr),
         doc: "Parse a CSV string into a list of rows, each row a list of strings.",
     },
     BuiltinMethod {
         namespace: "Csv",
         name: "parse_records",
-        params: &[BuiltinParam { name: "s", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::ListOfMapStrStr),
         doc: "Parse a CSV string into a list of named-column records.",
     },
     BuiltinMethod {
         namespace: "Csv",
         name: "stringify",
-        params: &[BuiltinParam { name: "rows", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "rows",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Serialize a list of rows into a CSV string.",
     },
@@ -660,7 +870,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Math",
         name: "sqrt",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the square root of x.",
     },
@@ -668,8 +882,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Math",
         name: "pow",
         params: &[
-            BuiltinParam { name: "x", ty: TySpec::Float, optional: false },
-            BuiltinParam { name: "y", ty: TySpec::Float, optional: false },
+            BuiltinParam {
+                name: "x",
+                ty: TySpec::Float,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "y",
+                ty: TySpec::Float,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return x raised to the power y.",
@@ -677,70 +899,110 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Math",
         name: "exp",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return e raised to the power x.",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "log",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the natural logarithm of x.",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "log2",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the base-2 logarithm of x.",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "log10",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the base-10 logarithm of x.",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "sin",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the sine of x (x in radians).",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "cos",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the cosine of x (x in radians).",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "tan",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the tangent of x (x in radians).",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "asin",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the arcsine of x in radians.",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "acos",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the arccosine of x in radians.",
     },
     BuiltinMethod {
         namespace: "Math",
         name: "atan",
-        params: &[BuiltinParam { name: "x", ty: TySpec::Float, optional: false }],
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the arctangent of x in radians.",
     },
@@ -748,8 +1010,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Math",
         name: "atan2",
         params: &[
-            BuiltinParam { name: "y", ty: TySpec::Float, optional: false },
-            BuiltinParam { name: "x", ty: TySpec::Float, optional: false },
+            BuiltinParam {
+                name: "y",
+                ty: TySpec::Float,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "x",
+                ty: TySpec::Float,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return the four-quadrant arctangent of y and x in radians.",
@@ -758,35 +1028,55 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Log",
         name: "info",
-        params: &[BuiltinParam { name: "message", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Emit an info-level log message.",
     },
     BuiltinMethod {
         namespace: "Log",
         name: "warn",
-        params: &[BuiltinParam { name: "message", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Emit a warning-level log message.",
     },
     BuiltinMethod {
         namespace: "Log",
         name: "error",
-        params: &[BuiltinParam { name: "message", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Emit an error-level log message.",
     },
     BuiltinMethod {
         namespace: "Log",
         name: "debug",
-        params: &[BuiltinParam { name: "message", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Emit a debug-level log message.",
     },
     BuiltinMethod {
         namespace: "Log",
         name: "set_level",
-        params: &[BuiltinParam { name: "level", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "level",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Set the minimum log level (\"debug\", \"info\", \"warn\", or \"error\").",
     },
@@ -802,8 +1092,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Memory",
         name: "remember",
         params: &[
-            BuiltinParam { name: "key", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "value", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "value",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Store a value in agent memory.",
@@ -811,7 +1109,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Memory",
         name: "recall",
-        params: &[BuiltinParam { name: "key", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::NullableStr),
         doc: "Retrieve a value from agent memory, returning none if absent.",
     },
@@ -819,35 +1121,55 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Schedule",
         name: "every",
-        params: &[BuiltinParam { name: "interval", ty: TySpec::Duration, optional: false }],
+        params: &[BuiltinParam {
+            name: "interval",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Schedule a task to run on a recurring interval.",
     },
     BuiltinMethod {
         namespace: "Schedule",
         name: "after",
-        params: &[BuiltinParam { name: "delay", ty: TySpec::Duration, optional: false }],
+        params: &[BuiltinParam {
+            name: "delay",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Schedule a task to run after a delay.",
     },
     BuiltinMethod {
         namespace: "Schedule",
         name: "at",
-        params: &[BuiltinParam { name: "time", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "time",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Schedule a task to run at a specific wall-clock time.",
     },
     BuiltinMethod {
         namespace: "Schedule",
         name: "cron",
-        params: &[BuiltinParam { name: "expr", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "expr",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Schedule a task using a cron expression.",
     },
     BuiltinMethod {
         namespace: "Schedule",
         name: "sleep",
-        params: &[BuiltinParam { name: "duration", ty: TySpec::Duration, optional: false }],
+        params: &[BuiltinParam {
+            name: "duration",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Pause execution for the given duration.",
     },
@@ -855,14 +1177,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Search",
         name: "web",
-        params: &[BuiltinParam { name: "query", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "query",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Search the web and return a list of SearchResult values.",
     },
     BuiltinMethod {
         namespace: "Search",
         name: "news",
-        params: &[BuiltinParam { name: "query", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "query",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Search for recent news and return a list of SearchResult values.",
     },
@@ -878,9 +1208,21 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Email",
         name: "send",
         params: &[
-            BuiltinParam { name: "to", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "subject", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "body", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "to",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "subject",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "body",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Send an email.",
@@ -888,7 +1230,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Email",
         name: "archive",
-        params: &[BuiltinParam { name: "id", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "id",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Archive an email by its ID.",
     },
@@ -896,7 +1242,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Http",
         name: "get",
-        params: &[BuiltinParam { name: "url", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "url",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Make an HTTP GET request and return an HttpResponse.",
     },
@@ -904,8 +1254,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Http",
         name: "post",
         params: &[
-            BuiltinParam { name: "url", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "body", ty: TySpec::Str, optional: true },
+            BuiltinParam {
+                name: "url",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "body",
+                ty: TySpec::Str,
+                optional: true,
+            },
         ],
         result: BuiltinResult::Unknown,
         doc: "Make an HTTP POST request and return an HttpResponse.",
@@ -914,8 +1272,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Http",
         name: "request",
         params: &[
-            BuiltinParam { name: "method", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "url", ty: TySpec::Str, optional: false },
+            BuiltinParam {
+                name: "method",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "url",
+                ty: TySpec::Str,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Unknown,
         doc: "Make an HTTP request with full control and return an HttpResponse.",
@@ -923,7 +1289,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Http",
         name: "serve",
-        params: &[BuiltinParam { name: "port", ty: TySpec::Int, optional: false }],
+        params: &[BuiltinParam {
+            name: "port",
+            ty: TySpec::Int,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Start an HTTP server on the given port.",
     },
@@ -931,7 +1301,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Shell",
         name: "run",
-        params: &[BuiltinParam { name: "cmd", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "cmd",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Run a shell command and return its combined stdout.",
     },
@@ -939,7 +1313,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Db",
         name: "connect",
-        params: &[BuiltinParam { name: "url", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "url",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::DbConnection),
         doc: "Open a database connection and return a DbConnection.",
     },
@@ -947,14 +1325,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Agent",
         name: "run",
-        params: &[BuiltinParam { name: "name", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "name",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Start a named agent.",
     },
     BuiltinMethod {
         namespace: "Agent",
         name: "stop",
-        params: &[BuiltinParam { name: "name", ty: TySpec::Str, optional: false }],
+        params: &[BuiltinParam {
+            name: "name",
+            ty: TySpec::Str,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Stop a running agent.",
     },
@@ -962,8 +1348,16 @@ static CATALOG: &[BuiltinMethod] = &[
         namespace: "Agent",
         name: "send",
         params: &[
-            BuiltinParam { name: "name", ty: TySpec::Str, optional: false },
-            BuiltinParam { name: "message", ty: TySpec::Dynamic, optional: false },
+            BuiltinParam {
+                name: "name",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "message",
+                ty: TySpec::Dynamic,
+                optional: false,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Send a message to an agent's mailbox.",
@@ -978,7 +1372,11 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Agent",
         name: "broadcast",
-        params: &[BuiltinParam { name: "message", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Broadcast a message to all running agents.",
     },
@@ -993,14 +1391,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Async",
         name: "join_all",
-        params: &[BuiltinParam { name: "handles", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "handles",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Wait for all async task handles to complete.",
     },
     BuiltinMethod {
         namespace: "Async",
         name: "select",
-        params: &[BuiltinParam { name: "handles", ty: TySpec::Dynamic, optional: false }],
+        params: &[BuiltinParam {
+            name: "handles",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Return the result of the first completed task handle.",
     },
@@ -1015,14 +1421,22 @@ static CATALOG: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "Control",
         name: "with_timeout",
-        params: &[BuiltinParam { name: "duration", ty: TySpec::Duration, optional: false }],
+        params: &[BuiltinParam {
+            name: "duration",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Run a task, raising an error if it exceeds the timeout.",
     },
     BuiltinMethod {
         namespace: "Control",
         name: "with_deadline",
-        params: &[BuiltinParam { name: "deadline", ty: TySpec::Datetime, optional: false }],
+        params: &[BuiltinParam {
+            name: "deadline",
+            ty: TySpec::Datetime,
+            optional: false,
+        }],
         result: BuiltinResult::Unknown,
         doc: "Run a task, raising an error if it runs past the deadline.",
     },
@@ -1279,9 +1693,9 @@ mod tests {
     fn catalog_covers_all_runtime_namespaces() {
         // Every namespace registered by the runtime must appear in the catalog.
         let runtime_namespaces = [
-            "Io", "Schedule", "Ai", "Email", "Env", "Memory", "Log", "Agent", "Control",
-            "Async", "Http", "Search", "Db", "Time", "File", "Json", "Cache", "Random",
-            "Uuid", "Crypto", "Math", "Shell", "Csv",
+            "Io", "Schedule", "Ai", "Email", "Env", "Memory", "Log", "Agent", "Control", "Async",
+            "Http", "Search", "Db", "Time", "File", "Json", "Cache", "Random", "Uuid", "Crypto",
+            "Math", "Shell", "Csv",
         ];
         let catalog_namespaces: std::collections::HashSet<&str> =
             CATALOG.iter().map(|m| m.namespace).collect();

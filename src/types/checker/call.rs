@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use crate::ast::CallArg;
-use crate::types::ty::{describe_ty, Ty};
+use crate::types::ty::{Ty, describe_ty};
 
 use super::Checker;
 

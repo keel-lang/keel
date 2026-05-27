@@ -69,11 +69,11 @@ impl TypeEnv {
         declarations: impl IntoIterator<Item = &'a crate::ast::Decl>,
     ) {
         for decl in declarations {
-            if let crate::ast::Decl::Type(t) = decl {
-                if let TypeDef::Alias(te) = &t.def {
-                    let resolved = resolve_type_expr(te, self);
-                    self.aliases.insert(t.name.clone(), resolved);
-                }
+            if let crate::ast::Decl::Type(t) = decl
+                && let TypeDef::Alias(te) = &t.def
+            {
+                let resolved = resolve_type_expr(te, self);
+                self.aliases.insert(t.name.clone(), resolved);
             }
         }
     }
@@ -95,9 +95,7 @@ impl TypeEnv {
 pub fn resolve_type_expr(te: &TypeExpr, env: &TypeEnv) -> Ty {
     match te {
         TypeExpr::Named(n) => resolve_named(n, env),
-        TypeExpr::Nullable(inner) => {
-            Ty::Nullable(Box::new(resolve_type_expr(inner, env)))
-        }
+        TypeExpr::Nullable(inner) => Ty::Nullable(Box::new(resolve_type_expr(inner, env))),
         TypeExpr::List(inner) => Ty::List(Box::new(resolve_type_expr(inner, env))),
         TypeExpr::Map(k, v) => Ty::Map(
             Box::new(resolve_type_expr(k, env)),
@@ -121,8 +119,7 @@ pub fn resolve_type_expr(te: &TypeExpr, env: &TypeEnv) -> Ty {
             // Resolve type arguments but keep the application nominal — there
             // is no generic-declaration context here. The name + resolved args
             // together form a unique identity for comparison purposes.
-            let resolved_args: Vec<Ty> =
-                args.iter().map(|a| resolve_type_expr(a, env)).collect();
+            let resolved_args: Vec<Ty> = args.iter().map(|a| resolve_type_expr(a, env)).collect();
             Ty::Enum(name.clone(), resolved_args)
         }
         TypeExpr::Dynamic => Ty::Dynamic,
@@ -261,10 +258,7 @@ mod tests {
 
     #[test]
     fn resolve_generic_carries_name_and_args() {
-        let te = TypeExpr::Generic(
-            "Result".to_owned(),
-            vec![te_named("str"), te_named("int")],
-        );
+        let te = TypeExpr::Generic("Result".to_owned(), vec![te_named("str"), te_named("int")]);
         assert_eq!(
             resolve(&te),
             Ty::Enum("Result".to_owned(), vec![Ty::Str, Ty::Int])
@@ -274,8 +268,7 @@ mod tests {
     #[test]
     fn resolve_generic_distinct_args_produce_distinct_ty() {
         let te_a = TypeExpr::Generic("Result".to_owned(), vec![te_named("str"), te_named("int")]);
-        let te_b =
-            TypeExpr::Generic("Result".to_owned(), vec![te_named("bool"), te_named("str")]);
+        let te_b = TypeExpr::Generic("Result".to_owned(), vec![te_named("bool"), te_named("str")]);
         assert_ne!(resolve(&te_a), resolve(&te_b));
     }
 
@@ -310,7 +303,10 @@ mod tests {
     // ── signature_satisfies ──────────────────────────────────────────────
 
     fn sig(ret: Ty) -> Signature {
-        Signature { params: vec![], ret }
+        Signature {
+            params: vec![],
+            ret,
+        }
     }
 
     #[test]

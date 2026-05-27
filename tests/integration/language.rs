@@ -2882,7 +2882,10 @@ task run_test() { Io.show("ok") }
 run_test()
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "dynamic should accept any concrete type\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        ok,
+        "dynamic should accept any concrete type\nstdout: {stdout}\nstderr: {stderr}"
+    );
 }
 
 #[test]

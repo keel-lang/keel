@@ -55,12 +55,7 @@ impl Interpreter {
         // declarations so that `impl` conformance checks can resolve TypeExpr
         // nodes to Ty values with proper alias expansion.
         let mut type_env = TypeEnv::new();
-        type_env.collect_aliases(
-            program
-                .declarations
-                .iter()
-                .map(|(decl, _)| decl),
-        );
+        type_env.collect_aliases(program.declarations.iter().map(|(decl, _)| decl));
         self.type_env = type_env;
 
         // Two-pass: register all declarations, then execute top-level statements.

@@ -157,6 +157,8 @@ Known technical debt to address post-v0.1:
 
 - ~~**Type-tagged struct values.**~~ Shipped alongside v0.1.28. `Value::Struct(TypeName, fields)` is now a distinct variant; impl dispatch is O(1) via direct type-name lookup. Field-set fallback retained for untagged map literals. Ambiguous dispatch between types sharing field names is eliminated.
 
+- ~~**Name resolution extracted from `infer_expr`.**~~ Shipped. A dedicated `types::resolve` module now owns global identifier classification via `NameIndex` + `ResolvedName`. `infer_expr` no longer performs ad-hoc string comparisons against multiple lookup tables for `Ident`, `FieldAccess`, `MethodCall`, and `Call` arms. Adding a new prelude namespace requires only a catalog entry. Prerequisite for multi-file imports and cross-module visibility (tracked as a future item).
+
 - **v1.0** is the first API-stable release. Semver begins at v1.0. Scope defined after real usage feedback from v0.1.
 
 One ship at a time.

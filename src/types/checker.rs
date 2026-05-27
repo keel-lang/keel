@@ -25,10 +25,9 @@ use crate::types::interface::{self as iface, Signature};
 pub use crate::types::ty::{Ty, TypeError};
 // Re-export IDE helpers so `lsp.rs` call-sites remain valid without churn.
 pub use crate::ide::hover::type_at;
-pub use crate::ide::symbols::{
-    definition_of, ident_at_offset, ident_span_at_offset, usages_of,
-};
+pub use crate::ide::symbols::{definition_of, ident_at_offset, ident_span_at_offset, usages_of};
 use crate::types::prelude::{builtin_interfaces, prelude_names};
+use crate::types::resolve::NameIndex;
 use crate::types::scope::Scope;
 use crate::types::ty::describe_ty;
 
@@ -92,6 +91,11 @@ pub(crate) struct Checker {
     /// When true, emit an error for any binding whose type the checker
     /// cannot resolve (falls back to `Ty::Unknown`).
     strict: bool,
+    /// Global name index, built by [`name_resolve::build`] at the start of
+    /// [`Checker::check_body`] after the declaration-collection pass has
+    /// finished.  Consulted by `infer_expr` for every [`crate::ast::Expr::Ident`]
+    /// that is not satisfied by the current lexical scope.
+    name_index: NameIndex,
 }
 
 // ---------------------------------------------------------------------------
@@ -136,6 +140,7 @@ impl Checker {
             prelude: prelude_names(),
             current_span: None,
             strict: false,
+            name_index: NameIndex::default(),
         }
     }
 
@@ -262,7 +267,6 @@ impl Checker {
             aliases: self.aliases.clone(),
         }
     }
-
 
     /// Structural type equality (ignoring nullability wrapping differences).
     fn types_match(&self, a: &Ty, b: &Ty) -> bool {
@@ -411,4 +415,3 @@ fn type_display_str(te: &TypeExpr) -> String {
         TypeExpr::Dynamic => "dynamic".to_string(),
     }
 }
-

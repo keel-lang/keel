@@ -10,12 +10,13 @@ use std::collections::HashMap;
 
 use crate::ast::*;
 use crate::types::prelude::{self, BuiltinResult};
+use crate::types::resolve::ResolvedName;
 use crate::types::scope::Scope;
-use crate::types::ty::{describe_ty, Ty, UnknownReason};
+use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 use super::{
-    binop::{check_binop, infer_binary},
     Checker,
+    binop::{check_binop, infer_binary},
 };
 
 impl Checker {
@@ -36,31 +37,39 @@ impl Checker {
             }
 
             Expr::Ident(name) => {
+                // Lexical scope always shadows global declarations.
                 if let Some(t) = scope.get(name) {
                     return t.clone();
                 }
-                if let Some(t) = self.top_tasks.get(name) {
-                    return Ty::Func(
-                        t.params.iter().map(|(_, ty)| ty.clone()).collect(),
-                        Box::new(t.return_type.clone()),
-                    );
+                // Global namespace: consult the pre-built name index.
+                match self.name_index.resolve(name) {
+                    ResolvedName::TopTask => {
+                        // Identifier used as a value — expose the task's type as
+                        // a function so callers can check arity at call sites.
+                        if let Some(t) = self.top_tasks.get(name) {
+                            return Ty::Func(
+                                t.params.iter().map(|(_, ty)| ty.clone()).collect(),
+                                Box::new(t.return_type.clone()),
+                            );
+                        }
+                        // The index and top_tasks are built together; this branch
+                        // is unreachable in practice.
+                        Ty::Error
+                    }
+                    // Agent, type-level, or prelude identifier used as an
+                    // expression — no value-level type is tracked statically.
+                    ResolvedName::Agent
+                    | ResolvedName::Enum
+                    | ResolvedName::TypeName
+                    | ResolvedName::PreludeNamespace => {
+                        Ty::Unknown(UnknownReason::InferenceLimitation)
+                    }
+                    // Undefined-name errors are emitted by the resolution pass
+                    // (resolve_names) before inference runs.  Return Ty::Error
+                    // here so downstream type checks are suppressed via
+                    // is_opaque(), avoiding cascading noise.
+                    ResolvedName::Unresolved => Ty::Error,
                 }
-                if self.agents.contains_key(name) {
-                    // Agent identifier used as a value — the type of an agent
-                    // reference is not tracked statically.
-                    return Ty::Unknown(UnknownReason::InferenceLimitation);
-                }
-                if self.enum_variants.contains_key(name)
-                    || self.structs.contains_key(name)
-                    || self.aliases.contains_key(name)
-                    || self.prelude.contains(name)
-                {
-                    // Type-level or namespace identifier used as an expression —
-                    // no value-level type is available.
-                    return Ty::Unknown(UnknownReason::InferenceLimitation);
-                }
-                self.err(format!("undefined: `{name}`"));
-                Ty::Error
             }
 
             Expr::SelfAccess(field) => {
@@ -84,42 +93,58 @@ impl Checker {
             Expr::SelfRef => Ty::Unknown(UnknownReason::InferenceLimitation),
 
             Expr::FieldAccess(obj, field) => {
-                // Enum variant shortcut: `Urgency.medium`.
+                // Resolve ident-qualified field access through the name index
+                // before falling through to value-level struct field access.
                 if let Expr::Ident(name) = obj.as_ref() {
-                    if let Some(variants) = self.enum_variants.get(name) {
-                        if !variants.contains(field) {
-                            self.err(format!("enum `{name}` has no variant `{field}`"));
+                    match self.name_index.resolve(name) {
+                        // Enum variant shortcut: `Urgency.medium`.
+                        ResolvedName::Enum => {
+                            if let Some(variants) = self.enum_variants.get(name)
+                                && !variants.contains(field)
+                            {
+                                self.err(format!("enum `{name}` has no variant `{field}`"));
+                            }
+                            return Ty::Enum(name.clone(), vec![]);
                         }
-                        return Ty::Enum(name.clone(), vec![]);
-                    }
-                    if self.prelude.contains(name) {
-                        if name == "Uuid"
-                            && matches!(field.as_str(), "DNS" | "URL" | "OID" | "X500")
-                        {
-                            return Ty::Uuid;
+                        // Prelude namespace field access: `Uuid.DNS`, etc.
+                        ResolvedName::PreludeNamespace => {
+                            // `Uuid` exposes namespace-constant UUIDs as fields.
+                            if name == "Uuid"
+                                && matches!(field.as_str(), "DNS" | "URL" | "OID" | "X500")
+                            {
+                                return Ty::Uuid;
+                            }
+                            // All other prelude namespace field accesses are not
+                            // value-level types tracked statically.
+                            return Ty::Unknown(UnknownReason::InferenceLimitation);
                         }
-                        // Field access on a prelude namespace — not a value-level type.
-                        return Ty::Unknown(UnknownReason::InferenceLimitation);
-                    }
-                    // Agent handler reference: `Foo.process` — validate the handler exists.
-                    if let Some(agent) = self.agents.get(name) {
-                        if !agent.handlers.contains_key(field) {
-                            self.err(format!(
-                                "agent `{name}` has no handler `{field}`; \
-                                 declared handlers: {}",
-                                if agent.handlers.is_empty() {
-                                    "none".to_string()
-                                } else {
-                                    agent.handlers.keys()
-                                        .map(|s| s.as_str())
-                                        .collect::<Vec<_>>()
-                                        .join(", ")
-                                }
-                            ));
+                        // Agent handler reference: `Foo.process` — validate
+                        // the handler exists and return an opaque delegate type.
+                        ResolvedName::Agent => {
+                            if let Some(agent) = self.agents.get(name)
+                                && !agent.handlers.contains_key(field)
+                            {
+                                self.err(format!(
+                                    "agent `{name}` has no handler `{field}`; \
+                                     declared handlers: {}",
+                                    if agent.handlers.is_empty() {
+                                        "none".to_string()
+                                    } else {
+                                        agent
+                                            .handlers
+                                            .keys()
+                                            .map(|s| s.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    }
+                                ));
+                            }
+                            // Handler references are delegate targets, not values.
+                            return Ty::Unknown(UnknownReason::InferenceLimitation);
                         }
-                        // Handler references are used as delegate targets,
-                        // not as typed values.
-                        return Ty::Unknown(UnknownReason::InferenceLimitation);
+                        // All other global categories (TopTask, TypeName, Unresolved)
+                        // fall through to the value-level field-access path below.
+                        _ => {}
                     }
                 }
                 let obj_ty = self.infer_expr(obj, scope);
@@ -437,137 +462,152 @@ impl Checker {
                     );
                     return sig.return_type;
                 }
-                if let Expr::Ident(name) = callee.as_ref()
-                    && let Some(sig) = self.top_tasks.get(name).cloned()
-                {
-                    let expected = sig.params.len();
-                    // Count only non-spread positional args (named args may map to params by name).
-                    let positional: usize = args
-                        .iter()
-                        .filter(|a| a.name.is_none() && !a.spread)
-                        .count();
-                    if !sig.variadic && positional > expected {
-                        let param_names: Vec<&str> =
-                            sig.params.iter().map(|(n, _)| n.as_str()).collect();
-                        let hint = if param_names.is_empty() {
-                            "task takes no arguments".to_string()
-                        } else {
-                            format!("expected: {}", param_names.join(", "))
-                        };
-                        self.err(format!(
-                            "task `{name}` takes {expected} argument(s), got {positional} — {hint}"
-                        ));
-                    }
-                    // For generic tasks, infer type params from argument types,
-                    // substitute into param types, then check each arg.
-                    if let Some(td) = self.generic_task_decls.get(name).cloned() {
-                        let mut type_env: HashMap<String, Ty> = HashMap::new();
-                        for (param, arg_ty) in td.params.iter().zip(arg_tys.iter()) {
-                            self.unify_type_params(
-                                &param.ty,
-                                arg_ty,
-                                &td.type_params,
-                                &mut type_env,
-                            );
-                        }
-                        let td_variadic = td.params.last().is_some_and(|p| p.variadic);
-                        let resolved_params: Vec<(String, Ty)> = td
-                            .params
-                            .iter()
-                            .map(|p| {
-                                (
-                                    match &p.name {
-                                        crate::ast::Binding::Ident(s) => s.clone(),
-                                        _ => String::new(),
-                                    },
-                                    self.resolve_type_with_env(&p.ty, &type_env),
-                                )
-                            })
-                            .collect();
-                        self.check_call_args(
-                            &resolved_params,
-                            td_variadic,
-                            args,
-                            &arg_tys,
-                            &format!("task `{name}`"),
-                        );
-                        if let Some(ret_expr) = &td.return_type {
-                            return self.resolve_type_with_env(ret_expr, &type_env);
-                        }
-                        return Ty::None_;
-                    }
-                    self.check_call_args(
-                        &sig.params,
-                        sig.variadic,
-                        args,
-                        &arg_tys,
-                        &format!("task `{name}`"),
-                    );
-                    return sig.return_type.clone();
-                }
-                // Typed inference for prelude free functions.
-                if let Expr::Ident(name) = callee.as_ref()
-                    && name == "uuid"
-                {
-                    return Ty::Uuid;
-                }
-                if let Expr::Ident(name) = callee.as_ref()
-                    && name == "typeof"
-                {
-                    return Ty::Str;
-                }
-
-                // Typed inference for prelude free functions min/max.
-                if let Expr::Ident(name) = callee.as_ref()
-                    && matches!(name.as_str(), "min" | "max")
-                {
-                    // Validate by: is a function if present.
-                    if let Some(by_ty) = args
-                        .iter()
-                        .zip(arg_tys.iter())
-                        .find(|(a, _)| a.name.as_deref() == Some("by"))
-                        .map(|(_, ty)| ty)
-                        && !matches!(by_ty, Ty::Func(..))
-                        && !by_ty.is_opaque()
-                    {
-                        self.err(format!(
-                            "`{name}`: `by:` must be a function, got `{}`",
-                            describe_ty(by_ty)
-                        ));
-                    }
-                    let positional_tys: Vec<Ty> = args
-                        .iter()
-                        .zip(arg_tys.iter())
-                        .filter(|(a, _)| a.name.is_none())
-                        .map(|(a, ty)| {
-                            if a.spread {
-                                match ty {
-                                    Ty::List(inner) | Ty::Set(inner) => *inner.clone(),
-                                    _ => ty.clone(),
+                // Dispatch on callee identity via the name index when the callee
+                // is a bare identifier.
+                if let Expr::Ident(name) = callee.as_ref() {
+                    match self.name_index.resolve(name) {
+                        ResolvedName::TopTask => {
+                            let sig = self.top_tasks.get(name).cloned();
+                            if let Some(sig) = sig {
+                                let expected = sig.params.len();
+                                // Count only non-spread positional args; named args
+                                // may map to params by name.
+                                let positional: usize = args
+                                    .iter()
+                                    .filter(|a| a.name.is_none() && !a.spread)
+                                    .count();
+                                if !sig.variadic && positional > expected {
+                                    let param_names: Vec<&str> =
+                                        sig.params.iter().map(|(n, _)| n.as_str()).collect();
+                                    let hint = if param_names.is_empty() {
+                                        "task takes no arguments".to_string()
+                                    } else {
+                                        format!("expected: {}", param_names.join(", "))
+                                    };
+                                    self.err(format!(
+                                        "task `{name}` takes {expected} argument(s), \
+                                         got {positional} — {hint}"
+                                    ));
                                 }
-                            } else {
-                                ty.clone()
+                                // For generic tasks, infer type params from argument types,
+                                // substitute into param types, then check each arg.
+                                if let Some(td) = self.generic_task_decls.get(name).cloned() {
+                                    let mut type_env: HashMap<String, Ty> = HashMap::new();
+                                    for (param, arg_ty) in td.params.iter().zip(arg_tys.iter()) {
+                                        self.unify_type_params(
+                                            &param.ty,
+                                            arg_ty,
+                                            &td.type_params,
+                                            &mut type_env,
+                                        );
+                                    }
+                                    let td_variadic = td.params.last().is_some_and(|p| p.variadic);
+                                    let resolved_params: Vec<(String, Ty)> = td
+                                        .params
+                                        .iter()
+                                        .map(|p| {
+                                            (
+                                                match &p.name {
+                                                    crate::ast::Binding::Ident(s) => s.clone(),
+                                                    _ => String::new(),
+                                                },
+                                                self.resolve_type_with_env(&p.ty, &type_env),
+                                            )
+                                        })
+                                        .collect();
+                                    self.check_call_args(
+                                        &resolved_params,
+                                        td_variadic,
+                                        args,
+                                        &arg_tys,
+                                        &format!("task `{name}`"),
+                                    );
+                                    if let Some(ret_expr) = &td.return_type {
+                                        return self.resolve_type_with_env(ret_expr, &type_env);
+                                    }
+                                    return Ty::None_;
+                                }
+                                self.check_call_args(
+                                    &sig.params,
+                                    sig.variadic,
+                                    args,
+                                    &arg_tys,
+                                    &format!("task `{name}`"),
+                                );
+                                return sig.return_type.clone();
                             }
-                        })
-                        .collect();
-                    let elem_ty = match positional_tys.as_slice() {
-                        // No positional args — element type is indeterminate.
-                        [] => Ty::Unknown(UnknownReason::InferenceLimitation),
-                        [Ty::List(inner)] => *inner.clone(),
-                        [single] => single.clone(),
-                        slice if slice.iter().all(|t| self.types_match(t, &slice[0])) => {
-                            slice[0].clone()
                         }
-                        slice => {
-                            let types: Vec<String> = slice.iter().map(describe_ty).collect();
-                            self.err(format!(
-                                "`{name}`: arguments must all have the same type, got {}",
-                                types.join(", ")
-                            ));
-                            Ty::Error
+                        ResolvedName::PreludeNamespace => {
+                            // Typed inference for prelude free functions.
+                            match name.as_str() {
+                                "uuid" => return Ty::Uuid,
+                                "typeof" => return Ty::Str,
+                                "min" | "max" => {
+                                    // Validate by: is a function if present.
+                                    if let Some(by_ty) = args
+                                        .iter()
+                                        .zip(arg_tys.iter())
+                                        .find(|(a, _)| a.name.as_deref() == Some("by"))
+                                        .map(|(_, ty)| ty)
+                                        && !matches!(by_ty, Ty::Func(..))
+                                        && !by_ty.is_opaque()
+                                    {
+                                        self.err(format!(
+                                            "`{name}`: `by:` must be a function, got `{}`",
+                                            describe_ty(by_ty)
+                                        ));
+                                    }
+                                    let positional_tys: Vec<Ty> = args
+                                        .iter()
+                                        .zip(arg_tys.iter())
+                                        .filter(|(a, _)| a.name.is_none())
+                                        .map(|(a, ty)| {
+                                            if a.spread {
+                                                match ty {
+                                                    Ty::List(inner) | Ty::Set(inner) => {
+                                                        *inner.clone()
+                                                    }
+                                                    _ => ty.clone(),
+                                                }
+                                            } else {
+                                                ty.clone()
+                                            }
+                                        })
+                                        .collect();
+                                    let elem_ty = match positional_tys.as_slice() {
+                                        // No positional args — element type is indeterminate.
+                                        [] => Ty::Unknown(UnknownReason::InferenceLimitation),
+                                        [Ty::List(inner)] => *inner.clone(),
+                                        [single] => single.clone(),
+                                        slice
+                                            if slice
+                                                .iter()
+                                                .all(|t| self.types_match(t, &slice[0])) =>
+                                        {
+                                            slice[0].clone()
+                                        }
+                                        slice => {
+                                            let types: Vec<String> =
+                                                slice.iter().map(describe_ty).collect();
+                                            self.err(format!(
+                                                "`{name}`: arguments must all have the same \
+                                                 type, got {}",
+                                                types.join(", ")
+                                            ));
+                                            Ty::Error
+                                        }
+                                    };
+                                    return Ty::Nullable(Box::new(elem_ty));
+                                }
+                                // Other prelude free identifiers called as functions —
+                                // return type is indeterminate.
+                                _ => {}
+                            }
                         }
-                    };
-                    return Ty::Nullable(Box::new(elem_ty));
+                        // Agent, TypeName, Enum, Unresolved — not callable by name;
+                        // fall through to the generic callee inference path.
+                        _ => {}
+                    }
                 }
                 let _ = self.infer_expr(callee, scope);
                 // Callee type not resolved — return type is also indeterminate.
@@ -624,92 +664,47 @@ impl Checker {
                     );
                     return sig.return_type;
                 }
-                // Special cases for inferring Ai.classify → Enum(T)
+                // Resolve ident-qualified method calls through the name index.
+                //
+                // Agent.delegate validation forms:
+                //   Symbol: Agent.delegate(Foo.handle, data)
+                //     — arg[0] is FieldAccess(Ident("Foo"), "handle")
+                //     — arg[1] is the data; type-checked against the handler param
+                //   String: Agent.delegate(Foo, "handle", data)
+                //     — arg[0] is Ident("Foo")
+                //     — arg[1] is a plain string literal naming the handler
+                //     — arg[2] is the data; type-checked against the handler param
                 if let Expr::Ident(name) = object.as_ref() {
-                    if self.agents.contains_key(name) {
-                        self.err(format!(
-                            "direct agent task calls like `{name}.{method}(...)` are unsupported; use `self.{method}(...)` inside that agent or mailbox APIs such as `Agent.send(...)` / `Agent.delegate(...)`"
-                        ));
-                        return Ty::Error;
-                    }
-                    // Validate Agent.delegate call sites at compile time.
-                    //
-                    // Symbol form:  Agent.delegate(Foo.handle, data)
-                    //   — arg[0] is FieldAccess(Ident("Foo"), "handle")
-                    //   — arg[1] is the data; its type is checked against the handler param
-                    //
-                    // String form:  Agent.delegate(Foo, "handle", data)
-                    //   — arg[0] is Ident("Foo")
-                    //   — arg[1] is a plain string literal naming the handler
-                    //   — arg[2] is the data; its type is checked against the handler param
-                    if name == "Agent" && method == "delegate" {
-                        if let Some(first_arg) = args.first() {
-                            match &first_arg.value {
-                                // Symbol form: Foo.handle
-                                Expr::FieldAccess(obj_expr, handler_name) => {
-                                    if let Expr::Ident(agent_name) = obj_expr.as_ref()
-                                        && let Some(agent) = self.agents.get(agent_name)
-                                    {
-                                        // handler existence is already checked in FieldAccess
-                                        if let Some(data_arg) = args.get(1) {
-                                            if let Some(Some(param_ty)) =
-                                                agent.handlers.get(handler_name).cloned()
+                    match self.name_index.resolve(name) {
+                        ResolvedName::Agent => {
+                            // Direct agent-task calls are not supported; callers
+                            // must use `self.task(...)` or the mailbox API.
+                            self.err(format!(
+                                "direct agent task calls like `{name}.{method}(...)` \
+                                 are unsupported; use `self.{method}(...)` inside that \
+                                 agent or mailbox APIs such as `Agent.send(...)` / \
+                                 `Agent.delegate(...)`"
+                            ));
+                            return Ty::Error;
+                        }
+                        ResolvedName::PreludeNamespace => {
+                            // Validate Agent.delegate call sites at compile time.
+                            if name == "Agent" && method == "delegate" {
+                                if let Some(first_arg) = args.first() {
+                                    match &first_arg.value {
+                                        // Symbol form: Foo.handle
+                                        Expr::FieldAccess(obj_expr, handler_name) => {
+                                            if let Expr::Ident(agent_name) = obj_expr.as_ref()
+                                                && let Some(agent) = self.agents.get(agent_name)
                                             {
-                                                self.expect(
-                                                    &arg_tys[1],
-                                                    &param_ty,
-                                                    &format!(
-                                                        "argument to `{agent_name}.{handler_name}`"
-                                                    ),
-                                                );
-                                            }
-                                            let _ = data_arg; // already inferred in arg_tys
-                                        }
-                                    }
-                                }
-                                // String form: Foo, "handle"
-                                Expr::Ident(agent_name)
-                                    if self.agents.contains_key(agent_name) =>
-                                {
-                                    let agent_name = agent_name.clone();
-                                    if let Some(second_arg) = args.get(1) {
-                                        if let Expr::StringLit(parts) = &second_arg.value {
-                                            // Only check when the string is a plain literal
-                                            // (no interpolation) so we can resolve it statically.
-                                            let maybe_handler: Option<String> =
-                                                parts.iter().try_fold(
-                                                    String::new(),
-                                                    |acc, p| match p {
-                                                        crate::ast::StringPart::Literal(s) => {
-                                                            Some(acc + s)
-                                                        }
-                                                        _ => None,
-                                                    },
-                                                );
-                                            if let Some(handler_name) = maybe_handler {
-                                                let agent = self.agents.get(&agent_name).unwrap();
-                                                if !agent.handlers.contains_key(&handler_name) {
-                                                    self.err(format!(
-                                                        "agent `{agent_name}` has no handler \
-                                                         `{handler_name}`; declared handlers: {}",
-                                                        if agent.handlers.is_empty() {
-                                                            "none".to_string()
-                                                        } else {
-                                                            agent.handlers
-                                                                .keys()
-                                                                .map(|s| s.as_str())
-                                                                .collect::<Vec<_>>()
-                                                                .join(", ")
-                                                        }
-                                                    ));
-                                                } else if let Some(data_arg) = args.get(2) {
-                                                    if let Some(Some(param_ty)) = agent
-                                                        .handlers
-                                                        .get(&handler_name)
-                                                        .cloned()
+                                                // Handler existence already checked in
+                                                // the FieldAccess arm above.
+                                                if let Some(data_arg) = args.get(1) {
+                                                    if let Some(Some(param_ty)) =
+                                                        agent.handlers.get(handler_name).cloned()
                                                     {
                                                         self.expect(
-                                                            &arg_tys[2],
+                                                            &arg_tys[1],
                                                             &param_ty,
                                                             &format!(
                                                                 "argument to \
@@ -721,52 +716,131 @@ impl Checker {
                                                 }
                                             }
                                         }
+                                        // String form: Foo, "handle"
+                                        Expr::Ident(agent_name)
+                                            if matches!(
+                                                self.name_index.resolve(agent_name),
+                                                ResolvedName::Agent
+                                            ) =>
+                                        {
+                                            let agent_name = agent_name.clone();
+                                            if let Some(second_arg) = args.get(1)
+                                                && let Expr::StringLit(parts) = &second_arg.value
+                                            {
+                                                // Only check plain string literals
+                                                // (no interpolation) for static resolution.
+                                                let maybe_handler: Option<String> = parts
+                                                    .iter()
+                                                    .try_fold(String::new(), |acc, p| match p {
+                                                        crate::ast::StringPart::Literal(s) => {
+                                                            Some(acc + s)
+                                                        }
+                                                        _ => None,
+                                                    });
+                                                if let Some(handler_name) = maybe_handler
+                                                    && let Some(agent) =
+                                                        self.agents.get(&agent_name)
+                                                {
+                                                    if !agent.handlers.contains_key(&handler_name) {
+                                                        self.err(format!(
+                                                            "agent `{agent_name}` has \
+                                                             no handler \
+                                                             `{handler_name}`; declared \
+                                                             handlers: {}",
+                                                            if agent.handlers.is_empty() {
+                                                                "none".to_string()
+                                                            } else {
+                                                                agent
+                                                                    .handlers
+                                                                    .keys()
+                                                                    .map(|s| s.as_str())
+                                                                    .collect::<Vec<_>>()
+                                                                    .join(", ")
+                                                            }
+                                                        ));
+                                                    } else if let Some(data_arg) = args.get(2) {
+                                                        if let Some(Some(param_ty)) = agent
+                                                            .handlers
+                                                            .get(&handler_name)
+                                                            .cloned()
+                                                        {
+                                                            self.expect(
+                                                                &arg_tys[2],
+                                                                &param_ty,
+                                                                &format!(
+                                                                    "argument to \
+                                                                     `{agent_name}.\
+                                                                     {handler_name}`"
+                                                                ),
+                                                            );
+                                                        }
+                                                        let _ = data_arg;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        _ => {}
                                     }
                                 }
-                                _ => {}
+                                return Ty::None_;
                             }
-                        }
-                        return Ty::None_;
-                    }
-                    // Resolve namespace method return types from the catalog.
-                    // This replaces the former hand-maintained per-namespace
-                    // match arms and ensures checker, LSP, and docs stay in sync.
-                    if let Some(entry) = prelude::catalog_method(name, method.as_str()) {
-                        return match entry.result {
-                            BuiltinResult::Fixed(spec) => prelude::ty_from_spec(spec),
-                            BuiltinResult::AiClassify => {
-                                // Return `Nullable(Enum(as:))` when the `as:`
-                                // argument names a known enum type; otherwise
-                                // the classification target is unknown.
-                                if let Some(as_arg) =
-                                    args.iter().find(|a| a.name.as_deref() == Some("as"))
-                                    && let Expr::Ident(enum_name) = &as_arg.value
-                                    && self.enum_variants.contains_key(enum_name)
-                                {
-                                    Ty::Nullable(Box::new(Ty::Enum(enum_name.clone(), vec![])))
-                                } else {
-                                    Ty::Unknown(UnknownReason::InferenceLimitation)
-                                }
-                            }
-                            BuiltinResult::AiExtract => {
-                                // Return `Nullable(resolve_type(as:))` when
-                                // the `as:` argument names a resolvable type.
-                                let inner = args
-                                    .iter()
-                                    .find(|a| a.name.as_deref() == Some("as"))
-                                    .map(|a| {
-                                        if let Expr::Ident(type_name) = &a.value {
-                                            self.resolve_type(&TypeExpr::Named(type_name.clone()))
+
+                            // Resolve namespace method return types from the catalog.
+                            // Adding a new prelude namespace requires only a catalog
+                            // entry; this arm needs no modification.
+                            if let Some(entry) = prelude::catalog_method(name, method.as_str()) {
+                                return match entry.result {
+                                    BuiltinResult::Fixed(spec) => prelude::ty_from_spec(spec),
+                                    BuiltinResult::AiClassify => {
+                                        // Return `Nullable(Enum(as:))` when the `as:` argument
+                                        // names a known enum type; otherwise the target is unknown.
+                                        if let Some(as_arg) =
+                                            args.iter().find(|a| a.name.as_deref() == Some("as"))
+                                            && let Expr::Ident(enum_name) = &as_arg.value
+                                            && matches!(
+                                                self.name_index.resolve(enum_name),
+                                                ResolvedName::Enum
+                                            )
+                                        {
+                                            Ty::Nullable(Box::new(Ty::Enum(
+                                                enum_name.clone(),
+                                                vec![],
+                                            )))
                                         } else {
                                             Ty::Unknown(UnknownReason::InferenceLimitation)
                                         }
-                                    })
-                                    .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
-                                Ty::Nullable(Box::new(inner))
+                                    }
+                                    BuiltinResult::AiExtract => {
+                                        // Return `Nullable(resolve_type(as:))` when the `as:`
+                                        // argument names a resolvable type.
+                                        let inner = args
+                                            .iter()
+                                            .find(|a| a.name.as_deref() == Some("as"))
+                                            .map(|a| {
+                                                if let Expr::Ident(type_name) = &a.value {
+                                                    self.resolve_type(&TypeExpr::Named(
+                                                        type_name.clone(),
+                                                    ))
+                                                } else {
+                                                    Ty::Unknown(UnknownReason::InferenceLimitation)
+                                                }
+                                            })
+                                            .unwrap_or(Ty::Unknown(
+                                                UnknownReason::InferenceLimitation,
+                                            ));
+                                        Ty::Nullable(Box::new(inner))
+                                    }
+                                    // Runtime-dynamic: return type depends on external context.
+                                    BuiltinResult::Unknown => {
+                                        Ty::Unknown(UnknownReason::ExternalDynamic)
+                                    }
+                                };
                             }
-                            // Runtime-dynamic: return type depends on external context.
-                            BuiltinResult::Unknown => Ty::Unknown(UnknownReason::ExternalDynamic),
-                        };
+                        }
+                        // TopTask, TypeName, Enum, Unresolved, or a local that was
+                        // bound to a non-namespace value — fall through to value-level
+                        // method dispatch below.
+                        _ => {}
                     }
                 }
                 let obj_ty = self.infer_expr(object, scope);
@@ -774,7 +848,9 @@ impl Checker {
                     (Ty::List(elem), "push" | "filter" | "sort" | "reverse" | "take" | "skip") => {
                         Ty::List(elem.clone())
                     }
-                    (Ty::List(_), "flatten") => Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation))),
+                    (Ty::List(_), "flatten") => {
+                        Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation)))
+                    }
                     (Ty::List(_), "len" | "count") => Ty::Int,
                     (Ty::List(_), "is_empty") => Ty::Bool,
                     (Ty::List(_), "contains" | "any" | "all") => Ty::Bool,
@@ -793,8 +869,12 @@ impl Checker {
                         };
                         Ty::List(Box::new(Ty::Tuple(vec![*elem_a.clone(), elem_b])))
                     }
-                    (Ty::List(_), "map") => Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation))),
-                    (Ty::List(_), "reduce" | "sum" | "min" | "max") => Ty::Unknown(UnknownReason::InferenceLimitation),
+                    (Ty::List(_), "map") => {
+                        Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation)))
+                    }
+                    (Ty::List(_), "reduce" | "sum" | "min" | "max") => {
+                        Ty::Unknown(UnknownReason::InferenceLimitation)
+                    }
                     (Ty::List(_), "join") => Ty::Str,
                     (Ty::Str, "len" | "count" | "length") => Ty::Int,
                     (
@@ -921,11 +1001,10 @@ impl Checker {
                 for p in params {
                     // Unannotated lambda parameters — type inference is not yet
                     // implemented; bind as InferenceLimitation to avoid cascade errors.
-                    let ty = p
-                        .ty
-                        .as_ref()
-                        .map(|t| self.resolve_type(t))
-                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
+                    let ty =
+                        p.ty.as_ref()
+                            .map(|t| self.resolve_type(t))
+                            .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                     scope.define(p.name.clone(), ty);
                 }
                 let ret = match body {

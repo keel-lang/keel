@@ -14,6 +14,8 @@ All notable changes to Keel.
 
 ### Changed
 
+- **Name resolution extracted into a dedicated pass.** A new `types::resolve` module defines `ResolvedName` (variants: `TopTask`, `Agent`, `Enum`, `TypeName`, `PreludeNamespace`, `Unresolved`) and a standalone `build()` function that compiles the checker's declaration tables into a `NameIndex`. The `Checker::infer_expr` method now consults this index for every `Expr::Ident`, `Expr::FieldAccess` LHS, `Expr::MethodCall` receiver, and `Expr::Call` callee instead of performing ad-hoc string comparisons against `top_tasks`, `agents`, `enum_variants`, `structs`, `aliases`, and `prelude` independently. Adding a new prelude namespace now requires only a catalog entry — `infer_expr` needs no modification. Internal change; no user-visible behaviour difference.
+
 - **`Ty::Unknown` split into four semantically distinct variants.** The bare `Unknown` variant has been replaced with `Unknown(UnknownReason)`, `Error`, `Unresolved(String)`, and the already-existing `Dynamic`. Each variant carries a precise meaning:
 
   | Variant | When produced | Strict-mode warning? |

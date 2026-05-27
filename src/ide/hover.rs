@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::ide::symbols::ident_at_offset;
 use crate::types::checker::Checker;
 use crate::types::scope::Scope;
-use crate::types::ty::{describe_ty, Ty, UnknownReason};
+use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 /// Resolve the inferred type for the identifier at `offset` (UTF-8 byte
 /// offset into `text`). Returns `None` if the cursor is not on an
@@ -109,7 +109,10 @@ pub(crate) fn insert_binding(
                 _ => vec![],
             };
             for (i, name) in names.iter().enumerate() {
-                let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
+                let t = elem_tys
+                    .get(i)
+                    .cloned()
+                    .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                 out.insert(name.clone(), t);
             }
         }
@@ -171,11 +174,7 @@ pub(crate) fn collect_decl_bindings(
     }
 }
 
-pub(crate) fn collect_stmt_bindings(
-    stmt: &Stmt,
-    c: &mut Checker,
-    out: &mut HashMap<String, Ty>,
-) {
+pub(crate) fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String, Ty>) {
     match stmt {
         Stmt::Let { binding, ty, value } => {
             let mut scope = Scope::new();

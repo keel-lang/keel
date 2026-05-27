@@ -838,9 +838,16 @@ fn decl_span_task() {
     let src = "task greet(name: str) -> str { name }";
     let prog = parse_ok(src);
     let span = first_span(&prog);
-    assert_ne!(span, 0..0, "task decl span must not be the 0..0 placeholder");
+    assert_ne!(
+        span,
+        0..0,
+        "task decl span must not be the 0..0 placeholder"
+    );
     assert_eq!(span.start, 0);
-    assert!(src[span].starts_with("task"), "span should cover the task keyword");
+    assert!(
+        src[span].starts_with("task"),
+        "span should cover the task keyword"
+    );
 }
 
 #[test]
@@ -848,9 +855,16 @@ fn decl_span_agent() {
     let src = "agent Greeter { @role \"assistant\" }";
     let prog = parse_ok(src);
     let span = first_span(&prog);
-    assert_ne!(span, 0..0, "agent decl span must not be the 0..0 placeholder");
+    assert_ne!(
+        span,
+        0..0,
+        "agent decl span must not be the 0..0 placeholder"
+    );
     assert_eq!(span.start, 0);
-    assert!(src[span].starts_with("agent"), "span should cover the agent keyword");
+    assert!(
+        src[span].starts_with("agent"),
+        "span should cover the agent keyword"
+    );
 }
 
 #[test]
@@ -858,9 +872,16 @@ fn decl_span_type() {
     let src = "type Color = red | green | blue";
     let prog = parse_ok(src);
     let span = first_span(&prog);
-    assert_ne!(span, 0..0, "type decl span must not be the 0..0 placeholder");
+    assert_ne!(
+        span,
+        0..0,
+        "type decl span must not be the 0..0 placeholder"
+    );
     assert_eq!(span.start, 0);
-    assert!(src[span].starts_with("type"), "span should cover the type keyword");
+    assert!(
+        src[span].starts_with("type"),
+        "span should cover the type keyword"
+    );
 }
 
 #[test]
@@ -868,9 +889,16 @@ fn decl_span_interface() {
     let src = "interface Printable { task print(self) -> str }";
     let prog = parse_ok(src);
     let span = first_span(&prog);
-    assert_ne!(span, 0..0, "interface decl span must not be the 0..0 placeholder");
+    assert_ne!(
+        span,
+        0..0,
+        "interface decl span must not be the 0..0 placeholder"
+    );
     assert_eq!(span.start, 0);
-    assert!(src[span].starts_with("interface"), "span should cover the interface keyword");
+    assert!(
+        src[span].starts_with("interface"),
+        "span should cover the interface keyword"
+    );
 }
 
 #[test]
@@ -878,9 +906,16 @@ fn decl_span_impl() {
     let src = "impl Stringable for Point { task to_str(self) -> str { \"p\" } }";
     let prog = parse_ok(src);
     let span = first_span(&prog);
-    assert_ne!(span, 0..0, "impl decl span must not be the 0..0 placeholder");
+    assert_ne!(
+        span,
+        0..0,
+        "impl decl span must not be the 0..0 placeholder"
+    );
     assert_eq!(span.start, 0);
-    assert!(src[span].starts_with("impl"), "span should cover the impl keyword");
+    assert!(
+        src[span].starts_with("impl"),
+        "span should cover the impl keyword"
+    );
 }
 
 #[test]
@@ -894,10 +929,20 @@ fn decl_span_multiple_are_distinct() {
         prog.declarations[1].1.clone(),
     );
     assert_ne!(span_a, 0..0, "first decl span must not be 0..0 placeholder");
-    assert_ne!(span_b, 0..0, "second decl span must not be 0..0 placeholder");
+    assert_ne!(
+        span_b,
+        0..0,
+        "second decl span must not be 0..0 placeholder"
+    );
     assert_ne!(span_a, span_b, "declarations must have distinct spans");
-    assert!(src[span_a.clone()].starts_with("type"), "first span covers 'type'");
-    assert!(src[span_b.clone()].starts_with("task"), "second span covers 'task'");
+    assert!(
+        src[span_a.clone()].starts_with("type"),
+        "first span covers 'type'"
+    );
+    assert!(
+        src[span_b.clone()].starts_with("task"),
+        "second span covers 'task'"
+    );
     // Spans must not overlap: first ends before second starts.
     assert!(
         span_a.end <= span_b.start,

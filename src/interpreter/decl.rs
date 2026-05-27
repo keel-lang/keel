@@ -263,11 +263,7 @@ fn type_display_str(te: &TypeExpr) -> String {
         TypeExpr::Named(n) => n.clone(),
         TypeExpr::Nullable(inner) => format!("{}?", type_display_str(inner)),
         TypeExpr::List(inner) => format!("[{}]", type_display_str(inner)),
-        TypeExpr::Map(k, v) => format!(
-            "map[{}, {}]",
-            type_display_str(k),
-            type_display_str(v)
-        ),
+        TypeExpr::Map(k, v) => format!("map[{}, {}]", type_display_str(k), type_display_str(v)),
         TypeExpr::Set(inner) => format!("set[{}]", type_display_str(inner)),
         TypeExpr::Tuple(items) => {
             let parts: Vec<_> = items.iter().map(type_display_str).collect();
@@ -291,7 +287,6 @@ fn type_display_str(te: &TypeExpr) -> String {
         TypeExpr::Dynamic => "dynamic".to_string(),
     }
 }
-
 
 #[cfg(test)]
 mod tests {

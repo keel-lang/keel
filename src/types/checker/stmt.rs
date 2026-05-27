@@ -9,9 +9,9 @@ use std::collections::HashSet;
 use crate::ast::*;
 use crate::lexer::Span;
 use crate::types::scope::Scope;
-use crate::types::ty::{describe_ty, Ty, UnknownReason};
+use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
-use super::{binop::check_binop, Checker};
+use super::{Checker, binop::check_binop};
 
 impl Checker {
     /// Second-pass validation: walk all task, agent, and top-level statement
@@ -20,6 +20,23 @@ impl Checker {
     /// Must be called after [`Checker::collect`] so that all type and task
     /// signatures are already registered.
     pub(crate) fn check_body(&mut self, program: &Program) {
+        // Build the global name index once, after collect() has populated all
+        // declaration tables.  This index is consulted by infer_expr for every
+        // Expr::Ident that the lexical scope does not satisfy.
+        use crate::types::resolve as name_resolve;
+        self.name_index = name_resolve::build(
+            self.top_tasks.keys().cloned(),
+            self.agents.keys().cloned(),
+            self.enum_variants.keys().cloned(),
+            self.structs.keys().chain(self.aliases.keys()).cloned(),
+            self.prelude.iter().cloned(),
+        );
+        // Run the name-resolution walk to emit undefined-identifier errors.
+        // This is the canonical source of "undefined: `x`" diagnostics; the
+        // Expr::Ident / Unresolved arm in infer_expr returns Ty::Error silently.
+        let name_errors = name_resolve::resolve_names(program, &self.name_index);
+        self.errors.extend(name_errors);
+
         for (decl, _) in &program.declarations {
             match decl {
                 Decl::Task(t) => {
@@ -65,7 +82,10 @@ impl Checker {
                     Ty::Struct(f) => f.clone(),
                     other if other.is_opaque() => {
                         for (_, local) in fields {
-                            scope.define(local.clone(), Ty::Unknown(UnknownReason::InferenceLimitation));
+                            scope.define(
+                                local.clone(),
+                                Ty::Unknown(UnknownReason::InferenceLimitation),
+                            );
                         }
                         return;
                     }
@@ -75,7 +95,10 @@ impl Checker {
                             describe_ty(other)
                         ));
                         for (_, local) in fields {
-                            scope.define(local.clone(), Ty::Unknown(UnknownReason::InferenceLimitation));
+                            scope.define(
+                                local.clone(),
+                                Ty::Unknown(UnknownReason::InferenceLimitation),
+                            );
                         }
                         return;
                     }
@@ -97,7 +120,10 @@ impl Checker {
                     Ty::Tuple(items) => items.clone(),
                     other if other.is_opaque() => {
                         for name in names {
-                            scope.define(name.clone(), Ty::Unknown(UnknownReason::InferenceLimitation));
+                            scope.define(
+                                name.clone(),
+                                Ty::Unknown(UnknownReason::InferenceLimitation),
+                            );
                         }
                         return;
                     }
@@ -120,7 +146,10 @@ impl Checker {
                     ));
                 }
                 for (i, name) in names.iter().enumerate() {
-                    let t = elem_tys.get(i).cloned().unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
+                    let t = elem_tys
+                        .get(i)
+                        .cloned()
+                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                     scope.define(name.clone(), t);
                 }
             }

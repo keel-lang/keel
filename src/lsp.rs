@@ -814,18 +814,21 @@ task t() {
         );
         // Regression (D1): `now` is a method (Time.now), not a reserved keyword.
         // It must appear with kind FUNCTION, never as a KEYWORD completion.
-        let now_as_keyword = items.iter().any(|i| {
-            i.label == "now" && i.kind == Some(CompletionItemKind::KEYWORD)
-        });
+        let now_as_keyword = items
+            .iter()
+            .any(|i| i.label == "now" && i.kind == Some(CompletionItemKind::KEYWORD));
         assert!(
             !now_as_keyword,
             "`now` must not appear as a keyword completion:\n{labels:?}"
         );
         // Confirm it does appear — correctly — as a method completion.
-        let now_as_method = items.iter().any(|i| {
-            i.label == "now" && i.kind == Some(CompletionItemKind::FUNCTION)
-        });
-        assert!(now_as_method, "`now` should appear as a method completion (Time.now)");
+        let now_as_method = items
+            .iter()
+            .any(|i| i.label == "now" && i.kind == Some(CompletionItemKind::FUNCTION));
+        assert!(
+            now_as_method,
+            "`now` should appear as a method completion (Time.now)"
+        );
     }
 
     #[tokio::test]
