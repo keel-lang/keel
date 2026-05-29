@@ -36,18 +36,12 @@ fn load_and_parse(path: &Path) -> Result<(String, NamedSource<String>, crate::as
 /// Nothing is returned; errors are printed to stderr. The caller is responsible
 /// for constructing a summary error after this function returns.
 #[cold]
-fn report_type_errors(errors: &[types::checker::TypeError], named_src: &NamedSource<String>) {
+fn report_type_errors(
+    errors: &[types::diagnostics::TypeDiagnostic],
+    named_src: &NamedSource<String>,
+) {
     for err in errors {
-        if let Some(span) = &err.span {
-            let report = miette::miette!(
-                labels = vec![miette::LabeledSpan::at(span.clone(), &err.message)],
-                "Type error"
-            )
-            .with_source_code(named_src.clone());
-            eprintln!("{:?}", report);
-        } else {
-            eprintln!("  Type error: {err}");
-        }
+        eprintln!("{:?}", err.to_report(named_src));
     }
 }
 

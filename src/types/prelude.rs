@@ -1671,10 +1671,10 @@ mod tests {
                     let path = entry.path();
                     if path.is_dir() {
                         collect(&path, out);
-                    } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
-                        if let Ok(text) = std::fs::read_to_string(&path) {
-                            out.push_str(&text);
-                        }
+                    } else if path.extension().and_then(|e| e.to_str()) == Some("md")
+                        && let Ok(text) = std::fs::read_to_string(&path)
+                    {
+                        out.push_str(&text);
                     }
                 }
             }

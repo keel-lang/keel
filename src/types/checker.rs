@@ -22,14 +22,14 @@ use crate::ast::*;
 use crate::lexer::Span;
 use crate::types::interface::{self as iface, Signature};
 // Re-export so existing call-sites (`crate::types::checker::Ty`, etc.) remain valid.
-pub use crate::types::ty::{Ty, TypeError};
+pub use crate::types::diagnostics::TypeDiagnostic;
+pub use crate::types::ty::Ty;
 // Re-export IDE helpers so `lsp.rs` call-sites remain valid without churn.
 pub use crate::ide::hover::type_at;
 pub use crate::ide::symbols::{definition_of, ident_at_offset, ident_span_at_offset, usages_of};
 use crate::types::prelude::{builtin_interfaces, prelude_names};
 use crate::types::resolve::NameIndex;
 use crate::types::scope::Scope;
-use crate::types::ty::describe_ty;
 
 // ---------------------------------------------------------------------------
 // Per-task / per-handler info
@@ -60,7 +60,7 @@ struct AgentInfo {
 // ---------------------------------------------------------------------------
 
 pub(crate) struct Checker {
-    errors: Vec<TypeError>,
+    errors: Vec<TypeDiagnostic>,
     enum_variants: HashMap<String, Vec<String>>,
     structs: HashMap<String, Vec<(String, Ty)>>,
     aliases: HashMap<String, Ty>,
@@ -103,7 +103,7 @@ pub(crate) struct Checker {
 // ---------------------------------------------------------------------------
 
 #[must_use]
-pub fn check(program: &Program) -> Vec<TypeError> {
+pub fn check(program: &Program) -> Vec<TypeDiagnostic> {
     let mut c = Checker::new();
     c.collect(program);
     c.check_body(program);
@@ -114,7 +114,7 @@ pub fn check(program: &Program) -> Vec<TypeError> {
 /// checker cannot resolve.  Use `keel check --strict` to surface gaps
 /// in type coverage that the normal checker accepts silently.
 #[must_use]
-pub fn check_strict(program: &Program) -> Vec<TypeError> {
+pub fn check_strict(program: &Program) -> Vec<TypeDiagnostic> {
     let mut c = Checker::new();
     c.strict = true;
     c.collect(program);
@@ -147,19 +147,29 @@ impl Checker {
     /// Emit an error, automatically attaching the current statement's span
     /// when one is available.
     fn err(&mut self, msg: impl Into<String>) {
-        let mut e = TypeError::new(msg);
-        if let Some(ref s) = self.current_span {
-            e = e.at(s.clone());
-        }
-        self.errors.push(e);
+        let span = self.current_span.clone().unwrap_or(0..0);
+        self.errors.push(TypeDiagnostic::other(msg, span));
     }
 
-    #[expect(
-        dead_code,
-        reason = "kept for diagnostics that need explicit source spans"
-    )]
     fn err_at(&mut self, msg: impl Into<String>, span: Span) {
-        self.errors.push(TypeError::new(msg).at(span));
+        self.errors.push(TypeDiagnostic::other(msg, span));
+    }
+
+    fn wrong_arity(
+        &mut self,
+        task_name: impl Into<String>,
+        expected: usize,
+        actual: usize,
+        expected_params: Vec<String>,
+        span: Span,
+    ) {
+        self.errors.push(TypeDiagnostic::WrongArity {
+            task_name: task_name.into(),
+            expected,
+            actual,
+            expected_params,
+            span,
+        });
     }
 
     fn check_impl_conformance(&mut self, impl_decl: &ImplDecl) {
@@ -178,12 +188,19 @@ impl Checker {
 
         let provided: HashSet<&str> = impl_decl.methods.iter().map(|m| m.name.as_str()).collect();
 
+        // Span for the impl block as a whole — set by collect() before calling
+        // this function.  Used for "missing method" errors that have no better
+        // site to point to.
+        let impl_span = self.current_span.clone().unwrap_or(0..0);
+
         for sig in &sigs {
             if !provided.contains(sig.name.as_str()) {
-                self.err(format!(
-                    "impl `{iface_name}` for `{type_name}` is missing required method `{}`",
-                    sig.name
-                ));
+                self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                    impl_name: type_name.clone(),
+                    interface_name: iface_name.clone(),
+                    reason: format!("missing required method `{}`", sig.name),
+                    span: impl_span.clone(),
+                });
                 continue;
             }
             let got_method = impl_decl
@@ -204,10 +221,15 @@ impl Checker {
                 .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
                 .count();
             if req_arity != got_arity {
-                self.err(format!(
-                    "impl `{iface_name}` for `{type_name}`: method `{}` expects {req_arity} parameter(s) but got {got_arity}",
-                    sig.name
-                ));
+                self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                    impl_name: type_name.clone(),
+                    interface_name: iface_name.clone(),
+                    reason: format!(
+                        "method `{}` expects {req_arity} parameter(s) but got {got_arity}",
+                        sig.name
+                    ),
+                    span: got_method.name_span.clone(),
+                });
             }
 
             // Return-type check — use the shared typed conformance function so
@@ -241,20 +263,34 @@ impl Checker {
                     .as_ref()
                     .map(|n| type_display_str(&n.kind))
                     .unwrap_or_else(|| "none".to_string());
-                self.err(format!(
-                    "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_str}` but returns `{got_str}`",
-                    sig.name
-                ));
+                // Point to the return-type annotation when present; fall back
+                // to the method name span so the caret is never at byte 0.
+                let ret_span = got_method
+                    .return_type
+                    .as_ref()
+                    .map(|n| n.span.clone())
+                    .unwrap_or_else(|| got_method.name_span.clone());
+                self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                    impl_name: type_name.clone(),
+                    interface_name: iface_name.clone(),
+                    reason: format!(
+                        "method `{}` must return `{req_str}` but returns `{got_str}`",
+                        sig.name
+                    ),
+                    span: ret_span,
+                });
             }
         }
 
         // Reject extra methods not declared in the interface.
         for method in &impl_decl.methods {
             if !sigs.iter().any(|s| s.name == method.name) {
-                self.err(format!(
-                    "impl `{iface_name}` for `{type_name}`: method `{}` is not part of interface `{iface_name}`",
-                    method.name
-                ));
+                self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                    impl_name: type_name.clone(),
+                    interface_name: iface_name.clone(),
+                    reason: format!("method `{}` is not declared in this interface", method.name),
+                    span: method.name_span.clone(),
+                });
             }
         }
     }
@@ -313,6 +349,11 @@ impl Checker {
     }
 
     fn expect(&mut self, actual: &Ty, expected: &Ty, context: &str) {
+        let span = self.current_span.clone().unwrap_or(0..0);
+        self.expect_at(actual, expected, context, span);
+    }
+
+    fn expect_at(&mut self, actual: &Ty, expected: &Ty, context: &str, span: Span) {
         if actual.is_opaque() {
             return;
         }
@@ -322,11 +363,13 @@ impl Checker {
 
         // Nullable actual where non-nullable expected — caller must unwrap.
         if matches!(actual, Ty::Nullable(_)) && !matches!(expected, Ty::Nullable(_)) {
-            self.err(format!(
-                "{context}: expected {}, got {} — use `!` to assert non-null or `??` to provide a fallback",
-                describe_ty(expected),
-                describe_ty(actual),
-            ));
+            self.errors.push(TypeDiagnostic::TypeMismatch {
+                context: context.to_string(),
+                expected: expected.clone(),
+                actual: actual.clone(),
+                span,
+                help: Some("use `!` to assert non-null or `??` to provide a fallback".into()),
+            });
             return;
         }
 
@@ -334,14 +377,25 @@ impl Checker {
         let expected_base = expected.strip_nullable();
 
         // Struct structural compatibility: all expected fields must be present.
+        // Forward `span` into every recursive call so that nested field errors
+        // carry the same precise location as the top-level mismatch instead of
+        // falling back to the ambient `current_span`.
         if let (Ty::Struct(actual_fields), Ty::Struct(expected_fields)) =
             (actual_base, expected_base)
         {
             for (exp_name, exp_ty) in expected_fields {
                 match actual_fields.iter().find(|(n, _)| n == exp_name) {
-                    None => self.err(format!("{context}: missing field `{exp_name}`")),
+                    None => self.err_at(
+                        format!("{context}: missing field `{exp_name}`"),
+                        span.clone(),
+                    ),
                     Some((_, act_ty)) => {
-                        self.expect(act_ty, exp_ty, &format!("{context}.{exp_name}"));
+                        self.expect_at(
+                            act_ty,
+                            exp_ty,
+                            &format!("{context}.{exp_name}"),
+                            span.clone(),
+                        );
                     }
                 }
             }
@@ -352,21 +406,30 @@ impl Checker {
         // declared `map[K, V]` is treated as a map when keys are strings and
         // every field value matches V. This matches the surface syntax where
         // the same `{...}` form serves as both struct and map literal.
+        // Forward `span` so value-type mismatches point to the argument, not
+        // to the enclosing statement.
         if let (Ty::Struct(actual_fields), Ty::Map(key_ty, value_ty)) = (actual_base, expected_base)
             && (matches!(key_ty.as_ref(), Ty::Str) || key_ty.is_opaque())
         {
             for (name, act_ty) in actual_fields {
-                self.expect(act_ty, value_ty, &format!("{context}[{name}]"));
+                self.expect_at(
+                    act_ty,
+                    value_ty,
+                    &format!("{context}[{name}]"),
+                    span.clone(),
+                );
             }
             return;
         }
 
         if actual_base != expected_base && !actual_base.is_opaque() {
-            self.err(format!(
-                "{context}: expected {}, got {}",
-                describe_ty(expected),
-                describe_ty(actual),
-            ));
+            self.errors.push(TypeDiagnostic::TypeMismatch {
+                context: context.to_string(),
+                expected: expected.clone(),
+                actual: actual.clone(),
+                span,
+                help: None,
+            });
         }
     }
 }

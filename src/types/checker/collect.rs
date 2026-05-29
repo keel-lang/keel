@@ -28,6 +28,7 @@ impl Checker {
             "Iterable",
         ];
         for node in &program.declarations {
+            self.current_span = Some(node.span.clone());
             if let Decl::Interface(iface) = &node.kind {
                 if BUILTIN_IFACES.contains(&iface.name.as_str()) {
                     self.err(format!(
@@ -42,6 +43,7 @@ impl Checker {
         }
 
         for node in &program.declarations {
+            self.current_span = Some(node.span.clone());
             match &node.kind {
                 Decl::Type(t) => self.collect_type_decl(t),
                 Decl::Task(t) => {
@@ -64,6 +66,7 @@ impl Checker {
                 _ => {}
             }
         }
+        self.current_span = None;
     }
 
     /// Register a single type declaration into the checker tables.

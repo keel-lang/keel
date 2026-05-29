@@ -9,6 +9,7 @@
 //! to reject bindings whose type the checker cannot resolve.
 
 pub mod checker;
+pub mod diagnostics;
 pub mod interface;
 pub mod prelude;
 pub(crate) mod resolve;

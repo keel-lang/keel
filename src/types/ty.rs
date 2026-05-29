@@ -1,43 +1,9 @@
 //! Core type representations shared across the type-checker sub-modules.
 //!
-//! This module owns the resolved-type enum ([`Ty`]), the diagnostic value
-//! ([`TypeError`]), and the human-readable description helper
-//! ([`describe_ty`]).  Everything here is intentionally free of AST
-//! references so that it can be imported by any sub-module without risk of
-//! circular dependencies.
-
-use crate::lexer::Span;
-
-// ---------------------------------------------------------------------------
-// Error shape
-// ---------------------------------------------------------------------------
-
-/// A type-checking diagnostic with an optional source location.
-#[derive(Debug)]
-pub struct TypeError {
-    pub message: String,
-    pub span: Option<Span>,
-}
-
-impl std::fmt::Display for TypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-
-impl TypeError {
-    pub(crate) fn new(msg: impl Into<String>) -> Self {
-        TypeError {
-            message: msg.into(),
-            span: None,
-        }
-    }
-
-    pub(crate) fn at(mut self, span: Span) -> Self {
-        self.span = Some(span);
-        self
-    }
-}
+//! This module owns the resolved-type enum ([`Ty`]) and the human-readable
+//! description helper ([`describe_ty`]).  Everything here is intentionally free
+//! of AST references so that it can be imported by any sub-module without risk
+//! of circular dependencies.
 
 // ---------------------------------------------------------------------------
 // Types (resolved, not AST-level)

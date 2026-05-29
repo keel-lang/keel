@@ -3,8 +3,6 @@
 //! Validates that inferred argument types match declared parameter types,
 //! handling positional, named, variadic, and spread arguments.
 
-use std::collections::HashMap;
-
 use crate::ast::CallArg;
 use crate::types::ty::{Ty, describe_ty};
 
@@ -32,17 +30,17 @@ impl Checker {
             ));
             return;
         }
-        let named: HashMap<&str, &Ty> = args
+        let named: std::collections::HashMap<&str, (&Ty, &CallArg)> = args
             .iter()
             .zip(arg_tys.iter())
-            .filter_map(|(a, ty)| a.name.as_deref().map(|n| (n, ty)))
+            .filter_map(|(a, ty)| a.name.as_deref().map(|n| (n, (ty, a))))
             .collect();
         // Plain positional args — not named, not spread.
-        let positional: Vec<&Ty> = args
+        let positional: Vec<(&Ty, &CallArg)> = args
             .iter()
             .zip(arg_tys.iter())
             .filter(|(a, _)| a.name.is_none() && !a.spread)
-            .map(|(_, ty)| ty)
+            .map(|(arg, ty)| (ty, arg))
             .collect();
 
         let fixed_params = if variadic && !params.is_empty() {
@@ -53,28 +51,36 @@ impl Checker {
 
         let mut pos_idx = 0;
         for (param_name, param_ty) in fixed_params {
-            let arg_ty = if let Some(ty) = named.get(param_name.as_str()) {
-                *ty
-            } else if let Some(ty) = positional.get(pos_idx) {
+            let (arg_ty, arg) = if let Some((ty, arg)) = named.get(param_name.as_str()) {
+                (*ty, *arg)
+            } else if let Some((ty, arg)) = positional.get(pos_idx) {
                 pos_idx += 1;
-                *ty
+                (*ty, *arg)
             } else {
                 continue;
             };
-            self.expect(arg_ty, param_ty, &format!("{callee} arg `{param_name}`"));
+            self.expect_at(
+                arg_ty,
+                param_ty,
+                &format!("{callee} arg `{param_name}`"),
+                arg.value.span.clone(),
+            );
         }
 
         if variadic && let Some((var_name, elem_ty)) = params.last() {
             // Check each remaining plain positional arg against the element type.
-            for arg_ty in positional.iter().skip(pos_idx) {
-                self.expect(
+            for (arg_ty, arg) in positional.iter().skip(pos_idx) {
+                self.expect_at(
                     arg_ty,
                     elem_ty,
                     &format!("{callee} variadic arg `{var_name}`"),
+                    arg.value.span.clone(),
                 );
             }
             // Check spread args: each must be list[T] or set[T].
-            for (_a, arg_ty) in args.iter().zip(arg_tys.iter()).filter(|(a, _)| a.spread) {
+            // Use err_at with the argument's own span so the diagnostic points
+            // to the specific spread expression, not to the enclosing statement.
+            for (a, arg_ty) in args.iter().zip(arg_tys.iter()).filter(|(a, _)| a.spread) {
                 let expected_list = Ty::List(Box::new(elem_ty.clone()));
                 let expected_set = Ty::Set(Box::new(elem_ty.clone()));
                 let ok = match arg_ty {
@@ -82,12 +88,15 @@ impl Checker {
                     _ => false,
                 };
                 if !ok {
-                    self.err(format!(
-                        "{callee}: spread arg `...` must be `{}` or `{}`, got `{}`",
-                        describe_ty(&expected_list),
-                        describe_ty(&expected_set),
-                        describe_ty(arg_ty),
-                    ));
+                    self.err_at(
+                        format!(
+                            "{callee}: spread arg `...` must be `{}` or `{}`, got `{}`",
+                            describe_ty(&expected_list),
+                            describe_ty(&expected_set),
+                            describe_ty(arg_ty),
+                        ),
+                        a.value.span.clone(),
+                    );
                 }
             }
         }

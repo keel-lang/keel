@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### Structured checker diagnostics
+
+Type-checker diagnostics are now structured internally. `keel check` and the LSP still show the same user-facing messages, but undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks now carry typed data and precise source spans for editor tooling.
+
 ---
 
 ## v0.1.30 — 2026-05-29

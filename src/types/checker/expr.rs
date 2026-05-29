@@ -451,16 +451,15 @@ impl Checker {
                         .filter(|arg| arg.name.is_none() && !arg.spread)
                         .count();
                     if !sig.variadic && positional > expected {
-                        let param_names: Vec<&str> =
-                            sig.params.iter().map(|(name, _)| name.as_str()).collect();
-                        let hint = if param_names.is_empty() {
-                            "task takes no arguments".to_string()
-                        } else {
-                            format!("expected: {}", param_names.join(", "))
-                        };
-                        self.err(format!(
-                            "task `{agent_name}.{task_name}` takes {expected} argument(s), got {positional} — {hint}"
-                        ));
+                        let param_names: Vec<String> =
+                            sig.params.iter().map(|(name, _)| name.clone()).collect();
+                        self.wrong_arity(
+                            format!("{agent_name}.{task_name}"),
+                            expected,
+                            positional,
+                            param_names,
+                            spanned.span.clone(),
+                        );
                     }
                     self.check_call_args(
                         &sig.params,
@@ -486,17 +485,15 @@ impl Checker {
                                     .filter(|a| a.name.is_none() && !a.spread)
                                     .count();
                                 if !sig.variadic && positional > expected {
-                                    let param_names: Vec<&str> =
-                                        sig.params.iter().map(|(n, _)| n.as_str()).collect();
-                                    let hint = if param_names.is_empty() {
-                                        "task takes no arguments".to_string()
-                                    } else {
-                                        format!("expected: {}", param_names.join(", "))
-                                    };
-                                    self.err(format!(
-                                        "task `{name}` takes {expected} argument(s), \
-                                         got {positional} — {hint}"
-                                    ));
+                                    let param_names: Vec<String> =
+                                        sig.params.iter().map(|(n, _)| n.clone()).collect();
+                                    self.wrong_arity(
+                                        name.clone(),
+                                        expected,
+                                        positional,
+                                        param_names,
+                                        spanned.span.clone(),
+                                    );
                                 }
                                 // For generic tasks, infer type params from argument types,
                                 // substitute into param types, then check each arg.
@@ -654,16 +651,15 @@ impl Checker {
                         .filter(|arg| arg.name.is_none() && !arg.spread)
                         .count();
                     if !sig.variadic && positional > expected {
-                        let param_names: Vec<&str> =
-                            sig.params.iter().map(|(name, _)| name.as_str()).collect();
-                        let hint = if param_names.is_empty() {
-                            "task takes no arguments".to_string()
-                        } else {
-                            format!("expected: {}", param_names.join(", "))
-                        };
-                        self.err(format!(
-                            "task `{agent_name}.{method}` takes {expected} argument(s), got {positional} — {hint}"
-                        ));
+                        let param_names: Vec<String> =
+                            sig.params.iter().map(|(name, _)| name.clone()).collect();
+                        self.wrong_arity(
+                            format!("{agent_name}.{method}"),
+                            expected,
+                            positional,
+                            param_names,
+                            spanned.span.clone(),
+                        );
                     }
                     self.check_call_args(
                         &sig.params,

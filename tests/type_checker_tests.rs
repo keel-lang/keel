@@ -1,17 +1,16 @@
 use keel_lang::lexer::lex;
 use keel_lang::parser::parse;
-use keel_lang::types::checker::{self, check};
-use keel_lang::types::ty::TypeError;
+use keel_lang::types::checker::{self, TypeDiagnostic, check};
 use miette::NamedSource;
 
 fn type_errors(source: &str) -> Vec<String> {
     let named = NamedSource::new("t.keel", source.to_string());
     let tokens = lex(source, &named).expect("lex failed");
     let program = parse(tokens, source.len(), &named).expect("parse failed");
-    check(&program).into_iter().map(|e| e.message).collect()
+    check(&program).into_iter().map(|e| e.message()).collect()
 }
 
-fn type_errors_full(source: &str) -> Vec<TypeError> {
+fn type_errors_full(source: &str) -> Vec<TypeDiagnostic> {
     let named = NamedSource::new("t.keel", source.to_string());
     let tokens = lex(source, &named).expect("lex failed");
     let program = parse(tokens, source.len(), &named).expect("parse failed");
@@ -2076,18 +2075,111 @@ fn type_mismatch_error_span_points_at_annotation() {
     let ann_end = ann_start + "str".len();
 
     let has_annotation_span = errs.iter().any(|e| {
-        if let Some(ref s) = e.span {
-            // The span must overlap the annotation range.
-            s.start >= ann_start && s.end <= ann_end + 1
-        } else {
-            false
-        }
+        let s = e.span();
+        // The span must overlap the annotation range.
+        s.start >= ann_start && s.end <= ann_end + 1
     });
     assert!(
         has_annotation_span,
         "expected error span to point at the type annotation 'str' ({ann_start}..{ann_end}), \
          got spans: {:?}",
-        errs.iter().map(|e| e.span.clone()).collect::<Vec<_>>()
+        errs.iter().map(|e| e.span().clone()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn undefined_name_is_structured_with_identifier_span() {
+    let src = "task go() {\n  missing\n}";
+    let errs = type_errors_full(src);
+    let missing_start = src.find("missing").expect("'missing' not found in source");
+    let missing_end = missing_start + "missing".len();
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::UndefinedName { name, span }
+                if name == "missing" && span.start == missing_start && span.end == missing_end
+        )),
+        "expected structured UndefinedName at identifier span, got: {errs:?}"
+    );
+}
+
+#[test]
+fn type_mismatch_is_structured_with_expected_and_actual_types() {
+    let src = "task go() {\n  x: str = 1\n}";
+    let errs = type_errors_full(src);
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::TypeMismatch {
+                context,
+                expected: keel_lang::types::checker::Ty::Str,
+                actual: keel_lang::types::checker::Ty::Int,
+                ..
+            } if context == "`x`"
+        )),
+        "expected structured TypeMismatch for `x`, got: {errs:?}"
+    );
+}
+
+#[test]
+fn wrong_arity_is_structured_with_call_span() {
+    let src = r#"
+task greet(name: str) {}
+
+task go() {
+  greet("Ada", "Lovelace")
+}
+"#;
+    let errs = type_errors_full(src);
+    let call_start = src.find("greet(\"Ada\"").expect("call not found");
+    let call_end = src[call_start..]
+        .find(')')
+        .map(|offset| call_start + offset + 1)
+        .expect("call end not found");
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::WrongArity {
+                task_name,
+                expected: 1,
+                actual: 2,
+                expected_params,
+                span,
+            } if task_name == "greet"
+                && expected_params == &vec!["name".to_string()]
+                && span.start == call_start
+                && span.end == call_end
+        )),
+        "expected structured WrongArity at call span, got: {errs:?}"
+    );
+}
+
+#[test]
+fn non_exhaustive_when_is_structured() {
+    let src = r#"
+type Status = open | closed
+
+task go(s: Status) {
+  when s {
+    open => { return }
+  }
+}
+"#;
+    let errs = type_errors_full(src);
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::NonExhaustiveWhen {
+                enum_name,
+                missing,
+                ..
+            } if enum_name == "Status" && missing == &vec!["closed".to_string()]
+        )),
+        "expected structured NonExhaustiveWhen, got: {errs:?}"
     );
 }
 
@@ -2104,5 +2196,88 @@ task go() -> int {
   return 0
 }
 "#,
+    );
+}
+
+#[test]
+fn interface_not_satisfied_is_structured_for_missing_method() {
+    let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person = { name: str }
+
+impl Greetable for Person {}
+"#;
+    let errs = type_errors_full(src);
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::InterfaceNotSatisfied {
+                impl_name,
+                interface_name,
+                reason,
+                ..
+            } if impl_name == "Person"
+                && interface_name == "Greetable"
+                && reason.contains("greet")
+        )),
+        "expected structured InterfaceNotSatisfied for missing method, got: {errs:?}"
+    );
+}
+
+#[test]
+fn interface_not_satisfied_is_structured_for_wrong_return_type() {
+    let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person = { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> int { 0 }
+}
+"#;
+    let errs = type_errors_full(src);
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::InterfaceNotSatisfied {
+                impl_name,
+                interface_name,
+                reason,
+                ..
+            } if impl_name == "Person"
+                && interface_name == "Greetable"
+                && reason.contains("greet")
+                && reason.contains("str")
+        )),
+        "expected structured InterfaceNotSatisfied for wrong return type, got: {errs:?}"
+    );
+}
+
+#[test]
+fn implicit_return_mismatch_span_points_at_result_expression() {
+    // Regression: block_type dispatches Stmt::Expr through infer_expr without
+    // calling check_stmt, so current_span was never set — the diagnostic used
+    // to land at byte 0 (beginning of file) instead of on the bad expression.
+    let src = "task go() -> str { 42 }";
+    let errs = type_errors_full(src);
+
+    let expr_start = src.find("42").expect("'42' not found");
+    let expr_end = expr_start + "42".len();
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::TypeMismatch { span, .. }
+                if span.start >= expr_start && span.end <= expr_end + 1
+        )),
+        "expected TypeMismatch span to point at '42' ({expr_start}..{expr_end}), got: {:?}",
+        errs.iter().map(|e| e.span().clone()).collect::<Vec<_>>()
     );
 }

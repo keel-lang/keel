@@ -29,7 +29,7 @@ use std::collections::HashSet;
 use crate::ast::visit::{self, Visitor};
 use crate::ast::*;
 use crate::lexer::Span;
-use crate::types::ty::TypeError;
+use crate::types::diagnostics::TypeDiagnostic;
 
 // ---------------------------------------------------------------------------
 // ResolvedName
@@ -157,13 +157,12 @@ pub fn build(
 /// This is the canonical source of undefined-identifier diagnostics.
 /// `infer_expr`'s `Unresolved` arm simply returns `Ty::Error` without emitting
 /// its own error — it relies on this pass having already done so.
-pub fn resolve_names(program: &Program, index: &NameIndex) -> Vec<TypeError> {
+pub fn resolve_names(program: &Program, index: &NameIndex) -> Vec<TypeDiagnostic> {
     let mut resolver = NameResolver {
         index,
         // Seed one frame for top-level let bindings so `bind()` always has a
         // live frame to write into.
         scopes: vec![HashSet::new()],
-        current_span: None,
         errors: Vec::new(),
     };
     resolver.visit_program(program);
@@ -179,11 +178,8 @@ struct NameResolver<'a> {
     /// Lexical scope stack.  Each frame is the set of names bound in that scope.
     /// The bottom frame (index 0) holds top-level `let` bindings.
     scopes: Vec<HashSet<String>>,
-    /// Current statement span — used as a location proxy for expression errors,
-    /// since individual `Expr` nodes do not carry their own spans.
-    current_span: Option<Span>,
     /// Accumulated undefined-name errors.
-    errors: Vec<TypeError>,
+    errors: Vec<TypeDiagnostic>,
 }
 
 impl NameResolver<'_> {
@@ -225,14 +221,12 @@ impl NameResolver<'_> {
         self.scopes.iter().any(|frame| frame.contains(name))
     }
 
-    /// Emit an "undefined" error for `name`, attaching the current statement
-    /// span when one is available.
-    fn emit_undefined(&mut self, name: &str) {
-        let mut e = TypeError::new(format!("undefined: `{name}`"));
-        if let Some(span) = &self.current_span {
-            e = e.at(span.clone());
-        }
-        self.errors.push(e);
+    /// Emit an "undefined" error for `name` at the identifier span.
+    fn emit_undefined(&mut self, name: &str, span: Span) {
+        self.errors.push(TypeDiagnostic::UndefinedName {
+            name: name.to_owned(),
+            span,
+        });
     }
 
     /// Open a fresh scope for a task / impl-method body, bind all parameters,
@@ -320,7 +314,6 @@ impl Visitor for NameResolver<'_> {
     // ------------------------------------------------------------------
 
     fn visit_stmt(&mut self, stmt: &Stmt, span: &Span) {
-        self.current_span = Some(span.clone());
         match stmt {
             // let binding: value is evaluated before the name is in scope.
             Stmt::Let { binding, value, .. } => {
@@ -395,7 +388,7 @@ impl Visitor for NameResolver<'_> {
                 if !self.is_bound(name)
                     && matches!(self.index.resolve(name), ResolvedName::Unresolved)
                 {
-                    self.emit_undefined(name);
+                    self.emit_undefined(name, spanned.span.clone());
                 }
             }
             Expr::Lambda { params, body } => {

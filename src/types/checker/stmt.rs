@@ -8,6 +8,7 @@ use std::collections::HashSet;
 
 use crate::ast::*;
 use crate::lexer::Span;
+use crate::types::diagnostics::TypeDiagnostic;
 use crate::types::scope::Scope;
 use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
@@ -179,9 +180,8 @@ impl Checker {
         // Only check implicit return when the last statement is an expression.
         // Control-flow statements (return, when, if, for, try/catch) manage
         // their own return paths; checking them here produces false positives.
-        let last_is_expr = t
-            .body
-            .last()
+        let last_stmt = t.body.last();
+        let last_is_expr = last_stmt
             .map(|s_node| matches!(s_node.kind, Stmt::Expr(_)))
             .unwrap_or(false);
         let implicit_ty = self.block_type(&t.body, &mut scope);
@@ -190,7 +190,12 @@ impl Checker {
             && !matches!(expected, Ty::None_)
             && !expected.is_opaque()
         {
-            self.expect(&implicit_ty, expected, "implicit return");
+            // block_type dispatches Stmt::Expr nodes through infer_expr directly,
+            // bypassing check_stmt (the only function that writes current_span).
+            // Capture the last expression's own span so the diagnostic points to
+            // the result expression rather than to byte 0.
+            let expr_span = last_stmt.map(|n| n.span.clone()).unwrap_or(0..0);
+            self.expect_at(&implicit_ty, expected, "implicit return", expr_span);
         }
 
         self.current_return_ty = prev_return_ty;
@@ -475,7 +480,7 @@ impl Checker {
 
         // Restore the when-statement's span so exhaustiveness errors point
         // to the `when` line, not to whatever was last checked inside arms.
-        self.current_span = Some(when_span);
+        self.current_span = Some(when_span.clone());
 
         // Exhaustiveness
         match subject_ty.strip_nullable() {
@@ -488,10 +493,11 @@ impl Checker {
                         variants.iter().filter(|v| !covered.contains(*v)).collect();
                     if !missing.is_empty() {
                         let names: Vec<String> = missing.iter().map(|s| s.to_string()).collect();
-                        self.err(format!(
-                            "non-exhaustive `when` on enum `{name}` — missing: {}",
-                            names.join(", ")
-                        ));
+                        self.errors.push(TypeDiagnostic::NonExhaustiveWhen {
+                            enum_name: name.clone(),
+                            missing: names,
+                            span: when_span.clone(),
+                        });
                     }
                 }
             }

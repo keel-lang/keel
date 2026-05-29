@@ -370,8 +370,12 @@ pub fn analyze(text: &str) -> Vec<Diagnostic> {
     };
 
     for err in checker::check(&program) {
-        let span = err.span.unwrap_or(0..0);
-        out.push(diag(text, span, err.message, DiagnosticSeverity::ERROR));
+        out.push(diag(
+            text,
+            err.span().clone(),
+            err.message(),
+            DiagnosticSeverity::ERROR,
+        ));
     }
     out
 }

@@ -10,6 +10,10 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Changed
+
+- **Type-checker diagnostics are now structured internally.** The checker returns `TypeDiagnostic` variants instead of a string-only `TypeError`, with structured data for undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks. CLI and LSP rendering keep the same user-facing messages, while diagnostics now carry expected/actual types and precise spans for IDE tooling.
+
 ---
 
 ## [0.1.30] — 2026-05-29
