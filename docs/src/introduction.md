@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [0.1.29](./release-notes.md)** — CSV and SQLite support, plus JSON/Cache documentation. [See what's new →](./release-notes.md)
+> **Latest: [0.1.30](./release-notes.md)** — Systematic spans on every AST node, unified type system, and compile-time-checked handler references.
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

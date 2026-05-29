@@ -2,9 +2,11 @@
 
 > **Alpha.** Keel is v0.1. Breaking changes are expected between 0.x releases.
 
+## Unreleased
+
 ---
 
-## Unreleased
+## v0.1.30 — 2026-05-29
 
 ### AST `Node<T>` migration
 
