@@ -67,8 +67,9 @@ impl Visitor for Counts {
         visit::walk_stmt(self, stmt, span);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, spanned: &SpannedExpr) {
         self.exprs += 1;
+        let expr = &spanned.kind;
         match expr {
             Expr::StringLit(parts) => {
                 self.saw_string_interpolation |= parts
@@ -105,7 +106,7 @@ impl Visitor for Counts {
             | Expr::Index { .. }
             | Expr::StructSpreadUpdate { .. } => {}
         }
-        visit::walk_expr(self, expr);
+        visit::walk_expr(self, spanned);
     }
 
     fn visit_pattern(&mut self, pattern: &Pattern) {

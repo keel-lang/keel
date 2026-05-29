@@ -138,12 +138,12 @@ async fn eval_source(
     // Try top-level program shape first (agent/task/type/interface/extern/use/stmt).
     if let Ok(program) = parser::parse(tokens.clone(), source.len(), &named) {
         let mut last = None;
-        for (decl, _span) in &program.declarations {
-            match decl {
-                Decl::Stmt((stmt, _)) => {
-                    last = Some(eval_stmt(interp, env, stmt).await?);
+        for node in &program.declarations {
+            match &node.kind {
+                Decl::Stmt(stmt_node) => {
+                    last = Some(eval_stmt(interp, env, &stmt_node.kind).await?);
                 }
-                _ => {
+                decl => {
                     interp.register_decl(decl)?;
                     last = None;
                 }
@@ -155,8 +155,8 @@ async fn eval_source(
     // Fall back to bare-statement parsing (for expression-only input).
     let stmts = parser::parse_stmts(tokens, source.len(), &named)?;
     let mut last = None;
-    for (stmt, _span) in &stmts {
-        last = Some(eval_stmt(interp, env, stmt).await?);
+    for stmt_node in &stmts {
+        last = Some(eval_stmt(interp, env, &stmt_node.kind).await?);
     }
     Ok(last)
 }

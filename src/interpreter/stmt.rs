@@ -26,16 +26,23 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     let v = match ty {
-                        Some(TypeExpr::Named(name))
-                            if self.struct_types.contains_key(name.as_str()) =>
-                        {
-                            match v {
-                                Value::Map(m) => {
-                                    let fields =
-                                        m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-                                    Value::Struct(name.clone(), fields)
+                        Some(ty_node) if matches!(&ty_node.kind, TypeExpr::Named(_)) => {
+                            let TypeExpr::Named(name) = &ty_node.kind else {
+                                unreachable!()
+                            };
+                            if self.struct_types.contains_key(name.as_str()) {
+                                match v {
+                                    Value::Map(m) => {
+                                        let fields = m
+                                            .into_iter()
+                                            .map(|(k, v)| (k.to_string(), v))
+                                            .collect();
+                                        Value::Struct(name.clone(), fields)
+                                    }
+                                    other => other,
                                 }
-                                other => other,
+                            } else {
+                                v
                             }
                         }
                         _ => v,
@@ -259,7 +266,7 @@ impl Interpreter {
                         Err(err) => {
                             let typed = self.last_typed_error.take();
                             for clause in catches {
-                                let clause_type = match &clause.ty {
+                                let clause_type = match &clause.ty.kind {
                                     crate::ast::TypeExpr::Named(n) => n.as_str(),
                                     _ => continue,
                                 };
@@ -304,8 +311,8 @@ impl Interpreter {
         env: &mut Environment,
     ) -> Result<StmtOutcome> {
         let mut last = Value::None;
-        for (stmt, _) in block {
-            match self.exec_stmt(stmt, env).await? {
+        for node in block {
+            match self.exec_stmt(&node.kind, env).await? {
                 StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
                 // Break and Continue bubble up through exec_block; the For
                 // loop handler in exec_stmt catches them at the loop boundary.
@@ -349,7 +356,7 @@ impl Interpreter {
                 None
             }
             Pattern::Literal(e) => {
-                let lit = match e {
+                let lit = match &e.kind {
                     Expr::Integer(n) => Value::Integer(*n),
                     Expr::Float(f) => Value::Float(*f),
                     Expr::StringLit(parts) => {

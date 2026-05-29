@@ -26,7 +26,7 @@ impl Interpreter {
                     TypeDef::Struct(fields) => {
                         let schema = fields
                             .iter()
-                            .map(|f| (f.name.clone(), type_display_str(&f.ty)))
+                            .map(|f| (f.name.clone(), type_display_str(&f.ty.kind)))
                             .collect();
                         self.struct_types.insert(t.name.clone(), schema);
                     }
@@ -112,7 +112,7 @@ impl Interpreter {
                                 ret: sig
                                     .return_type
                                     .as_ref()
-                                    .map(|te| iface::resolve_type_expr(te, env))
+                                    .map(|n| iface::resolve_type_expr(&n.kind, env))
                                     .unwrap_or(crate::types::checker::Ty::None_),
                             };
                             let got_sig = Signature {
@@ -120,7 +120,7 @@ impl Interpreter {
                                 ret: got_method
                                     .return_type
                                     .as_ref()
-                                    .map(|te| iface::resolve_type_expr(te, env))
+                                    .map(|n| iface::resolve_type_expr(&n.kind, env))
                                     .unwrap_or(crate::types::checker::Ty::None_),
                             };
                             if !iface::signature_satisfies(&req_sig, &got_sig) {
@@ -128,12 +128,12 @@ impl Interpreter {
                                 let req_ret = sig
                                     .return_type
                                     .as_ref()
-                                    .map(type_display_str)
+                                    .map(|n| type_display_str(&n.kind))
                                     .unwrap_or_else(|| "none".to_string());
                                 let got_ret = got_method
                                     .return_type
                                     .as_ref()
-                                    .map(type_display_str)
+                                    .map(|n| type_display_str(&n.kind))
                                     .unwrap_or_else(|| "none".to_string());
                                 return Err(runtime_error(format!(
                                     "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_ret}` but returns `{got_ret}`",
@@ -160,7 +160,10 @@ impl Interpreter {
                         if let Binding::Ident(n) = &param.name
                             && n == "self"
                         {
-                            param.ty = TypeExpr::Named(type_name.clone());
+                            // Replace __impl_self__ placeholder with the concrete type.
+                            // Preserve the original span (0..0 for synthetic, or the
+                            // `self` keyword span for parsed methods).
+                            param.ty.kind = TypeExpr::Named(type_name.clone());
                         }
                     }
                     self.impl_methods
@@ -221,12 +224,23 @@ impl Interpreter {
                             matches!(key, "timeout" | "max_tokens" | "max_cost")
                         };
                         let unknown_key: Option<String> = match &attr.body {
-                            AttributeBody::Expr(Expr::StructLit(f)) => f
-                                .iter()
-                                .filter_map(|(k, _)| k.as_str())
-                                .find(|k| !check_field(k))
-                                .map(|k| k.to_string()),
-                            AttributeBody::Expr(Expr::StructSpreadUpdate { overrides, .. }) => {
+                            AttributeBody::Expr(node)
+                                if matches!(&node.kind, Expr::StructLit(_)) =>
+                            {
+                                let Expr::StructLit(f) = &node.kind else {
+                                    unreachable!()
+                                };
+                                f.iter()
+                                    .filter_map(|(k, _)| k.as_str())
+                                    .find(|k| !check_field(k))
+                                    .map(|k| k.to_string())
+                            }
+                            AttributeBody::Expr(node)
+                                if matches!(&node.kind, Expr::StructSpreadUpdate { .. }) =>
+                            {
+                                let Expr::StructSpreadUpdate { overrides, .. } = &node.kind else {
+                                    unreachable!()
+                                };
                                 overrides
                                     .iter()
                                     .map(|(k, _)| k.as_str())
@@ -280,7 +294,7 @@ fn type_display_str(te: &TypeExpr) -> String {
         TypeExpr::Struct(fields) => {
             let fs: Vec<_> = fields
                 .iter()
-                .map(|f| format!("{}: {}", f.name, type_display_str(&f.ty)))
+                .map(|f| format!("{}: {}", f.name, type_display_str(&f.ty.kind)))
                 .collect();
             format!("{{{}}}", fs.join(", "))
         }
@@ -292,8 +306,9 @@ fn type_display_str(te: &TypeExpr) -> String {
 mod tests {
     use super::*;
     use crate::ast::{
-        AgentDecl, AgentItem, AttributeBody, AttributeDecl, Decl, Expr, Field, InterfaceDecl,
-        OnHandler, Param, StateField, TaskDecl, TypeDecl, TypeDef, TypeExpr, UseDecl, UseKind,
+        AgentDecl, AgentItem, AttributeBody, AttributeDecl, Decl, Expr, Field, InterfaceDecl, Node,
+        OnHandler, Param, SpannedExpr, StateField, TaskDecl, TypeDecl, TypeDef, TypeExpr, UseDecl,
+        UseKind,
     };
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -302,16 +317,29 @@ mod tests {
         Interpreter::new()
     }
 
-    fn struct_lit(fields: Vec<(&str, Expr)>) -> Expr {
-        Expr::StructLit(
+    fn struct_lit(fields: Vec<(&str, Expr)>) -> SpannedExpr {
+        Node::synthetic(Expr::StructLit(
             fields
                 .into_iter()
-                .map(|(k, v)| (crate::ast::MapLitKey::Ident(k.to_string()), v))
+                .map(|(k, v)| {
+                    (
+                        crate::ast::MapLitKey::Ident(k.to_string()),
+                        Node::synthetic(v),
+                    )
+                })
                 .collect(),
-        )
+        ))
     }
 
-    fn named_ty(name: &str) -> TypeExpr {
+    /// Construct a synthetic named-type annotation with a 0..0 sentinel span.
+    /// Use for AST node fields that expect `Node<TypeExpr>` (e.g. `Field.ty`, `Param.ty`).
+    fn named_ty(name: &str) -> Node<TypeExpr> {
+        Node::synthetic(TypeExpr::Named(name.to_string()))
+    }
+
+    /// Construct a bare `TypeExpr::Named` for use inside `TypeExpr::*` constructors
+    /// that take plain `TypeExpr` children (e.g. `Nullable`, `List`, `Map`).
+    fn te(name: &str) -> TypeExpr {
         TypeExpr::Named(name.to_string())
     }
 
@@ -322,6 +350,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "Urgency".into(),
+            name_span: 0..0,
             type_params: vec![],
             def: TypeDef::SimpleEnum(vec!["low".into(), "medium".into(), "high".into()]),
         });
@@ -343,6 +372,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "EmailInfo".into(),
+            name_span: 0..0,
             type_params: vec![],
             def: TypeDef::Struct(vec![
                 Field {
@@ -377,6 +407,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "Timestamp".into(),
+            name_span: 0..0,
             type_params: vec![],
             def: TypeDef::Alias(named_ty("datetime")),
         });
@@ -396,6 +427,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Type(TypeDecl {
             name: "Action".into(),
+            name_span: 0..0,
             type_params: vec![],
             def: TypeDef::RichEnum(vec![]), // empty rich enum
         });
@@ -416,6 +448,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Interface(InterfaceDecl {
             name: "MyInterface".into(),
+            name_span: 0..0,
             methods: vec![],
         });
         let prev_count = interp.globals.len();
@@ -428,6 +461,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Extern(crate::ast::ExternDecl {
             name: "my_extern".into(),
+            name_span: 0..0,
             params: vec![],
             return_type: named_ty("str"),
             source: "python".into(),
@@ -455,6 +489,7 @@ mod tests {
         let mut interp = new_interp();
         let task_decl = TaskDecl {
             name: "do_thing".into(),
+            name_span: 0..0,
             type_params: vec![],
             params: vec![],
             return_type: Some(named_ty("str")),
@@ -479,6 +514,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![],
         });
         interp.register_decl(&decl).unwrap();
@@ -503,21 +539,23 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "FullBot".into(),
+            name_span: 0..0,
             items: vec![
                 AgentItem::Attribute(AttributeDecl {
                     name: "role".into(),
-                    body: AttributeBody::Expr(Expr::StringLit(vec![
+                    body: AttributeBody::Expr(Node::synthetic(Expr::StringLit(vec![
                         crate::ast::StringPart::Literal("assistant".into()),
-                    ])),
+                    ]))),
                 }),
                 AgentItem::State(vec![StateField {
                     name: "counter".into(),
                     ty: named_ty("int"),
-                    default: Expr::Integer(0),
+                    default: Node::synthetic(Expr::Integer(0)),
                     readonly: false,
                 }]),
                 AgentItem::Task(TaskDecl {
                     name: "tick".into(),
+                    name_span: 0..0,
                     type_params: vec![],
                     params: vec![],
                     return_type: None,
@@ -548,17 +586,20 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "StateBot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::State(vec![
                 StateField {
                     name: "a".into(),
                     ty: named_ty("str"),
-                    default: Expr::StringLit(vec![crate::ast::StringPart::Literal("".into())]),
+                    default: Node::synthetic(Expr::StringLit(vec![
+                        crate::ast::StringPart::Literal("".into()),
+                    ])),
                     readonly: false,
                 },
                 StateField {
                     name: "b".into(),
                     ty: named_ty("int"),
-                    default: Expr::Integer(1),
+                    default: Node::synthetic(Expr::Integer(1)),
                     readonly: true,
                 },
             ])],
@@ -576,9 +617,11 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "TaskBot".into(),
+            name_span: 0..0,
             items: vec![
                 AgentItem::Task(TaskDecl {
                     name: "a".into(),
+                    name_span: 0..0,
                     type_params: vec![],
                     params: vec![],
                     return_type: None,
@@ -586,6 +629,7 @@ mod tests {
                 }),
                 AgentItem::Task(TaskDecl {
                     name: "b".into(),
+                    name_span: 0..0,
                     type_params: vec![],
                     params: vec![],
                     return_type: None,
@@ -606,6 +650,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "HandlerBot".into(),
+            name_span: 0..0,
             items: vec![
                 AgentItem::On(OnHandler {
                     event: "msg".into(),
@@ -616,6 +661,7 @@ mod tests {
                     event: "tick".into(),
                     param: Some(Param {
                         name: crate::ast::Binding::Ident("x".into()),
+                        name_span: 0..0,
                         ty: named_ty("int"),
                         default: None,
                         variadic: false,
@@ -639,6 +685,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "limits".into(),
                 body: AttributeBody::Expr(struct_lit(vec![
@@ -656,6 +703,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "limits".into(),
                 body: AttributeBody::Expr(struct_lit(vec![
@@ -677,6 +725,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "limits".into(),
                 body: AttributeBody::Expr(struct_lit(vec![])),
@@ -691,6 +740,7 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "model".into(),
                 body: AttributeBody::Expr(struct_lit(vec![(
@@ -708,9 +758,10 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "limits".into(),
-                body: AttributeBody::Expr(Expr::Integer(42)),
+                body: AttributeBody::Expr(Node::synthetic(Expr::Integer(42))),
             })],
         });
         assert!(interp.register_decl(&decl).is_ok());
@@ -721,12 +772,13 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "limits".into(),
-                body: AttributeBody::Expr(Expr::StructSpreadUpdate {
-                    base: Box::new(Expr::Ident("base_limits".into())),
-                    overrides: vec![("max_tokens".into(), Expr::Integer(2048))],
-                }),
+                body: AttributeBody::Expr(Node::synthetic(Expr::StructSpreadUpdate {
+                    base: Box::new(Node::synthetic(Expr::Ident("base_limits".into()))),
+                    overrides: vec![("max_tokens".into(), Node::synthetic(Expr::Integer(2048)))],
+                })),
             })],
         });
         assert!(interp.register_decl(&decl).is_ok());
@@ -737,12 +789,13 @@ mod tests {
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
+            name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "limits".into(),
-                body: AttributeBody::Expr(Expr::StructSpreadUpdate {
-                    base: Box::new(Expr::Ident("base_limits".into())),
-                    overrides: vec![("retry_count".into(), Expr::Integer(3))],
-                }),
+                body: AttributeBody::Expr(Node::synthetic(Expr::StructSpreadUpdate {
+                    base: Box::new(Node::synthetic(Expr::Ident("base_limits".into()))),
+                    overrides: vec![("retry_count".into(), Node::synthetic(Expr::Integer(3)))],
+                })),
             })],
         });
         let err = interp.register_decl(&decl).unwrap_err();
@@ -758,7 +811,10 @@ mod tests {
     #[test]
     fn register_stmt_is_noop() {
         let mut interp = new_interp();
-        let decl = Decl::Stmt((crate::ast::Stmt::Expr(Expr::Integer(1)), 0..1));
+        let decl = Decl::Stmt(Node::new(
+            crate::ast::Stmt::Expr(Node::synthetic(Expr::Integer(1))),
+            0..1,
+        ));
         let prev_count = interp.globals.len();
         interp.register_decl(&decl).unwrap();
         assert_eq!(interp.globals.len(), prev_count);
@@ -768,76 +824,73 @@ mod tests {
 
     #[test]
     fn type_named() {
-        assert_eq!(type_display_str(&named_ty("str")), "str");
-        assert_eq!(type_display_str(&named_ty("Urgency")), "Urgency");
+        assert_eq!(type_display_str(&te("str")), "str");
+        assert_eq!(type_display_str(&te("Urgency")), "Urgency");
     }
 
     #[test]
     fn type_nullable() {
-        let te = TypeExpr::Nullable(Box::new(named_ty("str")));
-        assert_eq!(type_display_str(&te), "str?");
+        let ty = TypeExpr::Nullable(Box::new(te("str")));
+        assert_eq!(type_display_str(&ty), "str?");
     }
 
     #[test]
     fn type_list() {
-        let te = TypeExpr::List(Box::new(named_ty("int")));
-        assert_eq!(type_display_str(&te), "[int]");
+        let ty = TypeExpr::List(Box::new(te("int")));
+        assert_eq!(type_display_str(&ty), "[int]");
     }
 
     #[test]
     fn type_map() {
-        let te = TypeExpr::Map(Box::new(named_ty("str")), Box::new(named_ty("int")));
-        assert_eq!(type_display_str(&te), "map[str, int]");
+        let ty = TypeExpr::Map(Box::new(te("str")), Box::new(te("int")));
+        assert_eq!(type_display_str(&ty), "map[str, int]");
     }
 
     #[test]
     fn type_set() {
-        let te = TypeExpr::Set(Box::new(named_ty("str")));
-        assert_eq!(type_display_str(&te), "set[str]");
+        let ty = TypeExpr::Set(Box::new(te("str")));
+        assert_eq!(type_display_str(&ty), "set[str]");
     }
 
     #[test]
     fn type_tuple() {
-        let te = TypeExpr::Tuple(vec![named_ty("str"), named_ty("int"), named_ty("bool")]);
-        assert_eq!(type_display_str(&te), "(str, int, bool)");
+        let ty = TypeExpr::Tuple(vec![te("str"), te("int"), te("bool")]);
+        assert_eq!(type_display_str(&ty), "(str, int, bool)");
     }
 
     #[test]
     fn type_tuple_single_element() {
-        let te = TypeExpr::Tuple(vec![named_ty("str")]);
-        assert_eq!(type_display_str(&te), "(str)");
+        let ty = TypeExpr::Tuple(vec![te("str")]);
+        assert_eq!(type_display_str(&ty), "(str)");
     }
 
     #[test]
     fn type_func() {
-        let te = TypeExpr::Func(
-            vec![named_ty("str"), named_ty("int")],
-            Box::new(named_ty("bool")),
-        );
-        assert_eq!(type_display_str(&te), "(str, int) -> bool");
+        let ty = TypeExpr::Func(vec![te("str"), te("int")], Box::new(te("bool")));
+        assert_eq!(type_display_str(&ty), "(str, int) -> bool");
     }
 
     #[test]
     fn type_func_no_params() {
-        let te = TypeExpr::Func(vec![], Box::new(named_ty("str")));
-        assert_eq!(type_display_str(&te), "() -> str");
+        let ty = TypeExpr::Func(vec![], Box::new(te("str")));
+        assert_eq!(type_display_str(&ty), "() -> str");
     }
 
     #[test]
     fn type_generic() {
-        let te = TypeExpr::Generic("Result".into(), vec![named_ty("str"), named_ty("int")]);
-        assert_eq!(type_display_str(&te), "Result[str, int]");
+        let ty = TypeExpr::Generic("Result".into(), vec![te("str"), te("int")]);
+        assert_eq!(type_display_str(&ty), "Result[str, int]");
     }
 
     #[test]
     fn type_generic_no_args() {
-        let te = TypeExpr::Generic("List".into(), vec![]);
-        assert_eq!(type_display_str(&te), "List[]");
+        let ty = TypeExpr::Generic("List".into(), vec![]);
+        assert_eq!(type_display_str(&ty), "List[]");
     }
 
     #[test]
     fn type_struct() {
-        let te = TypeExpr::Struct(vec![
+        let ty = TypeExpr::Struct(vec![
             Field {
                 name: "body".into(),
                 ty: named_ty("str"),
@@ -847,13 +900,13 @@ mod tests {
                 ty: named_ty("str"),
             },
         ]);
-        assert_eq!(type_display_str(&te), "{body: str, from: str}");
+        assert_eq!(type_display_str(&ty), "{body: str, from: str}");
     }
 
     #[test]
     fn type_struct_empty() {
-        let te = TypeExpr::Struct(vec![]);
-        assert_eq!(type_display_str(&te), "{}");
+        let ty = TypeExpr::Struct(vec![]);
+        assert_eq!(type_display_str(&ty), "{}");
     }
 
     #[test]
@@ -865,23 +918,23 @@ mod tests {
 
     #[test]
     fn type_nested_nullable_list() {
-        let te = TypeExpr::List(Box::new(TypeExpr::Nullable(Box::new(named_ty("str")))));
-        assert_eq!(type_display_str(&te), "[str?]");
+        let ty = TypeExpr::List(Box::new(TypeExpr::Nullable(Box::new(te("str")))));
+        assert_eq!(type_display_str(&ty), "[str?]");
     }
 
     #[test]
     fn type_nested_map_of_lists() {
-        let te = TypeExpr::Map(
-            Box::new(named_ty("str")),
-            Box::new(TypeExpr::List(Box::new(named_ty("int")))),
+        let ty = TypeExpr::Map(
+            Box::new(te("str")),
+            Box::new(TypeExpr::List(Box::new(te("int")))),
         );
-        assert_eq!(type_display_str(&te), "map[str, [int]]");
+        assert_eq!(type_display_str(&ty), "map[str, [int]]");
     }
 
     #[test]
     fn type_nested_func_returning_func() {
-        let ret = TypeExpr::Func(vec![named_ty("int")], Box::new(named_ty("bool")));
-        let te = TypeExpr::Func(vec![named_ty("str")], Box::new(ret));
-        assert_eq!(type_display_str(&te), "(str) -> (int) -> bool");
+        let ret = TypeExpr::Func(vec![te("int")], Box::new(te("bool")));
+        let ty = TypeExpr::Func(vec![te("str")], Box::new(ret));
+        assert_eq!(type_display_str(&ty), "(str) -> (int) -> bool");
     }
 }

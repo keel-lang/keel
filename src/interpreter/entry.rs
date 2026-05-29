@@ -44,8 +44,8 @@ impl Interpreter {
     pub async fn execute(&mut self, program: Program) -> Result<()> {
         // Pre-pass 1: register all interface declarations so that impl blocks
         // can reference them regardless of source order.
-        for (decl, _span) in &program.declarations {
-            if let Decl::Interface(iface) = decl {
+        for node in &program.declarations {
+            if let Decl::Interface(iface) = &node.kind {
                 self.interfaces
                     .insert(iface.name.clone(), iface.methods.clone());
             }
@@ -55,17 +55,17 @@ impl Interpreter {
         // declarations so that `impl` conformance checks can resolve TypeExpr
         // nodes to Ty values with proper alias expansion.
         let mut type_env = TypeEnv::new();
-        type_env.collect_aliases(program.declarations.iter().map(|(decl, _)| decl));
+        type_env.collect_aliases(program.declarations.iter().map(|n| &n.kind));
         self.type_env = type_env;
 
         // Two-pass: register all declarations, then execute top-level statements.
-        for (decl, _span) in &program.declarations {
-            self.register_decl(decl)?;
+        for node in &program.declarations {
+            self.register_decl(&node.kind)?;
         }
-        for (decl, _span) in &program.declarations {
-            if let Decl::Stmt((stmt, _)) = decl {
+        for node in &program.declarations {
+            if let Decl::Stmt(stmt_node) = &node.kind {
                 let mut env = Environment::new();
-                self.exec_stmt(stmt, &mut env).await?;
+                self.exec_stmt(&stmt_node.kind, &mut env).await?;
             }
         }
 
@@ -169,13 +169,13 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Decl, Expr, Program, Stmt, TypeDecl, TypeDef, TypeExpr};
+    use crate::ast::{Decl, Expr, Node, Program, Stmt, TypeDecl, TypeDef, TypeExpr};
     use crate::interpreter::state::Interpreter;
 
     // ── helpers ──────────────────────────────────────────────────────────
 
-    fn named_ty(name: &str) -> TypeExpr {
-        TypeExpr::Named(name.to_string())
+    fn named_ty(name: &str) -> Node<TypeExpr> {
+        Node::synthetic(TypeExpr::Named(name.to_string()))
     }
 
     fn empty_program() -> Program {
@@ -197,31 +197,27 @@ mod tests {
         let mut interp = Interpreter::new();
         let program = Program {
             declarations: vec![
-                (
-                    Decl::Type(TypeDecl {
-                        name: "Color".into(),
-                        type_params: vec![],
-                        def: TypeDef::SimpleEnum(vec!["red".into(), "green".into()]),
-                    }),
-                    0..0,
-                ),
-                (
-                    Decl::Type(TypeDecl {
-                        name: "Point".into(),
-                        type_params: vec![],
-                        def: TypeDef::Struct(vec![
-                            crate::ast::Field {
-                                name: "x".into(),
-                                ty: named_ty("int"),
-                            },
-                            crate::ast::Field {
-                                name: "y".into(),
-                                ty: named_ty("int"),
-                            },
-                        ]),
-                    }),
-                    0..0,
-                ),
+                Node::synthetic(Decl::Type(TypeDecl {
+                    name: "Color".into(),
+                    name_span: 0..0,
+                    type_params: vec![],
+                    def: TypeDef::SimpleEnum(vec!["red".into(), "green".into()]),
+                })),
+                Node::synthetic(Decl::Type(TypeDecl {
+                    name: "Point".into(),
+                    name_span: 0..0,
+                    type_params: vec![],
+                    def: TypeDef::Struct(vec![
+                        crate::ast::Field {
+                            name: "x".into(),
+                            ty: named_ty("int"),
+                        },
+                        crate::ast::Field {
+                            name: "y".into(),
+                            ty: named_ty("int"),
+                        },
+                    ]),
+                })),
             ],
         };
         interp.execute(program).await.unwrap();
@@ -238,7 +234,9 @@ mod tests {
         // Verify that top-level statements are executed in pass 2.
         let mut interp = Interpreter::new();
         let program = Program {
-            declarations: vec![(Decl::Stmt((Stmt::Expr(Expr::Integer(42)), 0..0)), 0..0)],
+            declarations: vec![Node::synthetic(Decl::Stmt(Node::synthetic(Stmt::Expr(
+                Node::synthetic(Expr::Integer(42)),
+            ))))],
         };
         interp.execute(program).await.unwrap();
     }
@@ -248,15 +246,15 @@ mod tests {
         let mut interp = Interpreter::new();
         let program = Program {
             declarations: vec![
-                (
-                    Decl::Type(TypeDecl {
-                        name: "Status".into(),
-                        type_params: vec![],
-                        def: TypeDef::SimpleEnum(vec!["ok".into()]),
-                    }),
-                    0..0,
-                ),
-                (Decl::Stmt((Stmt::Expr(Expr::Integer(1)), 0..0)), 0..0),
+                Node::synthetic(Decl::Type(TypeDecl {
+                    name: "Status".into(),
+                    name_span: 0..0,
+                    type_params: vec![],
+                    def: TypeDef::SimpleEnum(vec!["ok".into()]),
+                })),
+                Node::synthetic(Decl::Stmt(Node::synthetic(Stmt::Expr(Node::synthetic(
+                    Expr::Integer(1),
+                ))))),
             ],
         };
         interp.execute(program).await.unwrap();
@@ -297,14 +295,12 @@ mod tests {
     async fn run_with_source_and_runtime_basic() {
         let runtime = crate::runtime::context::RuntimeContext::native();
         let program = Program {
-            declarations: vec![(
-                Decl::Type(TypeDecl {
-                    name: "T".into(),
-                    type_params: vec![],
-                    def: TypeDef::SimpleEnum(vec!["a".into()]),
-                }),
-                0..0,
-            )],
+            declarations: vec![Node::synthetic(Decl::Type(TypeDecl {
+                name: "T".into(),
+                name_span: 0..0,
+                type_params: vec![],
+                def: TypeDef::SimpleEnum(vec!["a".into()]),
+            }))],
         };
         run_with_source_and_runtime(program, None, None, runtime)
             .await
@@ -398,7 +394,7 @@ mod tests {
             name: "req".to_string(),
             ty: None,
         }];
-        let body = LambdaBody::Expr(Box::new(Expr::Ident("req".to_string())));
+        let body = LambdaBody::Expr(Box::new(Node::synthetic(Expr::Ident("req".to_string()))));
         let closure_id = interp.register_closure("test_agent".to_string(), params, body);
 
         // Keep event loop alive by faking an active server
@@ -488,7 +484,7 @@ mod tests {
             name: "req".to_string(),
             ty: None,
         }];
-        let body = LambdaBody::Expr(Box::new(Expr::Ident("req".to_string())));
+        let body = LambdaBody::Expr(Box::new(Node::synthetic(Expr::Ident("req".to_string()))));
         let closure_id = interp.register_closure("test_agent".to_string(), params, body);
 
         interp.active_http_servers.fetch_add(1, Ordering::Relaxed);
@@ -534,7 +530,7 @@ mod tests {
             name: "req".to_string(),
             ty: None,
         }];
-        let body = LambdaBody::Expr(Box::new(Expr::None_));
+        let body = LambdaBody::Expr(Box::new(Node::synthetic(Expr::None_)));
         let closure_id = interp.register_closure("test_agent".to_string(), params, body);
 
         interp.active_http_servers.fetch_add(1, Ordering::Relaxed);

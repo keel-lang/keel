@@ -1,5 +1,7 @@
 //! Type declarations and type-expression nodes.
 
+use super::Node;
+
 #[derive(Debug, Clone)]
 pub enum TypeDef {
     /// `type Urgency = low | medium | high | critical`
@@ -9,7 +11,7 @@ pub enum TypeDef {
     /// `type EmailInfo { sender: str, subject: str }`
     Struct(Vec<Field>),
     /// `type Timestamp = datetime`
-    Alias(TypeExpr),
+    Alias(Node<TypeExpr>),
 }
 
 #[derive(Debug, Clone)]
@@ -21,7 +23,8 @@ pub struct EnumVariant {
 #[derive(Debug, Clone)]
 pub struct Field {
     pub name: String,
-    pub ty: TypeExpr,
+    /// The type annotation for this field, together with its source span.
+    pub ty: Node<TypeExpr>,
 }
 
 #[derive(Debug, Clone)]

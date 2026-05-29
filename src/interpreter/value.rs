@@ -377,6 +377,7 @@ mod tests {
         );
         let td = TaskDecl {
             name: "t".into(),
+            name_span: 0..0,
             type_params: vec![],
             params: vec![],
             return_type: None,
@@ -388,7 +389,7 @@ mod tests {
             name: "x".into(),
             ty: None,
         };
-        let b = LambdaBody::Expr(Box::new(Expr::Integer(0)));
+        let b = LambdaBody::Expr(Box::new(crate::ast::Node::synthetic(Expr::Integer(0))));
         assert_eq!(Value::Closure(vec![p], Box::new(b)).type_name(), "closure");
         assert_eq!(Value::Namespace("ns".into()).type_name(), "namespace");
         assert_eq!(Value::BuiltinFn("f".into()).type_name(), "builtin");
@@ -609,6 +610,7 @@ mod tests {
     fn display_task() {
         let td = TaskDecl {
             name: "my_task".into(),
+            name_span: 0..0,
             type_params: vec![],
             params: vec![],
             return_type: None,
@@ -629,7 +631,7 @@ mod tests {
             name: "x".into(),
             ty: None,
         };
-        let b = LambdaBody::Expr(Box::new(Expr::Integer(0)));
+        let b = LambdaBody::Expr(Box::new(crate::ast::Node::synthetic(Expr::Integer(0))));
         let v = Value::Closure(vec![p], Box::new(b));
         assert_eq!(format!("{v}"), "<closure (x)>");
     }

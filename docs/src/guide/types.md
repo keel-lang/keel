@@ -382,3 +382,20 @@ type Color = red | green | blue
 c: Color = Color.red
 typeof(c)           # "Color"
 ```
+
+## Type-mismatch diagnostics
+
+When a `let` binding has an explicit type annotation and the assigned value does
+not match, `keel check` underlines the **annotation** — not the whole statement —
+so you can see at a glance which declared type is wrong:
+
+```
+error: `n`: expected int, got str
+  --> example.keel:2:5
+   |
+ 2 |   n: int = "hello"
+   |      ^^^  — expected int here
+```
+
+This precision is available for all scalar, struct, and nullable mismatches on
+annotated `let` bindings.

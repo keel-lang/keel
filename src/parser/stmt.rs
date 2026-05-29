@@ -12,21 +12,21 @@ use crate::lexer::Token;
 use super::common::{
     P, ident, integer_lit, newlines, plain_string, sep, struct_destruct_pat, tuple_destruct_pat,
 };
-use super::types::type_expr;
+use super::types::spanned_type_expr;
 
 // ---------------------------------------------------------------------------
 // Public entry points
 // ---------------------------------------------------------------------------
 
-pub(super) fn stmt_parser() -> P<Spanned<Stmt>> {
+pub(super) fn stmt_parser() -> P<Node<Stmt>> {
     stmt_parser_with(super::expr::expr_parser())
 }
 
 /// Build a statement parser using a pre-constructed expression parser.
 /// Used internally by `expr_parser` to break mutual parser-construction
 /// recursion when building trailing-block / lambda-block support.
-pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
-    recursive(|stmt: Recursive<Token, Spanned<Stmt>, Simple<Token>>| {
+pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
+    recursive(|stmt: Recursive<Token, Node<Stmt>, Simple<Token>>| {
         let block = just(Token::LBrace)
             .ignore_then(newlines())
             .ignore_then(stmt.clone().separated_by(sep()).allow_trailing())
@@ -50,13 +50,16 @@ pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .ignore_then(ident())
             .then(aug_op.clone())
             .then(expr.clone())
-            .map(|((field, op), rhs)| Stmt::SelfAssign {
+            .map_with_span(|((field, op), rhs), span| Stmt::SelfAssign {
                 field: field.clone(),
-                value: Expr::BinaryOp {
-                    left: Box::new(Expr::SelfAccess(field)),
-                    op,
-                    right: Box::new(rhs),
-                },
+                value: Node::new(
+                    Expr::BinaryOp {
+                        left: Box::new(Node::new(Expr::SelfAccess(field), span.clone())),
+                        op,
+                        right: Box::new(rhs),
+                    },
+                    span,
+                ),
             })
             .boxed();
 
@@ -80,7 +83,7 @@ pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
 
         // x = expr  or  x: Type = expr
         let let_stmt = ident()
-            .then(just(Token::Colon).ignore_then(type_expr()).or_not())
+            .then(just(Token::Colon).ignore_then(spanned_type_expr()).or_not())
             .then_ignore(just(Token::Eq))
             .then(expr.clone())
             .map(|((name, ty), value)| Stmt::Let {
@@ -180,16 +183,21 @@ pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             .then(block.clone())
             .then(just(Token::Else).ignore_then(block.clone()).or_not())
             .then(just(Token::NullCoalesce).ignore_then(expr.clone()).or_not())
-            .map(|(((cond, then_body), else_body), null_coalesce)| {
+            .map_with_span(|(((cond, then_body), else_body), null_coalesce), span| {
                 if let Some(default) = null_coalesce {
                     // `if { } else { } ?? default` → expression statement.
-                    Stmt::Expr(Expr::NullCoalesce(
-                        Box::new(Expr::IfExpr {
+                    let if_span = cond.span.start..default.span.start;
+                    let if_expr = Node::new(
+                        Expr::IfExpr {
                             cond: Box::new(cond),
                             then_body,
                             else_body: else_body.unwrap_or_default(),
-                        }),
-                        Box::new(default),
+                        },
+                        if_span,
+                    );
+                    Stmt::Expr(Node::new(
+                        Expr::NullCoalesce(Box::new(if_expr), Box::new(default)),
+                        span,
                     ))
                 } else {
                     Stmt::If {
@@ -220,14 +228,22 @@ pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
                     Some(b) => Pattern::Variant { name, bindings: b },
                     None => Pattern::Ident(name),
                 }))
-            .or(plain_string()
-                .map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
-            .or(integer_lit().map(|n| Pattern::Literal(Expr::Integer(n))))
+            .or(plain_string().map_with_span(|s, span| {
+                Pattern::Literal(Node::new(
+                    Expr::StringLit(vec![StringPart::Literal(s)]),
+                    span,
+                ))
+            }))
+            .or(integer_lit()
+                .map_with_span(|n, span| Pattern::Literal(Node::new(Expr::Integer(n), span))))
             .boxed();
 
         let when_arm_body = block
             .clone()
-            .or(expr.clone().map(|e| vec![(Stmt::Expr(e), 0..0)]))
+            .or(expr.clone().map(|e| {
+                let span = e.span.clone();
+                vec![Node::new(Stmt::Expr(e), span)]
+            }))
             .boxed();
 
         let when_arm = pattern
@@ -256,7 +272,7 @@ pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
         let catch_clause = just(Token::Catch)
             .ignore_then(ident())
             .then_ignore(just(Token::Colon))
-            .then(type_expr())
+            .then(spanned_type_expr())
             .then(block.clone())
             .map(|((name, ty), body)| CatchClause { name, ty, body })
             .boxed();
@@ -289,7 +305,7 @@ pub(super) fn stmt_parser_with(expr: P<Expr>) -> P<Spanned<Stmt>> {
             try_catch,
             expr_stmt,
         ))
-        .map_with_span(|stmt, span| (stmt, span))
+        .map_with_span(Node::new)
     })
     .boxed()
 }

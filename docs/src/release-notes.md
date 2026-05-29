@@ -6,6 +6,33 @@
 
 ## Unreleased
 
+### AST `Node<T>` migration
+
+Every `(T, Span)` tuple in the public AST has been replaced by `Node<T>` — a named struct
+with `.kind` (the wrapped value) and `.span` (the source range). This is a purely internal
+refactor: no Keel source syntax or runtime behaviour is affected.
+
+**For contributors:** AST traversal code now uses uniform field access (`node.kind`,
+`node.span`) instead of tuple indexing (`.0`, `.1`). Synthetic nodes produced by the prelude
+and test helpers use `Node::synthetic(kind)`, which stores a `0..0` sentinel span.
+
+### Expression spans + annotation-precise type errors
+
+Every expression in the AST now carries its exact source byte range. The most
+visible benefit: when a `let` binding has an explicit type annotation and the
+inferred type doesn't match, the error caret points at the annotation — not the
+whole statement.
+
+```
+error: `n`: expected int, got str
+  --> example.keel:2:5
+   |
+ 2 |   n: int = "hello"
+   |      ^^^  ← caret lands here, not at the start of the line
+```
+
+See the [Types guide](guide/types.md#type-mismatch-diagnostics) for details.
+
 ### Richer type diagnostics — `Ty::Unknown` split
 
 The single overloaded `Unknown` fallback type has been replaced with four semantically distinct variants that give the checker, strict mode, and contributors a precise vocabulary for why a type is not known:

@@ -90,8 +90,8 @@ impl Linter {
         }
 
         // Rules 1, 3, 4 — walk declarations
-        for (decl, _) in &program.declarations {
-            match decl {
+        for node in &program.declarations {
+            match &node.kind {
                 Decl::Task(t) => {
                     self.check_block_unused(&t.body);
                     self.check_block_ai_outside_agent(&t.body);
@@ -113,12 +113,12 @@ impl Linter {
                         }
                     }
                 }
-                Decl::Stmt((stmt, span)) => {
+                Decl::Stmt(stmt_node) => {
                     // Rule 3: top-level Ai.* calls
-                    for method in ai_methods_in_stmt(stmt) {
+                    for method in ai_methods_in_stmt(&stmt_node.kind) {
                         self.warn(
                             format!("`Ai.{method}` called outside an agent — no `@role` or `@model` context"),
-                            Some(span.clone()),
+                            Some(stmt_node.span.clone()),
                             Some("wrap in an agent body with `@role` and `@model` attributes".into()),
                             false,
                         );
@@ -137,20 +137,20 @@ impl Linter {
         // Collect let-bindings defined at this block level only (not in nested blocks).
         // Each entry is (name, span, fixable). Destructure bindings are not auto-fixable.
         let mut defined: Vec<(String, Span, bool)> = Vec::new();
-        for (stmt, span) in block {
-            if let Stmt::Let { binding, .. } = stmt {
+        for s_node in block {
+            if let Stmt::Let { binding, .. } = &s_node.kind {
                 match binding {
                     Binding::Ident(name) => {
-                        defined.push((name.clone(), span.clone(), true));
+                        defined.push((name.clone(), s_node.span.clone(), true));
                     }
                     Binding::Destruct(DestructPat::Struct(fields)) => {
                         for (_, local) in fields {
-                            defined.push((local.clone(), span.clone(), false));
+                            defined.push((local.clone(), s_node.span.clone(), false));
                         }
                     }
                     Binding::Destruct(DestructPat::Tuple(names)) => {
                         for name in names {
-                            defined.push((name.clone(), span.clone(), false));
+                            defined.push((name.clone(), s_node.span.clone(), false));
                         }
                     }
                 }
@@ -179,8 +179,8 @@ impl Linter {
         }
 
         // Recurse into nested control-flow blocks.
-        for (stmt, _) in block {
-            match stmt {
+        for s_node in block {
+            match &s_node.kind {
                 Stmt::If {
                     then_body,
                     else_body,
@@ -214,13 +214,13 @@ impl Linter {
     // -----------------------------------------------------------------------
 
     fn check_block_ai_outside_agent(&mut self, block: &Block) {
-        for (stmt, span) in block {
-            for method in ai_methods_in_stmt(stmt) {
+        for s_node in block {
+            for method in ai_methods_in_stmt(&s_node.kind) {
                 self.warn(
                     format!(
                         "`Ai.{method}` called outside an agent — no `@role` or `@model` context"
                     ),
-                    Some(span.clone()),
+                    Some(s_node.span.clone()),
                     Some("wrap in an agent body with `@role` and `@model` attributes".into()),
                     false,
                 );
@@ -283,15 +283,15 @@ impl Linter {
 
 fn declared_tasks(program: &Program) -> Vec<(String, Span)> {
     let mut out = Vec::new();
-    for (decl, span) in &program.declarations {
-        match decl {
-            Decl::Task(t) => out.push((t.name.clone(), span.clone())),
+    for node in &program.declarations {
+        match &node.kind {
+            Decl::Task(t) => out.push((t.name.clone(), node.span.clone())),
             Decl::Agent(a) => {
                 for item in &a.items {
                     if let AgentItem::Task(t) = item {
                         // Use the agent declaration's span as a proxy since
                         // AgentItem doesn't carry its own span.
-                        out.push((t.name.clone(), span.clone()));
+                        out.push((t.name.clone(), node.span.clone()));
                     }
                 }
             }
@@ -307,8 +307,8 @@ fn declared_tasks(program: &Program) -> Vec<(String, Span)> {
 
 fn all_ident_reads(program: &Program) -> HashSet<String> {
     let mut reads = HashSet::new();
-    for (decl, _) in &program.declarations {
-        match decl {
+    for node in &program.declarations {
+        match &node.kind {
             Decl::Task(t) => collect_ident_reads_in_block(&t.body, &mut reads),
             Decl::Agent(a) => {
                 for item in &a.items {
@@ -330,7 +330,9 @@ fn all_ident_reads(program: &Program) -> HashSet<String> {
                     }
                 }
             }
-            Decl::Stmt((stmt, span)) => collect_ident_reads_in_stmt(stmt, span, &mut reads),
+            Decl::Stmt(stmt_node) => {
+                collect_ident_reads_in_stmt(&stmt_node.kind, &stmt_node.span, &mut reads)
+            }
             _ => {}
         }
     }
@@ -357,7 +359,7 @@ fn collect_ident_reads_in_stmt(stmt: &Stmt, span: &Span, out: &mut HashSet<Strin
     visitor.visit_stmt(stmt, span);
 }
 
-fn collect_ident_reads_in_expr(expr: &Expr, out: &mut HashSet<String>) {
+fn collect_ident_reads_in_expr(expr: &SpannedExpr, out: &mut HashSet<String>) {
     let mut visitor = IdentReads { reads: out };
     visitor.visit_expr(expr);
 }
@@ -367,21 +369,22 @@ struct IdentReads<'a> {
 }
 
 impl Visitor for IdentReads<'_> {
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, spanned: &SpannedExpr) {
+        let expr = &spanned.kind;
         if let Expr::Ident(name) = expr {
             self.reads.insert(name.clone());
         }
         if let Expr::MethodCall { object, method, .. } = expr
-            && matches!(object.as_ref(), Expr::SelfRef)
+            && matches!(&object.as_ref().kind, Expr::SelfRef)
         {
             self.reads.insert(method.clone());
         }
         if let Expr::Call { callee, .. } = expr
-            && let Expr::SelfAccess(method) = callee.as_ref()
+            && let Expr::SelfAccess(method) = &callee.as_ref().kind
         {
             self.reads.insert(method.clone());
         }
-        visit::walk_expr(self, expr);
+        visit::walk_expr(self, spanned);
     }
 }
 
@@ -402,14 +405,15 @@ struct AiCalls {
 }
 
 impl Visitor for AiCalls {
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, spanned: &SpannedExpr) {
+        let expr = &spanned.kind;
         if let Expr::MethodCall { object, method, .. } = expr
-            && let Expr::Ident(name) = object.as_ref()
+            && let Expr::Ident(name) = &object.as_ref().kind
             && name == "Ai"
         {
             self.methods.push(method.clone());
         }
-        visit::walk_expr(self, expr);
+        visit::walk_expr(self, spanned);
     }
 }
 
@@ -444,11 +448,12 @@ impl Visitor for SelfAccesses<'_> {
         visit::walk_stmt(self, stmt, span);
     }
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, spanned: &SpannedExpr) {
+        let expr = &spanned.kind;
         if let Expr::SelfAccess(field) = expr {
             self.reads.insert(field.clone());
         }
-        visit::walk_expr(self, expr);
+        visit::walk_expr(self, spanned);
     }
 }
 

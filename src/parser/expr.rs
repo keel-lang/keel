@@ -13,7 +13,7 @@ use super::common::{
     P, field_name, field_sep, ident, integer_lit, map_key, map_lit_key, newlines, plain_string,
     sep, string_lit,
 };
-use super::types::type_expr;
+use super::types::spanned_type_expr;
 
 // ---------------------------------------------------------------------------
 // Private helpers
@@ -28,8 +28,9 @@ enum PostfixOp {
     NullDotAccess(String),
     NullAssert,
     Call(Vec<CallArg>),
-    Cast(TypeExpr),
-    Index(Expr),
+    /// Type cast: `as T` — the target annotation carries its source span.
+    Cast(Node<TypeExpr>),
+    Index(SpannedExpr),
 }
 
 fn parse_duration_unit(s: &str) -> Option<DurationUnit> {
@@ -48,8 +49,8 @@ fn parse_duration_unit(s: &str) -> Option<DurationUnit> {
 // Public entry point
 // ---------------------------------------------------------------------------
 
-pub(super) fn expr_parser() -> P<Expr> {
-    recursive(|expr: Recursive<Token, Expr, Simple<Token>>| {
+pub(super) fn expr_parser() -> P<SpannedExpr> {
+    recursive(|expr: Recursive<Token, SpannedExpr, Simple<Token>>| {
         // ── Inner block parser for trailing-block calls ──────────
         //
         // Blocks inside expressions (lambda bodies, trailing blocks on
@@ -66,18 +67,31 @@ pub(super) fn expr_parser() -> P<Expr> {
             .boxed();
 
         // ── Literals ─────────────────────────────────────────────
-        let int_lit = select! { Token::Integer(s) => s }.try_map(|s, span| {
-            s.parse::<i64>()
-                .map(Expr::Integer)
-                .map_err(|_| Simple::custom(span, format!("integer literal `{s}` overflows i64")))
+        let int_lit = select! { Token::Integer(s) => s }
+            .try_map(|s, span| {
+                s.parse::<i64>().map(Expr::Integer).map_err(|_| {
+                    Simple::custom(span, format!("integer literal `{s}` overflows i64"))
+                })
+            })
+            .map_with_span(Node::new);
+        let float_lit = select! {
+            Token::Float(s) => Expr::Float(
+                s.parse::<f64>().expect("lexer regex guarantees valid f64 literal"),
+            )
+        }
+        .map_with_span(Node::new);
+        let str_expr = string_lit().map_with_span(|s, span| {
+            Node::new(
+                Expr::StringLit(super::strings::parse_interpolation(&s)),
+                span,
+            )
         });
-        let float_lit = select! { Token::Float(s) => Expr::Float(s.parse::<f64>().expect("lexer regex guarantees valid f64 literal")) };
-        let str_expr =
-            string_lit().map(|s| Expr::StringLit(super::strings::parse_interpolation(&s)));
         let bool_lit = just(Token::True)
             .to(Expr::Bool(true))
-            .or(just(Token::False).to(Expr::Bool(false)));
-        let none_lit = just(Token::None_).to(Expr::None_);
+            .or(just(Token::False).to(Expr::Bool(false)))
+            .map_with_span(Node::new);
+        let none_lit = just(Token::None_).to(Expr::None_).map_with_span(Node::new);
+
         // ── Lambda ───────────────────────────────────────────────
         let lambda_body = expr
             .clone()
@@ -88,9 +102,14 @@ pub(super) fn expr_parser() -> P<Expr> {
         let lambda_single = ident()
             .then_ignore(just(Token::FatArrow))
             .then(lambda_body.clone())
-            .map(|(name, body)| Expr::Lambda {
-                params: vec![LambdaParam { name, ty: None }],
-                body,
+            .map_with_span(|(name, body), span| {
+                Node::new(
+                    Expr::Lambda {
+                        params: vec![LambdaParam { name, ty: None }],
+                        body,
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -104,18 +123,21 @@ pub(super) fn expr_parser() -> P<Expr> {
             .then_ignore(just(Token::RParen))
             .then_ignore(just(Token::FatArrow))
             .then(lambda_body)
-            .map(|(params, body)| Expr::Lambda { params, body })
+            .map_with_span(|(params, body), span| Node::new(Expr::Lambda { params, body }, span))
             .boxed();
 
         // ── Identifier / self ────────────────────────────────────
-        let ident_expr = ident().map(Expr::Ident);
+        let ident_expr = ident().map(Expr::Ident).map_with_span(Node::new);
 
         let self_access = just(Token::SelfKw)
             .ignore_then(just(Token::Dot))
             .ignore_then(ident())
-            .map(Expr::SelfAccess);
+            .map(Expr::SelfAccess)
+            .map_with_span(Node::new);
 
-        let self_ref = just(Token::SelfKw).map(|_| Expr::SelfRef);
+        let self_ref = just(Token::SelfKw)
+            .to(Expr::SelfRef)
+            .map_with_span(Node::new);
 
         // ── Set literal: `set[1, 2, 3]` ──────────────────────────
         let set_lit = just(Token::Set)
@@ -124,7 +146,7 @@ pub(super) fn expr_parser() -> P<Expr> {
             .ignore_then(expr.clone().separated_by(field_sep()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBracket))
-            .map(Expr::SetLit);
+            .map_with_span(|items, span| Node::new(Expr::SetLit(items), span));
 
         // ── List ─────────────────────────────────────────────────
         let list_lit = just(Token::LBracket)
@@ -132,7 +154,7 @@ pub(super) fn expr_parser() -> P<Expr> {
             .ignore_then(expr.clone().separated_by(field_sep()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBracket))
-            .map(Expr::ListLit);
+            .map_with_span(|items, span| Node::new(Expr::ListLit(items), span));
 
         // ── Struct spread-update: `{ ...base, field: val, ... }` ──
         // Must be tried before struct_lit (both open with `{`).
@@ -157,9 +179,14 @@ pub(super) fn expr_parser() -> P<Expr> {
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
-            .map(|(base, overrides)| Expr::StructSpreadUpdate {
-                base: Box::new(base),
-                overrides,
+            .map_with_span(|(base, overrides), span| {
+                Node::new(
+                    Expr::StructSpreadUpdate {
+                        base: Box::new(base),
+                        overrides,
+                    },
+                    span,
+                )
             });
 
         // ── Struct / map literal: `{key: expr, ...}` ────────────
@@ -179,7 +206,7 @@ pub(super) fn expr_parser() -> P<Expr> {
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
-            .map(Expr::StructLit);
+            .map_with_span(|fields, span| Node::new(Expr::StructLit(fields), span));
 
         // ── Tuple / parenthesised ────────────────────────────────
         // Tuple requires 2+ elements; single paren is grouping.
@@ -195,13 +222,15 @@ pub(super) fn expr_parser() -> P<Expr> {
             .then_ignore(just(Token::Comma).or_not())
             .then_ignore(newlines())
             .then_ignore(just(Token::RParen))
-            .map(|(first, rest)| {
+            .map_with_span(|(first, rest), outer_span| {
                 if rest.is_empty() {
-                    first
+                    // Single-element paren: the result is the inner expression,
+                    // but we re-span it to cover the parentheses.
+                    Node::new(first.kind, outer_span)
                 } else {
                     let mut items = vec![first];
                     items.extend(rest);
-                    Expr::TupleLit(items)
+                    Node::new(Expr::TupleLit(items), outer_span)
                 }
             });
 
@@ -227,17 +256,22 @@ pub(super) fn expr_parser() -> P<Expr> {
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
-            .map(|((ty, variant), fields)| Expr::EnumVariant {
-                ty,
-                variant,
-                fields,
+            .map_with_span(|((ty, variant), fields), span| {
+                Node::new(
+                    Expr::EnumVariant {
+                        ty,
+                        variant,
+                        fields,
+                    },
+                    span,
+                )
             })
             .boxed();
 
         // ── If-expression (usable on any RHS) ────────────────────
         // Recursive so that `else if` chains work: the else-branch is either
         // another if-expression (wrapped as a single spanned Stmt::Expr) or a { block }.
-        let if_expr = recursive(|if_expr: Recursive<Token, Expr, Simple<Token>>| {
+        let if_expr = recursive(|if_expr: Recursive<Token, SpannedExpr, Simple<Token>>| {
             just(Token::If)
                 .ignore_then(expr.clone())
                 .then(inner_block.clone())
@@ -245,15 +279,20 @@ pub(super) fn expr_parser() -> P<Expr> {
                     just(Token::Else)
                         .ignore_then(
                             if_expr
-                                .map_with_span(|e, span| vec![(Stmt::Expr(e), span)])
+                                .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)])
                                 .or(inner_block.clone()),
                         )
                         .or_not(),
                 )
-                .map(|((cond, then_body), else_body)| Expr::IfExpr {
-                    cond: Box::new(cond),
-                    then_body,
-                    else_body: else_body.unwrap_or_default(),
+                .map_with_span(|((cond, then_body), else_body), span| {
+                    Node::new(
+                        Expr::IfExpr {
+                            cond: Box::new(cond),
+                            then_body,
+                            else_body: else_body.unwrap_or_default(),
+                        },
+                        span,
+                    )
                 })
         })
         .boxed();
@@ -276,14 +315,21 @@ pub(super) fn expr_parser() -> P<Expr> {
                     Some(b) => Pattern::Variant { name, bindings: b },
                     None => Pattern::Ident(name),
                 }))
-            .or(plain_string()
-                .map(|s| Pattern::Literal(Expr::StringLit(vec![StringPart::Literal(s)]))))
-            .or(integer_lit().map(|n| Pattern::Literal(Expr::Integer(n))))
+            .or(plain_string().map_with_span(|s, span| {
+                Pattern::Literal(Node::new(
+                    Expr::StringLit(vec![StringPart::Literal(s)]),
+                    span,
+                ))
+            }))
+            .or(integer_lit()
+                .map_with_span(|n, span| Pattern::Literal(Node::new(Expr::Integer(n), span))))
             .boxed();
 
         let we_arm_body = inner_block
             .clone()
-            .or(expr.clone().map(|e| vec![(Stmt::Expr(e), 0..0)]))
+            .or(expr
+                .clone()
+                .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)]))
             .boxed();
 
         let we_arm = we_pattern
@@ -292,7 +338,11 @@ pub(super) fn expr_parser() -> P<Expr> {
             .then(just(Token::Where).ignore_then(expr.clone()).or_not())
             .then_ignore(just(Token::FatArrow))
             .then(we_arm_body)
-            .map(|((patterns, guard), body)| WhenArm { patterns, guard, body })
+            .map(|((patterns, guard), body)| WhenArm {
+                patterns,
+                guard,
+                body,
+            })
             .boxed();
 
         let when_expr = just(Token::When)
@@ -302,9 +352,14 @@ pub(super) fn expr_parser() -> P<Expr> {
             .then(we_arm.separated_by(newlines()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
-            .map(|(subject, arms)| Expr::WhenExpr {
-                subject: Box::new(subject),
-                arms,
+            .map_with_span(|(subject, arms), span| {
+                Node::new(
+                    Expr::WhenExpr {
+                        subject: Box::new(subject),
+                        arms,
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -386,6 +441,10 @@ pub(super) fn expr_parser() -> P<Expr> {
             .map(PostfixOp::Index)
             .boxed();
 
+        // Each postfix operation is tagged with its own source span so that
+        // the foldl step can compute the full span of the composed expression.
+        // These `(PostfixOp, Span)` pairs are parser-internal only; they are
+        // not stored in the AST.
         let postfix_op = choice((
             just(Token::Dot)
                 .ignore_then(field_name())
@@ -397,64 +456,99 @@ pub(super) fn expr_parser() -> P<Expr> {
             just(Token::Bang).to(PostfixOp::NullAssert),
             call_args.clone().map(PostfixOp::Call),
             just(Token::As)
-                .ignore_then(type_expr())
+                .ignore_then(spanned_type_expr())
                 .map(PostfixOp::Cast),
             subscript,
         ))
+        .map_with_span(|op, s| (op, s))
         .boxed();
 
         let postfix = primary
             .then(postfix_op.repeated())
-            .foldl(|expr, op| match op {
-                PostfixOp::DotAccess {
-                    field,
-                    args: Some(args),
-                } => Expr::MethodCall {
-                    object: Box::new(expr),
-                    method: field,
-                    args,
-                },
-                PostfixOp::DotAccess { field, args: None } => {
-                    // Duration sugar: `5.minutes` after an Integer primary.
-                    if let Expr::Integer(n) = &expr
-                        && let Some(unit) = parse_duration_unit(&field)
-                    {
-                        return Expr::Duration {
-                            value: Box::new(Expr::Integer(*n)),
-                            unit,
-                        };
+            .foldl(|lhs_spanned, (op, op_span)| {
+                let full_span = lhs_spanned.span.start..op_span.end;
+                match op {
+                    PostfixOp::DotAccess {
+                        field,
+                        args: Some(args),
+                    } => Node::new(
+                        Expr::MethodCall {
+                            object: Box::new(lhs_spanned),
+                            method: field,
+                            args,
+                        },
+                        full_span,
+                    ),
+                    PostfixOp::DotAccess { field, args: None } => {
+                        // Duration sugar: `5.minutes` after an Integer primary.
+                        if let Expr::Integer(n) = &lhs_spanned.kind
+                            && let Some(unit) = parse_duration_unit(&field)
+                        {
+                            let n = *n;
+                            let int_span = lhs_spanned.span.clone();
+                            return Node::new(
+                                Expr::Duration {
+                                    value: Box::new(Node::new(Expr::Integer(n), int_span)),
+                                    unit,
+                                },
+                                full_span,
+                            );
+                        }
+                        // `Urgency.medium` and `Http.ok` both emit FieldAccess;
+                        // the type checker resolves enum variants vs. namespace
+                        // members based on the identifier's bound type.
+                        Node::new(Expr::FieldAccess(Box::new(lhs_spanned), field), full_span)
                     }
-                    // `Urgency.medium` and `Http.ok` both emit FieldAccess;
-                    // the type checker resolves enum variants vs. namespace
-                    // members based on the identifier's bound type.
-                    Expr::FieldAccess(Box::new(expr), field)
+                    PostfixOp::NullDotAccess(field) => Node::new(
+                        Expr::NullFieldAccess(Box::new(lhs_spanned), field),
+                        full_span,
+                    ),
+                    PostfixOp::NullAssert => {
+                        Node::new(Expr::NullAssert(Box::new(lhs_spanned)), full_span)
+                    }
+                    PostfixOp::Call(args) => Node::new(
+                        Expr::Call {
+                            callee: Box::new(lhs_spanned),
+                            args,
+                        },
+                        full_span,
+                    ),
+                    PostfixOp::Cast(ty) => Node::new(
+                        Expr::Cast {
+                            expr: Box::new(lhs_spanned),
+                            ty,
+                        },
+                        full_span,
+                    ),
+                    PostfixOp::Index(idx) => Node::new(
+                        Expr::Index {
+                            object: Box::new(lhs_spanned),
+                            index: Box::new(idx),
+                        },
+                        full_span,
+                    ),
                 }
-                PostfixOp::NullDotAccess(field) => Expr::NullFieldAccess(Box::new(expr), field),
-                PostfixOp::NullAssert => Expr::NullAssert(Box::new(expr)),
-                PostfixOp::Call(args) => Expr::Call {
-                    callee: Box::new(expr),
-                    args,
-                },
-                PostfixOp::Cast(ty) => Expr::Cast {
-                    expr: Box::new(expr),
-                    ty,
-                },
-                PostfixOp::Index(idx) => Expr::Index {
-                    object: Box::new(expr),
-                    index: Box::new(idx),
-                },
             })
             .boxed();
 
         // ── Unary ────────────────────────────────────────────────
+        // Tag each unary operator with its span so the foldr can extend
+        // the full expression span leftward from the operator position.
         let unary = just(Token::Not)
             .to(UnOp::Not)
             .or(just(Token::Minus).to(UnOp::Neg))
+            .map_with_span(|op, s| (op, s))
             .repeated()
             .then(postfix)
-            .foldr(|op, expr| Expr::UnaryOp {
-                op,
-                expr: Box::new(expr),
+            .foldr(|(op, op_span), inner_spanned| {
+                let span = op_span.start..inner_spanned.span.end;
+                Node::new(
+                    Expr::UnaryOp {
+                        op,
+                        expr: Box::new(inner_spanned),
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -469,10 +563,16 @@ pub(super) fn expr_parser() -> P<Expr> {
                     .then(unary)
                     .repeated(),
             )
-            .foldl(|l, (op, r)| Expr::BinaryOp {
-                left: Box::new(l),
-                op,
-                right: Box::new(r),
+            .foldl(|l, (op, r)| {
+                let span = l.span.start..r.span.end;
+                Node::new(
+                    Expr::BinaryOp {
+                        left: Box::new(l),
+                        op,
+                        right: Box::new(r),
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -486,10 +586,16 @@ pub(super) fn expr_parser() -> P<Expr> {
                     .then(product)
                     .repeated(),
             )
-            .foldl(|l, (op, r)| Expr::BinaryOp {
-                left: Box::new(l),
-                op,
-                right: Box::new(r),
+            .foldl(|l, (op, r)| {
+                let span = l.span.start..r.span.end;
+                Node::new(
+                    Expr::BinaryOp {
+                        left: Box::new(l),
+                        op,
+                        right: Box::new(r),
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -498,8 +604,11 @@ pub(super) fn expr_parser() -> P<Expr> {
         let range = sum
             .clone()
             .then(just(Token::DotDot).ignore_then(sum.clone()).or_not())
-            .map(|(start, end)| match end {
-                Some(end) => Expr::Range(Box::new(start), Box::new(end)),
+            .map(|(start, end_opt)| match end_opt {
+                Some(end_spanned) => {
+                    let span = start.span.start..end_spanned.span.end;
+                    Node::new(Expr::Range(Box::new(start), Box::new(end_spanned)), span)
+                }
                 None => start,
             })
             .boxed();
@@ -519,10 +628,16 @@ pub(super) fn expr_parser() -> P<Expr> {
                 .then(range)
                 .repeated(),
             )
-            .foldl(|l, (op, r)| Expr::BinaryOp {
-                left: Box::new(l),
-                op,
-                right: Box::new(r),
+            .foldl(|l, (op, r)| {
+                let span = l.span.start..r.span.end;
+                Node::new(
+                    Expr::BinaryOp {
+                        left: Box::new(l),
+                        op,
+                        right: Box::new(r),
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -530,10 +645,16 @@ pub(super) fn expr_parser() -> P<Expr> {
         let land = cmp
             .clone()
             .then(just(Token::And).to(BinOp::And).then(cmp).repeated())
-            .foldl(|l, (op, r)| Expr::BinaryOp {
-                left: Box::new(l),
-                op,
-                right: Box::new(r),
+            .foldl(|l, (op, r)| {
+                let span = l.span.start..r.span.end;
+                Node::new(
+                    Expr::BinaryOp {
+                        left: Box::new(l),
+                        op,
+                        right: Box::new(r),
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -541,10 +662,16 @@ pub(super) fn expr_parser() -> P<Expr> {
         let lor = land
             .clone()
             .then(just(Token::Or).to(BinOp::Or).then(land).repeated())
-            .foldl(|l, (op, r)| Expr::BinaryOp {
-                left: Box::new(l),
-                op,
-                right: Box::new(r),
+            .foldl(|l, (op, r)| {
+                let span = l.span.start..r.span.end;
+                Node::new(
+                    Expr::BinaryOp {
+                        left: Box::new(l),
+                        op,
+                        right: Box::new(r),
+                    },
+                    span,
+                )
             })
             .boxed();
 
@@ -553,7 +680,10 @@ pub(super) fn expr_parser() -> P<Expr> {
         let pipeline = lor
             .clone()
             .then(just(Token::Pipe).ignore_then(lor).repeated())
-            .foldl(|l, r| Expr::Pipeline(Box::new(l), Box::new(r)))
+            .foldl(|l, r| {
+                let span = l.span.start..r.span.end;
+                Node::new(Expr::Pipeline(Box::new(l), Box::new(r)), span)
+            })
             .boxed();
 
         // ── ?? ───────────────────────────────────────────────────
@@ -561,7 +691,10 @@ pub(super) fn expr_parser() -> P<Expr> {
         pipeline
             .clone()
             .then(just(Token::NullCoalesce).ignore_then(pipeline).repeated())
-            .foldl(|l, r| Expr::NullCoalesce(Box::new(l), Box::new(r)))
+            .foldl(|l, r| {
+                let span = l.span.start..r.span.end;
+                Node::new(Expr::NullCoalesce(Box::new(l), Box::new(r)), span)
+            })
     })
     .boxed()
 }

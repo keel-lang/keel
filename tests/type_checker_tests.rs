@@ -1,6 +1,7 @@
 use keel_lang::lexer::lex;
 use keel_lang::parser::parse;
 use keel_lang::types::checker::{self, check};
+use keel_lang::types::ty::TypeError;
 use miette::NamedSource;
 
 fn type_errors(source: &str) -> Vec<String> {
@@ -8,6 +9,13 @@ fn type_errors(source: &str) -> Vec<String> {
     let tokens = lex(source, &named).expect("lex failed");
     let program = parse(tokens, source.len(), &named).expect("parse failed");
     check(&program).into_iter().map(|e| e.message).collect()
+}
+
+fn type_errors_full(source: &str) -> Vec<TypeError> {
+    let named = NamedSource::new("t.keel", source.to_string());
+    let tokens = lex(source, &named).expect("lex failed");
+    let program = parse(tokens, source.len(), &named).expect("parse failed");
+    check(&program)
 }
 
 fn type_ok(source: &str) {
@@ -2042,6 +2050,44 @@ task go() -> int {
 }
 "#,
         "expected",
+    );
+}
+
+// ─── Type-annotation span (issue #8, stage 4) ────────────────────────────────
+//
+// When a `let` binding has an explicit type annotation and the inferred type
+// does not match, the error span must point at the annotation token sequence,
+// not the entire statement.
+
+#[test]
+fn type_mismatch_error_span_points_at_annotation() {
+    // Source: `x: str = 1`
+    // Byte layout (0-indexed):
+    //   task go() {\n  x: str = 1\n}
+    //   0123456789...
+    // We find the annotation "str" in the source and verify the error span
+    // covers exactly those bytes.
+    let src = "task go() {\n  x: str = 1\n}";
+    let errs = type_errors_full(src);
+    assert!(!errs.is_empty(), "expected a type mismatch error");
+
+    // At least one error must have a span that sits inside "str".
+    let ann_start = src.find("str").expect("'str' not found in source");
+    let ann_end = ann_start + "str".len();
+
+    let has_annotation_span = errs.iter().any(|e| {
+        if let Some(ref s) = e.span {
+            // The span must overlap the annotation range.
+            s.start >= ann_start && s.end <= ann_end + 1
+        } else {
+            false
+        }
+    });
+    assert!(
+        has_annotation_span,
+        "expected error span to point at the type annotation 'str' ({ann_start}..{ann_end}), \
+         got spans: {:?}",
+        errs.iter().map(|e| e.span.clone()).collect::<Vec<_>>()
     );
 }
 

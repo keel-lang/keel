@@ -5,7 +5,7 @@
 use chumsky::prelude::*;
 
 use crate::ast::MapLitKey;
-use crate::lexer::Token;
+use crate::lexer::{Span, Token};
 
 pub(super) type P<T> = BoxedParser<'static, Token, T, Simple<Token>>;
 
@@ -40,6 +40,16 @@ pub(super) fn field_sep() -> P<()> {
 
 pub(super) fn ident() -> P<String> {
     select! { Token::Ident(s) => s }.boxed()
+}
+
+/// An identifier token together with its byte-range span.
+///
+/// Use this instead of `ident()` when the call site stores the span for
+/// IDE features (rename, go-to-definition, diagnostics).
+pub(super) fn spanned_ident() -> P<(String, Span)> {
+    select! { Token::Ident(s) => s }
+        .map_with_span(|s, span| (s, span))
+        .boxed()
 }
 
 /// Identifier OR a small set of contextual keywords that users routinely

@@ -70,9 +70,9 @@ impl TypeEnv {
     ) {
         for decl in declarations {
             if let crate::ast::Decl::Type(t) = decl
-                && let TypeDef::Alias(te) = &t.def
+                && let TypeDef::Alias(te_node) = &t.def
             {
-                let resolved = resolve_type_expr(te, self);
+                let resolved = resolve_type_expr(&te_node.kind, self);
                 self.aliases.insert(t.name.clone(), resolved);
             }
         }
@@ -105,7 +105,7 @@ pub fn resolve_type_expr(te: &TypeExpr, env: &TypeEnv) -> Ty {
         TypeExpr::Struct(fields) => Ty::Struct(
             fields
                 .iter()
-                .map(|f| (f.name.clone(), resolve_type_expr(&f.ty, env)))
+                .map(|f| (f.name.clone(), resolve_type_expr(&f.ty.kind, env)))
                 .collect(),
         ),
         TypeExpr::Tuple(items) => {
@@ -218,7 +218,7 @@ fn ty_satisfies(required: &Ty, actual: &Ty) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ast::{Field, TypeExpr};
+    use crate::ast::{Field, Node, TypeExpr};
 
     fn env() -> TypeEnv {
         TypeEnv::new()
@@ -226,6 +226,11 @@ mod tests {
 
     fn te_named(name: &str) -> TypeExpr {
         TypeExpr::Named(name.to_owned())
+    }
+
+    /// Synthetic `Node<TypeExpr>` for use in `Field.ty` and other `Node<TypeExpr>` positions.
+    fn te_spanned(name: &str) -> Node<TypeExpr> {
+        Node::synthetic(TypeExpr::Named(name.to_owned()))
     }
 
     fn resolve(te: &TypeExpr) -> Ty {
@@ -284,11 +289,11 @@ mod tests {
         let te = TypeExpr::Struct(vec![
             Field {
                 name: "body".to_owned(),
-                ty: te_named("str"),
+                ty: te_spanned("str"),
             },
             Field {
                 name: "count".to_owned(),
-                ty: te_named("int"),
+                ty: te_spanned("int"),
             },
         ]);
         assert_eq!(

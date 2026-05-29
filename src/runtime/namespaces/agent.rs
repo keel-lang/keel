@@ -123,10 +123,13 @@ fn agents_in_team(interp: &crate::interpreter::Interpreter, team: &str) -> Vec<S
             if attr.name != "team" {
                 return false;
             }
-            let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body else {
+            let AttributeBody::Expr(list_node) = &attr.body else {
                 return false;
             };
-            items.iter().any(|e| match e {
+            let Expr::ListLit(items) = &list_node.kind else {
+                return false;
+            };
+            items.iter().any(|e| match &e.kind {
                 Expr::StringLit(parts) => {
                     let s: String = parts
                         .iter()

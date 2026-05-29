@@ -1,6 +1,6 @@
 //! Expression nodes and expression subtypes.
 
-use super::{Block, TypeExpr};
+use super::{Block, Node, TypeExpr};
 
 /// A key in a struct/map literal, carrying the original syntactic form.
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +34,12 @@ impl MapLitKey {
     }
 }
 
+/// A spanned expression: the expression node paired with its source byte range.
+///
+/// Every expression produced by the parser carries a span so that type-checker
+/// diagnostics and IDE features can point at the precise sub-expression.
+pub type SpannedExpr = Node<Expr>;
+
 #[derive(Debug, Clone)]
 pub enum Expr {
     // ── Literals ─────────────────────────────────────────────────────
@@ -47,11 +53,11 @@ pub enum Expr {
     // ── Identifiers & access ─────────────────────────────────────────
     Ident(String),
     /// `expr.field`
-    FieldAccess(Box<Expr>, String),
+    FieldAccess(Box<SpannedExpr>, String),
     /// `expr?.field`
-    NullFieldAccess(Box<Expr>, String),
+    NullFieldAccess(Box<SpannedExpr>, String),
     /// `expr!`
-    NullAssert(Box<Expr>),
+    NullAssert(Box<SpannedExpr>),
     /// `self.field`
     SelfAccess(String),
     /// bare `self` — resolves to an AgentRef for the current agent
@@ -59,46 +65,46 @@ pub enum Expr {
 
     // ── Compound literals ────────────────────────────────────────────
     /// `{key: value, ...}` — keys carry their syntactic form via `MapLitKey`.
-    StructLit(Vec<(MapLitKey, Expr)>),
+    StructLit(Vec<(MapLitKey, SpannedExpr)>),
     /// `{ ...base, field: val, ... }` — copy all fields from base, override specified ones.
     StructSpreadUpdate {
-        base: Box<Expr>,
-        overrides: Vec<(String, Expr)>,
+        base: Box<SpannedExpr>,
+        overrides: Vec<(String, SpannedExpr)>,
     },
     /// `[expr, ...]`
-    ListLit(Vec<Expr>),
+    ListLit(Vec<SpannedExpr>),
     /// `set[expr, ...]`
-    SetLit(Vec<Expr>),
+    SetLit(Vec<SpannedExpr>),
     /// `(expr, expr, ...)` — tuple with 2+ elements
-    TupleLit(Vec<Expr>),
+    TupleLit(Vec<SpannedExpr>),
 
     // ── Operators ────────────────────────────────────────────────────
     BinaryOp {
-        left: Box<Expr>,
+        left: Box<SpannedExpr>,
         op: BinOp,
-        right: Box<Expr>,
+        right: Box<SpannedExpr>,
     },
     UnaryOp {
         op: UnOp,
-        expr: Box<Expr>,
+        expr: Box<SpannedExpr>,
     },
     /// `expr ?? default`
-    NullCoalesce(Box<Expr>, Box<Expr>),
+    NullCoalesce(Box<SpannedExpr>, Box<SpannedExpr>),
     /// `expr |> func`
-    Pipeline(Box<Expr>, Box<Expr>),
+    Pipeline(Box<SpannedExpr>, Box<SpannedExpr>),
     /// `start..end` — inclusive integer range, evaluates to `list[int]`.
-    Range(Box<Expr>, Box<Expr>),
+    Range(Box<SpannedExpr>, Box<SpannedExpr>),
 
     // ── Calls ────────────────────────────────────────────────────────
     /// `func(args)` or `func(name: value)` — also covers
     /// `Ai.classify(...)` after method-call desugaring below.
     Call {
-        callee: Box<Expr>,
+        callee: Box<SpannedExpr>,
         args: Vec<CallArg>,
     },
     /// `expr.method(args)` — keeps the method name available for lookup.
     MethodCall {
-        object: Box<Expr>,
+        object: Box<SpannedExpr>,
         method: String,
         args: Vec<CallArg>,
     },
@@ -106,20 +112,21 @@ pub enum Expr {
     // ── Cast ─────────────────────────────────────────────────────────
     /// `expr as Type` — used with `Ai.prompt(...)` and `dynamic` narrowing.
     Cast {
-        expr: Box<Expr>,
-        ty: TypeExpr,
+        expr: Box<SpannedExpr>,
+        /// Target type annotation together with its source span.
+        ty: Node<TypeExpr>,
     },
 
     // ── Control flow as expressions ──────────────────────────────────
     /// `if cond { ... } else { ... }` (expression form)
     IfExpr {
-        cond: Box<Expr>,
+        cond: Box<SpannedExpr>,
         then_body: Block,
         else_body: Block,
     },
     /// `when subject { pattern => expr ... }` (expression form — evaluates to the matched arm's value)
     WhenExpr {
-        subject: Box<Expr>,
+        subject: Box<SpannedExpr>,
         arms: Vec<super::WhenArm>,
     },
     // ── Lambda ───────────────────────────────────────────────────────
@@ -133,14 +140,14 @@ pub enum Expr {
     /// `expr[index]` — list element access (returns `T`) or string char
     /// access (returns `str`). Out-of-bounds is a runtime error.
     Index {
-        object: Box<Expr>,
-        index: Box<Expr>,
+        object: Box<SpannedExpr>,
+        index: Box<SpannedExpr>,
     },
 
     // ── Duration ─────────────────────────────────────────────────────
     /// `5.minutes`, `2.hours` — parsed at postfix `INT "." Ident(unit)`.
     Duration {
-        value: Box<Expr>,
+        value: Box<SpannedExpr>,
         unit: DurationUnit,
     },
 
@@ -150,7 +157,7 @@ pub enum Expr {
     EnumVariant {
         ty: String,
         variant: String,
-        fields: Vec<(String, Expr)>,
+        fields: Vec<(String, SpannedExpr)>,
     },
 }
 
@@ -159,7 +166,7 @@ pub enum StringPart {
     Literal(String),
     /// Expression plus an optional raw format spec (the part after `:` inside `{}`).
     /// e.g. `{pi:.2f}` → spec = `Some(".2f")`, `{x}` → spec = `None`.
-    Interpolation(Box<Expr>, Option<String>),
+    Interpolation(Box<SpannedExpr>, Option<String>),
     /// The interpolation slot could not be parsed.
     ///
     /// Carries the raw slot text so the formatter can round-trip broken
@@ -171,7 +178,7 @@ pub enum StringPart {
 #[derive(Debug, Clone)]
 pub struct CallArg {
     pub name: Option<String>,
-    pub value: Expr,
+    pub value: SpannedExpr,
     /// If true, `value` is expanded (spread) into individual variadic slots.
     pub spread: bool,
 }
@@ -179,12 +186,13 @@ pub struct CallArg {
 #[derive(Debug, Clone)]
 pub struct LambdaParam {
     pub name: String,
-    pub ty: Option<TypeExpr>,
+    /// Optional type annotation together with its source span.
+    pub ty: Option<Node<TypeExpr>>,
 }
 
 #[derive(Debug, Clone)]
 pub enum LambdaBody {
-    Expr(Box<Expr>),
+    Expr(Box<SpannedExpr>),
     Block(Block),
 }
 

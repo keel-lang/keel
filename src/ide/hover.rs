@@ -124,15 +124,15 @@ pub(crate) fn collect_decl_bindings(
     c: &mut Checker,
     out: &mut HashMap<String, Ty>,
 ) {
-    for (decl, _) in &program.declarations {
-        match decl {
-            Decl::Stmt((stmt, _)) => collect_stmt_bindings(stmt, c, out),
+    for node in &program.declarations {
+        match &node.kind {
+            Decl::Stmt(stmt_node) => collect_stmt_bindings(&stmt_node.kind, c, out),
             Decl::Task(t) => {
                 for p in &t.params {
-                    insert_binding(&p.name, c.resolve_type(&p.ty), c, out);
+                    insert_binding(&p.name, c.resolve_type(&p.ty.kind), c, out);
                 }
-                for (s, _) in &t.body {
-                    collect_stmt_bindings(s, c, out);
+                for s_node in &t.body {
+                    collect_stmt_bindings(&s_node.kind, c, out);
                 }
             }
             Decl::Agent(decl) => {
@@ -140,29 +140,29 @@ pub(crate) fn collect_decl_bindings(
                     match it {
                         AgentItem::State(fields) => {
                             for sf in fields {
-                                out.insert(sf.name.clone(), c.resolve_type(&sf.ty));
+                                out.insert(sf.name.clone(), c.resolve_type(&sf.ty.kind));
                             }
                         }
                         AgentItem::Task(t) => {
                             for p in &t.params {
-                                insert_binding(&p.name, c.resolve_type(&p.ty), c, out);
+                                insert_binding(&p.name, c.resolve_type(&p.ty.kind), c, out);
                             }
-                            for (s, _) in &t.body {
-                                collect_stmt_bindings(s, c, out);
+                            for s_node in &t.body {
+                                collect_stmt_bindings(&s_node.kind, c, out);
                             }
                         }
                         AgentItem::On(h) => {
                             if let Some(p) = &h.param {
-                                insert_binding(&p.name, c.resolve_type(&p.ty), c, out);
+                                insert_binding(&p.name, c.resolve_type(&p.ty.kind), c, out);
                             }
-                            for (s, _) in &h.body {
-                                collect_stmt_bindings(s, c, out);
+                            for s_node in &h.body {
+                                collect_stmt_bindings(&s_node.kind, c, out);
                             }
                         }
                         AgentItem::Attribute(attr) => {
                             if let AttributeBody::Block(block) = &attr.body {
-                                for (s, _) in block {
-                                    collect_stmt_bindings(s, c, out);
+                                for s_node in block {
+                                    collect_stmt_bindings(&s_node.kind, c, out);
                                 }
                             }
                         }
@@ -179,7 +179,10 @@ pub(crate) fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut Hash
         Stmt::Let { binding, ty, value } => {
             let mut scope = Scope::new();
             let inferred = c.infer_expr(value, &mut scope);
-            let bound = ty.as_ref().map(|t| c.resolve_type(t)).unwrap_or(inferred);
+            let bound = ty
+                .as_ref()
+                .map(|t| c.resolve_type(&t.kind))
+                .unwrap_or(inferred);
             insert_binding(binding, bound, c, out);
         }
         Stmt::For {
@@ -195,8 +198,8 @@ pub(crate) fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut Hash
                 _ => Ty::Unknown(UnknownReason::InferenceLimitation),
             };
             insert_binding(binding, elem, c, out);
-            for (s, _) in body {
-                collect_stmt_bindings(s, c, out);
+            for s_node in body {
+                collect_stmt_bindings(&s_node.kind, c, out);
             }
         }
         Stmt::If {
@@ -204,35 +207,35 @@ pub(crate) fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut Hash
             else_body,
             ..
         } => {
-            for (s, _) in then_body {
-                collect_stmt_bindings(s, c, out);
+            for s_node in then_body {
+                collect_stmt_bindings(&s_node.kind, c, out);
             }
             if let Some(eb) = else_body {
-                for (s, _) in eb {
-                    collect_stmt_bindings(s, c, out);
+                for s_node in eb {
+                    collect_stmt_bindings(&s_node.kind, c, out);
                 }
             }
         }
         Stmt::When { arms, .. } => {
             for arm in arms {
-                for (s, _) in &arm.body {
-                    collect_stmt_bindings(s, c, out);
+                for s_node in &arm.body {
+                    collect_stmt_bindings(&s_node.kind, c, out);
                 }
             }
         }
         Stmt::While { body, .. } => {
-            for (s, _) in body {
-                collect_stmt_bindings(s, c, out);
+            for s_node in body {
+                collect_stmt_bindings(&s_node.kind, c, out);
             }
         }
         Stmt::TryCatch { body, catches } => {
-            for (s, _) in body {
-                collect_stmt_bindings(s, c, out);
+            for s_node in body {
+                collect_stmt_bindings(&s_node.kind, c, out);
             }
             for catch in catches {
-                out.insert(catch.name.clone(), c.resolve_type(&catch.ty));
-                for (s, _) in &catch.body {
-                    collect_stmt_bindings(s, c, out);
+                out.insert(catch.name.clone(), c.resolve_type(&catch.ty.kind));
+                for s_node in &catch.body {
+                    collect_stmt_bindings(&s_node.kind, c, out);
                 }
             }
         }

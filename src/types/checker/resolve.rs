@@ -91,7 +91,7 @@ impl Checker {
             TypeExpr::Struct(fields) => Ty::Struct(
                 fields
                     .iter()
-                    .map(|f| (f.name.clone(), self.resolve_type_with_env(&f.ty, env)))
+                    .map(|f| (f.name.clone(), self.resolve_type_with_env(&f.ty.kind, env)))
                     .collect(),
             ),
             TypeExpr::Tuple(items) => Ty::Tuple(
@@ -130,12 +130,14 @@ impl Checker {
                                 .map(|f| {
                                     (
                                         f.name.clone(),
-                                        self.resolve_type_with_env(&f.ty, &inner_env),
+                                        self.resolve_type_with_env(&f.ty.kind, &inner_env),
                                     )
                                 })
                                 .collect(),
                         ),
-                        TypeDef::Alias(ty) => self.resolve_type_with_env(ty, &inner_env),
+                        TypeDef::Alias(ty_node) => {
+                            self.resolve_type_with_env(&ty_node.kind, &inner_env)
+                        }
                         // Carry type args so variant field types can be resolved in
                         // pattern-matching arms.
                         TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => {
@@ -213,7 +215,7 @@ impl Checker {
                                     concrete_fields.iter().find(|(n, _)| *n == gfield.name)
                                 {
                                     bind_type_params(
-                                        &gfield.ty,
+                                        &gfield.ty.kind,
                                         concrete_ty,
                                         &inner_params,
                                         &mut inner_env,
@@ -280,7 +282,7 @@ impl Checker {
             .cloned()
             .zip(type_args.iter().cloned())
             .collect();
-        self.resolve_type_with_env(&field.ty, &env)
+        self.resolve_type_with_env(&field.ty.kind, &env)
     }
 }
 

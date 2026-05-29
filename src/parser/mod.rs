@@ -19,7 +19,7 @@ use chumsky::prelude::*;
 use miette::NamedSource;
 
 use crate::ast::*;
-use crate::lexer::{Span, Spanned, Token};
+use crate::lexer::{Span, Token};
 
 use common::*;
 
@@ -55,7 +55,7 @@ pub fn parse_stmts(
     tokens: Vec<(Token, Span)>,
     source_len: usize,
     named_src: &NamedSource<String>,
-) -> miette::Result<Vec<Spanned<Stmt>>> {
+) -> miette::Result<Vec<Node<Stmt>>> {
     let eoi = source_len..source_len + 1;
     let stream = Stream::from_iter(eoi, tokens.into_iter());
 

@@ -1,6 +1,6 @@
 use miette::Result;
 
-use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, TaskDecl, TypeExpr};
+use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, SpannedExpr, TaskDecl, TypeExpr};
 
 use super::bind_value;
 use super::environment::Environment;
@@ -103,7 +103,7 @@ impl Interpreter {
                 Value::None
             };
             // Tag plain map values that match a declared struct type annotation.
-            let v = if let TypeExpr::Named(type_name) = &p.ty
+            let v = if let TypeExpr::Named(type_name) = &p.ty.kind
                 && self.struct_types.contains_key(type_name.as_str())
             {
                 match v {
@@ -122,19 +122,23 @@ impl Interpreter {
             StmtOutcome::Value(v) | StmtOutcome::Return(v) => {
                 // Tag plain map return values that match the declared return type.
                 let v = match &decl.return_type {
-                    Some(TypeExpr::Named(type_name))
-                        if self.struct_types.contains_key(type_name.as_str()) =>
-                    {
-                        match v {
-                            Value::Map(m) => {
-                                let fields =
-                                    m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-                                Value::Struct(type_name.clone(), fields)
+                    Some(node) => {
+                        if let TypeExpr::Named(type_name) = &node.kind
+                            && self.struct_types.contains_key(type_name.as_str())
+                        {
+                            match v {
+                                Value::Map(m) => {
+                                    let fields =
+                                        m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
+                                    Value::Struct(type_name.clone(), fields)
+                                }
+                                other => other,
                             }
-                            other => other,
+                        } else {
+                            v
                         }
                     }
-                    _ => v,
+                    None => v,
                 };
                 Ok(v)
             }
@@ -244,39 +248,50 @@ impl Interpreter {
 
                 // Process a single (key-name, expr) pair into the limit slots.
                 // Base fields are visited first; overrides win on duplicates.
-                let mut apply = |key: &str, expr: &Expr| match key {
-                    "timeout" => {
-                        if let Expr::Duration { value, unit } = expr
-                            && let Expr::Integer(n) = value.as_ref()
-                        {
-                            timeout = Some(Value::duration_seconds(*n, *unit));
+                let mut apply = |key: &str, node: &SpannedExpr| {
+                    let expr = &node.kind;
+                    match key {
+                        "timeout" => {
+                            if let Expr::Duration { value, unit } = expr
+                                && let Expr::Integer(n) = &value.as_ref().kind
+                            {
+                                timeout = Some(Value::duration_seconds(*n, *unit));
+                            }
                         }
-                    }
-                    "max_tokens" => {
-                        if let Expr::Integer(n) = expr {
-                            max_tokens = Some(*n);
+                        "max_tokens" => {
+                            if let Expr::Integer(n) = expr {
+                                max_tokens = Some(*n);
+                            }
                         }
-                    }
-                    "max_cost" => {
-                        if let Expr::Float(f) = expr {
-                            max_cost = Some(*f);
-                        } else if let Expr::Integer(n) = expr {
-                            max_cost = Some(*n as f64);
+                        "max_cost" => {
+                            if let Expr::Float(f) = expr {
+                                max_cost = Some(*f);
+                            } else if let Expr::Integer(n) = expr {
+                                max_cost = Some(*n as f64);
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 };
 
                 match &attr.body {
-                    AttributeBody::Expr(Expr::StructLit(f)) => {
+                    AttributeBody::Expr(node) if matches!(&node.kind, Expr::StructLit(_)) => {
+                        let Expr::StructLit(f) = &node.kind else {
+                            unreachable!()
+                        };
                         for (k, expr) in f {
                             if let Some(name) = k.as_str() {
                                 apply(name, expr);
                             }
                         }
                     }
-                    AttributeBody::Expr(Expr::StructSpreadUpdate { base, overrides }) => {
-                        if let Expr::StructLit(base_fields) = base.as_ref() {
+                    AttributeBody::Expr(node)
+                        if matches!(&node.kind, Expr::StructSpreadUpdate { .. }) =>
+                    {
+                        let Expr::StructSpreadUpdate { base, overrides } = &node.kind else {
+                            unreachable!()
+                        };
+                        if let Expr::StructLit(base_fields) = &base.as_ref().kind {
                             for (k, expr) in base_fields {
                                 if let Some(name) = k.as_str() {
                                     apply(name, expr);

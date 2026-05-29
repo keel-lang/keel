@@ -218,7 +218,7 @@ impl Checker {
                 ret: sig
                     .return_type
                     .as_ref()
-                    .map(|te| iface::resolve_type_expr(te, &env))
+                    .map(|n| iface::resolve_type_expr(&n.kind, &env))
                     .unwrap_or(Ty::None_),
             };
             let got_sig = Signature {
@@ -226,7 +226,7 @@ impl Checker {
                 ret: got_method
                     .return_type
                     .as_ref()
-                    .map(|te| iface::resolve_type_expr(te, &env))
+                    .map(|n| iface::resolve_type_expr(&n.kind, &env))
                     .unwrap_or(Ty::None_),
             };
             if !iface::signature_satisfies(&req_sig, &got_sig) {
@@ -234,12 +234,12 @@ impl Checker {
                 let req_str = sig
                     .return_type
                     .as_ref()
-                    .map(type_display_str)
+                    .map(|n| type_display_str(&n.kind))
                     .unwrap_or_else(|| "none".to_string());
                 let got_str = got_method
                     .return_type
                     .as_ref()
-                    .map(type_display_str)
+                    .map(|n| type_display_str(&n.kind))
                     .unwrap_or_else(|| "none".to_string());
                 self.err(format!(
                     "impl `{iface_name}` for `{type_name}`: method `{}` must return `{req_str}` but returns `{got_str}`",
@@ -299,11 +299,11 @@ impl Checker {
     fn block_type(&mut self, block: &Block, scope: &mut Scope) -> Ty {
         scope.push();
         let mut last = Ty::None_;
-        for (stmt, span) in block {
-            last = match stmt {
+        for node in block {
+            last = match &node.kind {
                 Stmt::Expr(e) => self.infer_expr(e, scope),
                 other => {
-                    self.check_stmt(other, span.clone(), scope);
+                    self.check_stmt(other, node.span.clone(), scope);
                     Ty::None_
                 }
             };
@@ -408,7 +408,7 @@ fn type_display_str(te: &TypeExpr) -> String {
         TypeExpr::Struct(fields) => {
             let fs: Vec<_> = fields
                 .iter()
-                .map(|f| format!("{}: {}", f.name, type_display_str(&f.ty)))
+                .map(|f| format!("{}: {}", f.name, type_display_str(&f.ty.kind)))
                 .collect();
             format!("{{{}}}", fs.join(", "))
         }

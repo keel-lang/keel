@@ -17,7 +17,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{Binding, Param, TaskSig, TypeExpr};
+use crate::ast::{Binding, Node, Param, TaskSig, TypeExpr};
 use crate::types::ty::{Ty, UnknownReason};
 
 // ---------------------------------------------------------------------------
@@ -1559,15 +1559,18 @@ pub(crate) fn prelude_names() -> HashSet<String> {
 pub(crate) fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
     let mut map = HashMap::new();
 
+    // Synthetic params have no source position; use the 0..0 sentinel span.
     let self_param = || Param {
         name: Binding::Ident("self".to_string()),
-        ty: TypeExpr::Named("__impl_self__".to_string()),
+        name_span: 0..0,
+        ty: Node::synthetic(TypeExpr::Named("__impl_self__".to_string())),
         default: None,
         variadic: false,
     };
     let dynamic_param = |name: &str| Param {
         name: Binding::Ident(name.to_string()),
-        ty: TypeExpr::Dynamic,
+        name_span: 0..0,
+        ty: Node::synthetic(TypeExpr::Dynamic),
         default: None,
         variadic: false,
     };
@@ -1576,40 +1579,45 @@ pub(crate) fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
         "Stringable".to_string(),
         vec![TaskSig {
             name: "to_str".to_string(),
+            name_span: 0..0,
             params: vec![self_param()],
-            return_type: Some(TypeExpr::Named("str".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("str".to_string()))),
         }],
     );
     map.insert(
         "Serializable".to_string(),
         vec![TaskSig {
             name: "to_json".to_string(),
+            name_span: 0..0,
             params: vec![self_param()],
-            return_type: Some(TypeExpr::Named("str".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("str".to_string()))),
         }],
     );
     map.insert(
         "Comparable".to_string(),
         vec![TaskSig {
             name: "compare".to_string(),
+            name_span: 0..0,
             params: vec![self_param(), dynamic_param("other")],
-            return_type: Some(TypeExpr::Named("int".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("int".to_string()))),
         }],
     );
     map.insert(
         "Equatable".to_string(),
         vec![TaskSig {
             name: "equals".to_string(),
+            name_span: 0..0,
             params: vec![self_param(), dynamic_param("other")],
-            return_type: Some(TypeExpr::Named("bool".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("bool".to_string()))),
         }],
     );
     map.insert(
         "Iterable".to_string(),
         vec![TaskSig {
             name: "items".to_string(),
+            name_span: 0..0,
             params: vec![self_param()],
-            return_type: Some(TypeExpr::List(Box::new(TypeExpr::Dynamic))),
+            return_type: Some(Node::synthetic(TypeExpr::List(Box::new(TypeExpr::Dynamic)))),
         }],
     );
 

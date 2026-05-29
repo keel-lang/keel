@@ -14,6 +14,26 @@ All notable changes to Keel.
 
 ### Changed
 
+- **AST migrated from `Spanned<T>` tuples to `Node<T>` structs (Stage 5).** Every `(T, Span)` tuple in the public AST has been replaced by `Node<T>` — a named struct with `.kind` (the wrapped value) and `.span` (the source range). The old `type Spanned<T> = (T, Span)` alias is now only used inside `src/lexer.rs` for parser-internal token pairing. All consumer code in the formatter, type checker, interpreter, runtime namespaces, IDE hover/symbols, lint, repl, and all tests has been updated to use `.kind` and `.span` field access instead of positional tuple indexing. `Node::synthetic(kind)` produces nodes with a `0..0` sentinel span for prelude builtins and test helpers. This is an internal change; no Keel source behaviour is affected. It makes AST traversal code uniform and self-documenting, and eliminates the risk of accidentally swapping `.0` (the value) and `.1` (the span).
+
+  ```keel
+  task greet(name: str) -> str { name }
+  # param `name` carries Node<TypeExpr>{ kind: Named("str"), span: 11..14 }
+  # instead of the old tuple (Named("str"), 11..14)
+  ```
+
+- **Expression spans and annotation-precise type-mismatch diagnostics (Stage 4).** Every expression in the AST now carries its source byte range: `SpannedExpr = Node<Expr>` is used throughout the parser, type checker, formatter, interpreter, and visitor. Previously all expressions were bare `Expr` values and diagnostics pointed at the enclosing statement span. Now, when a `let` binding has an explicit type annotation and the inferred type does not match, the error caret points at the annotation itself — e.g. `x: str = 1` underlines `str`, not the whole statement. All internal APIs (`infer_expr`, `eval_expr`, `expr_str`, `visit_expr`, `walk_expr`) were updated to accept `&SpannedExpr`; test helpers use `Node::synthetic(expr)` for synthetic AST nodes.
+
+  ```keel
+  task go() -> str {
+    n: int = "hello"   # error caret points at `int`, not the whole line
+  }
+  ```
+
+- **Type annotations carry source spans (Stage 3).** All type-annotation use-sites in the AST now store `Node<TypeExpr>` rather than a bare `TypeExpr`. Affected fields: `Param.ty`, `TaskDecl.return_type`, `TaskSig.return_type`, `ExternDecl.return_type`, `StateField.ty`, `Field.ty`, `TypeDef::Alias`, `Stmt::Let { ty }`, `CatchClause.ty`, `Expr::Cast { ty }`, and `LambdaParam.ty`. The parser emits precise byte ranges for every annotation via `map_with_span`. Inner recursive `TypeExpr` children (e.g. the element type inside `list[T]`) are not wrapped — only the outermost annotation at each declaration/statement site is spanned. Synthetic AST nodes produced by the prelude catalog, `state.rs` builtins, and test helpers use `Node::synthetic(...)` with a `0..0` sentinel span. This is an internal change: no Keel source behaviour is affected. It unblocks "type mismatch" diagnostics that can point the caret at the exact annotation.
+
+- **AST declaration names now carry source spans (Stage 2).** `TaskDecl`, `AgentDecl`, `TypeDecl`, `InterfaceDecl`, `ExternDecl`, `TaskSig`, and `Param` each gain a `name_span: Span` field storing the exact byte range of their name token in the source. The parser emits these spans via `.map_with_span()` instead of dropping them. `ide::symbols::definition_of` now walks the parsed AST to return the stored `name_span` rather than re-scanning tokens on every request, and falls back to token scanning only when the source fails to parse (e.g. mid-edit in the LSP). Internal change; no user-visible behaviour difference. Unblocks expression-level diagnostics, LSP hover, and rename in future stages.
+
 - **Name resolution extracted into a dedicated pass.** A new `types::resolve` module defines `ResolvedName` (variants: `TopTask`, `Agent`, `Enum`, `TypeName`, `PreludeNamespace`, `Unresolved`) and a standalone `build()` function that compiles the checker's declaration tables into a `NameIndex`. The `Checker::infer_expr` method now consults this index for every `Expr::Ident`, `Expr::FieldAccess` LHS, `Expr::MethodCall` receiver, and `Expr::Call` callee instead of performing ad-hoc string comparisons against `top_tasks`, `agents`, `enum_variants`, `structs`, `aliases`, and `prelude` independently. Adding a new prelude namespace now requires only a catalog entry — `infer_expr` needs no modification. Internal change; no user-visible behaviour difference.
 
 - **`Ty::Unknown` split into four semantically distinct variants.** The bare `Unknown` variant has been replaced with `Unknown(UnknownReason)`, `Error`, `Unresolved(String)`, and the already-existing `Dynamic`. Each variant carries a precise meaning:

@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{CallArg, Expr, StringPart, TypeExpr, UnOp};
+use crate::ast::{CallArg, Expr, Node, SpannedExpr, StringPart, TypeExpr, UnOp};
 
 use super::environment::Environment;
 use super::runtime_error;
@@ -128,10 +128,11 @@ fn apply_format_spec(v: &Value, base_str: String, spec: &str) -> miette::Result<
 impl Interpreter {
     pub fn eval_expr<'a>(
         &'a mut self,
-        expr: &'a Expr,
+        spanned: &'a SpannedExpr,
         env: &'a mut Environment,
     ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>> {
         Box::pin(async move {
+            let expr = &spanned.kind;
             match expr {
                 Expr::Integer(n) => Ok(Value::Integer(*n)),
                 Expr::Float(f) => Ok(Value::Float(*f)),
@@ -234,7 +235,7 @@ impl Interpreter {
                 }
 
                 Expr::FieldAccess(obj, field) => {
-                    if let Expr::Ident(name) = obj.as_ref()
+                    if let Expr::Ident(name) = &obj.as_ref().kind
                         && name == "Uuid"
                         && let Some(value) =
                             crate::runtime::namespaces::uuid::uuid_namespace_constant(field)
@@ -243,7 +244,7 @@ impl Interpreter {
                     }
                     // Agent handler reference: `Foo.process` where Foo is a registered
                     // agent. Produces an AgentHandlerRef consumed by Agent.delegate.
-                    if let Expr::Ident(name) = obj.as_ref()
+                    if let Expr::Ident(name) = &obj.as_ref().kind
                         && self.agents.contains_key(name)
                     {
                         return Ok(Value::AgentHandlerRef(name.clone(), field.clone()));
@@ -252,7 +253,7 @@ impl Interpreter {
                     // a bare identifier naming a registered type, produce
                     // an EnumVariant directly (don't evaluate `obj`, which
                     // might not be bound as a Value).
-                    if let Expr::Ident(name) = obj.as_ref()
+                    if let Expr::Ident(name) = &obj.as_ref().kind
                         && !self.agents.contains_key(name)
                         && self
                             .globals
@@ -303,7 +304,10 @@ impl Interpreter {
                     if matches!(obj_v, Value::None) {
                         Ok(Value::None)
                     } else {
-                        let field_access = Expr::FieldAccess(obj.clone(), field.clone());
+                        let field_access = Node::new(
+                            Expr::FieldAccess(obj.clone(), field.clone()),
+                            obj.as_ref().span.clone(),
+                        );
                         self.eval_expr(&field_access, env).await
                     }
                 }
@@ -468,7 +472,7 @@ impl Interpreter {
 
                 Expr::Call { callee, args } => {
                     let arg_values = self.eval_args(args, env).await?;
-                    if let Expr::SelfAccess(task_name) = callee.as_ref() {
+                    if let Expr::SelfAccess(task_name) = &callee.as_ref().kind {
                         return self.call_current_agent_task(task_name, arg_values).await;
                     }
                     self.call_value(callee, arg_values, env).await
@@ -480,7 +484,7 @@ impl Interpreter {
                     args,
                 } => {
                     let arg_values = self.eval_args(args, env).await?;
-                    if matches!(object.as_ref(), Expr::SelfRef) {
+                    if matches!(&object.as_ref().kind, Expr::SelfRef) {
                         return self.call_current_agent_task(method, arg_values).await;
                     }
                     // If object is a namespace, dispatch to its method.
@@ -507,7 +511,7 @@ impl Interpreter {
 
                 Expr::Cast { expr: inner, ty } => {
                     let val = self.eval_expr(inner, env).await?;
-                    apply_cast(val, ty)
+                    apply_cast(val, &ty.kind)
                 }
 
                 Expr::Index { object, index } => {
@@ -708,7 +712,7 @@ impl Interpreter {
 
     fn call_value<'a>(
         &'a mut self,
-        callee: &'a Expr,
+        callee: &'a SpannedExpr,
         args: Vec<CallArgValue>,
         env: &'a mut Environment,
     ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>> {

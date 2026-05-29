@@ -3,23 +3,28 @@
 //! The AST is produced by the parser and consumed by the type checker,
 //! interpreter, formatter, and linter. Every node carries a [`Span`] so that
 //! diagnostics can point back to source positions.
+//!
+//! ## Node wrapper vs. lexer tuples
+//!
+//! AST nodes use [`Node<T>`] (`.kind` + `.span`) rather than the old
+//! `(T, Span)` tuple.  The lexer continues to expose `Spanned<Token>` tuples
+//! because chumsky 0.9's stream API expects that shape.
 
 pub mod decl;
 pub mod expr;
+pub mod node;
 pub mod stmt;
 pub mod ty;
 pub mod visit;
 
-use crate::lexer::Span;
-
 pub use decl::*;
 pub use expr::*;
+pub use node::Node;
 pub use stmt::*;
 pub use ty::*;
 
+/// The top-level program node.
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub declarations: Vec<Spanned<Decl>>,
+    pub declarations: Vec<Node<Decl>>,
 }
-
-pub type Spanned<T> = (T, Span);

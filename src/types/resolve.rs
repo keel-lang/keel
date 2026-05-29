@@ -388,7 +388,8 @@ impl Visitor for NameResolver<'_> {
     // Expressions — check identifiers; manage lambda / when-expr scope.
     // ------------------------------------------------------------------
 
-    fn visit_expr(&mut self, expr: &Expr) {
+    fn visit_expr(&mut self, spanned: &SpannedExpr) {
+        let expr = &spanned.kind;
         match expr {
             Expr::Ident(name) => {
                 if !self.is_bound(name)
@@ -412,7 +413,7 @@ impl Visitor for NameResolver<'_> {
                 self.visit_expr(subject);
                 self.visit_when_arms(arms);
             }
-            _ => visit::walk_expr(self, expr),
+            _ => visit::walk_expr(self, spanned),
         }
     }
 }

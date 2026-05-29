@@ -42,8 +42,8 @@ pub trait Visitor {
         walk_stmt(self, stmt, span);
     }
 
-    /// Visits an expression.
-    fn visit_expr(&mut self, expr: &Expr) {
+    /// Visits a spanned expression (the expression node together with its source span).
+    fn visit_expr(&mut self, expr: &SpannedExpr) {
         walk_expr(self, expr);
     }
 
@@ -60,8 +60,8 @@ pub trait Visitor {
 
 /// Walks every declaration in a program.
 pub fn walk_program<V: Visitor + ?Sized>(v: &mut V, program: &Program) {
-    for (decl, span) in &program.declarations {
-        v.visit_decl(decl, span);
+    for node in &program.declarations {
+        v.visit_decl(&node.kind, &node.span);
     }
 }
 
@@ -81,7 +81,7 @@ pub fn walk_decl<V: Visitor + ?Sized>(v: &mut V, decl: &Decl, _span: &Span) {
         Decl::Use(UseDecl { kind }) => match kind {
             UseKind::File(_) | UseKind::Symbol { .. } | UseKind::Package(_) => {}
         },
-        Decl::Stmt((stmt, span)) => v.visit_stmt(stmt, span),
+        Decl::Stmt(node) => v.visit_stmt(&node.kind, &node.span),
     }
 }
 
@@ -91,7 +91,7 @@ pub fn walk_agent_item<V: Visitor + ?Sized>(v: &mut V, item: &AgentItem) {
         AgentItem::Attribute(attribute) => v.visit_attribute_body(&attribute.body),
         AgentItem::State(fields) => {
             for field in fields {
-                v.visit_type_expr(&field.ty);
+                v.visit_type_expr(&field.ty.kind);
                 v.visit_expr(&field.default);
             }
         }
@@ -122,8 +122,8 @@ pub fn walk_attribute_body<V: Visitor + ?Sized>(v: &mut V, body: &AttributeBody)
 
 /// Walks each statement in a block.
 pub fn walk_block<V: Visitor + ?Sized>(v: &mut V, block: &Block) {
-    for (stmt, span) in block {
-        v.visit_stmt(stmt, span);
+    for node in block {
+        v.visit_stmt(&node.kind, &node.span);
     }
 }
 
@@ -131,8 +131,8 @@ pub fn walk_block<V: Visitor + ?Sized>(v: &mut V, block: &Block) {
 pub fn walk_stmt<V: Visitor + ?Sized>(v: &mut V, stmt: &Stmt, _span: &Span) {
     match stmt {
         Stmt::Let { ty, value, .. } => {
-            if let Some(ty) = ty {
-                v.visit_type_expr(ty);
+            if let Some(ty_node) = ty {
+                v.visit_type_expr(&ty_node.kind);
             }
             v.visit_expr(value);
         }
@@ -166,7 +166,7 @@ pub fn walk_stmt<V: Visitor + ?Sized>(v: &mut V, stmt: &Stmt, _span: &Span) {
         Stmt::TryCatch { body, catches } => {
             v.visit_block(body);
             for catch in catches {
-                v.visit_type_expr(&catch.ty);
+                v.visit_type_expr(&catch.ty.kind);
                 v.visit_block(&catch.body);
             }
         }
@@ -182,8 +182,11 @@ pub fn walk_stmt<V: Visitor + ?Sized>(v: &mut V, stmt: &Stmt, _span: &Span) {
 }
 
 /// Walks an expression's children.
-pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
-    match expr {
+///
+/// Accepts a [`SpannedExpr`] (= `Node<Expr>`) so that overriding visitors
+/// can access the expression's source span via `expr.span`.
+pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &SpannedExpr) {
+    match &expr.kind {
         Expr::Integer(_)
         | Expr::Float(_)
         | Expr::Bool(_)
@@ -240,7 +243,7 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
         }
         Expr::Cast { expr, ty } => {
             v.visit_expr(expr);
-            v.visit_type_expr(ty);
+            v.visit_type_expr(&ty.kind);
         }
         Expr::IfExpr {
             cond,
@@ -257,8 +260,8 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &Expr) {
         }
         Expr::Lambda { params, body } => {
             for param in params {
-                if let Some(ty) = &param.ty {
-                    v.visit_type_expr(ty);
+                if let Some(ty_node) = &param.ty {
+                    v.visit_type_expr(&ty_node.kind);
                 }
             }
             match body {
@@ -305,7 +308,7 @@ pub fn walk_type_expr<V: Visitor + ?Sized>(v: &mut V, ty: &TypeExpr) {
         }
         TypeExpr::Struct(fields) => {
             for field in fields {
-                v.visit_type_expr(&field.ty);
+                v.visit_type_expr(&field.ty.kind);
             }
         }
         TypeExpr::Tuple(items) => {
@@ -329,17 +332,17 @@ fn walk_type_decl<V: Visitor + ?Sized>(v: &mut V, decl: &TypeDecl) {
             for variant in variants {
                 if let Some(fields) = &variant.fields {
                     for field in fields {
-                        v.visit_type_expr(&field.ty);
+                        v.visit_type_expr(&field.ty.kind);
                     }
                 }
             }
         }
         TypeDef::Struct(fields) => {
             for field in fields {
-                v.visit_type_expr(&field.ty);
+                v.visit_type_expr(&field.ty.kind);
             }
         }
-        TypeDef::Alias(ty) => v.visit_type_expr(ty),
+        TypeDef::Alias(ty_node) => v.visit_type_expr(&ty_node.kind),
     }
 }
 
@@ -349,7 +352,7 @@ fn walk_interface_decl<V: Visitor + ?Sized>(v: &mut V, decl: &InterfaceDecl) {
             walk_param(v, param);
         }
         if let Some(return_type) = &method.return_type {
-            v.visit_type_expr(return_type);
+            v.visit_type_expr(&return_type.kind);
         }
     }
 }
@@ -358,7 +361,7 @@ fn walk_extern_decl<V: Visitor + ?Sized>(v: &mut V, decl: &ExternDecl) {
     for param in &decl.params {
         walk_param(v, param);
     }
-    v.visit_type_expr(&decl.return_type);
+    v.visit_type_expr(&decl.return_type.kind);
 }
 
 fn walk_task_decl<V: Visitor + ?Sized>(v: &mut V, decl: &TaskDecl) {
@@ -366,7 +369,7 @@ fn walk_task_decl<V: Visitor + ?Sized>(v: &mut V, decl: &TaskDecl) {
         walk_param(v, param);
     }
     if let Some(return_type) = &decl.return_type {
-        v.visit_type_expr(return_type);
+        v.visit_type_expr(&return_type.kind);
     }
     v.visit_block(&decl.body);
 }
@@ -378,7 +381,7 @@ fn walk_agent_decl<V: Visitor + ?Sized>(v: &mut V, decl: &AgentDecl) {
 }
 
 fn walk_param<V: Visitor + ?Sized>(v: &mut V, param: &Param) {
-    v.visit_type_expr(&param.ty);
+    v.visit_type_expr(&param.ty.kind);
     if let Some(default) = &param.default {
         v.visit_expr(default);
     }

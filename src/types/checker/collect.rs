@@ -27,8 +27,8 @@ impl Checker {
             "Serializable",
             "Iterable",
         ];
-        for (decl, _) in &program.declarations {
-            if let Decl::Interface(iface) = decl {
+        for node in &program.declarations {
+            if let Decl::Interface(iface) = &node.kind {
                 if BUILTIN_IFACES.contains(&iface.name.as_str()) {
                     self.err(format!(
                         "`{}` is a built-in interface and cannot be redeclared",
@@ -41,8 +41,8 @@ impl Checker {
             }
         }
 
-        for (decl, _) in &program.declarations {
-            match decl {
+        for node in &program.declarations {
+            match &node.kind {
                 Decl::Type(t) => self.collect_type_decl(t),
                 Decl::Task(t) => {
                     if !t.type_params.is_empty() {
@@ -99,13 +99,13 @@ impl Checker {
             TypeDef::Struct(fields) => {
                 let mut f = Vec::with_capacity(fields.len());
                 for field in fields {
-                    let ty = self.resolve_and_check_type(&field.ty);
+                    let ty = self.resolve_and_check_type(&field.ty.kind);
                     f.push((field.name.clone(), ty));
                 }
                 self.structs.insert(t.name.clone(), f);
             }
-            TypeDef::Alias(ty) => {
-                let resolved = self.resolve_and_check_type(ty);
+            TypeDef::Alias(ty_node) => {
+                let resolved = self.resolve_and_check_type(&ty_node.kind);
                 self.aliases.insert(t.name.clone(), resolved);
             }
         }
@@ -127,13 +127,13 @@ impl Checker {
                 };
                 // Variadic params are `list[T]` inside the body but `T` at call sites.
                 // The sig stores the element type so call-site checks compare each arg to T.
-                (name, self.resolve_type(&p.ty))
+                (name, self.resolve_type(&p.ty.kind))
             })
             .collect();
         let return_type = t
             .return_type
             .as_ref()
-            .map(|ty| self.resolve_type(ty))
+            .map(|ty| self.resolve_type(&ty.kind))
             .unwrap_or(Ty::None_);
         TaskSig {
             params,
@@ -153,7 +153,7 @@ impl Checker {
             match item {
                 AgentItem::State(fields) => {
                     for f in fields {
-                        state_fields.insert(f.name.clone(), self.resolve_type(&f.ty));
+                        state_fields.insert(f.name.clone(), self.resolve_type(&f.ty.kind));
                         if f.readonly {
                             readonly_fields.insert(f.name.clone());
                         }
@@ -163,7 +163,7 @@ impl Checker {
                     tasks.insert(t.name.clone(), self.task_sig(t));
                 }
                 AgentItem::On(h) => {
-                    let param_ty = h.param.as_ref().map(|p| self.resolve_type(&p.ty));
+                    let param_ty = h.param.as_ref().map(|p| self.resolve_type(&p.ty.kind));
                     handlers.insert(h.event.clone(), param_ty);
                 }
                 AgentItem::Attribute(_) => {}

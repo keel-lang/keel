@@ -1,8 +1,8 @@
 //! Statement, binding, and pattern nodes.
 
-use super::{Expr, Spanned, TypeExpr};
+use super::{Node, SpannedExpr, TypeExpr};
 
-pub type Block = Vec<Spanned<Stmt>>;
+pub type Block = Vec<Node<Stmt>>;
 
 /// Left-hand side of a destructuring assignment or parameter.
 /// Distinct from `Pattern` (used in `when` arms) — destructuring binds, not matches.
@@ -30,29 +30,33 @@ pub enum Stmt {
     /// `x = expr`, `x: Type = expr`, `{a, b} = expr`, or `(a, b) = expr`
     Let {
         binding: Binding,
-        ty: Option<TypeExpr>,
-        value: Expr,
+        /// Optional type annotation together with its source span.
+        ty: Option<Node<TypeExpr>>,
+        value: SpannedExpr,
     },
     /// `self.field = expr`
-    SelfAssign { field: String, value: Expr },
+    SelfAssign { field: String, value: SpannedExpr },
     /// `return expr`
-    Return(Option<Expr>),
+    Return(Option<SpannedExpr>),
     /// `for x in expr { ... }`, `for {a, b} in expr { ... }`, or with `where pred`
     For {
         binding: Binding,
-        iter: Expr,
-        filter: Option<Expr>,
+        iter: SpannedExpr,
+        filter: Option<SpannedExpr>,
         body: Block,
     },
     /// `if cond { ... } else { ... }` — statement form, used when the value
     /// isn't consumed (for branching side effects).
     If {
-        cond: Expr,
+        cond: SpannedExpr,
         then_body: Block,
         else_body: Option<Block>,
     },
     /// `when expr { arms }` — statement form.
-    When { subject: Expr, arms: Vec<WhenArm> },
+    When {
+        subject: SpannedExpr,
+        arms: Vec<WhenArm>,
+    },
     /// `try { ... } catch err: Type { ... }`
     TryCatch {
         body: Block,
@@ -65,25 +69,25 @@ pub enum Stmt {
     AugAssign {
         name: String,
         op: crate::ast::expr::BinOp,
-        rhs: Expr,
+        rhs: SpannedExpr,
     },
     /// `raise expr` — throws an error; caught by `catch err: Error`.
-    Raise(Expr),
+    Raise(SpannedExpr),
     /// `while cond { ... }` — repeat body until condition is false.
-    While { cond: Expr, body: Block },
+    While { cond: SpannedExpr, body: Block },
     /// `break` — exits the nearest enclosing loop.
     Break,
     /// `continue` — skips the rest of the current iteration.
     Continue,
     /// Expression used as a statement — covers `Io.notify(...)`,
     /// `Email.send(...)`, `run(MyAgent)`, bare calls, etc.
-    Expr(Expr),
+    Expr(SpannedExpr),
 }
 
 #[derive(Debug, Clone)]
 pub struct WhenArm {
     pub patterns: Vec<Pattern>,
-    pub guard: Option<Expr>,
+    pub guard: Option<SpannedExpr>,
     pub body: Block,
 }
 
@@ -93,8 +97,8 @@ pub enum Pattern {
     Ident(String),
     /// Wildcard: `_`
     Wildcard,
-    /// Literal value.
-    Literal(Expr),
+    /// Literal value — carries a span so diagnostics can point at pattern literals.
+    Literal(SpannedExpr),
     /// Rich enum variant destructure: `reply { to, tone }`.
     Variant { name: String, bindings: Vec<String> },
 }
@@ -102,6 +106,7 @@ pub enum Pattern {
 #[derive(Debug, Clone)]
 pub struct CatchClause {
     pub name: String,
-    pub ty: TypeExpr,
+    /// Caught type annotation together with its source span.
+    pub ty: Node<TypeExpr>,
     pub body: Block,
 }

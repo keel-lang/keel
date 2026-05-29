@@ -37,8 +37,8 @@ impl Checker {
         let name_errors = name_resolve::resolve_names(program, &self.name_index);
         self.errors.extend(name_errors);
 
-        for (decl, _) in &program.declarations {
-            match decl {
+        for node in &program.declarations {
+            match &node.kind {
                 Decl::Task(t) => {
                     self.current_agent = None;
                     self.check_task(t);
@@ -55,9 +55,9 @@ impl Checker {
                     }
                     self.current_agent = None;
                 }
-                Decl::Stmt((stmt, span)) => {
+                Decl::Stmt(stmt_node) => {
                     let mut scope = Scope::new();
-                    self.check_stmt(stmt, span.clone(), &mut scope);
+                    self.check_stmt(&stmt_node.kind, stmt_node.span.clone(), &mut scope);
                 }
                 _ => {}
             }
@@ -160,13 +160,13 @@ impl Checker {
         let declared_return = t
             .return_type
             .as_ref()
-            .map(|ty| self.resolve_and_check_type(ty));
+            .map(|ty| self.resolve_and_check_type(&ty.kind));
         let prev_return_ty = self.current_return_ty.take();
         self.current_return_ty = declared_return;
 
         let mut scope = self.fresh_scope();
         for p in &t.params {
-            let elem_ty = self.resolve_and_check_type(&p.ty);
+            let elem_ty = self.resolve_and_check_type(&p.ty.kind);
             // Variadic params are visible inside the body as `list[T]`.
             let param_ty = if p.variadic {
                 Ty::List(Box::new(elem_ty))
@@ -182,7 +182,7 @@ impl Checker {
         let last_is_expr = t
             .body
             .last()
-            .map(|(s, _)| matches!(s, Stmt::Expr(_)))
+            .map(|s_node| matches!(s_node.kind, Stmt::Expr(_)))
             .unwrap_or(false);
         let implicit_ty = self.block_type(&t.body, &mut scope);
         if last_is_expr
@@ -199,7 +199,7 @@ impl Checker {
     fn check_on_handler(&mut self, h: &OnHandler) {
         let mut scope = self.fresh_scope();
         if let Some(p) = &h.param {
-            let param_ty = self.resolve_and_check_type(&p.ty);
+            let param_ty = self.resolve_and_check_type(&p.ty.kind);
             self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
         self.check_block(&h.body, &mut scope);
@@ -234,8 +234,8 @@ impl Checker {
 
     fn check_block(&mut self, block: &Block, scope: &mut Scope) {
         scope.push();
-        for (stmt, span) in block {
-            self.check_stmt(stmt, span.clone(), scope);
+        for node in block {
+            self.check_stmt(&node.kind, node.span.clone(), scope);
         }
         scope.pop();
     }
@@ -250,8 +250,8 @@ impl Checker {
             Stmt::Let { binding, ty, value } => {
                 let inferred = self.infer_expr(value, scope);
                 let bound = match ty {
-                    Some(t) => {
-                        let declared = self.resolve_and_check_type(t);
+                    Some(ty_node) => {
+                        let declared = self.resolve_and_check_type(&ty_node.kind);
                         // Only check when declared type is concrete — an opaque
                         // type means the checker couldn't resolve it (e.g. an
                         // unrecognised named type), so a mismatch here would be
@@ -259,7 +259,12 @@ impl Checker {
                         if let Binding::Ident(name) = binding
                             && !declared.is_opaque()
                         {
+                            // Point the caret at the type annotation, not the
+                            // whole statement, so the user sees exactly which
+                            // annotation is wrong.
+                            let saved = self.current_span.replace(ty_node.span.clone());
                             self.expect(&inferred, &declared, &format!("`{name}`"));
+                            self.current_span = saved;
                         }
                         declared
                     }
@@ -357,8 +362,8 @@ impl Checker {
                     let pty = self.infer_expr(pred, scope);
                     self.expect(&pty, &Ty::Bool, "for-if guard");
                 }
-                for (s, s_span) in body {
-                    self.check_stmt(s, s_span.clone(), scope);
+                for s_node in body {
+                    self.check_stmt(&s_node.kind, s_node.span.clone(), scope);
                 }
                 // Restore span to the for-statement after processing body
                 self.current_span = Some(span.clone());
@@ -384,10 +389,10 @@ impl Checker {
                 self.check_block(body, scope);
                 for c in catches {
                     scope.push();
-                    let ty = self.resolve_type(&c.ty);
+                    let ty = self.resolve_type(&c.ty.kind);
                     scope.define(c.name.clone(), ty);
-                    for (s, s_span) in &c.body {
-                        self.check_stmt(s, s_span.clone(), scope);
+                    for s_node in &c.body {
+                        self.check_stmt(&s_node.kind, s_node.span.clone(), scope);
                     }
                     scope.pop();
                 }
@@ -462,8 +467,8 @@ impl Checker {
                 let g_ty = self.infer_expr(g, scope);
                 self.expect(&g_ty, &Ty::Bool, "`when` guard");
             }
-            for (s, s_span) in &arm.body {
-                self.check_stmt(s, s_span.clone(), scope);
+            for s_node in &arm.body {
+                self.check_stmt(&s_node.kind, s_node.span.clone(), scope);
             }
             scope.pop();
         }

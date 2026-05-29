@@ -6,12 +6,13 @@
 use chumsky::prelude::*;
 
 use crate::ast::*;
-use crate::lexer::Token;
+use crate::lexer::{Span, Token};
 
 use super::common::{
-    P, field_name, field_sep, ident, newlines, plain_string, sep, struct_destruct_pat,
+    P, field_name, field_sep, ident, newlines, plain_string, sep, spanned_ident,
+    struct_destruct_pat,
 };
-use super::types::type_expr;
+use super::types::spanned_type_expr;
 
 // ---------------------------------------------------------------------------
 // Type declaration
@@ -20,7 +21,7 @@ use super::types::type_expr;
 pub(super) fn type_decl() -> P<Decl> {
     let field_def = field_name()
         .then_ignore(just(Token::Colon))
-        .then(type_expr())
+        .then(spanned_type_expr())
         .map(|(name, ty)| Field { name, ty });
 
     let rich_variant = ident()
@@ -47,7 +48,7 @@ pub(super) fn type_decl() -> P<Decl> {
                                 .ignore_then(
                                     field_name()
                                         .then_ignore(just(Token::Colon))
-                                        .then(type_expr())
+                                        .then(spanned_type_expr())
                                         .map(|(n, t)| Field { name: n, ty: t })
                                         .separated_by(field_sep())
                                         .allow_trailing(),
@@ -86,7 +87,7 @@ pub(super) fn type_decl() -> P<Decl> {
         .ignore_then(
             field_name()
                 .then_ignore(just(Token::Colon))
-                .then(type_expr())
+                .then(spanned_type_expr())
                 .map(|(n, t)| Field { name: n, ty: t })
                 .separated_by(field_sep())
                 .allow_trailing(),
@@ -95,7 +96,7 @@ pub(super) fn type_decl() -> P<Decl> {
         .then_ignore(just(Token::RBrace))
         .map(TypeDef::Struct);
 
-    let alias = type_expr().map(TypeDef::Alias);
+    let alias = spanned_type_expr().map(TypeDef::Alias);
 
     let after_eq = choice((rich_enum, simple_enum, alias));
 
@@ -106,12 +107,13 @@ pub(super) fn type_decl() -> P<Decl> {
         .map(|p| p.unwrap_or_default());
 
     just(Token::Type)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then(type_params)
         .then(just(Token::Eq).ignore_then(after_eq).or(struct_def))
-        .map(|((name, type_params), def)| {
+        .map(|(((name, name_span), type_params), def)| {
             Decl::Type(TypeDecl {
                 name,
+                name_span,
                 type_params,
                 def,
             })
@@ -124,17 +126,19 @@ pub(super) fn type_decl() -> P<Decl> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn interface_decl() -> P<Decl> {
-    let self_param = just(Token::SelfKw).to(Param {
+    let self_param = just(Token::SelfKw).map_with_span(|_, span: Span| Param {
         name: Binding::Ident("self".to_string()),
-        ty: TypeExpr::Named("__impl_self__".to_string()),
+        name_span: span.clone(),
+        ty: Node::new(TypeExpr::Named("__impl_self__".to_string()), span),
         default: None,
         variadic: false,
     });
-    let typed_param = ident()
+    let typed_param = spanned_ident()
         .then_ignore(just(Token::Colon))
-        .then(type_expr())
-        .map(|(name, ty)| Param {
+        .then(spanned_type_expr())
+        .map(|((name, name_span), ty)| Param {
             name: Binding::Ident(name),
+            name_span,
             ty,
             default: None,
             variadic: false,
@@ -142,7 +146,7 @@ pub(super) fn interface_decl() -> P<Decl> {
     let any_param = choice((self_param, typed_param)).boxed();
 
     let task_sig = just(Token::Task)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
@@ -150,21 +154,28 @@ pub(super) fn interface_decl() -> P<Decl> {
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RParen)),
         )
-        .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
-        .map(|((name, params), return_type)| TaskSig {
+        .then(just(Token::Arrow).ignore_then(spanned_type_expr()).or_not())
+        .map(|(((name, name_span), params), return_type)| TaskSig {
             name,
+            name_span,
             params,
             return_type,
         });
 
     just(Token::Interface)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
         .then(task_sig.separated_by(sep()).allow_trailing())
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
-        .map(|(name, methods)| Decl::Interface(InterfaceDecl { name, methods }))
+        .map(|((name, name_span), methods)| {
+            Decl::Interface(InterfaceDecl {
+                name,
+                name_span,
+                methods,
+            })
+        })
         .boxed()
 }
 
@@ -173,11 +184,12 @@ pub(super) fn interface_decl() -> P<Decl> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn extern_decl() -> P<Decl> {
-    let param = ident()
+    let param = spanned_ident()
         .then_ignore(just(Token::Colon))
-        .then(type_expr())
-        .map(|(name, ty)| Param {
+        .then(spanned_type_expr())
+        .map(|((name, name_span), ty)| Param {
             name: Binding::Ident(name),
+            name_span,
             ty,
             default: None,
             variadic: false,
@@ -185,7 +197,7 @@ pub(super) fn extern_decl() -> P<Decl> {
 
     just(Token::Extern)
         .ignore_then(just(Token::Task))
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
@@ -194,12 +206,13 @@ pub(super) fn extern_decl() -> P<Decl> {
                 .then_ignore(just(Token::RParen)),
         )
         .then_ignore(just(Token::Arrow))
-        .then(type_expr())
+        .then(spanned_type_expr())
         .then_ignore(just(Token::From))
         .then(plain_string())
-        .map(|(((name, params), return_type), source)| {
+        .map(|((((name, name_span), params), return_type), source)| {
             Decl::Extern(ExternDecl {
                 name,
+                name_span,
                 params,
                 return_type,
                 source,
@@ -244,32 +257,37 @@ pub(super) fn use_decl() -> P<Decl> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn task_decl() -> P<TaskDecl> {
-    let param_name = choice((
-        struct_destruct_pat().map(|fields| Binding::Destruct(DestructPat::Struct(fields))),
-        ident().map(Binding::Ident),
+    // Capture the span of the full name/pattern for IDE features.
+    let param_name_spanned = choice((
+        struct_destruct_pat()
+            .map(|fields| Binding::Destruct(DestructPat::Struct(fields)))
+            .map_with_span(|b, span| (b, span)),
+        spanned_ident().map(|(s, span)| (Binding::Ident(s), span)),
     ));
     // Ordinary param: `name: Type` with an optional `= default`.
-    let regular_param = param_name
+    let regular_param = param_name_spanned
         .then_ignore(just(Token::Colon))
-        .then(type_expr())
+        .then(spanned_type_expr())
         .then(
             just(Token::Eq)
                 .ignore_then(super::expr::expr_parser())
                 .or_not(),
         )
-        .map(|((name, ty), default)| Param {
+        .map(|(((name, name_span), ty), default)| Param {
             name,
+            name_span,
             ty,
             default,
             variadic: false,
         });
     // Variadic param: `...name: Type` — no default allowed (defaults to []).
     let variadic_param = just(Token::DotDotDot)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then_ignore(just(Token::Colon))
-        .then(type_expr())
-        .map(|(name, ty)| Param {
+        .then(spanned_type_expr())
+        .map(|((name, name_span), ty)| Param {
             name: Binding::Ident(name),
+            name_span,
             ty,
             default: None,
             variadic: true,
@@ -308,14 +326,15 @@ pub(super) fn task_decl() -> P<TaskDecl> {
         .map(|p| p.unwrap_or_default());
 
     just(Token::Task)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then(type_params)
         .then(param_list)
-        .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
+        .then(just(Token::Arrow).ignore_then(spanned_type_expr()).or_not())
         .then(super::stmt::block_toplevel())
         .map(
-            |((((name, type_params), params), return_type), body)| TaskDecl {
+            |(((((name, name_span), type_params), params), return_type), body)| TaskDecl {
                 name,
+                name_span,
                 type_params,
                 params,
                 return_type,
@@ -402,7 +421,7 @@ fn agent_item() -> P<AgentItem> {
                         .or_not()
                         .map(|opt| opt.is_some()),
                 )
-                .then(type_expr())
+                .then(spanned_type_expr())
                 .then_ignore(just(Token::Eq))
                 .then(super::expr::expr_parser())
                 .map(|(((name, readonly), ty), default)| StateField {
@@ -421,20 +440,23 @@ fn agent_item() -> P<AgentItem> {
 
     let task = task_decl().map(AgentItem::Task).boxed();
 
-    let on_param_name = choice((
-        struct_destruct_pat().map(|fields| Binding::Destruct(DestructPat::Struct(fields))),
-        ident().map(Binding::Ident),
+    let on_param_name_spanned = choice((
+        struct_destruct_pat()
+            .map(|fields| Binding::Destruct(DestructPat::Struct(fields)))
+            .map_with_span(|b, span| (b, span)),
+        spanned_ident().map(|(s, span)| (Binding::Ident(s), span)),
     ));
     let on_handler = just(Token::On)
         .ignore_then(ident())
         .then(
             just(Token::LParen)
                 .ignore_then(
-                    on_param_name
+                    on_param_name_spanned
                         .then_ignore(just(Token::Colon))
-                        .then(type_expr())
-                        .map(|(name, ty)| Param {
+                        .then(spanned_type_expr())
+                        .map(|((name, name_span), ty)| Param {
                             name,
+                            name_span,
                             ty,
                             default: None,
                             variadic: false,
@@ -452,13 +474,19 @@ fn agent_item() -> P<AgentItem> {
 
 pub(super) fn agent_decl() -> P<Decl> {
     just(Token::Agent)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
         .then(agent_item().separated_by(sep()).allow_trailing())
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
-        .map(|(name, items)| Decl::Agent(AgentDecl { name, items }))
+        .map(|((name, name_span), items)| {
+            Decl::Agent(AgentDecl {
+                name,
+                name_span,
+                items,
+            })
+        })
         .boxed()
 }
 
@@ -467,19 +495,22 @@ pub(super) fn agent_decl() -> P<Decl> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn impl_decl() -> P<Decl> {
-    // `self` as receiver param — type is filled in at registration time
-    let self_param = just(Token::SelfKw).to(Param {
+    // `self` as receiver param — type is filled in at registration time.
+    // Span covers the `self` keyword token.
+    let self_param = just(Token::SelfKw).map_with_span(|_, span: Span| Param {
         name: Binding::Ident("self".to_string()),
-        ty: TypeExpr::Named("__impl_self__".to_string()),
+        name_span: span.clone(),
+        ty: Node::new(TypeExpr::Named("__impl_self__".to_string()), span),
         default: None,
         variadic: false,
     });
 
-    let typed_param = ident()
+    let typed_param = spanned_ident()
         .then_ignore(just(Token::Colon))
-        .then(type_expr())
-        .map(|(name, ty)| Param {
+        .then(spanned_type_expr())
+        .map(|((name, name_span), ty)| Param {
             name: Binding::Ident(name),
+            name_span,
             ty,
             default: None,
             variadic: false,
@@ -488,7 +519,7 @@ pub(super) fn impl_decl() -> P<Decl> {
     let any_param = choice((self_param, typed_param)).boxed();
 
     let impl_task = just(Token::Task)
-        .ignore_then(ident())
+        .ignore_then(spanned_ident())
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
@@ -496,15 +527,18 @@ pub(super) fn impl_decl() -> P<Decl> {
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RParen)),
         )
-        .then(just(Token::Arrow).ignore_then(type_expr()).or_not())
+        .then(just(Token::Arrow).ignore_then(spanned_type_expr()).or_not())
         .then(super::stmt::block_toplevel())
-        .map(|(((name, params), return_type), body)| TaskDecl {
-            name,
-            type_params: vec![],
-            params,
-            return_type,
-            body,
-        })
+        .map(
+            |((((name, name_span), params), return_type), body)| TaskDecl {
+                name,
+                name_span,
+                type_params: vec![],
+                params,
+                return_type,
+                body,
+            },
+        )
         .boxed();
 
     just(Token::Impl)
@@ -531,6 +565,7 @@ pub(super) fn impl_decl() -> P<Decl> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn program_parser() -> P<Program> {
+    // `stmt_parser()` produces `Node<Stmt>`; wrapping it in `Decl::Stmt` gives `Decl`.
     let stmt_decl = super::stmt::stmt_parser().map(Decl::Stmt);
 
     let decl = choice((
@@ -543,7 +578,7 @@ pub(super) fn program_parser() -> P<Program> {
         use_decl(),
         stmt_decl,
     ))
-    .map_with_span(|d, span| (d, span))
+    .map_with_span(Node::new)
     .boxed();
 
     newlines()

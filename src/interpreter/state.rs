@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::ast::{
-    AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, OnHandler, Param,
+    AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, Node, OnHandler, Param,
     StateField, StringPart, TaskDecl, TaskSig, TypeExpr,
 };
 use crate::types::interface::TypeEnv;
@@ -308,11 +308,12 @@ impl Interpreter {
         let def = agent.lock().def.clone();
         for attr in &def.attributes {
             if attr.name == "rules"
-                && let AttributeBody::Expr(Expr::ListLit(items)) = &attr.body
+                && let AttributeBody::Expr(node) = &attr.body
+                && let Expr::ListLit(items) = &node.kind
             {
                 return items
                     .iter()
-                    .filter_map(|e| match e {
+                    .filter_map(|e| match &e.kind {
                         Expr::StringLit(parts) => {
                             let s: String = parts
                                 .iter()
@@ -359,9 +360,16 @@ impl Interpreter {
         for attr in &def.attributes {
             if attr.name == "memory" {
                 match &attr.body {
-                    AttributeBody::Expr(Expr::Ident(mode)) => return Some(mode.clone()),
+                    AttributeBody::Expr(node) if matches!(&node.kind, Expr::Ident(_)) => {
+                        let Expr::Ident(mode) = &node.kind else {
+                            unreachable!()
+                        };
+                        return Some(mode.clone());
+                    }
                     // `none` is a reserved keyword, so `@memory none` parses as Expr::None_
-                    AttributeBody::Expr(Expr::None_) => return Some("none".to_string()),
+                    AttributeBody::Expr(node) if matches!(&node.kind, Expr::None_) => {
+                        return Some("none".to_string());
+                    }
                     _ => {}
                 }
             }
@@ -374,7 +382,8 @@ impl Interpreter {
         let def = agent.lock().def.clone();
         for attr in &def.attributes {
             if attr.name == name
-                && let AttributeBody::Expr(Expr::StringLit(parts)) = &attr.body
+                && let AttributeBody::Expr(node) = &attr.body
+                && let Expr::StringLit(parts) = &node.kind
             {
                 let s: String = parts
                     .iter()
@@ -422,15 +431,18 @@ impl Interpreter {
 fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
     let mut map = HashMap::new();
 
+    // Synthetic params have no source position; use the 0..0 sentinel span.
     let self_param = || Param {
         name: Binding::Ident("self".to_string()),
-        ty: TypeExpr::Named("__impl_self__".to_string()),
+        name_span: 0..0,
+        ty: Node::synthetic(TypeExpr::Named("__impl_self__".to_string())),
         default: None,
         variadic: false,
     };
     let dynamic_param = |name: &str| Param {
         name: Binding::Ident(name.to_string()),
-        ty: TypeExpr::Dynamic,
+        name_span: 0..0,
+        ty: Node::synthetic(TypeExpr::Dynamic),
         default: None,
         variadic: false,
     };
@@ -439,41 +451,46 @@ fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
         "Stringable".to_string(),
         vec![TaskSig {
             name: "to_str".to_string(),
+            name_span: 0..0,
             params: vec![self_param()],
-            return_type: Some(TypeExpr::Named("str".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("str".to_string()))),
         }],
     );
     map.insert(
         "Serializable".to_string(),
         vec![TaskSig {
             name: "to_json".to_string(),
+            name_span: 0..0,
             params: vec![self_param()],
-            return_type: Some(TypeExpr::Named("str".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("str".to_string()))),
         }],
     );
     map.insert(
         "Comparable".to_string(),
         vec![TaskSig {
             name: "compare".to_string(),
+            name_span: 0..0,
             params: vec![self_param(), dynamic_param("other")],
-            return_type: Some(TypeExpr::Named("int".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("int".to_string()))),
         }],
     );
     map.insert(
         "Equatable".to_string(),
         vec![TaskSig {
             name: "equals".to_string(),
+            name_span: 0..0,
             params: vec![self_param(), dynamic_param("other")],
-            return_type: Some(TypeExpr::Named("bool".to_string())),
+            return_type: Some(Node::synthetic(TypeExpr::Named("bool".to_string()))),
         }],
     );
     map.insert(
         "Iterable".to_string(),
         vec![TaskSig {
             name: "items".to_string(),
+            name_span: 0..0,
             params: vec![self_param()],
             // list[dynamic] — wildcard list return, matches any list[T] in conformance checks
-            return_type: Some(TypeExpr::List(Box::new(TypeExpr::Dynamic))),
+            return_type: Some(Node::synthetic(TypeExpr::List(Box::new(TypeExpr::Dynamic)))),
         }],
     );
     map

@@ -30,11 +30,11 @@ fn binding_str(b: &Binding) -> String {
 #[must_use]
 pub fn format_program(program: &Program) -> String {
     let mut f = Fmt::new();
-    for (i, (decl, _)) in program.declarations.iter().enumerate() {
+    for (i, node) in program.declarations.iter().enumerate() {
         if i > 0 {
             f.blank_line();
         }
-        f.decl(decl);
+        f.decl(&node.kind);
     }
     let mut out = f.into_string();
     if !out.ends_with('\n') {
@@ -116,8 +116,8 @@ impl Fmt {
             Decl::Extern(e) => self.extern_decl(e),
             Decl::Agent(a) => self.agent_decl(a),
             Decl::Use(u) => self.use_decl(u),
-            Decl::Stmt((stmt, _)) => {
-                self.stmt(stmt);
+            Decl::Stmt(stmt_node) => {
+                self.stmt(&stmt_node.kind);
                 self.newline();
             }
         }
@@ -149,7 +149,7 @@ impl Fmt {
                                 self.push(", ");
                             }
                             self.push(&format!("{}: ", f.name));
-                            self.push(&self.type_expr_str(&f.ty));
+                            self.push(&self.type_expr_str(&f.ty.kind));
                         }
                         self.push(" }");
                     }
@@ -163,16 +163,16 @@ impl Fmt {
                 self.indent();
                 for f in fields {
                     self.push(&format!("{}: ", f.name));
-                    self.push(&self.type_expr_str(&f.ty));
+                    self.push(&self.type_expr_str(&f.ty.kind));
                     self.newline();
                 }
                 self.dedent();
                 self.push("}");
                 self.newline();
             }
-            TypeDef::Alias(ty) => {
+            TypeDef::Alias(ty_node) => {
                 self.push(&format!("type {} = ", header));
-                self.push(&self.type_expr_str(ty));
+                self.push(&self.type_expr_str(&ty_node.kind));
                 self.newline();
             }
         }
@@ -198,9 +198,9 @@ impl Fmt {
             self.push(&format!("task {}(", method.name));
             self.params(&method.params);
             self.push(")");
-            if let Some(ret) = &method.return_type {
+            if let Some(ret_node) = &method.return_type {
                 self.push(" -> ");
-                self.push(&self.type_expr_str(ret));
+                self.push(&self.type_expr_str(&ret_node.kind));
             }
             self.newline();
         }
@@ -213,7 +213,7 @@ impl Fmt {
         self.push(&format!("extern task {}(", e.name));
         self.params(&e.params);
         self.push(") -> ");
-        self.push(&self.type_expr_str(&e.return_type));
+        self.push(&self.type_expr_str(&e.return_type.kind));
         self.push(&format!(" from \"{}\"", e.source));
         self.newline();
     }
@@ -242,15 +242,15 @@ impl Fmt {
         self.push(&format!("task {}(", header));
         self.params(&t.params);
         self.push(")");
-        if let Some(ret) = &t.return_type {
+        if let Some(ret_node) = &t.return_type {
             self.push(" -> ");
-            self.push(&self.type_expr_str(ret));
+            self.push(&self.type_expr_str(&ret_node.kind));
         }
         self.push(" {");
         self.newline();
         self.indent();
-        for (stmt, _) in &t.body {
-            self.stmt(stmt);
+        for stmt_node in &t.body {
+            self.stmt(&stmt_node.kind);
             self.newline();
         }
         self.dedent();
@@ -267,12 +267,12 @@ impl Fmt {
                 self.push("...");
             }
             // impl receiver: `self` has a placeholder type — emit bare `self`
-            if matches!(&p.ty, TypeExpr::Named(n) if n == "__impl_self__") {
+            if matches!(&p.ty.kind, TypeExpr::Named(n) if n == "__impl_self__") {
                 self.push("self");
                 continue;
             }
             self.push(&format!("{}: ", binding_str(&p.name)));
-            self.push(&self.type_expr_str(&p.ty));
+            self.push(&self.type_expr_str(&p.ty.kind));
             if let Some(default) = &p.default {
                 self.push(" = ");
                 self.push(&self.expr_str(default));
@@ -337,8 +337,8 @@ impl Fmt {
                         self.push("{");
                         self.newline();
                         self.indent();
-                        for (s, _) in body {
-                            self.stmt(s);
+                        for s_node in body {
+                            self.stmt(&s_node.kind);
                             self.newline();
                         }
                         self.dedent();
@@ -356,7 +356,7 @@ impl Fmt {
                     if f.readonly {
                         self.push("readonly ");
                     }
-                    self.push(&self.type_expr_str(&f.ty));
+                    self.push(&self.type_expr_str(&f.ty.kind));
                     self.push(" = ");
                     self.push(&self.expr_str(&f.default));
                     self.newline();
@@ -370,7 +370,7 @@ impl Fmt {
                 self.push(&format!("on {}", h.event));
                 if let Some(p) = &h.param {
                     self.push(&format!("({}: ", binding_str(&p.name)));
-                    self.push(&self.type_expr_str(&p.ty));
+                    self.push(&self.type_expr_str(&p.ty.kind));
                     self.push(")");
                 } else {
                     self.push("()");
@@ -378,8 +378,8 @@ impl Fmt {
                 self.push(" {");
                 self.newline();
                 self.indent();
-                for (s, _) in &h.body {
-                    self.stmt(s);
+                for s_node in &h.body {
+                    self.stmt(&s_node.kind);
                     self.newline();
                 }
                 self.dedent();
@@ -397,9 +397,9 @@ impl Fmt {
         match stmt {
             Stmt::Let { binding, ty, value } => {
                 self.push(&binding_str(binding));
-                if let Some(t) = ty {
+                if let Some(ty_node) = ty {
                     self.push(": ");
-                    self.push(&self.type_expr_str(t));
+                    self.push(&self.type_expr_str(&ty_node.kind));
                 }
                 self.push(" = ");
                 self.push(&self.expr_str(value));
@@ -430,8 +430,8 @@ impl Fmt {
                 self.push(" {");
                 self.newline();
                 self.indent();
-                for (s, _) in body {
-                    self.stmt(s);
+                for s_node in body {
+                    self.stmt(&s_node.kind);
                     self.newline();
                 }
                 self.dedent();
@@ -443,8 +443,8 @@ impl Fmt {
                 self.push(" {");
                 self.newline();
                 self.indent();
-                for (s, _) in body {
-                    self.stmt(s);
+                for s_node in body {
+                    self.stmt(&s_node.kind);
                     self.newline();
                 }
                 self.dedent();
@@ -460,8 +460,8 @@ impl Fmt {
                 self.push(" {");
                 self.newline();
                 self.indent();
-                for (s, _) in then_body {
-                    self.stmt(s);
+                for s_node in then_body {
+                    self.stmt(&s_node.kind);
                     self.newline();
                 }
                 self.dedent();
@@ -470,8 +470,8 @@ impl Fmt {
                     self.push(" else {");
                     self.newline();
                     self.indent();
-                    for (s, _) in eb {
-                        self.stmt(s);
+                    for s_node in eb {
+                        self.stmt(&s_node.kind);
                         self.newline();
                     }
                     self.dedent();
@@ -494,20 +494,20 @@ impl Fmt {
                 self.push("try {");
                 self.newline();
                 self.indent();
-                for (s, _) in body {
-                    self.stmt(s);
+                for s_node in body {
+                    self.stmt(&s_node.kind);
                     self.newline();
                 }
                 self.dedent();
                 self.push("}");
                 for c in catches {
                     self.push(&format!(" catch {}: ", c.name));
-                    self.push(&self.type_expr_str(&c.ty));
+                    self.push(&self.type_expr_str(&c.ty.kind));
                     self.push(" {");
                     self.newline();
                     self.indent();
-                    for (s, _) in &c.body {
-                        self.stmt(s);
+                    for s_node in &c.body {
+                        self.stmt(&s_node.kind);
                         self.newline();
                     }
                     self.dedent();
@@ -544,7 +544,7 @@ impl Fmt {
         self.push(" => ");
         // Single-expression arms stay inline; multi-stmt arms open a block.
         if arm.body.len() == 1
-            && let Stmt::Expr(e) = &arm.body[0].0
+            && let Stmt::Expr(e) = &arm.body[0].kind
         {
             self.push(&self.expr_str(e));
             self.newline();
@@ -553,8 +553,8 @@ impl Fmt {
         self.push("{");
         self.newline();
         self.indent();
-        for (s, _) in &arm.body {
-            self.stmt(s);
+        for s_node in &arm.body {
+            self.stmt(&s_node.kind);
             self.newline();
         }
         self.dedent();
@@ -581,11 +581,12 @@ impl Fmt {
     // Expressions — produce strings so we can compose inline.
     // -----------------------------------------------------------------
 
-    fn expr_str(&self, expr: &Expr) -> String {
-        self.expr_at(expr, self.indent)
+    fn expr_str(&self, spanned: &SpannedExpr) -> String {
+        self.expr_at(spanned, self.indent)
     }
 
-    fn expr_at(&self, expr: &Expr, indent: usize) -> String {
+    fn expr_at(&self, spanned: &SpannedExpr, indent: usize) -> String {
+        let expr = &spanned.kind;
         match expr {
             Expr::Integer(n) => n.to_string(),
             Expr::Float(f) => {
@@ -671,7 +672,11 @@ impl Fmt {
                 )
             }
             Expr::Cast { expr, ty } => {
-                format!("{} as {}", self.expr_str(expr), self.type_expr_str(ty))
+                format!(
+                    "{} as {}",
+                    self.expr_str(expr),
+                    self.type_expr_str(&ty.kind)
+                )
             }
             Expr::IfExpr {
                 cond,
@@ -682,7 +687,8 @@ impl Fmt {
                 // When else_body is a single if-expression, emit `else if …`
                 // so that re-parsing produces the same AST (idempotent).
                 if else_body.len() == 1
-                    && let (Stmt::Expr(inner @ Expr::IfExpr { .. }), _) = &else_body[0]
+                    && let Stmt::Expr(inner) = &else_body[0].kind
+                    && let Expr::IfExpr { .. } = &inner.kind
                 {
                     return format!(
                         "if {} {{ {} }} else {}",
@@ -705,7 +711,9 @@ impl Fmt {
                     let parts: Vec<String> = params
                         .iter()
                         .map(|p| match &p.ty {
-                            Some(t) => format!("{}: {}", p.name, self.type_expr_str(t)),
+                            Some(ty_node) => {
+                                format!("{}: {}", p.name, self.type_expr_str(&ty_node.kind))
+                            }
                             None => p.name.clone(),
                         })
                         .collect();
@@ -760,11 +768,11 @@ impl Fmt {
     fn lambda_block(&self, params_str: &str, body: &Block, indent: usize) -> String {
         let inner_indent = indent + 1;
         let mut s = format!("{params_str} => {{\n");
-        for (stmt, _) in body {
+        for stmt_node in body {
             for _ in 0..inner_indent {
                 s.push_str(INDENT);
             }
-            self.write_stmt(&mut s, stmt, inner_indent);
+            self.write_stmt(&mut s, &stmt_node.kind, inner_indent);
             s.push('\n');
         }
         for _ in 0..indent {
@@ -781,9 +789,9 @@ impl Fmt {
             Stmt::Expr(e) => s.push_str(&self.expr_at(e, indent)),
             Stmt::Let { binding, ty, value } => {
                 s.push_str(&binding_str(binding));
-                if let Some(t) = ty {
+                if let Some(ty_node) = ty {
                     s.push_str(": ");
-                    s.push_str(&self.type_expr_str(t));
+                    s.push_str(&self.type_expr_str(&ty_node.kind));
                 }
                 s.push_str(" = ");
                 s.push_str(&self.expr_at(value, indent));
@@ -876,7 +884,7 @@ impl Fmt {
                 s.push('}');
                 for c in catches {
                     s.push_str(&format!(" catch {}: ", c.name));
-                    s.push_str(&self.type_expr_str(&c.ty));
+                    s.push_str(&self.type_expr_str(&c.ty.kind));
                     s.push_str(" {\n");
                     self.write_block(s, &c.body, indent + 1);
                     for _ in 0..indent {
@@ -895,11 +903,11 @@ impl Fmt {
     }
 
     fn write_block(&self, s: &mut String, block: &Block, indent: usize) {
-        for (stmt, _) in block {
+        for stmt_node in block {
             for _ in 0..indent {
                 s.push_str(INDENT);
             }
-            self.write_stmt(s, stmt, indent);
+            self.write_stmt(s, &stmt_node.kind, indent);
             s.push('\n');
         }
     }
@@ -913,7 +921,7 @@ impl Fmt {
         }
         s.push_str(" => ");
         if arm.body.len() == 1
-            && let Stmt::Expr(e) = &arm.body[0].0
+            && let Stmt::Expr(e) = &arm.body[0].kind
         {
             s.push_str(&self.expr_at(e, indent));
             s.push('\n');
@@ -945,7 +953,10 @@ impl Fmt {
     }
 
     fn block_inline(&self, block: &Block) -> String {
-        let parts: Vec<String> = block.iter().map(|(s, _)| self.stmt_inline(s)).collect();
+        let parts: Vec<String> = block
+            .iter()
+            .map(|s_node| self.stmt_inline(&s_node.kind))
+            .collect();
         parts.join("; ")
     }
 
@@ -957,7 +968,7 @@ impl Fmt {
             Stmt::Let { binding, ty, value } => {
                 let ty_str = ty
                     .as_ref()
-                    .map(|t| format!(": {}", self.type_expr_str(t)))
+                    .map(|ty_node| format!(": {}", self.type_expr_str(&ty_node.kind)))
                     .unwrap_or_default();
                 format!(
                     "{}{ty_str} = {}",
@@ -1029,7 +1040,7 @@ impl Fmt {
             TypeExpr::Struct(fields) => {
                 let parts: Vec<String> = fields
                     .iter()
-                    .map(|f| format!("{}: {}", f.name, self.type_expr_str(&f.ty)))
+                    .map(|f| format!("{}: {}", f.name, self.type_expr_str(&f.ty.kind)))
                     .collect();
                 format!("{{ {} }}", parts.join(", "))
             }

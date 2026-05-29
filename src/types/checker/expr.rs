@@ -20,7 +20,8 @@ use super::{
 };
 
 impl Checker {
-    pub(crate) fn infer_expr(&mut self, expr: &Expr, scope: &mut Scope) -> Ty {
+    pub(crate) fn infer_expr(&mut self, spanned: &SpannedExpr, scope: &mut Scope) -> Ty {
+        let expr = &spanned.kind;
         match expr {
             Expr::Integer(_) => Ty::Int,
             Expr::Float(_) => Ty::Float,
@@ -103,7 +104,7 @@ impl Checker {
             Expr::FieldAccess(obj, field) => {
                 // Resolve ident-qualified field access through the name index
                 // before falling through to value-level struct field access.
-                if let Expr::Ident(name) = obj.as_ref() {
+                if let Expr::Ident(name) = &obj.as_ref().kind {
                     match self.name_index.resolve(name) {
                         // Enum variant shortcut: `Urgency.medium`.
                         ResolvedName::Enum => {
@@ -430,7 +431,7 @@ impl Checker {
                     .iter()
                     .map(|a| self.infer_expr(&a.value, scope))
                     .collect();
-                if let Expr::SelfAccess(task_name) = callee.as_ref() {
+                if let Expr::SelfAccess(task_name) = &callee.as_ref().kind {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{task_name}(...)` used outside an agent"));
                         return Ty::Error;
@@ -472,7 +473,7 @@ impl Checker {
                 }
                 // Dispatch on callee identity via the name index when the callee
                 // is a bare identifier.
-                if let Expr::Ident(name) = callee.as_ref() {
+                if let Expr::Ident(name) = &callee.as_ref().kind {
                     match self.name_index.resolve(name) {
                         ResolvedName::TopTask => {
                             let sig = self.top_tasks.get(name).cloned();
@@ -503,7 +504,7 @@ impl Checker {
                                     let mut type_env: HashMap<String, Ty> = HashMap::new();
                                     for (param, arg_ty) in td.params.iter().zip(arg_tys.iter()) {
                                         self.unify_type_params(
-                                            &param.ty,
+                                            &param.ty.kind,
                                             arg_ty,
                                             &td.type_params,
                                             &mut type_env,
@@ -519,7 +520,7 @@ impl Checker {
                                                     crate::ast::Binding::Ident(s) => s.clone(),
                                                     _ => String::new(),
                                                 },
-                                                self.resolve_type_with_env(&p.ty, &type_env),
+                                                self.resolve_type_with_env(&p.ty.kind, &type_env),
                                             )
                                         })
                                         .collect();
@@ -530,8 +531,9 @@ impl Checker {
                                         &arg_tys,
                                         &format!("task `{name}`"),
                                     );
-                                    if let Some(ret_expr) = &td.return_type {
-                                        return self.resolve_type_with_env(ret_expr, &type_env);
+                                    if let Some(ret_node) = &td.return_type {
+                                        return self
+                                            .resolve_type_with_env(&ret_node.kind, &type_env);
                                     }
                                     return Ty::None_;
                                 }
@@ -632,7 +634,7 @@ impl Checker {
                     .iter()
                     .map(|a| self.infer_expr(&a.value, scope))
                     .collect();
-                if matches!(object.as_ref(), Expr::SelfRef) {
+                if matches!(&object.as_ref().kind, Expr::SelfRef) {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{method}(...)` used outside an agent"));
                         return Ty::Error;
@@ -682,7 +684,7 @@ impl Checker {
                 //     — arg[0] is Ident("Foo")
                 //     — arg[1] is a plain string literal naming the handler
                 //     — arg[2] is the data; type-checked against the handler param
-                if let Expr::Ident(name) = object.as_ref() {
+                if let Expr::Ident(name) = &object.as_ref().kind {
                     match self.name_index.resolve(name) {
                         ResolvedName::Agent => {
                             // Direct agent-task calls are not supported; callers
@@ -699,17 +701,17 @@ impl Checker {
                             // Validate Agent.delegate call sites at compile time.
                             if name == "Agent" && method == "delegate" {
                                 if let Some(first_arg) = args.first() {
-                                    match &first_arg.value {
+                                    match first_arg.value.kind.clone() {
                                         // Symbol form: Foo.handle
                                         Expr::FieldAccess(obj_expr, handler_name) => {
-                                            if let Expr::Ident(agent_name) = obj_expr.as_ref()
+                                            if let Expr::Ident(agent_name) = &obj_expr.as_ref().kind
                                                 && let Some(agent) = self.agents.get(agent_name)
                                             {
                                                 // Handler existence already checked in
                                                 // the FieldAccess arm above.
                                                 if let Some(data_arg) = args.get(1) {
                                                     if let Some(Some(param_ty)) =
-                                                        agent.handlers.get(handler_name).cloned()
+                                                        agent.handlers.get(&handler_name).cloned()
                                                     {
                                                         self.expect(
                                                             &arg_tys[1],
@@ -727,13 +729,13 @@ impl Checker {
                                         // String form: Foo, "handle"
                                         Expr::Ident(agent_name)
                                             if matches!(
-                                                self.name_index.resolve(agent_name),
+                                                self.name_index.resolve(&agent_name),
                                                 ResolvedName::Agent
                                             ) =>
                                         {
-                                            let agent_name = agent_name.clone();
                                             if let Some(second_arg) = args.get(1)
-                                                && let Expr::StringLit(parts) = &second_arg.value
+                                                && let Expr::StringLit(parts) =
+                                                    &second_arg.value.kind
                                             {
                                                 // Only check plain string literals
                                                 // (no interpolation) for static resolution.
@@ -804,7 +806,7 @@ impl Checker {
                                         // names a known enum type; otherwise the target is unknown.
                                         if let Some(as_arg) =
                                             args.iter().find(|a| a.name.as_deref() == Some("as"))
-                                            && let Expr::Ident(enum_name) = &as_arg.value
+                                            && let Expr::Ident(enum_name) = &as_arg.value.kind
                                             && matches!(
                                                 self.name_index.resolve(enum_name),
                                                 ResolvedName::Enum
@@ -825,7 +827,7 @@ impl Checker {
                                             .iter()
                                             .find(|a| a.name.as_deref() == Some("as"))
                                             .map(|a| {
-                                                if let Expr::Ident(type_name) = &a.value {
+                                                if let Expr::Ident(type_name) = &a.value.kind {
                                                     self.resolve_type(&TypeExpr::Named(
                                                         type_name.clone(),
                                                     ))
@@ -924,7 +926,7 @@ impl Checker {
 
             Expr::Cast { expr, ty } => {
                 self.infer_expr(expr, scope);
-                self.resolve_type(ty)
+                self.resolve_type(&ty.kind)
             }
 
             Expr::IfExpr {
@@ -1011,7 +1013,7 @@ impl Checker {
                     // implemented; bind as InferenceLimitation to avoid cascade errors.
                     let ty =
                         p.ty.as_ref()
-                            .map(|t| self.resolve_type(t))
+                            .map(|t| self.resolve_type(&t.kind))
                             .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
                     scope.define(p.name.clone(), ty);
                 }
@@ -1019,11 +1021,11 @@ impl Checker {
                     LambdaBody::Expr(e) => self.infer_expr(e, scope),
                     LambdaBody::Block(b) => {
                         let mut last = Ty::Unknown(UnknownReason::InferenceLimitation);
-                        for (s, s_span) in b {
-                            last = match s {
+                        for s_node in b {
+                            last = match &s_node.kind {
                                 Stmt::Expr(e) => self.infer_expr(e, scope),
                                 other => {
-                                    self.check_stmt(other, s_span.clone(), scope);
+                                    self.check_stmt(other, s_node.span.clone(), scope);
                                     Ty::Unknown(UnknownReason::InferenceLimitation)
                                 }
                             };
@@ -1037,7 +1039,7 @@ impl Checker {
                         .iter()
                         .map(|p| {
                             p.ty.as_ref()
-                                .map(|t| self.resolve_type(t))
+                                .map(|t| self.resolve_type(&t.kind))
                                 .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation))
                         })
                         .collect(),

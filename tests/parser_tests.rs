@@ -16,7 +16,7 @@ fn parse_err(source: &str) -> String {
 }
 
 fn first_decl(program: &Program) -> &Decl {
-    &program.declarations[0].0
+    &program.declarations[0].kind
 }
 
 // ─── Type declarations ───────────────────────────────────────────────────────
@@ -63,7 +63,12 @@ fn parse_type_alias() {
         Decl::Type(td) => {
             assert_eq!(td.name, "Timestamp");
             match &td.def {
-                TypeDef::Alias(TypeExpr::Named(n)) => assert_eq!(n, "datetime"),
+                TypeDef::Alias(ty_node) => {
+                    let TypeExpr::Named(n) = &ty_node.kind else {
+                        panic!("expected Named alias, got {:?}", ty_node.kind);
+                    };
+                    assert_eq!(n, "datetime");
+                }
                 other => panic!("expected Alias, got {:?}", other),
             }
         }
@@ -284,7 +289,10 @@ agent Bot {
                 })
                 .expect("expected @limits");
             match &limits.body {
-                AttributeBody::Expr(Expr::StructLit(fields)) => {
+                AttributeBody::Expr(expr_node) => {
+                    let Expr::StructLit(fields) = &expr_node.kind else {
+                        panic!("expected StructLit, got {:?}", expr_node.kind);
+                    };
                     assert_eq!(fields.len(), 2);
                     assert_eq!(fields[0].0.as_str(), Some("max_cost_per_request"));
                 }
@@ -396,19 +404,22 @@ fn parse_namespace_method_call() {
     match first_decl(&prog) {
         Decl::Task(t) => {
             assert_eq!(t.body.len(), 1);
-            match &t.body[0].0 {
-                Stmt::Expr(Expr::MethodCall {
-                    object,
-                    method,
-                    args,
-                }) => {
-                    assert!(matches!(object.as_ref(), Expr::Ident(n) if n == "Ai"));
-                    assert_eq!(method, "classify");
-                    assert_eq!(args.len(), 2);
-                    assert!(args[0].name.is_none());
-                    assert_eq!(args[1].name.as_deref(), Some("as"));
-                }
-                other => panic!("expected MethodCall, got {:?}", other),
+            match &t.body[0].kind {
+                Stmt::Expr(expr_node) => match &expr_node.kind {
+                    Expr::MethodCall {
+                        object,
+                        method,
+                        args,
+                    } => {
+                        assert!(matches!(&object.as_ref().kind, Expr::Ident(n) if n == "Ai"));
+                        assert_eq!(method, "classify");
+                        assert_eq!(args.len(), 2);
+                        assert!(args[0].name.is_none());
+                        assert_eq!(args[1].name.as_deref(), Some("as"));
+                    }
+                    other => panic!("expected MethodCall, got {:?}", other),
+                },
+                other => panic!("expected Stmt::Expr, got {:?}", other),
             }
         }
         other => panic!("expected Task, got {:?}", other),
@@ -419,12 +430,15 @@ fn parse_namespace_method_call() {
 fn parse_explicit_lambda_arg() {
     let prog = parse_ok(r#"task t() { Schedule.every(5.minutes, () => { Io.notify("tick") }) }"#);
     match first_decl(&prog) {
-        Decl::Task(t) => match &t.body[0].0 {
-            Stmt::Expr(Expr::MethodCall { args, .. }) => {
-                assert_eq!(args.len(), 2);
-                assert!(matches!(&args[1].value, Expr::Lambda { .. }));
-            }
-            other => panic!("expected MethodCall, got {:?}", other),
+        Decl::Task(t) => match &t.body[0].kind {
+            Stmt::Expr(expr_node) => match &expr_node.kind {
+                Expr::MethodCall { args, .. } => {
+                    assert_eq!(args.len(), 2);
+                    assert!(matches!(&args[1].value.kind, Expr::Lambda { .. }));
+                }
+                other => panic!("expected MethodCall, got {:?}", other),
+            },
+            other => panic!("expected Stmt::Expr, got {:?}", other),
         },
         other => panic!("expected Task, got {:?}", other),
     }
@@ -434,9 +448,9 @@ fn parse_explicit_lambda_arg() {
 fn parse_as_cast() {
     let prog = parse_ok(r#"task t() { x = Ai.prompt(system: "hi") as MyType }"#);
     match first_decl(&prog) {
-        Decl::Task(t) => match &t.body[0].0 {
+        Decl::Task(t) => match &t.body[0].kind {
             Stmt::Let { value, .. } => {
-                assert!(matches!(value, Expr::Cast { .. }));
+                assert!(matches!(&value.kind, Expr::Cast { .. }));
             }
             other => panic!("expected Let, got {:?}", other),
         },
@@ -450,8 +464,14 @@ fn parse_as_cast() {
 fn parse_top_level_run() {
     let prog = parse_ok("run(MyAgent)");
     match first_decl(&prog) {
-        Decl::Stmt((Stmt::Expr(Expr::Call { callee, args }), _)) => {
-            assert!(matches!(callee.as_ref(), Expr::Ident(n) if n == "run"));
+        Decl::Stmt(stmt_node) => {
+            let Stmt::Expr(expr_node) = &stmt_node.kind else {
+                panic!("expected Stmt::Expr, got {:?}", stmt_node.kind);
+            };
+            let Expr::Call { callee, args } = &expr_node.kind else {
+                panic!("expected Expr::Call, got {:?}", expr_node.kind);
+            };
+            assert!(matches!(&callee.as_ref().kind, Expr::Ident(n) if n == "run"));
             assert_eq!(args.len(), 1);
         }
         other => panic!("expected Stmt::Expr(Call), got {:?}", other),
@@ -472,7 +492,7 @@ task t() {
 "#;
     let prog = parse_ok(src);
     match first_decl(&prog) {
-        Decl::Task(t) => match &t.body[0].0 {
+        Decl::Task(t) => match &t.body[0].kind {
             Stmt::When { arms, .. } => {
                 assert_eq!(arms.len(), 2);
                 assert_eq!(arms[0].patterns.len(), 2);
@@ -500,9 +520,9 @@ fn parse_if_expression() {
 fn parse_null_coalesce_and_pipeline() {
     let prog = parse_ok(r#"task t() { x = a |> b ?? "default" }"#);
     match first_decl(&prog) {
-        Decl::Task(t) => match &t.body[0].0 {
+        Decl::Task(t) => match &t.body[0].kind {
             Stmt::Let { value, .. } => {
-                assert!(matches!(value, Expr::NullCoalesce(_, _)));
+                assert!(matches!(&value.kind, Expr::NullCoalesce(_, _)));
             }
             _ => panic!(),
         },
@@ -518,10 +538,13 @@ fn former_keyword_classify_is_ident() {
     // function name, or a method name. Here we use it as a method call.
     let prog = parse_ok(r#"task t() { Ai.classify(x, as: T) }"#);
     match first_decl(&prog) {
-        Decl::Task(t) => match &t.body[0].0 {
-            Stmt::Expr(Expr::MethodCall { method, .. }) => {
-                assert_eq!(method, "classify");
-            }
+        Decl::Task(t) => match &t.body[0].kind {
+            Stmt::Expr(expr_node) => match &expr_node.kind {
+                Expr::MethodCall { method, .. } => {
+                    assert_eq!(method, "classify");
+                }
+                _ => panic!(),
+            },
             _ => panic!(),
         },
         _ => panic!(),
@@ -562,7 +585,7 @@ fn parse_generic_alias() {
         Decl::Type(td) => {
             assert_eq!(td.name, "Bag");
             assert_eq!(td.type_params, vec!["T"]);
-            assert!(matches!(&td.def, TypeDef::Alias(TypeExpr::List(_))));
+            assert!(matches!(&td.def, TypeDef::Alias(n) if matches!(&n.kind, TypeExpr::List(_))));
         }
         other => panic!("expected Type, got {:?}", other),
     }
@@ -599,7 +622,10 @@ fn parse_func_type_single_param() {
     let prog = parse_ok("type Handler = (str) -> bool");
     match first_decl(&prog) {
         Decl::Type(td) => match &td.def {
-            TypeDef::Alias(TypeExpr::Func(params, ret)) => {
+            TypeDef::Alias(ty_node) => {
+                let TypeExpr::Func(params, ret) = &ty_node.kind else {
+                    panic!("expected Func alias, got {:?}", ty_node.kind);
+                };
                 assert_eq!(params.len(), 1);
                 assert!(matches!(&params[0], TypeExpr::Named(n) if n == "str"));
                 assert!(matches!(ret.as_ref(), TypeExpr::Named(n) if n == "bool"));
@@ -615,7 +641,10 @@ fn parse_func_type_multi_param() {
     let prog = parse_ok("type Reducer = (str, int) -> str");
     match first_decl(&prog) {
         Decl::Type(td) => match &td.def {
-            TypeDef::Alias(TypeExpr::Func(params, ret)) => {
+            TypeDef::Alias(ty_node) => {
+                let TypeExpr::Func(params, ret) = &ty_node.kind else {
+                    panic!("expected Func alias, got {:?}", ty_node.kind);
+                };
                 assert_eq!(params.len(), 2);
                 assert!(matches!(ret.as_ref(), TypeExpr::Named(n) if n == "str"));
             }
@@ -630,7 +659,10 @@ fn parse_func_type_no_params() {
     let prog = parse_ok("type Thunk = () -> str");
     match first_decl(&prog) {
         Decl::Type(td) => match &td.def {
-            TypeDef::Alias(TypeExpr::Func(params, _)) => {
+            TypeDef::Alias(ty_node) => {
+                let TypeExpr::Func(params, _) = &ty_node.kind else {
+                    panic!("expected Func alias, got {:?}", ty_node.kind);
+                };
                 assert!(params.is_empty());
             }
             other => panic!("expected Func alias, got {:?}", other),
@@ -644,7 +676,10 @@ fn parse_tuple_type_still_works() {
     let prog = parse_ok("type Coord = (str, int)");
     match first_decl(&prog) {
         Decl::Type(td) => match &td.def {
-            TypeDef::Alias(TypeExpr::Tuple(elems)) => {
+            TypeDef::Alias(ty_node) => {
+                let TypeExpr::Tuple(elems) = &ty_node.kind else {
+                    panic!("expected Tuple alias, got {:?}", ty_node.kind);
+                };
                 assert_eq!(elems.len(), 2);
             }
             other => panic!("expected Tuple alias, got {:?}", other),
@@ -660,7 +695,9 @@ fn parse_generic_func_type_alias() {
     match first_decl(&prog) {
         Decl::Type(td) => {
             assert_eq!(td.type_params, vec!["T"]);
-            assert!(matches!(&td.def, TypeDef::Alias(TypeExpr::Func(_, _))));
+            assert!(
+                matches!(&td.def, TypeDef::Alias(n) if matches!(&n.kind, TypeExpr::Func(_, _)))
+            );
         }
         other => panic!("expected Type, got {:?}", other),
     }
@@ -731,13 +768,10 @@ task t(x: str) {
     match first_decl(&prog) {
         Decl::Task(t) => {
             // find the statement with a WhenExpr on the rhs
-            let has_when_expr = t.body.iter().any(|(stmt, _)| {
+            let has_when_expr = t.body.iter().any(|s_node| {
                 matches!(
-                    stmt,
-                    Stmt::Let {
-                        value: Expr::WhenExpr { .. },
-                        ..
-                    }
+                    &s_node.kind,
+                    Stmt::Let { value, .. } if matches!(&value.kind, Expr::WhenExpr { .. })
                 )
             });
             assert!(has_when_expr, "expected a let binding with a WhenExpr RHS");
@@ -775,7 +809,7 @@ fn parse_while_basic() {
             let while_stmt = td
                 .body
                 .iter()
-                .find(|(s, _)| matches!(s, Stmt::While { .. }));
+                .find(|s_node| matches!(&s_node.kind, Stmt::While { .. }));
             assert!(while_stmt.is_some(), "expected Stmt::While in task body");
         }
         other => panic!("expected Task, got {:?}", other),
@@ -830,7 +864,7 @@ fn parse_impl_stringable() {
 // expected keyword, proving the span actually covers the declaration's text.
 
 fn first_span(prog: &Program) -> std::ops::Range<usize> {
-    prog.declarations[0].1.clone()
+    prog.declarations[0].span.clone()
 }
 
 #[test]
@@ -925,8 +959,8 @@ fn decl_span_multiple_are_distinct() {
     let prog = parse_ok(src);
     assert_eq!(prog.declarations.len(), 2, "expected two declarations");
     let (span_a, span_b) = (
-        prog.declarations[0].1.clone(),
-        prog.declarations[1].1.clone(),
+        prog.declarations[0].span.clone(),
+        prog.declarations[1].span.clone(),
     );
     assert_ne!(span_a, 0..0, "first decl span must not be 0..0 placeholder");
     assert_ne!(
@@ -948,4 +982,229 @@ fn decl_span_multiple_are_distinct() {
         span_a.end <= span_b.start,
         "spans must not overlap: {span_a:?} overlaps {span_b:?}"
     );
+}
+
+// ─── Declaration name spans (Stage 2) ────────────────────────────────────────
+//
+// Each test asserts the exact byte range stored in `name_span` for a
+// declaration name token.  The range must:
+//   • equal `src.find(expected_name)..src.find(expected_name) + expected_name.len()`
+//   • yield the identifier characters when used to slice `src`
+//
+// This is stricter than the `decl_span_*` tests above, which only check that
+// the span is non-empty and starts with the right keyword.
+
+#[test]
+fn name_span_task() {
+    let src = "task greet(name: str) -> str { name }";
+    //              ^^^^^
+    //              offset 5, length 5
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    assert_eq!(&src[t.name_span.clone()], "greet");
+    assert_eq!(t.name_span, 5..10);
+}
+
+#[test]
+fn name_span_agent() {
+    let src = "agent Greeter { @role \"assistant\" }";
+    //               ^^^^^^^
+    //               offset 6, length 7
+    let prog = parse_ok(src);
+    let Decl::Agent(a) = first_decl(&prog) else {
+        panic!("expected Decl::Agent");
+    };
+    assert_eq!(&src[a.name_span.clone()], "Greeter");
+    assert_eq!(a.name_span, 6..13);
+}
+
+#[test]
+fn name_span_type() {
+    let src = "type Color = red | green | blue";
+    //              ^^^^^
+    //              offset 5, length 5
+    let prog = parse_ok(src);
+    let Decl::Type(t) = first_decl(&prog) else {
+        panic!("expected Decl::Type");
+    };
+    assert_eq!(&src[t.name_span.clone()], "Color");
+    assert_eq!(t.name_span, 5..10);
+}
+
+#[test]
+fn name_span_interface() {
+    let src = "interface Printable { task print(self) -> str }";
+    //                   ^^^^^^^^^
+    //                   offset 10, length 9
+    let prog = parse_ok(src);
+    let Decl::Interface(i) = first_decl(&prog) else {
+        panic!("expected Decl::Interface");
+    };
+    assert_eq!(&src[i.name_span.clone()], "Printable");
+    assert_eq!(i.name_span, 10..19);
+}
+
+#[test]
+fn name_span_task_param() {
+    let src = "task greet(name: str) -> str { name }";
+    //                     ^^^^
+    //                     offset 11, length 4
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    let param = &t.params[0];
+    assert_eq!(&src[param.name_span.clone()], "name");
+    assert_eq!(param.name_span, 11..15);
+}
+
+#[test]
+fn name_span_task_variadic_param() {
+    let src = "task log(...msgs: str) { }";
+    //                  ^^^^
+    //                  offset 12, length 4
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    let param = &t.params[0];
+    assert_eq!(&src[param.name_span.clone()], "msgs");
+    assert_eq!(param.name_span, 12..16);
+}
+
+#[test]
+fn name_span_interface_method() {
+    let src = "interface Printable { task print(self) -> str }";
+    //                              ^^^^^
+    //                              offset 27, length 5
+    let prog = parse_ok(src);
+    let Decl::Interface(i) = first_decl(&prog) else {
+        panic!("expected Decl::Interface");
+    };
+    let sig = &i.methods[0];
+    assert_eq!(&src[sig.name_span.clone()], "print");
+    assert_eq!(sig.name_span, 27..32);
+}
+
+#[test]
+fn name_span_agent_task() {
+    let src = "agent Bot {\ntask tick() { }\n}";
+    //              ^^^               (Bot at 6..9)
+    //                   ^^^^        (tick at 17..21)
+    let prog = parse_ok(src);
+    let Decl::Agent(a) = first_decl(&prog) else {
+        panic!("expected Decl::Agent");
+    };
+    assert_eq!(&src[a.name_span.clone()], "Bot");
+    let AgentItem::Task(t) = &a.items[0] else {
+        panic!("expected AgentItem::Task");
+    };
+    assert_eq!(&src[t.name_span.clone()], "tick");
+}
+
+// ─── Stage 3: type-expression span tests ─────────────────────────────────────
+
+/// Param type annotation span points at exactly the type token.
+#[test]
+fn param_ty_span() {
+    // "task f(x: str) { }"
+    //         ^  ^^^
+    //         9  9..12
+    let src = "task f(x: str) { }";
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    let span = &t.params[0].ty.span;
+    assert_eq!(&src[span.clone()], "str");
+}
+
+/// Task return-type span covers the declared return type.
+#[test]
+fn return_type_span() {
+    // "task greet() -> bool { true }"
+    //                  ^^^^
+    let src = "task greet() -> bool { true }";
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    let ret_node = t.return_type.as_ref().expect("expected return type");
+    let span = &ret_node.span;
+    assert_eq!(&src[span.clone()], "bool");
+}
+
+/// Struct field type annotation span covers just the type token.
+#[test]
+fn field_ty_span() {
+    // "type Point { x: int, y: float }"
+    //               ^ ^^^  ^ ^^^^^
+    let src = "type Point { x: int, y: float }";
+    let prog = parse_ok(src);
+    let Decl::Type(td) = first_decl(&prog) else {
+        panic!("expected Decl::Type");
+    };
+    let TypeDef::Struct(fields) = &td.def else {
+        panic!("expected Struct");
+    };
+    let x_span = &fields[0].ty.span;
+    let y_span = &fields[1].ty.span;
+    assert_eq!(&src[x_span.clone()], "int");
+    assert_eq!(&src[y_span.clone()], "float");
+}
+
+/// Type alias span covers the right-hand side type expression.
+#[test]
+fn alias_ty_span() {
+    // "type Ts = datetime"
+    //            ^^^^^^^^
+    let src = "type Ts = datetime";
+    let prog = parse_ok(src);
+    let Decl::Type(td) = first_decl(&prog) else {
+        panic!("expected Decl::Type");
+    };
+    let TypeDef::Alias(ty_node) = &td.def else {
+        panic!("expected Alias");
+    };
+    let span = &ty_node.span;
+    assert_eq!(&src[span.clone()], "datetime");
+}
+
+/// Let statement type annotation span covers just the type token.
+/// Keel `let` syntax: `x: Type = expr` (no `let` keyword).
+#[test]
+fn let_ty_span() {
+    let src = "task f() {\nx: int = 1\n}";
+    //                     ^^^
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    let Stmt::Let { ty, .. } = &t.body[0].kind else {
+        panic!("expected Stmt::Let");
+    };
+    let ty_node = ty.as_ref().expect("expected type annotation");
+    let span = &ty_node.span;
+    assert_eq!(&src[span.clone()], "int");
+}
+
+/// `as` cast expression span covers just the target type.
+#[test]
+fn cast_ty_span() {
+    let src = "task f() {\n1 as float\n}";
+    //                       ^^^^^
+    let prog = parse_ok(src);
+    let Decl::Task(t) = first_decl(&prog) else {
+        panic!("expected Decl::Task");
+    };
+    let Stmt::Expr(expr_node) = &t.body[0].kind else {
+        panic!("expected Stmt::Expr");
+    };
+    let Expr::Cast { ty, .. } = &expr_node.kind else {
+        panic!("expected Expr::Cast");
+    };
+    let span = &ty.span;
+    assert_eq!(&src[span.clone()], "float");
 }

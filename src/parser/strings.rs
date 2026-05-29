@@ -9,7 +9,7 @@ use chumsky::Stream;
 use chumsky::prelude::*;
 use logos::Logos;
 
-use crate::ast::{Expr, StringPart};
+use crate::ast::{Expr, Node, SpannedExpr, StringPart};
 use crate::lexer::{Token, normalize_newlines};
 
 use super::expr::expr_parser;
@@ -250,10 +250,12 @@ fn is_digit_separator_tail(s: &str) -> bool {
 /// Returns `Ok(expr)` on success, `Err(())` when the slot text is not a valid
 /// expression.  The caller is responsible for recording a `StringPart::ParseError`
 /// so the type checker can surface a diagnostic.
-fn parse_interp_expr(text: &str) -> Result<Expr, ()> {
+fn parse_interp_expr(text: &str) -> Result<SpannedExpr, ()> {
     let text = text.trim();
     if text.is_empty() {
-        return Ok(Expr::StringLit(vec![StringPart::Literal(String::new())]));
+        return Ok(Node::synthetic(Expr::StringLit(vec![StringPart::Literal(
+            String::new(),
+        )])));
     }
 
     // Lex the interpolation content directly via logos, bypassing the
