@@ -1208,3 +1208,57 @@ fn cast_ty_span() {
     let span = &ty.span;
     assert_eq!(&src[span.clone()], "float");
 }
+
+fn first_interpolation(parts: &[StringPart]) -> &SpannedExpr {
+    parts
+        .iter()
+        .find_map(|part| match part {
+            StringPart::Interpolation(expr, _) => Some(expr.as_ref()),
+            _ => None,
+        })
+        .expect("expected interpolation")
+}
+
+fn task_body_string_parts(program: &Program) -> &[StringPart] {
+    let Decl::Task(task) = first_decl(program) else {
+        panic!("expected Decl::Task");
+    };
+    let Stmt::Expr(expr) = &task.body[0].kind else {
+        panic!("expected Stmt::Expr");
+    };
+    let Expr::StringLit(parts) = &expr.kind else {
+        panic!("expected Expr::StringLit");
+    };
+    parts
+}
+
+#[test]
+fn interpolation_slot_span_is_file_relative() {
+    for src in [
+        r#"task greet(name: str) { "héllo { name }" }"#,
+        "task greet(name: str) { \"\"\"héllo { name }\"\"\" }",
+        r#"task greet(name: str) { "héllo { name:>10}" }"#,
+    ] {
+        let program = parse_ok(src);
+        let expr = first_interpolation(task_body_string_parts(&program));
+        let name_start = src.rfind("name").expect("expected interpolated name");
+
+        assert_eq!(expr.span, name_start..name_start + "name".len());
+        assert_eq!(&src[expr.span.clone()], "name");
+    }
+}
+
+#[test]
+fn nested_interpolation_slot_span_is_file_relative() {
+    let src = r#"task greet(name: str) { "outer {"inner { name }"}" }"#;
+    let program = parse_ok(src);
+    let nested_string = first_interpolation(task_body_string_parts(&program));
+    let Expr::StringLit(parts) = &nested_string.kind else {
+        panic!("expected nested Expr::StringLit");
+    };
+    let expr = first_interpolation(parts);
+    let name_start = src.rfind("name").expect("expected interpolated name");
+
+    assert_eq!(expr.span, name_start..name_start + "name".len());
+    assert_eq!(&src[expr.span.clone()], "name");
+}

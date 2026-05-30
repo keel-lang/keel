@@ -10,20 +10,28 @@ use chumsky::prelude::*;
 use logos::Logos;
 
 use crate::ast::{Expr, Node, SpannedExpr, StringPart};
-use crate::lexer::{Token, normalize_newlines};
+use crate::lexer::{Span, Token, normalize_newlines};
 
 use super::expr::expr_parser;
 
 /// Parse a raw string token body into a sequence of `StringPart`s,
 /// expanding `{expr}` interpolation slots.
-pub(super) fn parse_interpolation(raw: &str) -> Vec<StringPart> {
+pub(super) fn parse_interpolation(raw: &str, string_span: &Span) -> Vec<StringPart> {
     let mut parts = Vec::new();
     let mut current = String::with_capacity(raw.len());
-    let mut chars = raw.chars().peekable();
+    let mut chars = raw.char_indices().peekable();
+    // Keel currently has symmetric ASCII delimiters: `"` and `"""`. The
+    // token span includes both delimiters while `raw` contains only the body.
+    let delimiter_len = string_span
+        .end
+        .saturating_sub(string_span.start)
+        .saturating_sub(raw.len())
+        / 2;
+    let body_start = string_span.start + delimiter_len;
 
-    while let Some(ch) = chars.next() {
+    while let Some((slot_start, ch)) = chars.next() {
         if ch == '\\' {
-            if let Some(&next) = chars.peek() {
+            if let Some(&(_, next)) = chars.peek() {
                 match next {
                     'n' => {
                         chars.next();
@@ -66,12 +74,12 @@ pub(super) fn parse_interpolation(raw: &str) -> Vec<StringPart> {
             }
             let mut depth = 1;
             let mut expr_text = String::new();
-            while let Some(c) = chars.next() {
+            while let Some((_, c)) = chars.next() {
                 if c == '\\' {
                     // Preserve escape sequences inside the slot so the
                     // nested expression lexer can resolve them.
                     expr_text.push(c);
-                    if let Some(&n) = chars.peek() {
+                    if let Some(&(_, n)) = chars.peek() {
                         chars.next();
                         expr_text.push(n);
                     }
@@ -81,10 +89,10 @@ pub(super) fn parse_interpolation(raw: &str) -> Vec<StringPart> {
                     // this interpolation prematurely.
                     expr_text.push(c);
                     let mut inner_depth = 0;
-                    while let Some(nc) = chars.next() {
+                    while let Some((_, nc)) = chars.next() {
                         if nc == '\\' {
                             expr_text.push(nc);
-                            if let Some(&nn) = chars.peek() {
+                            if let Some(&(_, nn)) = chars.peek() {
                                 chars.next();
                                 expr_text.push(nn);
                             }
@@ -117,7 +125,9 @@ pub(super) fn parse_interpolation(raw: &str) -> Vec<StringPart> {
                 }
             }
             let (expr_src, fmt_spec) = split_format_spec(&expr_text);
-            match parse_interp_expr(expr_src) {
+            // Advance past the opening `{` delimiter to the slot body.
+            let expr_start = body_start + slot_start + '{'.len_utf8();
+            match parse_interp_expr(expr_src, expr_start) {
                 Ok(expr) => parts.push(StringPart::Interpolation(
                     Box::new(expr),
                     fmt_spec.map(|s| s.to_string()),
@@ -161,7 +171,9 @@ fn split_format_spec(text: &str) -> (&str, Option<&str>) {
             '{' | '(' | '[' => depth += 1,
             '}' | ')' | ']' => depth -= 1,
             ':' if depth == 0 => {
-                let expr_part = text[..i].trim();
+                // Keep leading padding so `parse_interp_expr` can include it
+                // when rebasing the first token's absolute source position.
+                let expr_part = &text[..i];
                 let spec_part = text[i + 1..].trim();
                 if !spec_part.is_empty() {
                     return (expr_part, Some(spec_part));
@@ -250,7 +262,11 @@ fn is_digit_separator_tail(s: &str) -> bool {
 /// Returns `Ok(expr)` on success, `Err(())` when the slot text is not a valid
 /// expression.  The caller is responsible for recording a `StringPart::ParseError`
 /// so the type checker can surface a diagnostic.
-fn parse_interp_expr(text: &str) -> Result<SpannedExpr, ()> {
+fn parse_interp_expr(text: &str, source_start: usize) -> Result<SpannedExpr, ()> {
+    // Only leading padding shifts token positions. Trailing padding can be
+    // trimmed for parsing without changing any token span.
+    let leading_padding_len = text.len() - text.trim_start().len();
+    let source_start = source_start + leading_padding_len;
     let text = text.trim();
     if text.is_empty() {
         return Ok(Node::synthetic(Expr::StringLit(vec![StringPart::Literal(
@@ -262,7 +278,10 @@ fn parse_interp_expr(text: &str) -> Result<SpannedExpr, ()> {
     // NamedSource wrapper used by the public `lex()` entry point.
     let raw: Vec<_> = Token::lexer(text)
         .spanned()
-        .filter_map(|(r, span)| r.ok().map(|t| (t, span)))
+        .filter_map(|(r, span)| {
+            r.ok()
+                .map(|t| (t, source_start + span.start..source_start + span.end))
+        })
         .collect();
 
     if raw.is_empty() {
@@ -297,7 +316,7 @@ fn parse_interp_expr(text: &str) -> Result<SpannedExpr, ()> {
         .collect::<Vec<_>>();
 
     let tokens = normalize_newlines(raw);
-    let eoi = text.len()..text.len() + 1;
+    let eoi = source_start + text.len()..source_start + text.len() + 1;
     let stream = Stream::from_iter(eoi, tokens.into_iter());
 
     // Require the entire slot to be consumed so that a trailing stray

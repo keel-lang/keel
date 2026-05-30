@@ -82,7 +82,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         .map_with_span(Node::new);
         let str_expr = string_lit().map_with_span(|s, span| {
             Node::new(
-                Expr::StringLit(super::strings::parse_interpolation(&s)),
+                Expr::StringLit(super::strings::parse_interpolation(&s, &span)),
                 span,
             )
         });

@@ -8,6 +8,10 @@
 
 Type-checker diagnostics are now structured internally. `keel check` and the LSP still show the same user-facing messages, but undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks now carry typed data and precise source spans for editor tooling.
 
+### Accurate interpolation diagnostics
+
+Type-checker diagnostics inside string interpolation slots now underline the correct source range. This also applies to nested and triple-quoted strings.
+
 ### Strict runtime arguments for data APIs
 
 Runtime APIs now enforce their declared inputs. Data APIs such as

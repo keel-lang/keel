@@ -2105,6 +2105,25 @@ fn undefined_name_is_structured_with_identifier_span() {
 }
 
 #[test]
+fn undefined_name_inside_interpolation_has_file_relative_span() {
+    let src = r#"task go() {
+  "hello { missing }"
+}"#;
+    let errs = type_errors_full(src);
+    let missing_start = src.find("missing").expect("'missing' not found in source");
+    let missing_end = missing_start + "missing".len();
+
+    assert!(
+        errs.iter().any(|e| matches!(
+            e,
+            TypeDiagnostic::UndefinedName { name, span }
+                if name == "missing" && span.start == missing_start && span.end == missing_end
+        )),
+        "expected interpolated UndefinedName at identifier span, got: {errs:?}"
+    );
+}
+
+#[test]
 fn type_mismatch_is_structured_with_expected_and_actual_types() {
     let src = "task go() {\n  x: str = 1\n}";
     let errs = type_errors_full(src);

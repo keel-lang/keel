@@ -8,13 +8,15 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Runtime data APIs now reject wrong argument types instead of silently stringifying them.
+%%TAGLINE%% Runtime APIs enforce declared inputs and diagnostics point to precise source ranges.
 
 ### Changed
 
 - **Type-checker diagnostics are now structured internally.** The checker returns `TypeDiagnostic` variants instead of a string-only `TypeError`, with structured data for undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks. CLI and LSP rendering keep the same user-facing messages, while diagnostics now carry expected/actual types and precise spans for IDE tooling.
 
 ### Fixed
+
+- **Interpolation diagnostics now point at the correct source range.** Expressions inside string interpolation slots were re-lexed from byte offset `0`, so type-checker errors such as an undefined name underlined the wrong part of the file. Slot token spans are now rebased to their absolute `.keel` source positions, including nested and triple-quoted strings.
 
 - **Runtime APIs now enforce their declared arguments.** Older namespace methods such as `File.read`, `Cache.get`, `Json.parse`, and `Shell.run` passed values through display formatting, so dynamic calls could silently turn `42` into `"42"`. Required sleep and value-method arguments could also be omitted and silently treated as no-ops or empty strings. Shared runtime argument decoders now reject wrong or missing inputs with clear errors; display coercion remains available only for presentation-oriented APIs such as interpolation, `Io.*`, and `Log.*`.
 
