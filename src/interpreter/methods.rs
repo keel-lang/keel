@@ -24,6 +24,46 @@ fn compare_keys(a: &Value, b: &Value) -> std::cmp::Ordering {
     }
 }
 
+// Value methods use interpreter errors, while namespace decoders use miette
+// reports. Keep this adapter local so each dispatch path preserves its error type.
+fn optional_str_arg<'a>(
+    args: &'a [CallArgValue],
+    idx: usize,
+    caller: &str,
+) -> Result<Option<&'a str>> {
+    match args.get(idx).map(|arg| &arg.value) {
+        Some(Value::String(value)) => Ok(Some(value)),
+        Some(other) => Err(runtime_error(format!(
+            "{caller}: argument at position {idx} must be str, got {}",
+            other.type_name()
+        ))),
+        None => Ok(None),
+    }
+}
+
+fn expect_str_arg<'a>(args: &'a [CallArgValue], idx: usize, caller: &str) -> Result<&'a str> {
+    optional_str_arg(args, idx, caller)?
+        .ok_or_else(|| runtime_error(format!("{caller}: missing argument at position {idx}")))
+}
+
+fn optional_named_or_positional_str_arg<'a>(
+    args: &'a [CallArgValue],
+    name: &str,
+    idx: usize,
+    caller: &str,
+) -> Result<Option<&'a str>> {
+    match args.iter().find(|arg| arg.name.as_deref() == Some(name)) {
+        Some(arg) => match &arg.value {
+            Value::String(value) => Ok(Some(value)),
+            other => Err(runtime_error(format!(
+                "{caller}: `{name}:` must be str, got {}",
+                other.type_name()
+            ))),
+        },
+        None => optional_str_arg(args, idx, caller),
+    }
+}
+
 impl Interpreter {
     /// Find the `impl` TaskDecl for `method` on `value`.
     /// For type-tagged `Value::Struct` this is O(1); for untagged `Value::Map`
@@ -102,46 +142,26 @@ impl Interpreter {
             (Value::String(s), "lower") => Ok(Value::String(s.to_lowercase())),
             (Value::String(s), "trim" | "strip") => Ok(Value::String(s.trim().to_string())),
             (Value::String(s), "contains") => {
-                let needle = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(Value::Bool(s.contains(&needle)))
+                let needle = expect_str_arg(&args, 0, "str.contains")?;
+                Ok(Value::Bool(s.contains(needle)))
             }
             (Value::String(s), "starts_with") => {
-                let prefix = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(Value::Bool(s.starts_with(prefix.as_str())))
+                let prefix = expect_str_arg(&args, 0, "str.starts_with")?;
+                Ok(Value::Bool(s.starts_with(prefix)))
             }
             (Value::String(s), "ends_with") => {
-                let suffix = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(Value::Bool(s.ends_with(suffix.as_str())))
+                let suffix = expect_str_arg(&args, 0, "str.ends_with")?;
+                Ok(Value::Bool(s.ends_with(suffix)))
             }
             (Value::String(s), "replace") => {
-                let from = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                let to = args
-                    .get(1)
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(Value::String(s.replace(from.as_str(), &to)))
+                let from = expect_str_arg(&args, 0, "str.replace")?;
+                let to = expect_str_arg(&args, 1, "str.replace")?;
+                Ok(Value::String(s.replace(from, to)))
             }
             (Value::String(s), "split") => {
-                let sep = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_else(|| " ".to_string());
-                let parts: Vec<Value> = s
-                    .split(sep.as_str())
-                    .map(|p| Value::String(p.to_string()))
-                    .collect();
+                let sep = expect_str_arg(&args, 0, "str.split")?;
+                let parts: Vec<Value> =
+                    s.split(sep).map(|p| Value::String(p.to_string())).collect();
                 Ok(Value::List(parts))
             }
             (Value::String(s), "to_int") => Ok(s
@@ -173,31 +193,22 @@ impl Interpreter {
                 Ok(Value::String(chars[start..end].iter().collect()))
             }
             (Value::String(s), "index_of") => {
-                let needle = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(s.find(needle.as_str())
+                let needle = expect_str_arg(&args, 0, "str.index_of")?;
+                Ok(s.find(needle)
                     .map(|byte_pos| Value::Integer(s[..byte_pos].chars().count() as i64))
                     .unwrap_or(Value::None))
             }
             (Value::String(s), "trim_start") => Ok(Value::String(s.trim_start().to_string())),
             (Value::String(s), "trim_end") => Ok(Value::String(s.trim_end().to_string())),
             (Value::String(s), "matches") => {
-                let pattern = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .ok_or_else(|| runtime_error("matches: missing pattern argument"))?;
-                let re = regex::Regex::new(&pattern)
+                let pattern = expect_str_arg(&args, 0, "str.matches")?;
+                let re = regex::Regex::new(pattern)
                     .map_err(|e| runtime_error(format!("matches: invalid regex: {e}")))?;
                 Ok(Value::Bool(re.is_match(s)))
             }
             (Value::String(s), "extract") => {
-                let pattern = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .ok_or_else(|| runtime_error("extract: missing pattern argument"))?;
-                let re = regex::Regex::new(&pattern)
+                let pattern = expect_str_arg(&args, 0, "str.extract")?;
+                let re = regex::Regex::new(pattern)
                     .map_err(|e| runtime_error(format!("extract: invalid regex: {e}")))?;
                 match re.captures(s) {
                     Some(caps) => match caps.get(1) {
@@ -237,11 +248,9 @@ impl Interpreter {
                     )));
                 }
                 let width = width_i as usize;
-                let pad_char_str = args
-                    .iter()
-                    .find(|a| a.name.as_deref() == Some("char"))
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_else(|| " ".to_string());
+                let pad_char_str =
+                    optional_named_or_positional_str_arg(&args, "char", 1, "str.pad")?
+                        .unwrap_or(" ");
                 let pad_char = pad_char_str.chars().next().unwrap_or(' ');
                 let len = s.chars().count();
                 if len >= width {
@@ -252,11 +261,8 @@ impl Interpreter {
                 }
             }
             (Value::String(s), "find_all") => {
-                let pattern = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .ok_or_else(|| runtime_error("find_all: missing pattern argument"))?;
-                let re = regex::Regex::new(&pattern)
+                let pattern = expect_str_arg(&args, 0, "str.find_all")?;
+                let re = regex::Regex::new(pattern)
                     .map_err(|e| runtime_error(format!("find_all: invalid regex: {e}")))?;
                 let matches: Vec<Value> = re
                     .find_iter(s)
@@ -265,19 +271,11 @@ impl Interpreter {
                 Ok(Value::List(matches))
             }
             (Value::String(s), "sub") => {
-                let pattern = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .ok_or_else(|| runtime_error("sub: missing pattern argument"))?;
-                let replacement = args
-                    .get(1)
-                    .map(|a| a.value.to_display_string())
-                    .ok_or_else(|| runtime_error("sub: missing replacement argument"))?;
-                let re = regex::Regex::new(&pattern)
+                let pattern = expect_str_arg(&args, 0, "str.sub")?;
+                let replacement = expect_str_arg(&args, 1, "str.sub")?;
+                let re = regex::Regex::new(pattern)
                     .map_err(|e| runtime_error(format!("sub: invalid regex: {e}")))?;
-                Ok(Value::String(
-                    re.replace_all(s, replacement.as_str()).to_string(),
-                ))
+                Ok(Value::String(re.replace_all(s, replacement).to_string()))
             }
             (Value::Range(lo, hi), "count" | "len") => {
                 Ok(Value::Integer(if lo <= hi { hi - lo + 1 } else { 0 }))
@@ -751,11 +749,8 @@ impl Interpreter {
                 Ok(result)
             }
             (Value::Struct(_, m), "get") => {
-                let key = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(m.get(&key).cloned().unwrap_or(Value::None))
+                let key = expect_str_arg(&args, 0, "struct.get")?;
+                Ok(m.get(key).cloned().unwrap_or(Value::None))
             }
             (Value::Map(m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
             (Value::Struct(_, m), "count" | "len" | "size") => Ok(Value::Integer(m.len() as i64)),
@@ -770,11 +765,8 @@ impl Interpreter {
                 Ok(Value::Bool(found))
             }
             (Value::Struct(_, m), "contains" | "has") => {
-                let key = args
-                    .first()
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
-                Ok(Value::Bool(m.contains_key(&key)))
+                let key = expect_str_arg(&args, 0, "struct.contains")?;
+                Ok(Value::Bool(m.contains_key(key)))
             }
             (Value::Integer(n), "abs") => Ok(Value::Integer(n.abs())),
             (Value::Integer(n), "floor" | "ceil" | "round") => Ok(Value::Integer(*n)),
@@ -791,13 +783,9 @@ impl Interpreter {
                 .map(Value::Integer)
                 .ok_or_else(|| runtime_error(format!("Uuid.version: invalid UUID `{id}`"))),
             (Value::Uuid(id), "format") => {
-                let format = args
-                    .iter()
-                    .find(|a| a.name.as_deref() == Some("as"))
-                    .or_else(|| args.first())
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_else(|| "hyphenated".to_string());
-                match format.as_str() {
+                let format = optional_named_or_positional_str_arg(&args, "as", 0, "Uuid.format")?
+                    .unwrap_or("hyphenated");
+                match format {
                     "hyphenated" => Ok(Value::String(id.clone())),
                     "simple" => Ok(Value::String(id.replace('-', ""))),
                     "urn" => Ok(Value::String(format!("urn:uuid:{id}"))),
@@ -841,14 +829,11 @@ impl Interpreter {
                 }
             }
             (Value::String(s), "format") => {
-                let pattern = args
-                    .iter()
-                    .find(|a| a.name.as_deref() == Some("as"))
-                    .or_else(|| args.first())
-                    .map(|a| a.value.to_display_string())
-                    .unwrap_or_default();
+                let pattern =
+                    optional_named_or_positional_str_arg(&args, "as", 0, "datetime.format")?
+                        .unwrap_or_default();
                 match chrono::DateTime::parse_from_rfc3339(s) {
-                    Ok(dt) => Ok(Value::String(dt.format(&pattern).to_string())),
+                    Ok(dt) => Ok(Value::String(dt.format(pattern).to_string())),
                     Err(_) => Ok(Value::None),
                 }
             }

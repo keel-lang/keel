@@ -1,5 +1,6 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
+use crate::runtime::args::{expect_duration, expect_str};
 use crate::runtime::namespace::{ns, positional};
 use crate::runtime::namespaces::schedule::parse_datetime;
 
@@ -29,10 +30,12 @@ pub(crate) fn namespace() -> Namespace {
         // Control.with_timeout(duration, fn) — abort fn if it doesn't
         // complete within `duration`. Raises TimeoutError on expiry.
         "with_timeout" => |interp, args| Box::pin(async move {
-            let duration = args.iter().find_map(|a| match &a.value {
-                Value::Duration(s) => Some(*s),
-                _ => None,
-            }).ok_or_else(|| miette::miette!("Control.with_timeout: missing duration argument"))?;
+            if matches!(positional(&args, 0), None | Some(Value::Closure(_, _))) {
+                return Err(miette::miette!(
+                    "Control.with_timeout: missing duration argument"
+                ));
+            }
+            let duration = expect_duration(&args, 0, "Control.with_timeout")?;
             let (params, body) = args.iter().find_map(|a| match &a.value {
                 Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
                 _ => None,
@@ -49,10 +52,8 @@ pub(crate) fn namespace() -> Namespace {
         // Control.with_deadline(datetime_str, fn) — abort fn if the
         // absolute deadline (RFC 3339 / ISO 8601) passes before fn returns.
         "with_deadline" => |interp, args| Box::pin(async move {
-            let when_str = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Control.with_deadline: missing datetime argument"))?;
-            let target = parse_datetime(&when_str)
+            let when_str = expect_str(&args, 0, "Control.with_deadline")?;
+            let target = parse_datetime(when_str)
                 .ok_or_else(|| miette::miette!("Control.with_deadline: cannot parse `{when_str}` as an ISO 8601 datetime"))?;
             let now = interp.runtime.clock.now_utc();
             let remaining = (target - now).num_milliseconds().max(0) as u64;

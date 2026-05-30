@@ -1,6 +1,7 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
-use crate::runtime::namespace::{find_arg, ns, positional};
+use crate::runtime::args::{expect_str, expect_str_named, expect_str_value};
+use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Agent", {
@@ -32,7 +33,9 @@ pub(crate) fn namespace() -> Namespace {
                 .find(|a| a.name.is_none())
                 .map(|a| a.value.clone())
                 .unwrap_or(Value::None);
-            let event_name = find_arg(&args, "event").map(|v| v.to_display_string()).unwrap_or_else(|| "message".to_string());
+            let event_name = expect_str_named(&args, "event", "Agent.send")?
+                .unwrap_or("message")
+                .to_owned();
             interp.enqueue_event(crate::interpreter::Event::Dispatch {
                 agent_name: target,
                 event: event_name,
@@ -60,8 +63,10 @@ pub(crate) fn namespace() -> Namespace {
                 }
                 Some(Value::AgentRef(name)) => {
                     let handler = args.get(1)
-                        .map(|a| a.value.to_display_string())
-                        .unwrap_or_else(|| "message".to_string());
+                        .map(|a| expect_str_value(&a.value, "handler name", "Agent.delegate"))
+                        .transpose()?
+                        .unwrap_or("message")
+                        .to_owned();
                     let data = args.get(2)
                         .map(|a| a.value.clone())
                         .unwrap_or(Value::None);
@@ -84,15 +89,13 @@ pub(crate) fn namespace() -> Namespace {
         // running agent whose `@team [...]` declaration includes the given
         // team name. Useful for system-wide signals to a labeled group.
         "broadcast" => |interp, args| Box::pin(async move {
-            let team = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Agent.broadcast: missing team name"))?;
+            let team = expect_str(&args, 0, "Agent.broadcast")?;
             let data = positional(&args, 1).cloned().unwrap_or(Value::None);
-            let event_name = find_arg(&args, "event")
-                .map(|v| v.to_display_string())
-                .unwrap_or_else(|| "message".to_string());
+            let event_name = expect_str_named(&args, "event", "Agent.broadcast")?
+                .unwrap_or("message")
+                .to_owned();
 
-            let recipients = agents_in_team(interp, &team);
+            let recipients = agents_in_team(interp, team);
             for agent_name in recipients {
                 interp.enqueue_event(crate::interpreter::Event::Dispatch {
                     agent_name,

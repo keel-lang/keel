@@ -1,5 +1,6 @@
 use crate::interpreter::value::Value;
 use crate::interpreter::{Interpreter, Namespace};
+use crate::runtime::args::expect_str;
 use crate::runtime::context;
 use crate::runtime::namespace::{ns, positional};
 
@@ -33,10 +34,8 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::None)
         }),
         "set_level" => |interp, args| Box::pin(async move {
-            let level = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Log.set_level: missing level argument"))?;
-            if !interp.runtime.set_log_threshold(&level) {
+            let level = expect_str(&args, 0, "Log.set_level")?;
+            if !interp.runtime.set_log_threshold(level) {
                 return Err(miette::miette!(
                     "Log.set_level: `{level}` is not a valid level (expected debug|info|warn|error)"
                 ));

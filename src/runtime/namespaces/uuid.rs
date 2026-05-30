@@ -1,5 +1,6 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
+use crate::runtime::args::{expect_str, expect_str_value};
 use crate::runtime::namespace::{find_arg, ns, positional};
 
 const UUID_DNS: &str = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
@@ -30,10 +31,10 @@ pub(crate) fn namespace() -> Namespace {
             let ns = find_arg(&args, "ns")
                 .or_else(|| positional(&args, 0))
                 .ok_or_else(|| miette::miette!("Uuid.v5: missing `ns:` argument"))?;
-            let name = find_arg(&args, "name")
-                .or_else(|| positional(&args, 1))
-                .map(Value::to_display_string)
-                .ok_or_else(|| miette::miette!("Uuid.v5: missing `name:` argument"))?;
+            let name = match find_arg(&args, "name") {
+                Some(value) => expect_str_value(value, "`name:`", "Uuid.v5")?,
+                None => expect_str(&args, 1, "Uuid.v5")?,
+            };
             let ns_bytes = uuid_bytes_from_value(ns)
                 .ok_or_else(|| miette::miette!("Uuid.v5: `ns:` must be a Uuid value"))?;
             let digest = sha1_uuid(&ns_bytes, name.as_bytes());
@@ -43,10 +44,8 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::Uuid(format_uuid(bytes)))
         }),
         "parse" => |_interp, args| Box::pin(async move {
-            let s = positional(&args, 0)
-                .map(Value::to_display_string)
-                .ok_or_else(|| miette::miette!("Uuid.parse: missing argument"))?;
-            Ok(parse_uuid(&s)
+            let s = expect_str(&args, 0, "Uuid.parse")?;
+            Ok(parse_uuid(s)
                 .map(|bytes| Value::Uuid(format_uuid(bytes)))
                 .unwrap_or(Value::None))
         }),

@@ -298,6 +298,8 @@ info: MyStruct = raw as MyStruct      # narrow with runtime check
 
 `dynamic` defeats autocomplete and type checking. Narrow as early as possible. The compiler warns on `dynamic` use outside the explicit escape hatches.
 
+**Strict runtime arguments.** Runtime APIs enforce their declared arguments. A dynamic value passed to `File.read(path: str)`, `Cache.get(key: str)`, `Json.parse(s: str)`, or another typed API is rejected when its runtime type does not match. Required namespace and value-method arguments also raise an error when omitted. Display formatting is explicit: interpolation, `Io.*`, and `Log.*` may render arbitrary values, while data APIs do not silently stringify them.
+
 **`Json.parse` return-type semantics.** `Json.parse(s)` returns an untyped value — the type checker does not infer a precise return type. Narrow with `as T` before use, or annotate the binding as `dynamic` to opt out of static typing at that site. The JSON-to-Keel runtime mapping is:
 
 | JSON type | Keel runtime value |
@@ -1593,7 +1595,7 @@ text = Csv.stringify(out)
 |---|---|---|
 | `Csv.parse(text: str)` | `list[list[str]]` | Parse CSV; every cell is a `str`. Raises `CsvError` on malformed input. |
 | `Csv.parse_records(text: str)` | `list[map[str, str]]` | First row becomes header keys; remaining rows become maps. Returns `[]` when only a header row is present. |
-| `Csv.stringify(rows: list[list[str]])` | `str` | Convert rows to CSV text. Each inner list is one row; cell values are coerced to `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list. |
+| `Csv.stringify(rows: list[list[str]])` | `str` | Convert rows to CSV text. Each inner list is one row; every cell must be a `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list or a cell is not a `str`. |
 
 ### Notes
 

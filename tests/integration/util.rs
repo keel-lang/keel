@@ -291,8 +291,8 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing datetime");
     assert!(
-        stderr.contains("missing datetime"),
-        "expected 'missing datetime' error:\n{stderr}"
+        stderr.contains("Control.with_deadline: missing argument at position 0"),
+        "expected missing argument error:\n{stderr}"
     );
 }
 

@@ -1,13 +1,12 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::args::{expect_bool_named, expect_str};
+use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("File", {
         "read" => |interp, args| Box::pin(async move {
-            let path = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.read: missing path argument"))?;
+            let path = expect_str(&args, 0, "File.read")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
@@ -19,12 +18,8 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.read `{path}`: {e}"))
         }),
         "write" => |interp, args| Box::pin(async move {
-            let path = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.write: missing path argument"))?;
-            let content = positional(&args, 1)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.write: missing content argument"))?;
+            let path = expect_str(&args, 0, "File.write")?.to_owned();
+            let content = expect_str(&args, 1, "File.write")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
@@ -36,9 +31,7 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.write `{path}`: {e}"))
         }),
         "exists" => |interp, args| Box::pin(async move {
-            let path = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.exists: missing path argument"))?;
+            let path = expect_str(&args, 0, "File.exists")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let path_inner = path.clone();
             let exists = tokio::task::spawn_blocking(move || {
@@ -49,9 +42,7 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::Bool(exists))
         }),
         "list" => |interp, args| Box::pin(async move {
-            let dir_path = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.list: missing directory argument"))?;
+            let dir_path = expect_str(&args, 0, "File.list")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let dir_inner = dir_path.clone();
             tokio::task::spawn_blocking(move || {
@@ -63,9 +54,7 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.list `{dir_path}`: {e}"))
         }),
         "mkdir" => |interp, args| Box::pin(async move {
-            let path = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.mkdir: missing path argument"))?;
+            let path = expect_str(&args, 0, "File.mkdir")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
@@ -77,9 +66,7 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.mkdir `{path}`: {e}"))
         }),
         "remove" => |interp, args| Box::pin(async move {
-            let path = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.remove: missing path argument"))?;
+            let path = expect_str(&args, 0, "File.remove")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
@@ -91,12 +78,8 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.remove `{path}`: {e}"))
         }),
         "copy" => |interp, args| Box::pin(async move {
-            let src = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.copy: missing src argument"))?;
-            let dst = positional(&args, 1)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.copy: missing dst argument"))?;
+            let src = expect_str(&args, 0, "File.copy")?.to_owned();
+            let dst = expect_str(&args, 1, "File.copy")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let (src_inner, dst_inner) = (src.clone(), dst.clone());
             tokio::task::spawn_blocking(move || {
@@ -111,9 +94,7 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.copy `{src}` -> `{dst}`: {e}"))
         }),
         "glob" => |interp, args| Box::pin(async move {
-            let pattern = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.glob: missing pattern argument"))?;
+            let pattern = expect_str(&args, 0, "File.glob")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let pat_inner = pattern.clone();
             tokio::task::spawn_blocking(move || fs.glob(&pat_inner))
@@ -123,12 +104,8 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.glob `{pattern}`: {e}"))
         }),
         "move" => |interp, args| Box::pin(async move {
-            let src = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.move: missing src argument"))?;
-            let dst = positional(&args, 1)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("File.move: missing dst argument"))?;
+            let src = expect_str(&args, 0, "File.move")?.to_owned();
+            let dst = expect_str(&args, 1, "File.move")?.to_owned();
             let fs = interp.runtime.file_system.clone();
             let (src_inner, dst_inner) = (src.clone(), dst.clone());
             tokio::task::spawn_blocking(move || {
@@ -143,11 +120,7 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("FileError: File.move `{src}` -> `{dst}`: {e}"))
         }),
         "mktemp" => |interp, args| Box::pin(async move {
-            let is_dir = args
-                .iter()
-                .find(|a| a.name.as_deref() == Some("dir"))
-                .map(|a| matches!(a.value, Value::Bool(true)))
-                .unwrap_or(false);
+            let is_dir = expect_bool_named(&args, "dir", "File.mktemp")?.unwrap_or(false);
             let fs = interp.runtime.file_system.clone();
             tokio::task::spawn_blocking(move || fs.mktemp(is_dir))
             .await
@@ -217,6 +190,42 @@ mod tests {
 
         let result = read(&mut interp, vec![arg(Value::String("data.txt".into()))]).await;
         assert_eq!(result.unwrap(), Value::String("hello".into()));
+    }
+
+    #[tokio::test]
+    async fn read_rejects_non_string_path() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let read = ns.methods.get("read").unwrap();
+
+        let err = read(&mut interp, vec![arg(Value::Integer(42))])
+            .await
+            .expect_err("integer path must fail");
+        assert_eq!(
+            err.to_string(),
+            "File.read: argument at position 0 must be str, got int"
+        );
+    }
+
+    #[tokio::test]
+    async fn write_rejects_non_string_content() {
+        let ns = namespace();
+        let mut interp = interp_with_fs(InMemoryFileSystem::new());
+        let write = ns.methods.get("write").unwrap();
+
+        let err = write(
+            &mut interp,
+            vec![
+                arg(Value::String("data.txt".into())),
+                arg(Value::Integer(42)),
+            ],
+        )
+        .await
+        .expect_err("integer content must fail");
+        assert_eq!(
+            err.to_string(),
+            "File.write: argument at position 1 must be str, got int"
+        );
     }
 
     #[tokio::test]

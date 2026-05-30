@@ -1,6 +1,7 @@
 use crate::interpreter::value::Value;
 use crate::interpreter::{CallArgValue, Interpreter, Namespace};
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::args::{expect_duration, expect_str};
+use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Schedule", {
@@ -32,18 +33,15 @@ pub(crate) fn namespace() -> Namespace {
             schedule_cron(interp, args).await
         }),
         "sleep" => |_i, args| Box::pin(async move {
-            if let Some(Value::Duration(secs)) = positional(&args, 0) {
-                tokio::time::sleep(std::time::Duration::from_secs_f64(*secs)).await;
-            }
+            let secs = expect_duration(&args, 0, "Schedule.sleep")?;
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
             Ok(Value::None)
         }),
     })
 }
 
 async fn schedule_at(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miette::Result<Value> {
-    let when_str = positional(&args, 0)
-        .map(|v| v.to_display_string())
-        .ok_or_else(|| miette::miette!("Schedule.at: missing datetime argument"))?;
+    let when_str = expect_str(&args, 0, "Schedule.at")?.to_owned();
 
     let target = parse_datetime(&when_str).ok_or_else(|| {
         miette::miette!("Schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime")
@@ -110,9 +108,7 @@ pub(crate) fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 }
 
 async fn schedule_cron(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miette::Result<Value> {
-    let expr_str = positional(&args, 0)
-        .map(|v| v.to_display_string())
-        .ok_or_else(|| miette::miette!("Schedule.cron: missing cron expression argument"))?;
+    let expr_str = expect_str(&args, 0, "Schedule.cron")?.to_owned();
 
     let (params, body) = args
         .iter()
@@ -289,13 +285,7 @@ async fn schedule_fire(
     args: Vec<CallArgValue>,
     recurring: bool,
 ) -> miette::Result<Value> {
-    let duration = args
-        .iter()
-        .find_map(|a| match &a.value {
-            Value::Duration(s) => Some(*s),
-            _ => None,
-        })
-        .ok_or_else(|| miette::miette!("Schedule: missing duration argument"))?;
+    let duration = expect_duration(&args, 0, "Schedule")?;
 
     let (params, body) = args
         .iter()
@@ -358,6 +348,40 @@ async fn schedule_fire(
 mod tests {
     use super::*;
     use chrono::{Datelike, TimeZone, Timelike};
+
+    #[tokio::test]
+    async fn sleep_without_duration_errors() {
+        let ns = namespace();
+        let mut interp = Interpreter::default();
+        let method = ns.methods.get("sleep").unwrap();
+        let err = method(&mut interp, vec![])
+            .await
+            .expect_err("missing delay must fail");
+        assert_eq!(
+            err.to_string(),
+            "Schedule.sleep: missing argument at position 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn sleep_rejects_non_duration_values() {
+        let ns = namespace();
+        let mut interp = Interpreter::default();
+        let method = ns.methods.get("sleep").unwrap();
+        let err = method(
+            &mut interp,
+            vec![CallArgValue {
+                name: None,
+                value: Value::Integer(1),
+            }],
+        )
+        .await
+        .expect_err("integer delay must fail");
+        assert_eq!(
+            err.to_string(),
+            "Schedule.sleep: argument at position 0 must be duration, got int"
+        );
+    }
 
     #[test]
     fn parse_cron_field_accepts_ranges_steps_and_lists() {

@@ -8,6 +8,16 @@
 
 Type-checker diagnostics are now structured internally. `keel check` and the LSP still show the same user-facing messages, but undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks now carry typed data and precise source spans for editor tooling.
 
+### Strict runtime arguments for data APIs
+
+Runtime APIs now enforce their declared inputs. Data APIs such as
+`File.read(path: str)`, `Cache.get(key: str)`, `Json.parse(text: str)`, and
+`Shell.run(cmd: str)` reject non-string values with a clear error instead of silently
+formatting them as strings. Required sleep and value-method arguments now also raise
+an error when omitted instead of silently acting as no-ops or empty strings.
+Display-oriented APIs such as interpolation, `Io.*`, and `Log.*` continue to format
+arbitrary values.
+
 ---
 
 ## v0.1.30 — 2026-05-29

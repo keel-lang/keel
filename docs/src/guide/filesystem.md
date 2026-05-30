@@ -15,6 +15,9 @@ File.write("output/result.txt", content)
 
 `File.write` creates parent directories automatically.
 
+All `File.*` paths and `File.write` content must be `str` values. Dynamic values with
+another runtime type raise a clear type error; they are not silently formatted as strings.
+
 ## Existence and listing
 
 ```keel

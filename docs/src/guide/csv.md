@@ -67,7 +67,7 @@ If the input has only a header row (no data rows), returns `[]`.
 
 ### `Csv.stringify(rows: list[list[str]]) -> str`
 
-Convert a list of rows to a CSV string. Each inner list is one row; values are coerced to `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list.
+Convert a list of rows to a CSV string. Each inner list is one row; every cell must be a `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list or a cell is not a `str`.
 
 Include a header row as the first inner list:
 

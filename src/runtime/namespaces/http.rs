@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::runtime::args::{expect_int, expect_str, expect_str_value};
 use crate::runtime::convert::value_to_json;
 use crate::runtime::namespace::{find_arg, ns, positional};
 
@@ -11,22 +12,20 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::n
 pub(crate) fn namespace() -> Namespace {
     ns!("Http", {
         "get" => |_i, args| Box::pin(async move {
-            let url = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Http.get: missing URL"))?;
-            let headers = map_from_arg(find_arg(&args, "headers"));
-            let response = http_send("GET", &url, headers, None).await?;
+            let url = expect_str(&args, 0, "Http.get")?;
+            let headers = map_from_arg(find_arg(&args, "headers"), "Http.get")?;
+            let response = http_send("GET", url, headers, None).await?;
             Ok(response)
         }),
         "post" => |_i, args| Box::pin(async move {
-            let url = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Http.post: missing URL"))?;
-            let headers = map_from_arg(find_arg(&args, "headers"));
-            let body = find_arg(&args, "json")
-                .or_else(|| find_arg(&args, "body"))
-                .cloned();
-            let response = http_send("POST", &url, headers, body).await?;
+            let url = expect_str(&args, 0, "Http.post")?;
+            let headers = map_from_arg(find_arg(&args, "headers"), "Http.post")?;
+            let body = request_body(
+                find_arg(&args, "json"),
+                find_arg(&args, "body"),
+                "Http.post",
+            )?;
+            let response = http_send("POST", url, headers, body).await?;
             Ok(response)
         }),
         "request" => |_i, args| Box::pin(async move {
@@ -47,25 +46,25 @@ pub(crate) fn namespace() -> Namespace {
             };
             let method = cfg
                 .get(&MapKey::Str("method".into()))
-                .map(|v| v.to_display_string())
-                .unwrap_or_else(|| "GET".into());
+                .map(|v| expect_str_value(v, "`method`", "Http.request"))
+                .transpose()?
+                .unwrap_or("GET");
             let url = cfg
                 .get(&MapKey::Str("url".into()))
-                .map(|v| v.to_display_string())
+                .map(|v| expect_str_value(v, "`url`", "Http.request"))
+                .transpose()?
                 .ok_or_else(|| miette::miette!("Http.request: missing `url`"))?;
             let headers = cfg
                 .get(&MapKey::Str("headers".into()))
-                .cloned()
-                .and_then(|v| match v {
-                    Value::Map(m) => Some(m),
-                    _ => None,
-                })
+                .map(|v| map_from_arg(Some(v), "Http.request"))
+                .transpose()?
                 .unwrap_or_default();
-            let body = cfg
-                .get(&MapKey::Str("json".into()))
-                .or_else(|| cfg.get(&MapKey::Str("body".into())))
-                .cloned();
-            http_send(&method, &url, headers, body).await
+            let body = request_body(
+                cfg.get(&MapKey::Str("json".into())),
+                cfg.get(&MapKey::Str("body".into())),
+                "Http.request",
+            )?;
+            http_send(method, url, headers, body).await
         }),
         // Http.serve(port, handler) — start an HTTP server on the given port.
         // The handler closure receives a request map with {method, path, body}
@@ -84,8 +83,16 @@ pub(crate) fn namespace() -> Namespace {
         // See `docs/src/guide/connections.md` for the user-facing callout.
         "serve" => |interp, args| Box::pin(async move {
             let port = match positional(&args, 0) {
-                Some(Value::Integer(p)) if *p > 0 && *p < 65536 => *p as u16,
-                _ => 8080u16,
+                None => 8080u16,
+                Some(_) => {
+                    let port = expect_int(&args, 0, "Http.serve")?;
+                    u16::try_from(port)
+                        .ok()
+                        .filter(|port| *port > 0)
+                        .ok_or_else(|| miette::miette!(
+                            "Http.serve: port must be an integer in the range 1..=65535"
+                        ))?
+                }
             };
 
             // Extract closure from args
@@ -160,10 +167,36 @@ pub(crate) fn namespace() -> Namespace {
     })
 }
 
-fn map_from_arg(arg: Option<&Value>) -> HashMap<MapKey, Value> {
+#[derive(Debug)]
+enum RequestBody {
+    Text(String),
+    Json(Value),
+}
+
+fn request_body(
+    json: Option<&Value>,
+    body: Option<&Value>,
+    caller: &str,
+) -> miette::Result<Option<RequestBody>> {
+    if let Some(value) = json {
+        return Ok(Some(RequestBody::Json(value.clone())));
+    }
+    body.map(|value| {
+        expect_str_value(value, "`body:`", caller)
+            .map(str::to_owned)
+            .map(RequestBody::Text)
+    })
+    .transpose()
+}
+
+fn map_from_arg(arg: Option<&Value>, caller: &str) -> miette::Result<HashMap<MapKey, Value>> {
     match arg {
-        Some(Value::Map(m)) => m.clone(),
-        _ => HashMap::new(),
+        Some(Value::Map(m)) => Ok(m.clone()),
+        Some(other) => Err(miette::miette!(
+            "{caller}: `headers:` must be map[str, str], got {}",
+            other.type_name()
+        )),
+        None => Ok(HashMap::new()),
     }
 }
 
@@ -171,7 +204,7 @@ async fn http_send(
     method: &str,
     url: &str,
     headers: HashMap<MapKey, Value>,
-    body: Option<Value>,
+    body: Option<RequestBody>,
 ) -> miette::Result<Value> {
     let client = &*HTTP_CLIENT;
     let method_upper = method.to_uppercase();
@@ -186,21 +219,22 @@ async fn http_send(
 
     let mut req = client.request(reqwest_method, url);
     for (k, v) in &headers {
-        req = req.header(k.to_string(), v.to_display_string());
+        let MapKey::Str(name) = k else {
+            return Err(miette::miette!(
+                "Http: header names must be str, got {}",
+                k.to_value().type_name()
+            ));
+        };
+        let value = expect_str_value(v, "header value", "Http")?;
+        req = req.header(name, value);
     }
     if let Some(b) = body {
         match b {
-            Value::Map(_) | Value::List(_) => {
-                // Serialise via serde_json round-trip.
-                if let Ok(json) = serde_json::to_value(value_to_json(&b)) {
-                    req = req.json(&json);
-                }
-            }
-            Value::String(s) => {
+            RequestBody::Text(s) => {
                 req = req.body(s);
             }
-            _ => {
-                req = req.body(b.to_display_string());
+            RequestBody::Json(value) => {
+                req = req.json(&value_to_json(&value));
             }
         }
     }
@@ -238,24 +272,55 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    use crate::interpreter::{CallArgValue, Interpreter};
+
     // ── map_from_arg ────────────────────────────────────────────────────
 
     #[test]
     fn map_from_arg_returns_map_when_given_map() {
         let mut m = HashMap::new();
         m.insert(MapKey::Str("k".into()), Value::Integer(1));
-        let result = map_from_arg(Some(&Value::Map(m.clone())));
+        let result = map_from_arg(Some(&Value::Map(m.clone())), "Http.get").unwrap();
         assert_eq!(result, m);
     }
 
     #[test]
-    fn map_from_arg_returns_empty_when_given_non_map() {
-        assert!(map_from_arg(Some(&Value::String("x".into()))).is_empty());
+    fn map_from_arg_rejects_non_map() {
+        let err = map_from_arg(Some(&Value::String("x".into())), "Http.get")
+            .expect_err("string headers must fail");
+        assert!(err.to_string().contains("must be map[str, str]"));
     }
 
     #[test]
     fn map_from_arg_returns_empty_when_none() {
-        assert!(map_from_arg(None).is_empty());
+        assert!(map_from_arg(None, "Http.get").unwrap().is_empty());
+    }
+
+    #[test]
+    fn request_body_rejects_non_string_text_body() {
+        let err = request_body(None, Some(&Value::Integer(42)), "Http.post")
+            .expect_err("integer text body must fail");
+        assert_eq!(err.to_string(), "Http.post: `body:` must be str, got int");
+    }
+
+    #[tokio::test]
+    async fn serve_rejects_non_integer_port() {
+        let ns = namespace();
+        let mut interp = Interpreter::default();
+        let serve = ns.methods.get("serve").unwrap();
+        let err = serve(
+            &mut interp,
+            vec![CallArgValue {
+                name: None,
+                value: Value::String("8080".into()),
+            }],
+        )
+        .await
+        .expect_err("string port must fail");
+        assert_eq!(
+            err.to_string(),
+            "Http.serve: argument at position 0 must be int, got str"
+        );
     }
 
     // ── http_send helpers ───────────────────────────────────────────────
@@ -314,7 +379,7 @@ mod tests {
             "PUT",
             &format!("{url}/echo"),
             HashMap::new(),
-            Some(Value::String("hello".into())),
+            Some(RequestBody::Text("hello".into())),
         )
         .await
         .unwrap();
@@ -355,7 +420,7 @@ mod tests {
             "POST",
             &format!("{url}/echo"),
             HashMap::new(),
-            Some(Value::Integer(42)),
+            Some(RequestBody::Json(Value::Integer(42))),
         )
         .await
         .unwrap();

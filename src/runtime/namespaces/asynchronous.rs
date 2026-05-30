@@ -5,6 +5,7 @@ use std::task::Poll;
 
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::runtime::args::expect_duration;
 use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
@@ -130,9 +131,8 @@ pub(crate) fn namespace() -> Namespace {
             }
         }),
         "sleep" => |_i, args| Box::pin(async move {
-            if let Some(Value::Duration(secs)) = positional(&args, 0) {
-                tokio::time::sleep(std::time::Duration::from_secs_f64(*secs)).await;
-            }
+            let secs = expect_duration(&args, 0, "Async.sleep")?;
+            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
             Ok(Value::None)
         }),
     })
@@ -372,13 +372,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sleep_without_duration_returns_none() {
+    async fn sleep_without_duration_errors() {
         let ns = namespace();
         let mut interp = test_interp();
         let method = ns.methods.get("sleep").unwrap();
-        let result = method(&mut interp, vec![]).await;
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), Value::None);
+        let err = method(&mut interp, vec![])
+            .await
+            .expect_err("missing delay must fail");
+        assert_eq!(
+            err.to_string(),
+            "Async.sleep: missing argument at position 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn sleep_rejects_non_duration_values() {
+        let ns = namespace();
+        let mut interp = test_interp();
+        let method = ns.methods.get("sleep").unwrap();
+        let err = method(&mut interp, vec![arg_val(Value::Integer(1))])
+            .await
+            .expect_err("integer delay must fail");
+        assert_eq!(
+            err.to_string(),
+            "Async.sleep: argument at position 0 must be duration, got int"
+        );
     }
 
     // ── Async.select happy path ────────────────────────────────────

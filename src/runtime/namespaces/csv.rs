@@ -1,6 +1,7 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::args::{expect_list, expect_str};
+use crate::runtime::namespace::ns;
 
 fn parse_csv(text: &str) -> miette::Result<Vec<Vec<String>>> {
     let mut rdr = csv::ReaderBuilder::new()
@@ -21,11 +22,9 @@ pub(crate) fn namespace() -> Namespace {
         // Csv.parse(text) — parse a CSV string into list[list[str]].
         // Each inner list is one row; all values are strings.
         "parse" => |_i, args| Box::pin(async move {
-            let text = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Csv.parse: missing argument"))?;
+            let text = expect_str(&args, 0, "Csv.parse")?;
 
-            let rows = parse_csv(&text)?;
+            let rows = parse_csv(text)?;
             Ok(Value::List(
                 rows.into_iter()
                     .map(|row| {
@@ -38,11 +37,9 @@ pub(crate) fn namespace() -> Namespace {
         // Csv.parse_records(text) — parse CSV using the first row as header names.
         // Returns list[map[str, str]]; absent fields default to "".
         "parse_records" => |_i, args| Box::pin(async move {
-            let text = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Csv.parse_records: missing argument"))?;
+            let text = expect_str(&args, 0, "Csv.parse_records")?;
 
-            let rows = parse_csv(&text)?;
+            let rows = parse_csv(text)?;
             if rows.is_empty() {
                 return Ok(Value::List(vec![]));
             }
@@ -82,22 +79,10 @@ pub(crate) fn namespace() -> Namespace {
         }),
 
         // Csv.stringify(rows) — convert list[list[str]] to a CSV string.
-        // Each inner list is a row; values are coerced to strings.
+        // Each inner list is a row; every cell must be a string.
         // Include a header row as the first element if desired.
         "stringify" => |_i, args| Box::pin(async move {
-            let rows_val = positional(&args, 0)
-                .cloned()
-                .ok_or_else(|| miette::miette!("Csv.stringify: missing argument"))?;
-
-            let rows = match rows_val {
-                Value::List(r) => r,
-                other => {
-                    return Err(miette::miette!(
-                        "CsvError: Csv.stringify expects list[list[str]], got {}",
-                        other.type_name()
-                    ));
-                }
-            };
+            let rows = expect_list(&args, 0, "Csv.stringify")?;
 
             let mut wtr = csv::WriterBuilder::new()
                 .terminator(csv::Terminator::CRLF)

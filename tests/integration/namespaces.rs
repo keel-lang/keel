@@ -1361,3 +1361,67 @@ run(A)
         "expected non-string cell error: {stdout}"
     );
 }
+
+#[test]
+fn string_regex_methods_reject_non_string_patterns() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            "hello".matches(42)
+        } catch e: Error {
+            Io.show("matches={e.message}")
+        }
+        try {
+            "hello".find_all(42)
+        } catch e: Error {
+            Io.show("find_all={e.message}")
+        }
+        try {
+            "hello".sub(42, "x")
+        } catch e: Error {
+            Io.show("sub={e.message}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("matches=str.matches: argument at position 0 must be str, got int"),
+        "expected strict matches error: {stdout}"
+    );
+    assert!(
+        stdout.contains("find_all=str.find_all: argument at position 0 must be str, got int"),
+        "expected strict find_all error: {stdout}"
+    );
+    assert!(
+        stdout.contains("sub=str.sub: argument at position 0 must be str, got int"),
+        "expected strict sub error: {stdout}"
+    );
+}
+
+#[test]
+fn string_contains_rejects_missing_argument() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            "hello".contains()
+        } catch e: Error {
+            Io.show("caught={e.message}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("caught=str.contains: missing argument at position 0"),
+        "expected missing-argument error: {stdout}"
+    );
+}

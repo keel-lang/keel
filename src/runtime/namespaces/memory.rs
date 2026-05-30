@@ -2,6 +2,7 @@ use sha2::{Digest, Sha256};
 
 use crate::interpreter::value::Value;
 use crate::interpreter::{Interpreter, Namespace};
+use crate::runtime::args::expect_str;
 use crate::runtime::context;
 use crate::runtime::namespace::{ns, positional};
 
@@ -135,9 +136,7 @@ pub(crate) fn namespace() -> Namespace {
             let (program_name, agent_name) = interp.require_agent_context("Memory.remember")?;
             let mode = memory_mode(interp)?;
 
-            let key = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Memory.remember: missing key argument"))?;
+            let key = expect_str(&args, 0, "Memory.remember")?.to_owned();
             let value = positional(&args, 1)
                 .cloned()
                 .ok_or_else(|| miette::miette!("Memory.remember: missing value argument"))?;
@@ -168,9 +167,7 @@ pub(crate) fn namespace() -> Namespace {
             let (program_name, agent_name) = interp.require_agent_context("Memory.recall")?;
             let mode = memory_mode(interp)?;
 
-            let key = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Memory.recall: missing key argument"))?;
+            let key = expect_str(&args, 0, "Memory.recall")?.to_owned();
 
             match mode {
                 "none" => Err(miette::miette!(
@@ -195,9 +192,7 @@ pub(crate) fn namespace() -> Namespace {
             let (program_name, agent_name) = interp.require_agent_context("Memory.forget")?;
             let mode = memory_mode(interp)?;
 
-            let key = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Memory.forget: missing key argument"))?;
+            let key = expect_str(&args, 0, "Memory.forget")?.to_owned();
 
             match mode {
                 "none" => Err(miette::miette!(

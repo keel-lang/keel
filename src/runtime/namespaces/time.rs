@@ -1,13 +1,13 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
-use crate::runtime::namespace::{find_arg, ns, positional};
+use crate::runtime::args::{expect_str, expect_str_named};
+use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Time", {
         "now" => |interp, args| Box::pin(async move {
             use chrono::SecondsFormat;
-            if let Some(tz_val) = find_arg(&args, "tz") {
-                let tz_str = tz_val.to_display_string();
+            if let Some(tz_str) = expect_str_named(&args, "tz", "Time.now")? {
                 let tz: chrono_tz::Tz = tz_str.parse().map_err(|_| {
                     miette::miette!("Time.now: unknown timezone {tz_str:?}. Use an IANA name like \"America/New_York\".")
                 })?;
@@ -23,27 +23,24 @@ pub(crate) fn namespace() -> Namespace {
         }),
         "parse" => |_i, args| Box::pin(async move {
             use chrono::SecondsFormat;
-            let s = positional(&args, 0)
-                .ok_or_else(|| miette::miette!("Time.parse: missing argument"))?
-                .to_display_string();
+            let s = expect_str(&args, 0, "Time.parse")?;
 
-            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&s) {
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
                 return Ok(Value::String(dt.to_rfc3339_opts(SecondsFormat::Millis, false)));
             }
 
-            if let Some(tz_val) = find_arg(&args, "tz") {
-                let tz_str = tz_val.to_display_string();
+            if let Some(tz_str) = expect_str_named(&args, "tz", "Time.parse")? {
                 let Ok(tz) = tz_str.parse::<chrono_tz::Tz>() else {
                     return Ok(Value::None);
                 };
                 for fmt in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S",
                             "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d"] {
-                    if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&s, fmt)
+                    if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(s, fmt)
                         && let chrono::LocalResult::Single(dt) = ndt.and_local_timezone(tz)
                     {
                         return Ok(Value::String(dt.to_rfc3339_opts(SecondsFormat::Millis, false)));
                     }
-                    if let Ok(nd) = chrono::NaiveDate::parse_from_str(&s, fmt)
+                    if let Ok(nd) = chrono::NaiveDate::parse_from_str(s, fmt)
                         && let Some(ndt) = nd.and_hms_opt(0, 0, 0)
                         && let chrono::LocalResult::Single(dt) = ndt.and_local_timezone(tz)
                     {

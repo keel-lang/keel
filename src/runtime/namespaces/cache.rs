@@ -1,22 +1,17 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
-use crate::runtime::namespace::{find_arg, ns, positional};
+use crate::runtime::args::{expect_duration_named, expect_str};
+use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Cache", {
         "set" => |interp, args| Box::pin(async move {
-            let key = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Cache.set: missing key argument"))?;
+            let key = expect_str(&args, 0, "Cache.set")?.to_owned();
             let value = positional(&args, 1)
                 .cloned()
                 .ok_or_else(|| miette::miette!("Cache.set: missing value argument"))?;
 
-            let expires_at = find_arg(&args, "ttl")
-                .and_then(|v| match v {
-                    Value::Duration(secs) => Some(*secs),
-                    _ => None,
-                })
+            let expires_at = expect_duration_named(&args, "ttl", "Cache.set")?
                 .map(|secs| interp.runtime.clock.now_instant() + std::time::Duration::from_secs_f64(secs));
 
             let cache = &interp.runtime.cache;
@@ -24,29 +19,25 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::None)
         }),
         "get" => |interp, args| Box::pin(async move {
-            let key = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Cache.get: missing key argument"))?;
+            let key = expect_str(&args, 0, "Cache.get")?;
 
             let cache = &interp.runtime.cache;
             let mut cache_lock = cache.lock();
 
-            match cache_lock.get(&key) {
+            match cache_lock.get(key) {
                 None => Ok(Value::None),
                 Some((_, Some(expiry))) if interp.runtime.clock.now_instant() > *expiry => {
-                    cache_lock.remove(&key);
+                    cache_lock.remove(key);
                     Ok(Value::None)
                 }
                 Some((v, _)) => Ok(v.clone()),
             }
         }),
         "delete" => |interp, args| Box::pin(async move {
-            let key = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Cache.delete: missing key argument"))?;
+            let key = expect_str(&args, 0, "Cache.delete")?;
 
             let cache = &interp.runtime.cache;
-            cache.lock().remove(&key);
+            cache.lock().remove(key);
             Ok(Value::None)
         }),
         "clear" => |interp, _args| Box::pin(async move {
@@ -116,6 +107,23 @@ mod tests {
         let get = ns.methods.get("get").unwrap();
         let result = get(&mut interp, vec![arg(Value::String("missing".into()))]).await;
         assert_eq!(result.unwrap(), Value::None);
+    }
+
+    #[tokio::test]
+    async fn set_rejects_non_string_key() {
+        let ns = namespace();
+        let mut interp = interp_with_cache();
+        let set = ns.methods.get("set").unwrap();
+        let err = set(
+            &mut interp,
+            vec![arg(Value::Integer(1)), arg(Value::String("value".into()))],
+        )
+        .await
+        .expect_err("integer key must fail");
+        assert_eq!(
+            err.to_string(),
+            "Cache.set: argument at position 0 must be str, got int"
+        );
     }
 
     #[tokio::test]

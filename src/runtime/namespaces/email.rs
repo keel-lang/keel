@@ -1,17 +1,18 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::runtime::args::{expect_bool_named, expect_str_value};
 use crate::runtime::namespace::{find_arg, ns, positional};
 use crate::runtime::{context, email};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Email", {
         "fetch" => |interp, args| Box::pin(async move {
+            // `unread: true` is the v0.1 default (and only) filter.
+            let _unread_only = expect_bool_named(&args, "unread", "Email.fetch")?.unwrap_or(true);
             let Some(conn) = email_conn_from_env(interp.runtime.env.as_ref()) else {
                 eprintln!("  ⚠ Email.fetch: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — returning empty list");
                 return Ok(Value::List(vec![]));
             };
-            // `unread: true` is the v0.1 default (and only) filter.
-            let _unread_only = !matches!(find_arg(&args, "unread"), Some(Value::Bool(false)));
             match tokio::task::spawn_blocking(move || email::fetch_emails(&conn)).await {
                 Ok(Ok(emails)) => Ok(Value::List(emails)),
                 Ok(Err(msg)) => Err(miette::miette!("{msg}")),
@@ -26,25 +27,27 @@ pub(crate) fn namespace() -> Namespace {
             // Positional 0 is the message body (str or Map with .body).
             let (body, inferred_subject) = match positional(&args, 0) {
                 Some(Value::Map(m)) => (
-                    m.get(&MapKey::Str("body".into()))
-                        .map(|v| v.to_display_string())
-                        .unwrap_or_default(),
-                    m.get(&MapKey::Str("subject".into()))
-                        .map(|v| v.to_display_string()),
+                    email_text_field(m, "body", "Email.send")?
+                        .unwrap_or_default()
+                        .to_owned(),
+                    email_text_field(m, "subject", "Email.send")?.map(str::to_owned),
                 ),
-                Some(v) => (v.to_display_string(), None),
+                Some(v) => (
+                    expect_str_value(v, "message body", "Email.send")?.to_owned(),
+                    None,
+                ),
                 None => return Err(miette::miette!("Email.send: missing message body")),
             };
             let to = match find_arg(&args, "to") {
-                Some(Value::Map(m)) => m
-                    .get(&MapKey::Str("from".into()))
-                    .map(|v| v.to_display_string())
-                    .unwrap_or_default(),
-                Some(v) => v.to_display_string(),
+                Some(Value::Map(m)) => email_text_field(m, "from", "Email.send")?
+                    .unwrap_or_default()
+                    .to_owned(),
+                Some(v) => expect_str_value(v, "`to:`", "Email.send")?.to_owned(),
                 None => return Err(miette::miette!("Email.send: missing `to:` argument")),
             };
             let subject = find_arg(&args, "subject")
-                .map(|v| v.to_display_string())
+                .map(|v| expect_str_value(v, "`subject:`", "Email.send").map(str::to_owned))
+                .transpose()?
                 .or(inferred_subject)
                 .unwrap_or_else(|| "(no subject)".to_string());
             match tokio::task::spawn_blocking(move || email::send_email(&conn, &to, &subject, &body)).await {
@@ -80,6 +83,17 @@ pub(crate) fn namespace() -> Namespace {
             }
         }),
     })
+}
+
+fn email_text_field<'a>(
+    fields: &'a std::collections::HashMap<MapKey, Value>,
+    field: &str,
+    caller: &str,
+) -> miette::Result<Option<&'a str>> {
+    fields
+        .get(&MapKey::Str(field.to_string()))
+        .map(|value| expect_str_value(value, &format!("message.{field}"), caller))
+        .transpose()
 }
 
 /// Build an `EmailConnection` from environment variables. Returns

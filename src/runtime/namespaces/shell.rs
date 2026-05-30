@@ -5,17 +5,16 @@ use tokio::process::Command;
 
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
-use crate::runtime::namespace::{find_arg, ns, positional};
+use crate::runtime::args::{expect_str, expect_str_named};
+use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Shell", {
         "run" => |_i, args| Box::pin(async move {
-            let cmd = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!("Shell.run: missing cmd argument"))?;
+            let cmd = expect_str(&args, 0, "Shell.run")?.to_owned();
 
-            let stdin_input = find_arg(&args, "stdin").map(|v| v.to_display_string());
-            let cwd = find_arg(&args, "cwd").map(|v| v.to_display_string());
+            let stdin_input = expect_str_named(&args, "stdin", "Shell.run")?.map(str::to_owned);
+            let cwd = expect_str_named(&args, "cwd", "Shell.run")?.map(str::to_owned);
 
             // Start with a clean environment to avoid leaking secrets from the
             // keel process (e.g. DATABASE_URL, API keys). Only restore a minimal
@@ -144,7 +143,7 @@ mod tests {
         let method = ns.methods.get("run").expect("run method");
         let err = method(&mut interp, vec![]).await.unwrap_err();
         assert!(
-            err.to_string().contains("missing cmd"),
+            err.to_string().contains("missing argument at position 0"),
             "unexpected error: {err}"
         );
     }

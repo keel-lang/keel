@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::runtime::args::expect_str;
 use crate::runtime::db_provider::{DbConnectionHandle, DbFuture};
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::namespace::ns;
 
 // ── SQLite backend ────────────────────────────────────────────────────────────
 
@@ -114,11 +115,7 @@ impl DbConnectionHandle for SqliteConnection {
 pub(crate) fn namespace() -> Namespace {
     ns!("Db", {
         "connect" => |_i, args| Box::pin(async move {
-            let url = positional(&args, 0)
-                .map(|v| v.to_display_string())
-                .ok_or_else(|| miette::miette!(
-                    "Db.connect: missing connection URL — use Db.connect(\"sqlite://path\")"
-                ))?;
+            let url = expect_str(&args, 0, "Db.connect")?.to_owned();
 
             let path = parse_sqlite_url(&url)?;
             let path_for_open = path.clone();
@@ -275,7 +272,7 @@ mod tests {
         let mut interp = Interpreter::default();
         let connect = ns.methods.get("connect").unwrap();
         let err = connect(&mut interp, vec![]).await.unwrap_err();
-        assert!(err.to_string().contains("missing connection URL"));
+        assert!(err.to_string().contains("missing argument at position 0"));
     }
 
     #[tokio::test]

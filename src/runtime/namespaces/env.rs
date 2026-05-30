@@ -1,19 +1,20 @@
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::args::expect_str;
+use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Env", {
         "get" => |interp, args| Box::pin(async move {
-            let name = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
-            match interp.runtime.env.var(&name) {
+            let name = expect_str(&args, 0, "Env.get")?;
+            match interp.runtime.env.var(name) {
                 Some(v) => Ok(Value::String(v)),
                 None => Ok(Value::None),
             }
         }),
         "require" => |interp, args| Box::pin(async move {
-            let name = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
-            match interp.runtime.env.var(&name) {
+            let name = expect_str(&args, 0, "Env.require")?;
+            match interp.runtime.env.var(name) {
                 Some(v) => Ok(Value::String(v)),
                 None => Err(miette::miette!("Env.require: `{name}` is not set")),
             }

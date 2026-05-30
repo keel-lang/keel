@@ -155,6 +155,10 @@ impl Value {
         }
     }
 
+    /// Format this value for display-oriented APIs only.
+    ///
+    /// Data APIs must decode their declared input types explicitly instead of
+    /// silently coercing values through this helper.
     pub fn to_display_string(&self) -> String {
         match self {
             Value::String(s) => s.clone(),

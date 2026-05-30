@@ -167,7 +167,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "Http.get without URL should fail");
     assert!(
-        stderr.contains("Http.get: missing URL"),
+        stderr.contains("Http.get: missing argument at position 0"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -185,7 +185,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "Http.post without URL should fail");
     assert!(
-        stderr.contains("Http.post: missing URL"),
+        stderr.contains("Http.post: missing argument at position 0"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }

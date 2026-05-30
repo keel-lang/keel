@@ -22,10 +22,10 @@ impl EmailConnection {
 
         for (key, val) in config {
             match key.as_str() {
-                "host" => imap_host = val.to_display_string(),
-                "smtp_host" => smtp_host = val.to_display_string(),
-                "user" => user = val.to_display_string(),
-                "pass" | "password" => pass = val.to_display_string(),
+                "host" => imap_host = config_str(val, "host")?.to_owned(),
+                "smtp_host" => smtp_host = config_str(val, "smtp_host")?.to_owned(),
+                "user" => user = config_str(val, "user")?.to_owned(),
+                "pass" | "password" => pass = config_str(val, key)?.to_owned(),
                 _ => {}
             }
         }
@@ -45,6 +45,16 @@ impl EmailConnection {
             user,
             pass,
         })
+    }
+}
+
+fn config_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
+    match value {
+        Value::String(value) => Ok(value),
+        other => Err(format!(
+            "Email connection field `{field}` must be str, got {}",
+            other.type_name()
+        )),
     }
 }
 
@@ -278,6 +288,18 @@ mod tests {
         assert_eq!(conn.smtp_host, "smtp.example.test");
         assert_eq!(conn.user, "bot@example.test");
         assert_eq!(conn.pass, "secret");
+    }
+
+    #[test]
+    fn connection_from_config_rejects_non_string_fields() {
+        let config = vec![
+            ("host".to_string(), Value::Integer(42)),
+            ("user".to_string(), Value::String("bot@example.test".into())),
+            ("pass".to_string(), Value::String("secret".into())),
+        ];
+
+        let err = EmailConnection::from_config(&config).expect_err("integer host must fail");
+        assert_eq!(err, "Email connection field `host` must be str, got int");
     }
 
     #[test]

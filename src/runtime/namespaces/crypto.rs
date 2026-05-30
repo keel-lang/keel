@@ -2,6 +2,7 @@ use sha2::{Digest, Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 
 use crate::interpreter::value::Value;
 use crate::interpreter::{CallArgValue, Namespace};
+use crate::runtime::args::{expect_int, expect_str, expect_str_named};
 use crate::runtime::namespace::{find_arg, ns, positional};
 
 const DEFAULT_TOKEN_BYTES: usize = 32;
@@ -53,9 +54,7 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::String(hex(&bytes)))
         }),
         "random_bytes" => |_interp, args| Box::pin(async move {
-            let n = positional(&args, 0)
-                .and_then(Value::as_int)
-                .ok_or_else(|| miette::miette!("Crypto.random_bytes: missing integer byte count"))?;
+            let n = expect_int(&args, 0, "Crypto.random_bytes")?;
             let n = validate_byte_count(n, "Crypto.random_bytes")?;
             let bytes = secure_random_bytes(n, "Crypto.random_bytes")?;
             Ok(Value::List(
@@ -79,18 +78,13 @@ enum HashAlgo {
 }
 
 fn hash_call(args: Vec<CallArgValue>, algo: HashAlgo, context: &str) -> miette::Result<Value> {
-    let data = positional(&args, 0)
-        .map(Value::to_display_string)
-        .ok_or_else(|| miette::miette!("{context}: missing data argument"))?;
+    let data = expect_str(&args, 0, context)?;
     Ok(Value::String(hash_hex(data.as_bytes(), algo)))
 }
 
 fn hmac_call(args: Vec<CallArgValue>, algo: HashAlgo, context: &str) -> miette::Result<Value> {
-    let data = positional(&args, 0)
-        .map(Value::to_display_string)
-        .ok_or_else(|| miette::miette!("{context}: missing data argument"))?;
-    let key = find_arg(&args, "key")
-        .map(Value::to_display_string)
+    let data = expect_str(&args, 0, context)?;
+    let key = expect_str_named(&args, "key", context)?
         .ok_or_else(|| miette::miette!("{context}: missing `key:` argument"))?;
     Ok(Value::String(hmac_hex(
         key.as_bytes(),
@@ -335,6 +329,20 @@ mod tests {
             items
                 .into_iter()
                 .all(|item| { matches!(item, Value::Integer(n) if (0..=255).contains(&n)) })
+        );
+    }
+
+    #[tokio::test]
+    async fn random_bytes_rejects_non_integer_count() {
+        let ns = namespace();
+        let mut interp = Interpreter::new();
+        let method = ns.methods.get("random_bytes").expect("random_bytes method");
+        let err = method(&mut interp, vec![arg(Value::String("8".into()))])
+            .await
+            .expect_err("string byte count must fail");
+        assert_eq!(
+            err.to_string(),
+            "Crypto.random_bytes: argument at position 0 must be int, got str"
         );
     }
 
