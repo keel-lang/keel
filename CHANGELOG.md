@@ -18,7 +18,7 @@ All notable changes to Keel.
 
 ### Fixed
 
-- **Typed runtime errors now propagate as structured values.** `AiError` and `AiSchemaError` were stored in mutable interpreter state before `try/catch` reconstructed the caught value. Nested calls could overwrite that shared slot, and concurrent agent execution could observe the wrong error. Typed errors now travel with the runtime report itself, so each catch clause receives the exact error value produced by its failing call.
+- **Typed runtime errors now propagate as structured values.** `AiError` and `AiSchemaError` were stored in a mutable `Interpreter` side-channel that `try/catch` read to reconstruct the caught value. A nested `try/catch` whose inner clause did not match would clear that slot before the outer clause could read it, so the outer catch lost its typed error. Typed errors now travel inside the runtime report itself, so each catch clause receives the exact error value produced by its failing call regardless of nesting. A regression test confirms a typed error survives propagation past a non-matching inner catch, and unit tests assert the typed payload is carried in the report (`downcast_ref::<RuntimeError>`) rather than a separate field.
 
 - **Interpolation diagnostics now point at the correct source range.** Expressions inside string interpolation slots were re-lexed from byte offset `0`, so type-checker errors such as an undefined name underlined the wrong part of the file. Slot token spans are now rebased to their absolute `.keel` source positions, including nested and triple-quoted strings.
 

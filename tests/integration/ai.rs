@@ -242,6 +242,10 @@ run(A)
 
 #[test]
 fn nested_try_catch_preserves_typed_ai_errors() {
+    // Functional test: after an inner catch completes, the outer catch variable
+    // should still hold its original value. The outer binding is a concrete
+    // `Value` captured in the environment before the inner block runs, so
+    // subsequent inner operations cannot affect it.
     let server = start_repeated_json_response_server(r#"{"message":{"content":"not-a-mood"}}"#, 2);
     let src = r#"
 type Mood = calm | tense
@@ -288,6 +292,126 @@ run(A)
     assert!(
         stdout.contains("outer-again=not-a-mood"),
         "outer typed error binding was overwritten:\n{stdout}"
+    );
+}
+
+#[test]
+fn typed_error_survives_non_matching_inner_catch() {
+    // Regression guard for the bug fixed in commit 8b7343a (#19):
+    //
+    // In the old implementation, `last_typed_error` was a field on `Interpreter`
+    // read via `take()` inside every `TryCatch` handler. When a typed error
+    // propagated *past* a non-matching inner catch, the inner TryCatch called
+    // `take()` first — consuming and clearing the field — so the outer catch
+    // read `None` and failed to match the typed clause.
+    //
+    // The fix embeds `RuntimeError` in the `miette::Report` itself, so it
+    // travels with the error through every layer of the call stack without
+    // relying on a separate side-channel field.
+    let server = start_repeated_json_response_server(r#"{"message":{"content":"not-a-mood"}}"#, 1);
+    let src = r#"
+type Mood = calm | tense
+
+agent A {
+  @role "tester"
+  @on_start {
+    try {
+      try {
+        Ai.classify("test", as: Mood)
+      } catch inner: NetworkError {
+        Io.show("inner caught (unexpected)")
+      }
+    } catch outer: AiSchemaError {
+      Io.show("outer got={outer.got}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(
+        src,
+        &[
+            ("KEEL_LLM", ""),
+            ("OLLAMA_HOST", server.as_str()),
+            ("KEEL_OLLAMA_MODEL", "test-model"),
+        ],
+    );
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("outer got=not-a-mood"),
+        "typed error lost after propagating past non-matching inner catch:\n{stdout}"
+    );
+}
+
+#[test]
+fn concurrent_typed_errors_are_isolated_across_spawned_tasks() {
+    // Smoke test: two Async.spawn tasks can each independently catch their own
+    // typed AiSchemaError. Per-task isolation is architecturally guaranteed —
+    // each spawned task gets its own Interpreter instance — so this test
+    // validates the end-to-end concurrent execution path rather than probing
+    // a specific side-channel risk.
+    //
+    // Task B sleeps 100 ms to ensure deterministic ordering of HTTP requests
+    // against the sequential mock server, so each task reliably consumes its
+    // assigned response payload.
+    let server = start_json_response_sequence(vec![
+        r#"{"message":{"content":"error-from-task-a"}}"#,
+        r#"{"message":{"content":"error-from-task-b"}}"#,
+    ]);
+    let src = r#"
+type Mood = calm | tense
+
+agent Tester {
+  @role "tester"
+  @on_start {
+    h_a = Async.spawn(() => {
+      try {
+        Ai.classify("test-a", as: Mood)
+        "no-error"
+      } catch ea: AiSchemaError {
+        ea.got
+      }
+    })
+    h_b = Async.spawn(() => {
+      Async.sleep(100.ms)
+      try {
+        Ai.classify("test-b", as: Mood)
+        "no-error"
+      } catch eb: AiSchemaError {
+        eb.got
+      }
+    })
+    results = Async.join_all([h_a, h_b])
+    Io.show("task-a-caught={results[0]}")
+    Io.show("task-b-caught={results[1]}")
+    stop(self)
+  }
+}
+run(Tester)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(
+        src,
+        &[
+            ("KEEL_LLM", ""),
+            ("OLLAMA_HOST", server.as_str()),
+            ("KEEL_OLLAMA_MODEL", "test-model"),
+        ],
+    );
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("task-a-caught=error-from-task-a"),
+        "task A caught wrong error or no error:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("task-b-caught=error-from-task-b"),
+        "task B caught wrong error or no error:\n{stdout}"
     );
 }
 

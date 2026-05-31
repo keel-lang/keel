@@ -202,6 +202,31 @@ pub fn start_single_response_server(body: &'static str) -> String {
     format!("http://{address}")
 }
 
+/// Serve a different JSON body for each incoming request, in order.
+/// Once the listed bodies are exhausted the server thread exits and drops the
+/// listener, so any further request fails on the client side (refused/closed
+/// connection) rather than panicking the server.
+pub fn start_json_response_sequence(bodies: Vec<&'static str>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test HTTP server");
+    let address = listener.local_addr().expect("read test HTTP address");
+    thread::spawn(move || {
+        for body in bodies {
+            let (mut stream, _) = listener.accept().expect("accept test HTTP request");
+            let mut buffer = [0_u8; 4096];
+            let _ = stream.read(&mut buffer).expect("read test HTTP request");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write test HTTP response");
+        }
+    });
+    format!("http://{address}")
+}
+
 pub fn start_repeated_json_response_server(body: &'static str, request_count: usize) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test HTTP server");
     let address = listener.local_addr().expect("read test HTTP address");
