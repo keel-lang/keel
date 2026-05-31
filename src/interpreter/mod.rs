@@ -23,7 +23,7 @@ mod stmt;
 pub(crate) use binary::{eval_binary, is_pascal_case};
 pub(crate) use binding::bind_value;
 pub use entry::{run_with_source, run_with_source_and_runtime};
-pub(crate) use error::runtime_error;
+pub(crate) use error::{RuntimeError, runtime_error};
 pub use state::{
     AgentDef, AgentInstance, BuiltinFn, CallArgValue, Event, Interpreter, Namespace,
     ScheduledClosure,

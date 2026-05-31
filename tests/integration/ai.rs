@@ -241,6 +241,57 @@ run(A)
 }
 
 #[test]
+fn nested_try_catch_preserves_typed_ai_errors() {
+    let server = start_repeated_json_response_server(r#"{"message":{"content":"not-a-mood"}}"#, 2);
+    let src = r#"
+type Mood = calm | tense
+
+agent A {
+  @role "tester"
+  @on_start {
+    try {
+      Ai.classify("outer", as: Mood)
+    } catch outer: AiSchemaError {
+      Io.show("outer={outer.got}")
+      try {
+        Ai.classify("inner", as: Mood)
+      } catch inner: AiSchemaError {
+        Io.show("inner={inner.got}")
+      }
+      Io.show("outer-again={outer.got}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(
+        src,
+        &[
+            ("KEEL_LLM", ""),
+            ("OLLAMA_HOST", server.as_str()),
+            ("KEEL_OLLAMA_MODEL", "test-model"),
+        ],
+    );
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("outer=not-a-mood"),
+        "outer typed error was not caught:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("inner=not-a-mood"),
+        "inner typed error was not caught:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("outer-again=not-a-mood"),
+        "outer typed error binding was overwritten:\n{stdout}"
+    );
+}
+
+#[test]
 fn ai_classify_null_coalesces_in_mock_mode() {
     // In mock mode, classify() returns none (call failed gracefully).
     // The ?? operator should provide the default without an error.

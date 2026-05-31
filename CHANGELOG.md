@@ -16,6 +16,8 @@ All notable changes to Keel.
 
 ### Fixed
 
+- **Typed runtime errors now propagate as structured values.** `AiError` and `AiSchemaError` were stored in mutable interpreter state before `try/catch` reconstructed the caught value. Nested calls could overwrite that shared slot, and concurrent agent execution could observe the wrong error. Typed errors now travel with the runtime report itself, so each catch clause receives the exact error value produced by its failing call.
+
 - **Interpolation diagnostics now point at the correct source range.** Expressions inside string interpolation slots were re-lexed from byte offset `0`, so type-checker errors such as an undefined name underlined the wrong part of the file. Slot token spans are now rebased to their absolute `.keel` source positions, including nested and triple-quoted strings.
 
 - **Runtime APIs now enforce their declared arguments.** Older namespace methods such as `File.read`, `Cache.get`, `Json.parse`, and `Shell.run` passed values through display formatting, so dynamic calls could silently turn `42` into `"42"`. Required sleep and value-method arguments could also be omitted and silently treated as no-ops or empty strings. Shared runtime argument decoders now reject wrong or missing inputs with clear errors; display coercion remains available only for presentation-oriented APIs such as interpolation, `Io.*`, and `Log.*`.

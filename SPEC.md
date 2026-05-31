@@ -382,7 +382,8 @@ type Decision[T] { choice: T, reason: str, confidence: float }
 # Predefined namespace constants: Uuid.DNS, Uuid.URL, Uuid.OID, Uuid.X500
 
 type Error =
-  | AIError { model: str, tokens_used: int }
+  | AiError { message: str }
+  | AiSchemaError { message: str, got: str }
   | NetworkError { status: int?, url: str }
   | TimeoutError { duration: duration }
   | NullError

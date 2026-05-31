@@ -27,7 +27,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::SchemaValidation { got }) => {
-                    throw_typed_error(interp, "AiSchemaError",
+                    throw_typed_error("AiSchemaError",
                         &format!("LLM output did not match expected schema: '{got}'"),
                         Some(("got", got)))
                 }
@@ -56,7 +56,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
             }
         }),
 
@@ -79,7 +79,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
             }
         }),
 
@@ -139,7 +139,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
             }
         }),
 
@@ -170,7 +170,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
             }
         }),
 
@@ -197,7 +197,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
             }
         }),
 
@@ -214,7 +214,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(interp, "AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
             }
         }),
 

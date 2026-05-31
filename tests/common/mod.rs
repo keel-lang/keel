@@ -201,3 +201,24 @@ pub fn start_single_response_server(body: &'static str) -> String {
     });
     format!("http://{address}")
 }
+
+pub fn start_repeated_json_response_server(body: &'static str, request_count: usize) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test HTTP server");
+    let address = listener.local_addr().expect("read test HTTP address");
+    thread::spawn(move || {
+        for _ in 0..request_count {
+            let (mut stream, _) = listener.accept().expect("accept test HTTP request");
+            let mut buffer = [0_u8; 4096];
+            let _ = stream.read(&mut buffer).expect("read test HTTP request");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write test HTTP response");
+        }
+    });
+    format!("http://{address}")
+}

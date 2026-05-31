@@ -8,9 +8,9 @@ use crate::ast::{Block, Expr, Pattern, Stmt, StringPart, TypeExpr};
 
 use super::bind_value;
 use super::environment::Environment;
-use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
+use super::{RuntimeError, runtime_error};
 
 impl Interpreter {
     pub fn exec_stmt<'a>(
@@ -259,48 +259,43 @@ impl Interpreter {
                 }
                 Stmt::Break => Ok(StmtOutcome::Break),
                 Stmt::Continue => Ok(StmtOutcome::Continue),
-                Stmt::TryCatch { body, catches } => {
-                    self.last_typed_error = None;
-                    match self.exec_block(body, env).await {
-                        Ok(outcome) => Ok(outcome),
-                        Err(err) => {
-                            let typed = self.last_typed_error.take();
-                            for clause in catches {
-                                let clause_type = match &clause.ty.kind {
-                                    crate::ast::TypeExpr::Named(n) => n.as_str(),
-                                    _ => continue,
-                                };
-                                let matches = match &typed {
-                                    Some((type_name, _)) => {
-                                        clause_type == "Error" || clause_type == type_name
-                                    }
-                                    None => clause_type == "Error",
-                                };
-                                if matches {
-                                    let error_val = match &typed {
-                                        Some((type_name, f)) => {
-                                            Value::Struct(type_name.clone(), f.clone())
-                                        }
-                                        None => {
-                                            let mut m = HashMap::new();
-                                            m.insert(
-                                                "message".to_string(),
-                                                Value::String(err.to_string()),
-                                            );
-                                            Value::Struct("Error".to_string(), m)
-                                        }
-                                    };
-                                    env.push_scope();
-                                    env.define(clause.name.clone(), error_val);
-                                    let outcome = self.exec_block(&clause.body, env).await;
-                                    env.pop_scope();
-                                    return outcome;
+                Stmt::TryCatch { body, catches } => match self.exec_block(body, env).await {
+                    Ok(outcome) => Ok(outcome),
+                    Err(err) => {
+                        let typed = err.downcast_ref::<RuntimeError>();
+                        for clause in catches {
+                            let clause_type = match &clause.ty.kind {
+                                crate::ast::TypeExpr::Named(n) => n.as_str(),
+                                _ => continue,
+                            };
+                            let matches = match &typed {
+                                Some(typed) => {
+                                    clause_type == "Error" || clause_type == typed.type_name
                                 }
+                                None => clause_type == "Error",
+                            };
+                            if matches {
+                                let error_val = match &typed {
+                                    Some(typed) => typed.as_value(),
+                                    None => {
+                                        let mut m = HashMap::new();
+                                        m.insert(
+                                            "message".to_string(),
+                                            Value::String(err.to_string()),
+                                        );
+                                        Value::Struct("Error".to_string(), m)
+                                    }
+                                };
+                                env.push_scope();
+                                env.define(clause.name.clone(), error_val);
+                                let outcome = self.exec_block(&clause.body, env).await;
+                                env.pop_scope();
+                                return outcome;
                             }
-                            Err(err)
                         }
+                        Err(err)
                     }
-                }
+                },
             }
         })
     }

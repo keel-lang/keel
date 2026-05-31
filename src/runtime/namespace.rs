@@ -1,19 +1,19 @@
 use crate::interpreter::CallArgValue;
+use crate::interpreter::RuntimeError;
 use crate::interpreter::value::Value;
 
 pub(crate) fn throw_typed_error(
-    interp: &mut crate::interpreter::Interpreter,
     type_name: &str,
     message: &str,
     extra: Option<(&str, String)>,
 ) -> miette::Result<Value> {
     let mut fields = std::collections::HashMap::new();
-    fields.insert("message".to_string(), Value::String(message.to_string()));
     if let Some((key, val)) = extra {
         fields.insert(key.to_string(), Value::String(val));
     }
-    interp.last_typed_error = Some((type_name.to_string(), fields));
-    Err(miette::miette!("{type_name}: {message}"))
+    // Insert "message" last so it is never overwritten by an extra field.
+    fields.insert("message".to_string(), Value::String(message.to_string()));
+    Err(miette::Report::new(RuntimeError::new(type_name, fields)))
 }
 
 pub(crate) fn find_arg<'a>(args: &'a [CallArgValue], name: &str) -> Option<&'a Value> {
@@ -146,8 +146,7 @@ mod tests {
 
     #[test]
     fn throw_typed_error_without_extra() {
-        let mut interp = crate::interpreter::Interpreter::new();
-        let result = throw_typed_error(&mut interp, "AiError", "something failed", None);
+        let result = throw_typed_error("AiError", "something failed", None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
@@ -156,23 +155,19 @@ mod tests {
             msg.contains("something failed"),
             "expected message in: {msg}"
         );
-        // last_typed_error is populated.
-        let te = interp
-            .last_typed_error
-            .as_ref()
-            .expect("last_typed_error should be set");
-        assert_eq!(te.0, "AiError");
+        let typed = err
+            .downcast_ref::<RuntimeError>()
+            .expect("typed payload should be preserved");
+        assert_eq!(typed.type_name, "AiError");
         assert_eq!(
-            te.1.get("message").map(|v| v.to_display_string()),
+            typed.fields.get("message").map(|v| v.to_display_string()),
             Some("something failed".into())
         );
     }
 
     #[test]
     fn throw_typed_error_with_extra_field() {
-        let mut interp = crate::interpreter::Interpreter::new();
         let result = throw_typed_error(
-            &mut interp,
             "AiSchemaError",
             "schema mismatch",
             Some(("got", "{\"x\":1}".into())),
@@ -184,13 +179,12 @@ mod tests {
             msg.contains("AiSchemaError"),
             "expected AiSchemaError in: {msg}"
         );
-        let te = interp
-            .last_typed_error
-            .as_ref()
-            .expect("last_typed_error should be set");
-        assert_eq!(te.0, "AiSchemaError");
+        let typed = err
+            .downcast_ref::<RuntimeError>()
+            .expect("typed payload should be preserved");
+        assert_eq!(typed.type_name, "AiSchemaError");
         assert_eq!(
-            te.1.get("got").map(|v| v.to_display_string()),
+            typed.fields.get("got").map(|v| v.to_display_string()),
             Some("{\"x\":1}".into())
         );
     }

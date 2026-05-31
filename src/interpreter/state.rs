@@ -161,9 +161,6 @@ pub struct Interpreter {
     /// Format: `<stem>_<sha256[:12]>` for real files; `__repl__` / `__inline__`
     /// for REPL and inline evaluations. Defaults to `"__inline__"`.
     pub(crate) program_name: String,
-    /// Last typed error thrown via `throw_typed_error`. Used by `try/catch` to
-    /// match catch clauses by type name. Cleared at the start of each `try` block.
-    pub(crate) last_typed_error: Option<(String, HashMap<String, Value>)>,
 }
 
 impl Interpreter {
@@ -192,7 +189,6 @@ impl Interpreter {
             active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
             program_name: "__inline__".to_string(),
-            last_typed_error: None,
         };
         crate::runtime::install_prelude(&mut interp);
         interp
