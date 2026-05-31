@@ -1,6 +1,7 @@
 //! Expression nodes and expression subtypes.
 
 use super::{Block, Node, TypeExpr};
+use crate::lexer::Span;
 
 /// A key in a struct/map literal, carrying the original syntactic form.
 #[derive(Debug, Clone, PartialEq)]
@@ -59,7 +60,10 @@ pub enum Expr {
     /// `expr!`
     NullAssert(Box<SpannedExpr>),
     /// `self.field`
-    SelfAccess(String),
+    SelfAccess {
+        field: String,
+        field_span: Span,
+    },
     /// bare `self` — resolves to an AgentRef for the current agent
     SelfRef,
 

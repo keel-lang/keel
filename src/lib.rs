@@ -1,6 +1,6 @@
 //! Keel — a programming language where AI agents are first-class citizens.
 //!
-//! This crate provides the compiler pipeline (lexer → parser → type checker),
+//! This crate provides the compiler pipeline (lexer → parser → HIR → type checker),
 //! the tree-walking async interpreter, the runtime prelude namespaces, and
 //! the formatter, linter, REPL, and LSP server.
 #![deny(clippy::correctness)]
@@ -11,6 +11,7 @@
 
 pub mod ast;
 pub mod formatter;
+pub mod hir;
 pub mod ide;
 pub mod interpreter;
 pub mod lexer;

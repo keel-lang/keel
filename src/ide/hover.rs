@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 
 use crate::ast::*;
+use crate::hir;
 use crate::ide::symbols::ident_at_offset;
 use crate::types::checker::Checker;
 use crate::types::scope::Scope;
@@ -66,9 +67,10 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
     let named = miette::NamedSource::new("file", text.to_string());
     let tokens = crate::lexer::lex(text, &named).ok()?;
     let program = crate::parser::parse(tokens, text.len(), &named).ok()?;
+    let hir = hir::lower_ast(&program);
 
     let mut bindings: HashMap<String, Ty> = HashMap::new();
-    let mut checker = Checker::new();
+    let mut checker = Checker::new(&hir);
     checker.collect(&program);
     collect_decl_bindings(&program, &mut checker, &mut bindings);
 
@@ -82,7 +84,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
 pub(crate) fn insert_binding(
     binding: &Binding,
     ty: Ty,
-    _c: &mut Checker,
+    _c: &mut Checker<'_, '_>,
     out: &mut HashMap<String, Ty>,
 ) {
     match binding {
@@ -121,7 +123,7 @@ pub(crate) fn insert_binding(
 
 pub(crate) fn collect_decl_bindings(
     program: &Program,
-    c: &mut Checker,
+    c: &mut Checker<'_, '_>,
     out: &mut HashMap<String, Ty>,
 ) {
     for node in &program.declarations {
@@ -174,7 +176,11 @@ pub(crate) fn collect_decl_bindings(
     }
 }
 
-pub(crate) fn collect_stmt_bindings(stmt: &Stmt, c: &mut Checker, out: &mut HashMap<String, Ty>) {
+pub(crate) fn collect_stmt_bindings(
+    stmt: &Stmt,
+    c: &mut Checker<'_, '_>,
+    out: &mut HashMap<String, Ty>,
+) {
     match stmt {
         Stmt::Let { binding, ty, value } => {
             let mut scope = Scope::new();

@@ -161,6 +161,8 @@ pub const BLOCK_BODY_ATTRIBUTES: &[&str] = &["on_start", "on_stop"];
 #[derive(Debug, Clone)]
 pub struct StateField {
     pub name: String,
+    /// Byte span of the state-field name token.
+    pub name_span: Span,
     /// Type annotation together with its source span.
     pub ty: Node<TypeExpr>,
     pub default: SpannedExpr,

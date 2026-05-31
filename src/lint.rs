@@ -380,7 +380,7 @@ impl Visitor for IdentReads<'_> {
             self.reads.insert(method.clone());
         }
         if let Expr::Call { callee, .. } = expr
-            && let Expr::SelfAccess(method) = &callee.as_ref().kind
+            && let Expr::SelfAccess { field: method, .. } = &callee.as_ref().kind
         {
             self.reads.insert(method.clone());
         }
@@ -450,7 +450,7 @@ impl Visitor for SelfAccesses<'_> {
 
     fn visit_expr(&mut self, spanned: &SpannedExpr) {
         let expr = &spanned.kind;
-        if let Expr::SelfAccess(field) = expr {
+        if let Expr::SelfAccess { field, .. } = expr {
             self.reads.insert(field.clone());
         }
         visit::walk_expr(self, spanned);

@@ -9,8 +9,8 @@
 use std::collections::HashMap;
 
 use crate::ast::*;
+use crate::hir::{LiteralKind, MapKeyKind, NameKind};
 use crate::types::prelude::{self, BuiltinResult};
-use crate::types::resolve::ResolvedName;
 use crate::types::scope::Scope;
 use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
@@ -19,7 +19,7 @@ use super::{
     binop::{check_binop, infer_binary},
 };
 
-impl Checker {
+impl Checker<'_, '_> {
     pub(crate) fn infer_expr(&mut self, spanned: &SpannedExpr, scope: &mut Scope) -> Ty {
         let expr = &spanned.kind;
         match expr {
@@ -51,8 +51,8 @@ impl Checker {
                     return t.clone();
                 }
                 // Global namespace: consult the pre-built name index.
-                match self.name_index.resolve(name) {
-                    ResolvedName::TopTask => {
+                match self.hir.resolve_global(name).kind {
+                    NameKind::TopTask => {
                         // Identifier used as a value — expose the task's type as
                         // a function so callers can check arity at call sites.
                         if let Some(t) = self.top_tasks.get(name) {
@@ -67,21 +67,20 @@ impl Checker {
                     }
                     // Agent, type-level, or prelude identifier used as an
                     // expression — no value-level type is tracked statically.
-                    ResolvedName::Agent
-                    | ResolvedName::Enum
-                    | ResolvedName::TypeName
-                    | ResolvedName::PreludeNamespace => {
-                        Ty::Unknown(UnknownReason::InferenceLimitation)
-                    }
-                    // Undefined-name errors are emitted by the resolution pass
-                    // (resolve_names) before inference runs.  Return Ty::Error
+                    NameKind::Agent
+                    | NameKind::Enum
+                    | NameKind::TypeName
+                    | NameKind::PreludeNamespace => Ty::Unknown(UnknownReason::InferenceLimitation),
+                    // Undefined-name errors are emitted by HIR lowering before
+                    // inference runs. Return Ty::Error
                     // here so downstream type checks are suppressed via
                     // is_opaque(), avoiding cascading noise.
-                    ResolvedName::Unresolved => Ty::Error,
+                    NameKind::Local => unreachable!("HIR global resolution excludes locals"),
+                    NameKind::Unresolved => Ty::Error,
                 }
             }
 
-            Expr::SelfAccess(field) => {
+            Expr::SelfAccess { field, .. } => {
                 let Some(agent_name) = self.current_agent.clone() else {
                     self.err(format!("`self.{field}` used outside an agent"));
                     return Ty::Error;
@@ -105,9 +104,9 @@ impl Checker {
                 // Resolve ident-qualified field access through the name index
                 // before falling through to value-level struct field access.
                 if let Expr::Ident(name) = &obj.as_ref().kind {
-                    match self.name_index.resolve(name) {
+                    match self.hir.resolve_global(name).kind {
                         // Enum variant shortcut: `Urgency.medium`.
-                        ResolvedName::Enum => {
+                        NameKind::Enum => {
                             if let Some(variants) = self.enum_variants.get(name)
                                 && !variants.contains(field)
                             {
@@ -116,7 +115,7 @@ impl Checker {
                             return Ty::Enum(name.clone(), vec![]);
                         }
                         // Prelude namespace field access: `Uuid.DNS`, etc.
-                        ResolvedName::PreludeNamespace => {
+                        NameKind::PreludeNamespace => {
                             // `Uuid` exposes namespace-constant UUIDs as fields.
                             if name == "Uuid"
                                 && matches!(field.as_str(), "DNS" | "URL" | "OID" | "X500")
@@ -129,7 +128,7 @@ impl Checker {
                         }
                         // Agent handler reference: `Foo.process` — validate
                         // the handler exists and return an opaque delegate type.
-                        ResolvedName::Agent => {
+                        NameKind::Agent => {
                             if let Some(agent) = self.agents.get(name)
                                 && !agent.handlers.contains_key(field)
                             {
@@ -189,47 +188,53 @@ impl Checker {
             }
 
             Expr::StructLit(fields) => {
-                use crate::ast::MapLitKey;
-                let has_int = fields.iter().any(|(k, _)| matches!(k, MapLitKey::Int(_)));
-                let has_bool = fields.iter().any(|(k, _)| matches!(k, MapLitKey::Bool(_)));
-                let has_str = fields
-                    .iter()
-                    .any(|(k, _)| matches!(k, MapLitKey::Ident(_) | MapLitKey::Str(_)));
-
-                if has_int || has_bool {
-                    if (has_int && has_bool) || (has_str && (has_int || has_bool)) {
+                match self
+                    .hir
+                    .literal_kind(spanned)
+                    .unwrap_or(LiteralKind::Struct)
+                {
+                    LiteralKind::InvalidMixedKeys => {
                         self.err(
                             "map literal has mixed key types — all keys must be \
                              the same type (str, int, or bool)"
                                 .to_string(),
                         );
-                        for (_, v) in fields {
-                            self.infer_expr(v, scope);
+                        for (_, value) in fields {
+                            self.infer_expr(value, scope);
                         }
-                        return Ty::Error;
+                        Ty::Error
                     }
-                    let key_ty = if has_int { Ty::Int } else { Ty::Bool };
-                    // Use Option<Ty> as the "not yet set" sentinel.  A plain
-                    // is_opaque() check would re-treat a legitimately opaque
-                    // first value (e.g. Json.parse → Unknown) as "unset" and
-                    // let subsequent entries overwrite it silently.
-                    let mut val_ty: Option<Ty> = None;
-                    for (_, v) in fields {
-                        let t = self.infer_expr(v, scope);
-                        match val_ty {
-                            None => val_ty = Some(t),
-                            Some(ref vt) => self.expect(&t, vt, "map literal value"),
+                    LiteralKind::Map(key_kind) => {
+                        let key_ty = match key_kind {
+                            MapKeyKind::Str => Ty::Str,
+                            MapKeyKind::Int => Ty::Int,
+                            MapKeyKind::Bool => Ty::Bool,
+                        };
+                        // Use Option<Ty> as the "not yet set" sentinel. A plain
+                        // is_opaque() check would re-treat a legitimately opaque
+                        // first value (e.g. Json.parse -> Unknown) as "unset".
+                        let mut val_ty: Option<Ty> = None;
+                        for (_, value) in fields {
+                            let ty = self.infer_expr(value, scope);
+                            match val_ty {
+                                None => val_ty = Some(ty),
+                                Some(ref expected) => {
+                                    self.expect(&ty, expected, "map literal value");
+                                }
+                            }
                         }
+                        let val_ty =
+                            val_ty.unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
+                        Ty::Map(Box::new(key_ty), Box::new(val_ty))
                     }
-                    let val_ty = val_ty.unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
-                    Ty::Map(Box::new(key_ty), Box::new(val_ty))
-                } else {
-                    let mut inferred: Vec<(String, Ty)> = Vec::with_capacity(fields.len());
-                    for (k, v) in fields {
-                        let ty = self.infer_expr(v, scope);
-                        inferred.push((k.as_str().unwrap_or("").to_string(), ty));
+                    LiteralKind::Struct => {
+                        let mut inferred: Vec<(String, Ty)> = Vec::with_capacity(fields.len());
+                        for (key, value) in fields {
+                            let ty = self.infer_expr(value, scope);
+                            inferred.push((key.as_str().unwrap_or("").to_string(), ty));
+                        }
+                        Ty::Struct(inferred)
                     }
-                    Ty::Struct(inferred)
                 }
             }
 
@@ -431,7 +436,10 @@ impl Checker {
                     .iter()
                     .map(|a| self.infer_expr(&a.value, scope))
                     .collect();
-                if let Expr::SelfAccess(task_name) = &callee.as_ref().kind {
+                if let Expr::SelfAccess {
+                    field: task_name, ..
+                } = &callee.as_ref().kind
+                {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{task_name}(...)` used outside an agent"));
                         return Ty::Error;
@@ -473,8 +481,8 @@ impl Checker {
                 // Dispatch on callee identity via the name index when the callee
                 // is a bare identifier.
                 if let Expr::Ident(name) = &callee.as_ref().kind {
-                    match self.name_index.resolve(name) {
-                        ResolvedName::TopTask => {
+                    match self.hir.resolve_global(name).kind {
+                        NameKind::TopTask => {
                             let sig = self.top_tasks.get(name).cloned();
                             if let Some(sig) = sig {
                                 let expected = sig.params.len();
@@ -544,7 +552,7 @@ impl Checker {
                                 return sig.return_type.clone();
                             }
                         }
-                        ResolvedName::PreludeNamespace => {
+                        NameKind::PreludeNamespace => {
                             // Typed inference for prelude free functions.
                             match name.as_str() {
                                 "uuid" => return Ty::Uuid,
@@ -681,8 +689,8 @@ impl Checker {
                 //     — arg[1] is a plain string literal naming the handler
                 //     — arg[2] is the data; type-checked against the handler param
                 if let Expr::Ident(name) = &object.as_ref().kind {
-                    match self.name_index.resolve(name) {
-                        ResolvedName::Agent => {
+                    match self.hir.resolve_global(name).kind {
+                        NameKind::Agent => {
                             // Direct agent-task calls are not supported; callers
                             // must use `self.task(...)` or the mailbox API.
                             self.err(format!(
@@ -693,7 +701,7 @@ impl Checker {
                             ));
                             return Ty::Error;
                         }
-                        ResolvedName::PreludeNamespace => {
+                        NameKind::PreludeNamespace => {
                             // Validate Agent.delegate call sites at compile time.
                             if name == "Agent" && method == "delegate" {
                                 if let Some(first_arg) = args.first() {
@@ -725,8 +733,8 @@ impl Checker {
                                         // String form: Foo, "handle"
                                         Expr::Ident(agent_name)
                                             if matches!(
-                                                self.name_index.resolve(&agent_name),
-                                                ResolvedName::Agent
+                                                self.hir.resolve_global(&agent_name).kind,
+                                                NameKind::Agent
                                             ) =>
                                         {
                                             if let Some(second_arg) = args.get(1)
@@ -804,8 +812,8 @@ impl Checker {
                                             args.iter().find(|a| a.name.as_deref() == Some("as"))
                                             && let Expr::Ident(enum_name) = &as_arg.value.kind
                                             && matches!(
-                                                self.name_index.resolve(enum_name),
-                                                ResolvedName::Enum
+                                                self.hir.resolve_global(enum_name).kind,
+                                                NameKind::Enum
                                             )
                                         {
                                             Ty::Nullable(Box::new(Ty::Enum(

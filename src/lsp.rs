@@ -1,7 +1,7 @@
 //! Keel Language Server — v0.1.
 //!
 //! Scope for this release: diagnostics only. On every `did_open` /
-//! `did_change`, we lex → parse → type-check and publish the resulting
+//! `did_change`, we lex → parse → lower HIR → type-check and publish the resulting
 //! errors as LSP diagnostics. Hover and completion are placeholders
 //! pending a follow-up.
 
@@ -13,6 +13,7 @@ use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
+use crate::hir;
 use crate::lexer::{self, Span};
 use crate::parser;
 use crate::types::checker;
@@ -259,9 +260,9 @@ impl LanguageServer for Backend {
         }
         // v0.1 rename is scope-unaware: only allow renaming top-level
         // declarations (task / agent / type names). Local variables would
-        // require AST-level scope tracking to rename safely; until that
+        // require scope-aware HIR edits to rename safely; until that
         // lands, decline rather than risk renaming the wrong scope.
-        if checker::definition_of(&text, offset).is_none() {
+        if !checker::is_top_level_symbol(&text, offset) {
             return Ok(None);
         }
         let Some(span) = checker::ident_span_at_offset(&text, offset) else {
@@ -286,10 +287,9 @@ impl LanguageServer for Backend {
         // v0.1 rename is scope-unaware: only allow renaming top-level
         // declarations (task / agent / type names), where a file-wide
         // rename is correct. For local variables (let bindings, params,
-        // etc.) `definition_of` returns `None` — decline the rename
-        // rather than risk clobbering an identically-named binding in
-        // another scope.
-        if checker::definition_of(&text, offset).is_none() {
+        // etc.) are declined by the HIR symbol-kind gate rather than risk
+        // clobbering an identically-named binding in another scope.
+        if !checker::is_top_level_symbol(&text, offset) {
             return Ok(None);
         }
         let spans = checker::usages_of(&text, &name);
@@ -369,7 +369,8 @@ pub fn analyze(text: &str) -> Vec<Diagnostic> {
         }
     };
 
-    for err in checker::check(&program) {
+    let hir = hir::lower_ast(&program);
+    for err in checker::check(&hir) {
         out.push(diag(
             text,
             err.span().clone(),

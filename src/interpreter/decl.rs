@@ -549,6 +549,7 @@ mod tests {
                 }),
                 AgentItem::State(vec![StateField {
                     name: "counter".into(),
+                    name_span: 0..0,
                     ty: named_ty("int"),
                     default: Node::synthetic(Expr::Integer(0)),
                     readonly: false,
@@ -590,6 +591,7 @@ mod tests {
             items: vec![AgentItem::State(vec![
                 StateField {
                     name: "a".into(),
+                    name_span: 0..0,
                     ty: named_ty("str"),
                     default: Node::synthetic(Expr::StringLit(vec![
                         crate::ast::StringPart::Literal("".into()),
@@ -598,6 +600,7 @@ mod tests {
                 },
                 StateField {
                     name: "b".into(),
+                    name_span: 0..0,
                     ty: named_ty("int"),
                     default: Node::synthetic(Expr::Integer(1)),
                     readonly: true,

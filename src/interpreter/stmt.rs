@@ -50,7 +50,7 @@ impl Interpreter {
                     bind_value(binding, v, env)?;
                     Ok(StmtOutcome::Normal)
                 }
-                Stmt::SelfAssign { field, value } => {
+                Stmt::SelfAssign { field, value, .. } => {
                     let v = self.eval_expr(value, env).await?;
                     if let Value::EarlyReturn(inner) = v {
                         return Ok(StmtOutcome::Return(*inner));
@@ -211,7 +211,7 @@ impl Interpreter {
                     }
                     Ok(StmtOutcome::Normal)
                 }
-                Stmt::AugAssign { name, op, rhs } => {
+                Stmt::AugAssign { name, op, rhs, .. } => {
                     let rhs_val = self.eval_expr(rhs, env).await?;
                     if let Value::EarlyReturn(inner) = rhs_val {
                         return Ok(StmtOutcome::Return(*inner));

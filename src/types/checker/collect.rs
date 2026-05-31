@@ -11,7 +11,7 @@ use crate::types::ty::Ty;
 
 use super::{AgentInfo, Checker, TaskSig};
 
-impl Checker {
+impl Checker<'_, '_> {
     /// First-pass scan: register all declared types, tasks, agents, and
     /// interface implementations into the checker's lookup tables.
     ///

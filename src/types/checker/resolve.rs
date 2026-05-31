@@ -12,7 +12,7 @@ use crate::types::ty::{Ty, UnknownReason};
 
 use super::Checker;
 
-impl Checker {
+impl Checker<'_, '_> {
     /// Resolve a [`TypeExpr`] into a concrete [`Ty`] using the checker's
     /// current type environment.
     pub(crate) fn resolve_type(&self, ty: &TypeExpr) -> Ty {

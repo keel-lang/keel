@@ -19,6 +19,7 @@ mod stmt;
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::*;
+use crate::hir::Hir;
 use crate::lexer::Span;
 use crate::types::interface::{self as iface, Signature};
 // Re-export so existing call-sites (`crate::types::checker::Ty`, etc.) remain valid.
@@ -26,9 +27,10 @@ pub use crate::types::diagnostics::TypeDiagnostic;
 pub use crate::types::ty::Ty;
 // Re-export IDE helpers so `lsp.rs` call-sites remain valid without churn.
 pub use crate::ide::hover::type_at;
-pub use crate::ide::symbols::{definition_of, ident_at_offset, ident_span_at_offset, usages_of};
-use crate::types::prelude::{builtin_interfaces, prelude_names};
-use crate::types::resolve::NameIndex;
+pub use crate::ide::symbols::{
+    definition_of, ident_at_offset, ident_span_at_offset, is_top_level_symbol, usages_of,
+};
+use crate::types::prelude::builtin_interfaces;
 use crate::types::scope::Scope;
 
 // ---------------------------------------------------------------------------
@@ -59,7 +61,8 @@ struct AgentInfo {
 // Checker state
 // ---------------------------------------------------------------------------
 
-pub(crate) struct Checker {
+pub(crate) struct Checker<'hir, 'ast> {
+    hir: &'hir Hir<'ast>,
     errors: Vec<TypeDiagnostic>,
     enum_variants: HashMap<String, Vec<String>>,
     structs: HashMap<String, Vec<(String, Ty)>>,
@@ -81,9 +84,6 @@ pub(crate) struct Checker {
     current_agent: Option<String>,
     /// Declared return type of the task currently being checked.
     current_return_ty: Option<Ty>,
-    /// Pre-seeded names that must not be reported as undefined
-    /// (prelude namespaces, built-in types, symbol identifiers, etc.).
-    prelude: HashSet<String>,
     /// Span of the statement currently being checked. Set at the top of
     /// `check_stmt` so every `err()` call within a statement — including
     /// errors raised by `infer_expr` — automatically gets a location.
@@ -91,11 +91,6 @@ pub(crate) struct Checker {
     /// When true, emit an error for any binding whose type the checker
     /// cannot resolve (falls back to `Ty::Unknown`).
     strict: bool,
-    /// Global name index, built by [`name_resolve::build`] at the start of
-    /// [`Checker::check_body`] after the declaration-collection pass has
-    /// finished.  Consulted by `infer_expr` for every [`crate::ast::Expr::Ident`]
-    /// that is not satisfied by the current lexical scope.
-    name_index: NameIndex,
 }
 
 // ---------------------------------------------------------------------------
@@ -103,10 +98,10 @@ pub(crate) struct Checker {
 // ---------------------------------------------------------------------------
 
 #[must_use]
-pub fn check(program: &Program) -> Vec<TypeDiagnostic> {
-    let mut c = Checker::new();
-    c.collect(program);
-    c.check_body(program);
+pub fn check(hir: &Hir<'_>) -> Vec<TypeDiagnostic> {
+    let mut c = Checker::new(hir);
+    c.collect(hir.program());
+    c.check_body(hir.program());
     c.errors
 }
 
@@ -114,17 +109,18 @@ pub fn check(program: &Program) -> Vec<TypeDiagnostic> {
 /// checker cannot resolve.  Use `keel check --strict` to surface gaps
 /// in type coverage that the normal checker accepts silently.
 #[must_use]
-pub fn check_strict(program: &Program) -> Vec<TypeDiagnostic> {
-    let mut c = Checker::new();
+pub fn check_strict(hir: &Hir<'_>) -> Vec<TypeDiagnostic> {
+    let mut c = Checker::new(hir);
     c.strict = true;
-    c.collect(program);
-    c.check_body(program);
+    c.collect(hir.program());
+    c.check_body(hir.program());
     c.errors
 }
 
-impl Checker {
-    pub(crate) fn new() -> Self {
+impl<'hir, 'ast> Checker<'hir, 'ast> {
+    pub(crate) fn new(hir: &'hir Hir<'ast>) -> Self {
         Checker {
+            hir,
             errors: Vec::new(),
             enum_variants: HashMap::new(),
             structs: HashMap::new(),
@@ -137,10 +133,8 @@ impl Checker {
             agents: HashMap::new(),
             current_agent: None,
             current_return_ty: None,
-            prelude: prelude_names(),
             current_span: None,
             strict: false,
-            name_index: NameIndex::default(),
         }
     }
 

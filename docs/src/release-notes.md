@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Read-only HIR semantic index
+
+The checker and LSP now consume a read-only high-level intermediate representation
+lowered from the parser AST. HIR assigns stable symbol IDs to declarations and
+bindings, records resolved references for editor navigation, and classifies brace
+literals as structs or maps once when an expected type is available. Agent-local
+`self.task(...)` references and `self.field` reads/writes are also linked to their
+symbols during lowering.
+
+This is an internal compiler change. Keel syntax and runtime behavior are unchanged,
+and the tree-walking interpreter intentionally remains AST-backed in this first phase.
+
 ### Structured checker diagnostics
 
 Type-checker diagnostics are now structured internally. `keel check` and the LSP still show the same user-facing messages, but undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks now carry typed data and precise source spans for editor tooling.

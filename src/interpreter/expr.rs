@@ -181,7 +181,7 @@ impl Interpreter {
 
                 Expr::Ident(name) => self.lookup_ident(name, env),
 
-                Expr::SelfAccess(field) => {
+                Expr::SelfAccess { field, .. } => {
                     // impl block receiver: `self` bound in local env as a Map or Struct
                     if let Some(v) = env.get("self").cloned() {
                         return match &v {
@@ -472,7 +472,10 @@ impl Interpreter {
 
                 Expr::Call { callee, args } => {
                     let arg_values = self.eval_args(args, env).await?;
-                    if let Expr::SelfAccess(task_name) = &callee.as_ref().kind {
+                    if let Expr::SelfAccess {
+                        field: task_name, ..
+                    } = &callee.as_ref().kind
+                    {
                         return self.call_current_agent_task(task_name, arg_values).await;
                     }
                     self.call_value(callee, arg_values, env).await

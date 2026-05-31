@@ -131,8 +131,9 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
 
         let self_access = just(Token::SelfKw)
             .ignore_then(just(Token::Dot))
-            .ignore_then(ident())
-            .map(Expr::SelfAccess)
+            .ignore_then(
+                ident().map_with_span(|field, field_span| Expr::SelfAccess { field, field_span }),
+            )
             .map_with_span(Node::new);
 
         let self_ref = just(Token::SelfKw)
@@ -192,7 +193,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // ── Struct / map literal: `{key: expr, ...}` ────────────
         // Keys may be identifiers, contextual keywords, string literals,
         // integer literals, or boolean literals.  The AST stores all as
-        // StructLit; the type checker resolves struct vs. map.
+        // StructLit; HIR lowering resolves struct vs. map once.
         let struct_lit = just(Token::LBrace)
             .ignore_then(newlines())
             .ignore_then(

@@ -8,9 +8,11 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Runtime APIs enforce declared inputs and diagnostics point to precise source ranges.
+%%TAGLINE%% Semantic analysis now lowers through HIR while runtime APIs enforce declared inputs.
 
 ### Changed
+
+- **Checker and LSP now consume a read-only HIR index.** Parsing now lowers into a high-level intermediate representation before semantic analysis. HIR assigns `SymbolId`s to declarations and binding sites, records resolved identifier references (including `self.task(...)` and `self.field` reads/writes) for editor navigation, and classifies brace literals as structs or maps once using their expected type when available. The interpreter intentionally remains AST-backed in this first phase. This internal boundary prevents checker and LSP logic from independently re-resolving syntax as future execution backends are added.
 
 - **Type-checker diagnostics are now structured internally.** The checker returns `TypeDiagnostic` variants instead of a string-only `TypeError`, with structured data for undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks. CLI and LSP rendering keep the same user-facing messages, while diagnostics now carry expected/actual types and precise spans for IDE tooling.
 

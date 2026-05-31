@@ -1,7 +1,8 @@
 //! AST node types for the Keel language.
 //!
-//! The AST is produced by the parser and consumed by the type checker,
-//! interpreter, formatter, and linter. Every node carries a [`Span`] so that
+//! The AST is produced by the parser and lowered into HIR for the type checker
+//! and IDE. The interpreter, formatter, and linter still consume AST directly.
+//! Every node carries a [`crate::lexer::Span`] so that
 //! diagnostics can point back to source positions.
 //!
 //! ## Node wrapper vs. lexer tuples

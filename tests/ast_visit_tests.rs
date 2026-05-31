@@ -78,7 +78,7 @@ impl Visitor for Counts {
             }
             Expr::NullFieldAccess(_, _) => self.saw_null_field_access = true,
             Expr::NullAssert(_) => self.saw_null_assert = true,
-            Expr::SelfAccess(_) => self.saw_self_access = true,
+            Expr::SelfAccess { .. } => self.saw_self_access = true,
             Expr::SelfRef => self.saw_self_ref = true,
             Expr::StructLit(_) => self.saw_struct_lit = true,
             Expr::SetLit(_) => self.saw_set_lit = true,

@@ -8,7 +8,7 @@ use crate::types::ty::{Ty, describe_ty};
 
 use super::Checker;
 
-impl Checker {
+impl Checker<'_, '_> {
     /// Check inferred argument types against declared parameter types.
     ///
     /// Positional args fill params in order; named args match by param name

@@ -404,7 +404,7 @@ impl Fmt {
                 self.push(" = ");
                 self.push(&self.expr_str(value));
             }
-            Stmt::SelfAssign { field, value } => {
+            Stmt::SelfAssign { field, value, .. } => {
                 self.push(&format!("self.{field} = "));
                 self.push(&self.expr_str(value));
             }
@@ -514,7 +514,7 @@ impl Fmt {
                     self.push("}");
                 }
             }
-            Stmt::AugAssign { name, op, rhs } => {
+            Stmt::AugAssign { name, op, rhs, .. } => {
                 self.push(&format!("{name} {}= ", binop_str(*op)));
                 self.push(&self.expr_str(rhs));
             }
@@ -597,7 +597,7 @@ impl Fmt {
             Expr::None_ => "none".into(),
             Expr::StringLit(parts) => self.string_lit(parts),
             Expr::Ident(name) => name.clone(),
-            Expr::SelfAccess(f) => format!("self.{f}"),
+            Expr::SelfAccess { field, .. } => format!("self.{field}"),
             Expr::SelfRef => "self".to_string(),
             Expr::FieldAccess(obj, f) => format!("{}.{}", self.expr_str(obj), f),
             Expr::NullFieldAccess(obj, f) => format!("{}?.{}", self.expr_str(obj), f),
@@ -796,7 +796,7 @@ impl Fmt {
                 s.push_str(" = ");
                 s.push_str(&self.expr_at(value, indent));
             }
-            Stmt::SelfAssign { field, value } => {
+            Stmt::SelfAssign { field, value, .. } => {
                 s.push_str(&format!("self.{field} = "));
                 s.push_str(&self.expr_at(value, indent));
             }
@@ -893,7 +893,7 @@ impl Fmt {
                     s.push('}');
                 }
             }
-            Stmt::AugAssign { name, op, rhs } => {
+            Stmt::AugAssign { name, op, rhs, .. } => {
                 s.push_str(&format!("{name} {}= ", binop_str(*op)));
                 s.push_str(&self.expr_at(rhs, indent));
             }
@@ -976,8 +976,10 @@ impl Fmt {
                     self.expr_str(value)
                 )
             }
-            Stmt::SelfAssign { field, value } => format!("self.{field} = {}", self.expr_str(value)),
-            Stmt::AugAssign { name, op, rhs } => {
+            Stmt::SelfAssign { field, value, .. } => {
+                format!("self.{field} = {}", self.expr_str(value))
+            }
+            Stmt::AugAssign { name, op, rhs, .. } => {
                 format!("{name} {}= {}", binop_str(*op), self.expr_str(rhs))
             }
             Stmt::Raise(e) => format!("raise {}", self.expr_str(e)),

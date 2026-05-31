@@ -415,6 +415,7 @@ fn agent_item() -> P<AgentItem> {
         .ignore_then(newlines())
         .ignore_then(
             ident()
+                .map_with_span(|name, name_span| (name, name_span))
                 .then_ignore(just(Token::Colon))
                 .then(
                     just(Token::Ident("readonly".to_string()))
@@ -424,12 +425,15 @@ fn agent_item() -> P<AgentItem> {
                 .then(spanned_type_expr())
                 .then_ignore(just(Token::Eq))
                 .then(super::expr::expr_parser())
-                .map(|(((name, readonly), ty), default)| StateField {
-                    name,
-                    ty,
-                    default,
-                    readonly,
-                })
+                .map(
+                    |((((name, name_span), readonly), ty), default)| StateField {
+                        name,
+                        name_span,
+                        ty,
+                        default,
+                        readonly,
+                    },
+                )
                 .separated_by(sep())
                 .allow_trailing(),
         )

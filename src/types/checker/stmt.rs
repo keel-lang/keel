@@ -14,29 +14,15 @@ use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 use super::{Checker, binop::check_binop};
 
-impl Checker {
+impl Checker<'_, '_> {
     /// Second-pass validation: walk all task, agent, and top-level statement
     /// declarations and type-check their bodies.
     ///
     /// Must be called after [`Checker::collect`] so that all type and task
     /// signatures are already registered.
     pub(crate) fn check_body(&mut self, program: &Program) {
-        // Build the global name index once, after collect() has populated all
-        // declaration tables.  This index is consulted by infer_expr for every
-        // Expr::Ident that the lexical scope does not satisfy.
-        use crate::types::resolve as name_resolve;
-        self.name_index = name_resolve::build(
-            self.top_tasks.keys().cloned(),
-            self.agents.keys().cloned(),
-            self.enum_variants.keys().cloned(),
-            self.structs.keys().chain(self.aliases.keys()).cloned(),
-            self.prelude.iter().cloned(),
-        );
-        // Run the name-resolution walk to emit undefined-identifier errors.
-        // This is the canonical source of "undefined: `x`" diagnostics; the
-        // Expr::Ident / Unresolved arm in infer_expr returns Ty::Error silently.
-        let name_errors = name_resolve::resolve_names(program, &self.name_index);
-        self.errors.extend(name_errors);
+        // HIR lowering is the canonical source of undefined-name diagnostics.
+        self.errors.extend_from_slice(self.hir.diagnostics());
 
         for node in &program.declarations {
             match &node.kind {
@@ -290,7 +276,7 @@ impl Checker {
                 };
                 self.bind_to_scope(binding, &bound, scope);
             }
-            Stmt::SelfAssign { field, value } => {
+            Stmt::SelfAssign { field, value, .. } => {
                 let Some(agent_name) = &self.current_agent.clone() else {
                     self.err(format!("`self.{field}` used outside an agent"));
                     return;
@@ -402,11 +388,17 @@ impl Checker {
                     scope.pop();
                 }
             }
-            Stmt::AugAssign { name, op, rhs } => {
+            Stmt::AugAssign {
+                name,
+                name_span,
+                op,
+                rhs,
+            } => {
                 let var_ty = scope.get(name).cloned().unwrap_or_else(|| {
-                    self.err(format!(
-                        "augmented assignment to undefined variable `{name}`"
-                    ));
+                    self.err_at(
+                        format!("augmented assignment to undefined variable `{name}`"),
+                        name_span.clone(),
+                    );
                     Ty::Error
                 });
                 let rhs_ty = self.infer_expr(rhs, scope);

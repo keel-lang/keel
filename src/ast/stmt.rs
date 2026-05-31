@@ -1,6 +1,7 @@
 //! Statement, binding, and pattern nodes.
 
 use super::{Node, SpannedExpr, TypeExpr};
+use crate::lexer::Span;
 
 pub type Block = Vec<Node<Stmt>>;
 
@@ -35,7 +36,11 @@ pub enum Stmt {
         value: SpannedExpr,
     },
     /// `self.field = expr`
-    SelfAssign { field: String, value: SpannedExpr },
+    SelfAssign {
+        field: String,
+        field_span: Span,
+        value: SpannedExpr,
+    },
     /// `return expr`
     Return(Option<SpannedExpr>),
     /// `for x in expr { ... }`, `for {a, b} in expr { ... }`, or with `where pred`
@@ -68,6 +73,7 @@ pub enum Stmt {
     /// accumulation inside `for` loops updates the outer variable correctly.
     AugAssign {
         name: String,
+        name_span: Span,
         op: crate::ast::expr::BinOp,
         rhs: SpannedExpr,
     },

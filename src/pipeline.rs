@@ -1,6 +1,6 @@
 //! Compiler pipeline entry points for `keel run`, `check`, `fmt`, `build`, and `lint`.
 //!
-//! These functions encode the canonical lex → parse → type-check → execute sequence.
+//! These functions encode the canonical lex → parse → HIR → type-check → execute sequence.
 //! They live in the library so integration tests can call them directly without
 //! spawning the `keel` binary as a subprocess.
 
@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::runtime::context::RuntimeContext;
-use crate::{formatter, interpreter, lexer, lint, parser, types, vm};
+use crate::{formatter, hir, interpreter, lexer, lint, parser, types, vm};
 
 fn load_and_parse(path: &Path) -> Result<(String, NamedSource<String>, crate::ast::Program)> {
     let source = fs::read_to_string(path)
@@ -71,7 +71,8 @@ pub async fn run_file_with_runtime(path: &Path, runtime: Arc<RuntimeContext>) ->
 
     let (_, named_src, program) = load_and_parse(path)?;
 
-    let errors = types::checker::check(&program);
+    let hir = hir::lower_ast(&program);
+    let errors = types::checker::check(&hir);
     if !errors.is_empty() {
         report_type_errors(&errors, &named_src);
         return Err(miette::miette!(
@@ -94,10 +95,11 @@ pub async fn run_file_with_runtime(path: &Path, runtime: Arc<RuntimeContext>) ->
 pub fn check_file(path: &Path, strict: bool) -> Result<()> {
     let (_, named_src, program) = load_and_parse(path)?;
 
+    let hir = hir::lower_ast(&program);
     let errors = if strict {
-        types::checker::check_strict(&program)
+        types::checker::check_strict(&hir)
     } else {
-        types::checker::check(&program)
+        types::checker::check(&hir)
     };
 
     if !errors.is_empty() {
@@ -121,7 +123,8 @@ pub fn check_file(path: &Path, strict: bool) -> Result<()> {
 pub fn build_file(path: &Path) -> Result<()> {
     let (_, _, program) = load_and_parse(path)?;
 
-    let errors = types::checker::check(&program);
+    let hir = hir::lower_ast(&program);
+    let errors = types::checker::check(&hir);
     if !errors.is_empty() {
         for err in &errors {
             eprintln!("  Type error: {err}");
@@ -179,7 +182,8 @@ pub fn fmt_file(path: &Path) -> Result<()> {
 pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
     let (source, named_src, program) = load_and_parse(path)?;
 
-    let type_errors = types::checker::check(&program);
+    let hir = hir::lower_ast(&program);
+    let type_errors = types::checker::check(&hir);
     if !type_errors.is_empty() {
         report_type_errors(&type_errors, &named_src);
         return Err(miette::miette!(

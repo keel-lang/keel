@@ -1,3 +1,4 @@
+use keel_lang::hir::lower_ast;
 use keel_lang::lexer::lex;
 use keel_lang::parser::parse;
 use keel_lang::types::checker::{self, TypeDiagnostic, check};
@@ -7,14 +8,17 @@ fn type_errors(source: &str) -> Vec<String> {
     let named = NamedSource::new("t.keel", source.to_string());
     let tokens = lex(source, &named).expect("lex failed");
     let program = parse(tokens, source.len(), &named).expect("parse failed");
-    check(&program).into_iter().map(|e| e.message()).collect()
+    check(&lower_ast(&program))
+        .into_iter()
+        .map(|e| e.message())
+        .collect()
 }
 
 fn type_errors_full(source: &str) -> Vec<TypeDiagnostic> {
     let named = NamedSource::new("t.keel", source.to_string());
     let tokens = lex(source, &named).expect("lex failed");
     let program = parse(tokens, source.len(), &named).expect("parse failed");
-    check(&program)
+    check(&lower_ast(&program))
 }
 
 fn type_ok(source: &str) {
@@ -373,6 +377,21 @@ task call_it() {
 }
 "#,
         "argument",
+    );
+}
+
+#[test]
+fn valid_out_of_order_named_args_use_matching_literal_types() {
+    type_ok(
+        r#"
+type Record = { tag: int }
+
+task collect(record: Record, labels: map[str, int]) {}
+
+task call_it() {
+  collect(labels: {one: 1}, record: {tag: 2})
+}
+"#,
     );
 }
 
@@ -2102,6 +2121,20 @@ fn undefined_name_is_structured_with_identifier_span() {
         )),
         "expected structured UndefinedName at identifier span, got: {errs:?}"
     );
+}
+
+#[test]
+fn undefined_augmented_assignment_reports_one_checker_error() {
+    let src = "task go() {\n  missing += 1\n}";
+    let errs = type_errors_full(src);
+
+    assert_eq!(errs.len(), 1, "expected one diagnostic, got: {errs:?}");
+    assert_eq!(
+        errs[0].message(),
+        "augmented assignment to undefined variable `missing`"
+    );
+    let missing = src.find("missing").unwrap();
+    assert_eq!(errs[0].span(), &(missing..missing + "missing".len()));
 }
 
 #[test]

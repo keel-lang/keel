@@ -3,7 +3,7 @@
 //!
 //! # Sub-modules
 //!
-//! - [`symbols`] — token-level navigation: identifier lookup, go-to-definition, find-usages.
+//! - [`symbols`] — HIR-backed navigation: identifier lookup, go-to-definition, find-usages.
 //! - [`hover`] — type-inference hover: resolve the type of the identifier under the cursor.
 
 pub mod hover;

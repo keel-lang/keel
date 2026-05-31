@@ -192,7 +192,7 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &SpannedExpr) {
         | Expr::Bool(_)
         | Expr::None_
         | Expr::Ident(_)
-        | Expr::SelfAccess(_)
+        | Expr::SelfAccess { .. }
         | Expr::SelfRef => {}
         Expr::StringLit(parts) => {
             for part in parts {

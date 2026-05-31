@@ -47,14 +47,18 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
         // self.field += expr  (desugars to self.field = self.field op expr)
         let aug_self_assign = just(Token::SelfKw)
             .ignore_then(just(Token::Dot))
-            .ignore_then(ident())
+            .ignore_then(ident().map_with_span(|field, field_span| (field, field_span)))
             .then(aug_op.clone())
             .then(expr.clone())
-            .map_with_span(|((field, op), rhs), span| Stmt::SelfAssign {
+            .map_with_span(|(((field, field_span), op), rhs), span| Stmt::SelfAssign {
                 field: field.clone(),
+                field_span: field_span.clone(),
                 value: Node::new(
                     Expr::BinaryOp {
-                        left: Box::new(Node::new(Expr::SelfAccess(field), span.clone())),
+                        left: Box::new(Node::new(
+                            Expr::SelfAccess { field, field_span },
+                            span.clone(),
+                        )),
                         op,
                         right: Box::new(rhs),
                     },
@@ -66,19 +70,29 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
         // self.field = expr
         let self_assign = just(Token::SelfKw)
             .ignore_then(just(Token::Dot))
-            .ignore_then(ident())
+            .ignore_then(ident().map_with_span(|field, field_span| (field, field_span)))
             .then_ignore(just(Token::Eq))
             .then(expr.clone())
-            .map(|(field, value)| Stmt::SelfAssign { field, value })
+            .map(|((field, field_span), value)| Stmt::SelfAssign {
+                field,
+                field_span,
+                value,
+            })
             .boxed();
 
         // x += expr, x -= expr, etc. — produces Stmt::AugAssign so the
         // interpreter can use env.set (mutation) rather than env.define
         // (shadow), which makes accumulation in for loops work correctly.
         let aug_let_stmt = ident()
+            .map_with_span(|name, name_span| (name, name_span))
             .then(aug_op)
             .then(expr.clone())
-            .map(|((name, op), rhs)| Stmt::AugAssign { name, op, rhs })
+            .map(|(((name, name_span), op), rhs)| Stmt::AugAssign {
+                name,
+                name_span,
+                op,
+                rhs,
+            })
             .boxed();
 
         // x = expr  or  x: Type = expr

@@ -1,11 +1,11 @@
-//! Token-level and AST-level IDE helpers: identifier lookup and
+//! Token-level and HIR-level IDE helpers: identifier lookup and
 //! source-navigation primitives used by the language server.
 //!
-//! [`definition_of`] is the primary entry point.  It parses the source into
-//! an AST and reads the stored `name_span` from the relevant declaration,
+//! [`definition_of`] is the primary entry point.  It parses and lowers the
+//! source, then reads the declaration span through HIR symbol IDs,
 //! falling back to token-level scanning when parsing fails (e.g. mid-edit).
 
-use crate::ast::{AgentItem, Decl, Program};
+use crate::hir::{Hir, SymbolKind};
 use crate::lexer::{Span, Token};
 use logos::Logos;
 
@@ -45,7 +45,7 @@ pub fn ident_span_at_offset(text: &str, offset: usize) -> Option<Span> {
 
 /// Find the declaration span of the identifier at `offset`.
 ///
-/// Parses the source into an AST and returns the stored `name_span` for the
+/// Parses and lowers the source, then returns the HIR symbol span for the
 /// matching `task`, `agent`, `type`, or `interface` declaration.  Falls back
 /// to token-level scanning when the source does not parse cleanly (e.g.
 /// mid-edit in the LSP).  Returns `None` if the cursor is not on an
@@ -53,50 +53,125 @@ pub fn ident_span_at_offset(text: &str, offset: usize) -> Option<Span> {
 pub fn definition_of(text: &str, offset: usize) -> Option<Span> {
     let name = ident_at_offset(text, offset)?;
 
-    // Attempt a full parse and walk stored spans.
+    // Attempt a full parse and resolve through HIR symbol IDs.
     let named_src = miette::NamedSource::new("<lsp>", text.to_string());
     if let Ok(tokens) = crate::lexer::lex(text, &named_src)
         && let Ok(prog) = crate::parser::parse(tokens, text.len(), &named_src)
     {
-        return definition_of_in_program(&prog, &name);
+        let hir = crate::hir::lower_ast(&prog);
+        let ident_span = ident_span_at_offset(text, offset)?;
+        return definition_of_in_hir(&hir, &name, &ident_span);
     }
 
     // Parse failed (e.g. incomplete edit) — fall back to token scanning.
     definition_of_token_scan(text, &name)
 }
 
-/// Walk a parsed [`Program`] looking for a declaration whose stored `name_span`
-/// belongs to `name`.  Checks top-level `task`, `agent`, `type`, `interface`,
-/// agent-nested tasks, and `impl` method bodies.
-fn definition_of_in_program(prog: &Program, name: &str) -> Option<Span> {
-    for node in &prog.declarations {
-        match &node.kind {
-            Decl::Task(t) if t.name == name => return Some(t.name_span.clone()),
-            Decl::Agent(a) => {
-                if a.name == name {
-                    return Some(a.name_span.clone());
-                }
-                for item in &a.items {
-                    if let AgentItem::Task(t) = item
-                        && t.name == name
-                    {
-                        return Some(t.name_span.clone());
-                    }
-                }
-            }
-            Decl::Type(t) if t.name == name => return Some(t.name_span.clone()),
-            Decl::Interface(i) if i.name == name => return Some(i.name_span.clone()),
-            Decl::Impl(impl_decl) => {
-                for m in &impl_decl.methods {
-                    if m.name == name {
-                        return Some(m.name_span.clone());
-                    }
+/// Return whether the identifier at `offset` resolves to a top-level symbol.
+///
+/// Rename remains file-wide in v0.1, so local symbols must not pass this gate
+/// even though HIR-backed go-to-definition can navigate to them.
+pub fn is_top_level_symbol(text: &str, offset: usize) -> bool {
+    let Some(name) = ident_at_offset(text, offset) else {
+        return false;
+    };
+    let Some(ident_span) = ident_span_at_offset(text, offset) else {
+        return false;
+    };
+    let named_src = miette::NamedSource::new("<lsp>", text.to_string());
+    let Ok(tokens) = crate::lexer::lex(text, &named_src) else {
+        return is_top_level_declaration_token(text, &name, &ident_span);
+    };
+    let Ok(program) = crate::parser::parse(tokens, text.len(), &named_src) else {
+        return is_top_level_declaration_token(text, &name, &ident_span);
+    };
+    let hir = crate::hir::lower_ast(&program);
+
+    hir.resolution_at(&ident_span)
+        .symbol
+        .and_then(|id| hir.symbol(id))
+        .or_else(|| {
+            hir.symbols()
+                .iter()
+                .find(|symbol| symbol.name == name && symbol.span == ident_span)
+        })
+        .is_some_and(|symbol| {
+            matches!(
+                symbol.kind,
+                SymbolKind::TopTask
+                    | SymbolKind::Agent
+                    | SymbolKind::Enum
+                    | SymbolKind::TypeName
+                    | SymbolKind::Interface
+                    | SymbolKind::Extern
+            )
+        })
+}
+
+/// Return whether `span` is the name token of a top-level declaration.
+///
+/// This intentionally recognizes declaration sites only. When parsing fails we
+/// cannot safely resolve reference sites without risking a file-wide local
+/// rename, but declaration tokens before the broken edit remain unambiguous.
+fn is_top_level_declaration_token(text: &str, name: &str, span: &Span) -> bool {
+    let tokens: Vec<(Token, Span)> = Token::lexer(text)
+        .spanned()
+        .filter_map(|(result, span)| result.ok().map(|token| (token, span)))
+        .collect();
+    let mut brace_depth = 0usize;
+
+    for tokens in tokens.windows(2) {
+        match tokens[0].0 {
+            Token::LBrace => brace_depth += 1,
+            Token::RBrace => brace_depth = brace_depth.saturating_sub(1),
+            Token::Task | Token::Agent | Token::Type | Token::Interface if brace_depth == 0 => {
+                if let Token::Ident(candidate) = &tokens[1].0
+                    && candidate == name
+                    && tokens[1].1 == *span
+                {
+                    return true;
                 }
             }
             _ => {}
         }
     }
-    None
+    false
+}
+
+/// Resolve a declaration span through HIR symbols.
+fn definition_of_in_hir(hir: &Hir<'_>, name: &str, ident_span: &Span) -> Option<Span> {
+    if let Some(symbol) = hir
+        .resolution_at(ident_span)
+        .symbol
+        .and_then(|id| hir.symbol(id))
+    {
+        return Some(symbol.span.clone());
+    }
+
+    hir.symbols()
+        .iter()
+        .find(|symbol| {
+            symbol.name == name && symbol.span == *ident_span && is_definition_symbol(symbol.kind)
+        })
+        .or_else(|| {
+            hir.resolve_global(name)
+                .symbol
+                .and_then(|id| hir.symbol(id))
+        })
+        .map(|symbol| symbol.span.clone())
+}
+
+fn is_definition_symbol(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::TopTask
+            | SymbolKind::Agent
+            | SymbolKind::Enum
+            | SymbolKind::TypeName
+            | SymbolKind::Interface
+            | SymbolKind::Extern
+            | SymbolKind::Method
+    )
 }
 
 /// Token-level fallback for when the source cannot be parsed.
