@@ -95,6 +95,23 @@ File.remove(tmp)
 | `File.mktemp()` | `str` | temp file path; caller removes it |
 | `File.mktemp(dir: true)` | `str` | temp directory path; caller removes it |
 
+## Error handling
+
+All `File.*` methods that fail for I/O reasons throw a `FileError`. Catch it by type name:
+
+```keel
+try {
+    content = File.read("config.json")
+} catch err: FileError {
+    Io.notify("Could not read config: {err.message}")
+    content = "{}"
+} catch err: Error {
+    Io.notify("Unexpected error: {err.message}")
+}
+```
+
+`FileError` carries a `message: str` field. Its diagnostic code is `keel::runtime::FileError`.
+
 ---
 
 For subprocess execution, see [Shell — subprocess bridge](./shell.md).

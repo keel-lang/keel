@@ -1,9 +1,24 @@
 use crate::interpreter::CallArgValue;
-use crate::interpreter::RuntimeError;
 use crate::interpreter::value::Value;
+use crate::interpreter::{RuntimeError, RuntimeErrorKind};
 
+/// Returns a bare `miette::Report` wrapping a typed `RuntimeError` with a
+/// stable diagnostic code. Use this inside `.map_err()` closures. Use
+/// `throw_typed_error` instead when the call site returns `miette::Result<Value>`
+/// directly.
+pub(crate) fn make_typed_report(
+    kind: RuntimeErrorKind,
+    message: impl Into<String>,
+) -> miette::Report {
+    let mut fields = std::collections::HashMap::new();
+    fields.insert("message".to_string(), Value::String(message.into()));
+    miette::Report::new(RuntimeError::new(kind, fields))
+}
+
+/// Return `Err(miette::Report)` wrapping a typed `RuntimeError`. Optionally
+/// attach one extra named field (e.g. `got` for `AiSchemaError`).
 pub(crate) fn throw_typed_error(
-    type_name: &str,
+    kind: RuntimeErrorKind,
     message: &str,
     extra: Option<(&str, String)>,
 ) -> miette::Result<Value> {
@@ -13,7 +28,7 @@ pub(crate) fn throw_typed_error(
     }
     // Insert "message" last so it is never overwritten by an extra field.
     fields.insert("message".to_string(), Value::String(message.to_string()));
-    Err(miette::Report::new(RuntimeError::new(type_name, fields)))
+    Err(miette::Report::new(RuntimeError::new(kind, fields)))
 }
 
 pub(crate) fn find_arg<'a>(args: &'a [CallArgValue], name: &str) -> Option<&'a Value> {
@@ -47,6 +62,7 @@ mod tests {
     use super::*;
     use crate::interpreter::CallArgValue;
     use crate::interpreter::value::Value;
+    use miette::Diagnostic;
 
     // ── find_arg ──────────────────────────────────────────────────────────
 
@@ -146,7 +162,7 @@ mod tests {
 
     #[test]
     fn throw_typed_error_without_extra() {
-        let result = throw_typed_error("AiError", "something failed", None);
+        let result = throw_typed_error(RuntimeErrorKind::Ai, "something failed", None);
         assert!(result.is_err());
         let err = result.unwrap_err();
         let msg = format!("{err:?}");
@@ -158,17 +174,22 @@ mod tests {
         let typed = err
             .downcast_ref::<RuntimeError>()
             .expect("typed payload should be preserved");
-        assert_eq!(typed.type_name, "AiError");
+        assert_eq!(typed.type_name(), "AiError");
         assert_eq!(
             typed.fields.get("message").map(|v| v.to_display_string()),
             Some("something failed".into())
+        );
+        assert_eq!(
+            typed.code().map(|c| c.to_string()),
+            Some("keel::runtime::AiError".into()),
+            "diagnostic code must be stable"
         );
     }
 
     #[test]
     fn throw_typed_error_with_extra_field() {
         let result = throw_typed_error(
-            "AiSchemaError",
+            RuntimeErrorKind::AiSchema,
             "schema mismatch",
             Some(("got", "{\"x\":1}".into())),
         );
@@ -182,10 +203,33 @@ mod tests {
         let typed = err
             .downcast_ref::<RuntimeError>()
             .expect("typed payload should be preserved");
-        assert_eq!(typed.type_name, "AiSchemaError");
+        assert_eq!(typed.type_name(), "AiSchemaError");
         assert_eq!(
             typed.fields.get("got").map(|v| v.to_display_string()),
             Some("{\"x\":1}".into())
+        );
+        assert_eq!(
+            typed.code().map(|c| c.to_string()),
+            Some("keel::runtime::AiSchemaError".into()),
+            "diagnostic code must be stable"
+        );
+    }
+
+    #[test]
+    fn make_typed_report_carries_file_error_code() {
+        let report = make_typed_report(RuntimeErrorKind::File, "File.read `x.txt`: not found");
+        let typed = report
+            .downcast_ref::<RuntimeError>()
+            .expect("typed payload should be preserved");
+        assert_eq!(typed.type_name(), "FileError");
+        assert_eq!(
+            typed.code().map(|c| c.to_string()),
+            Some("keel::runtime::FileError".into()),
+            "diagnostic code must be stable"
+        );
+        assert!(
+            report.to_string().contains("FileError"),
+            "display must contain type name"
         );
     }
 }

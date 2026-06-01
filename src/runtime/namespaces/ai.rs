@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::interpreter::value::{MapKey, Value};
-use crate::interpreter::{CallArgValue, Interpreter, Namespace};
+use crate::interpreter::{CallArgValue, Interpreter, Namespace, RuntimeErrorKind};
 use crate::runtime::convert::json_to_value;
 use crate::runtime::namespace::{find_arg, ns, positional, throw_typed_error};
 
@@ -27,9 +27,11 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::SchemaValidation { got }) => {
-                    throw_typed_error("AiSchemaError",
+                    throw_typed_error(
+                        RuntimeErrorKind::AiSchema,
                         &format!("LLM output did not match expected schema: '{got}'"),
-                        Some(("got", got)))
+                        Some(("got", got)),
+                    )
                 }
                 // Network / timeout / mock failures: return none so `??` provides the default.
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
@@ -56,7 +58,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 
@@ -79,7 +81,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 
@@ -139,7 +141,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 
@@ -170,7 +172,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 
@@ -197,7 +199,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 
@@ -214,7 +216,7 @@ pub(crate) fn namespace() -> Namespace {
                 Ok(None) => Ok(Value::None),
                 Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error("AiError", &e.to_string(), None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 

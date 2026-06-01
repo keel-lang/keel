@@ -34,6 +34,18 @@ an error when omitted instead of silently acting as no-ops or empty strings.
 Display-oriented APIs such as interpolation, `Io.*`, and `Log.*` continue to format
 arbitrary values.
 
+### Stable diagnostic codes for typed runtime errors
+
+`AiError`, `AiSchemaError`, and `FileError` now expose a stable machine-readable
+code via `miette`'s diagnostic protocol. When an error propagates uncaught to the
+CLI, the code appears in the output — for example `keel::runtime::FileError`. The
+code follows the pattern `keel::runtime::<TypeName>` and can be inspected by tooling
+without parsing the error message.
+
+`FileError` is now a typed runtime error: `File.*` failures can be caught by type
+name (`catch e: FileError`), matching the behavior of `AiError` and `AiSchemaError`.
+`catch e: Error` continues to catch all failures as before.
+
 ---
 
 ## v0.1.30 — 2026-05-29

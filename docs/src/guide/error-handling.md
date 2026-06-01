@@ -52,6 +52,25 @@ try {
 | `message` | `str` | Human-readable description |
 | `got` | `str` | The raw LLM output that didn't match |
 
+## Diagnostic codes
+
+Typed runtime errors expose a stable machine-readable code via `miette`'s diagnostic protocol. When an error propagates uncaught to the CLI, the code appears in the error output:
+
+```
+Error: keel::runtime::FileError
+  × FileError: File.read `missing.txt`: No such file or directory
+```
+
+Codes follow the pattern `keel::runtime::<TypeName>`. Currently classified:
+
+| Error type | Diagnostic code |
+|---|---|
+| `AiError` | `keel::runtime::AiError` |
+| `AiSchemaError` | `keel::runtime::AiSchemaError` |
+| `FileError` | `keel::runtime::FileError` |
+
+More namespace errors will gain codes as they are migrated. Tooling and host integrations can inspect the code directly without parsing the error message string.
+
 ## `raise` — throw an error
 
 Throw an error from any point in a task or agent handler:

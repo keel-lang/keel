@@ -24,6 +24,16 @@ All notable changes to Keel.
 
 - **Runtime APIs now enforce their declared arguments.** Older namespace methods such as `File.read`, `Cache.get`, `Json.parse`, and `Shell.run` passed values through display formatting, so dynamic calls could silently turn `42` into `"42"`. Required sleep and value-method arguments could also be omitted and silently treated as no-ops or empty strings. Shared runtime argument decoders now reject wrong or missing inputs with clear errors; display coercion remains available only for presentation-oriented APIs such as interpolation, `Io.*`, and `Log.*`.
 
+- **Runtime errors now carry stable machine-readable diagnostic codes.** `AiError`, `AiSchemaError`, and `FileError` are classified by a new `RuntimeErrorKind` enum. `miette::Diagnostic::code()` returns a stable code of the form `keel::runtime::<TypeName>` (e.g. `keel::runtime::FileError`) which CLI renderers and future host integrations can inspect without parsing the error message. The code appears in the CLI output when a typed error propagates uncaught:
+
+  ```
+  Error: keel::runtime::FileError
+
+    × FileError: File.read `config.json`: No such file or directory (os error 2)
+  ```
+
+  **`FileError` is now a typed runtime error** — `File.*` failures are now catchable by type name (`catch e: FileError`), matching how `AiError` and `AiSchemaError` have always worked. `catch e: Error` continues to catch all failures as before. `AiError` and `AiSchemaError` catch behaviour and error messages are unchanged.
+
 ---
 
 ## [0.1.30] — 2026-05-29

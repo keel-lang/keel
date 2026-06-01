@@ -1,7 +1,7 @@
-use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_bool_named, expect_str};
-use crate::runtime::namespace::ns;
+use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("File", {
@@ -15,7 +15,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.read: {e}"))?
             .map(Value::String)
-            .map_err(|e| miette::miette!("FileError: File.read `{path}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.read `{path}`: {e}")))
         }),
         "write" => |interp, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.write")?.to_owned();
@@ -28,7 +28,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.write: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| miette::miette!("FileError: File.write `{path}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.write `{path}`: {e}")))
         }),
         "exists" => |interp, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.exists")?.to_owned();
@@ -51,7 +51,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.list: {e}"))?
             .map(|names| Value::List(names.into_iter().map(Value::String).collect()))
-            .map_err(|e| miette::miette!("FileError: File.list `{dir_path}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.list `{dir_path}`: {e}")))
         }),
         "mkdir" => |interp, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.mkdir")?.to_owned();
@@ -63,7 +63,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.mkdir: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| miette::miette!("FileError: File.mkdir `{path}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.mkdir `{path}`: {e}")))
         }),
         "remove" => |interp, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.remove")?.to_owned();
@@ -75,7 +75,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.remove: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| miette::miette!("FileError: File.remove `{path}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.remove `{path}`: {e}")))
         }),
         "copy" => |interp, args| Box::pin(async move {
             let src = expect_str(&args, 0, "File.copy")?.to_owned();
@@ -91,7 +91,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.copy: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| miette::miette!("FileError: File.copy `{src}` -> `{dst}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.copy `{src}` -> `{dst}`: {e}")))
         }),
         "glob" => |interp, args| Box::pin(async move {
             let pattern = expect_str(&args, 0, "File.glob")?.to_owned();
@@ -101,7 +101,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.glob: {e}"))?
             .map(|paths| Value::List(paths.into_iter().map(Value::String).collect()))
-            .map_err(|e| miette::miette!("FileError: File.glob `{pattern}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.glob `{pattern}`: {e}")))
         }),
         "move" => |interp, args| Box::pin(async move {
             let src = expect_str(&args, 0, "File.move")?.to_owned();
@@ -117,7 +117,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.move: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| miette::miette!("FileError: File.move `{src}` -> `{dst}`: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.move `{src}` -> `{dst}`: {e}")))
         }),
         "mktemp" => |interp, args| Box::pin(async move {
             let is_dir = expect_bool_named(&args, "dir", "File.mktemp")?.unwrap_or(false);
@@ -126,7 +126,7 @@ pub(crate) fn namespace() -> Namespace {
             .await
             .map_err(|e| miette::miette!("File.mktemp: {e}"))?
             .map(Value::String)
-            .map_err(|e| miette::miette!("FileError: File.mktemp: {e}"))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.mktemp: {e}")))
         }),
     })
 }

@@ -270,7 +270,7 @@ impl Interpreter {
                             };
                             let matches = match &typed {
                                 Some(typed) => {
-                                    clause_type == "Error" || clause_type == typed.type_name
+                                    clause_type == "Error" || clause_type == typed.type_name()
                                 }
                                 None => clause_type == "Error",
                             };

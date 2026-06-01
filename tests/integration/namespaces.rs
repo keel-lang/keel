@@ -99,6 +99,76 @@ run(A)
 }
 
 #[test]
+fn file_error_is_catchable_by_type_name() {
+    let missing = tempfile::tempdir()
+        .expect("tempdir")
+        .path()
+        .join("missing.txt");
+    let file = keel_string_literal(&missing.to_string_lossy());
+    let src = format!(
+        r#"
+agent A {{
+    @on_start {{
+        try {{
+            File.read("{file}")
+        }} catch e: FileError {{
+            Io.show("caught={{e.message}}")
+        }}
+        stop(self)
+    }}
+}}
+run(A)
+"#
+    );
+    let (ok, stdout, stderr) = run_inline(&src, false);
+    assert!(
+        ok,
+        "catch FileError should succeed\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught="),
+        "FileError clause must fire, not Error fallback:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("File.read"),
+        "caught message should mention File.read:\n{stdout}"
+    );
+}
+
+#[test]
+fn file_error_also_caught_by_error_fallback() {
+    let missing = tempfile::tempdir()
+        .expect("tempdir")
+        .path()
+        .join("missing.txt");
+    let file = keel_string_literal(&missing.to_string_lossy());
+    let src = format!(
+        r#"
+agent A {{
+    @on_start {{
+        try {{
+            File.read("{file}")
+        }} catch e: Error {{
+            Io.show("caught-as-error")
+        }}
+        stop(self)
+    }}
+}}
+run(A)
+"#
+    );
+    let (ok, stdout, stderr) = run_inline(&src, false);
+    assert!(
+        ok,
+        "catch Error should catch FileError too\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught-as-error"),
+        "Error fallback must catch FileError:\n{stdout}"
+    );
+}
+
+#[test]
 fn file_namespace_mkdir_creates_directory() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let new_dir = tmp.path().join("created").join("nested");
