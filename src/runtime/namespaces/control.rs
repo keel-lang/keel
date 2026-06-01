@@ -8,7 +8,7 @@ pub(crate) fn namespace() -> Namespace {
     ns!("Control", {
         // Control.retry(n, fn) — invoke fn up to n times until it succeeds.
         // The last error is surfaced if every attempt fails.
-        "retry" => |interp, args| Box::pin(async move {
+        "retry" => |host, args| Box::pin(async move {
             let attempts = match positional(&args, 0) {
                 Some(Value::Integer(n)) if *n > 0 => *n as usize,
                 _ => return Err(miette::miette!("Control.retry: first argument must be a positive integer")),
@@ -20,7 +20,7 @@ pub(crate) fn namespace() -> Namespace {
 
             let mut last_err: Option<miette::Report> = None;
             for _ in 0..attempts {
-                match interp.call_closure(&params, &body, vec![]).await {
+                match host.call_closure(&params, &body, vec![]).await {
                     Ok(v) => return Ok(v),
                     Err(e) => last_err = Some(e),
                 }
@@ -29,7 +29,7 @@ pub(crate) fn namespace() -> Namespace {
         }),
         // Control.with_timeout(duration, fn) — abort fn if it doesn't
         // complete within `duration`. Raises TimeoutError on expiry.
-        "with_timeout" => |interp, args| Box::pin(async move {
+        "with_timeout" => |host, args| Box::pin(async move {
             if matches!(positional(&args, 0), None | Some(Value::Closure(_, _))) {
                 return Err(miette::miette!(
                     "Control.with_timeout: missing duration argument"
@@ -42,7 +42,7 @@ pub(crate) fn namespace() -> Namespace {
             }).ok_or_else(|| miette::miette!("Control.with_timeout: missing closure argument"))?;
 
             let dur = std::time::Duration::from_secs_f64(duration);
-            let fut = interp.call_closure(&params, &body, vec![]);
+            let fut = host.call_closure(&params, &body, vec![]);
             match tokio::time::timeout(dur, fut).await {
                 Ok(Ok(v)) => Ok(v),
                 Ok(Err(e)) => Err(e),
@@ -51,11 +51,11 @@ pub(crate) fn namespace() -> Namespace {
         }),
         // Control.with_deadline(datetime_str, fn) — abort fn if the
         // absolute deadline (RFC 3339 / ISO 8601) passes before fn returns.
-        "with_deadline" => |interp, args| Box::pin(async move {
+        "with_deadline" => |host, args| Box::pin(async move {
             let when_str = expect_str(&args, 0, "Control.with_deadline")?;
             let target = parse_datetime(when_str)
                 .ok_or_else(|| miette::miette!("Control.with_deadline: cannot parse `{when_str}` as an ISO 8601 datetime"))?;
-            let now = interp.runtime.clock.now_utc();
+            let now = host.runtime().clock.now_utc();
             let remaining = (target - now).num_milliseconds().max(0) as u64;
             let (params, body) = args.iter().find_map(|a| match &a.value {
                 Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
@@ -63,7 +63,7 @@ pub(crate) fn namespace() -> Namespace {
             }).ok_or_else(|| miette::miette!("Control.with_deadline: missing closure argument"))?;
 
             let dur = std::time::Duration::from_millis(remaining);
-            let fut = interp.call_closure(&params, &body, vec![]);
+            let fut = host.call_closure(&params, &body, vec![]);
             match tokio::time::timeout(dur, fut).await {
                 Ok(Ok(v)) => Ok(v),
                 Ok(Err(e)) => Err(e),

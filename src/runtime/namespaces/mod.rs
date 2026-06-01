@@ -1,4 +1,4 @@
-use crate::interpreter::{Interpreter, Namespace};
+use crate::interpreter::{Host, Namespace};
 
 mod agent;
 mod ai;
@@ -24,9 +24,9 @@ mod shell;
 mod time;
 pub(crate) mod uuid;
 
-pub(crate) fn install(interp: &mut Interpreter) {
+pub(crate) fn install(host: &mut dyn Host) {
     for namespace in namespaces() {
-        interp.register_namespace(namespace);
+        host.register_namespace(namespace);
     }
 }
 

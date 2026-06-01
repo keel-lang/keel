@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use crate::interpreter::value::Value;
-use crate::interpreter::{CallArgValue, Interpreter};
+use crate::interpreter::{CallArgValue, Host};
 
 pub(crate) mod args;
 pub mod context;
@@ -52,24 +52,22 @@ const SYMBOL_IDENTS: &[&str] = &[
     "markdown",
 ];
 
-pub fn install_prelude(interp: &mut Interpreter) {
+pub fn install_prelude(host: &mut dyn Host) {
     for s in SYMBOL_IDENTS {
-        interp
-            .globals
-            .insert((*s).to_string(), Value::String((*s).to_string()));
+        host.insert_global((*s).to_string(), Value::String((*s).to_string()));
     }
 
-    namespaces::install(interp);
-    install_top_level_agent_fns(interp);
-    install_min_max(interp);
-    install_uuid_alias(interp);
-    install_typeof(interp);
+    namespaces::install(host);
+    install_top_level_agent_fns(host);
+    install_min_max(host);
+    install_uuid_alias(host);
+    install_typeof(host);
 }
 
-fn install_typeof(interp: &mut Interpreter) {
-    interp.register_top_fn(
+fn install_typeof(host: &mut dyn Host) {
+    host.register_top_fn(
         "typeof",
-        Arc::new(|_interp: &mut Interpreter, args: Vec<CallArgValue>| {
+        Arc::new(|_host: &mut dyn Host, args: Vec<CallArgValue>| {
             Box::pin(async move {
                 let val = args
                     .into_iter()
@@ -108,14 +106,14 @@ fn cmp_values(a: &Value, b: &Value) -> miette::Result<std::cmp::Ordering> {
     }
 }
 
-fn install_min_max(interp: &mut Interpreter) {
+fn install_min_max(host: &mut dyn Host) {
     use std::cmp::Ordering;
 
     for want_max in [false, true] {
         let name = if want_max { "max" } else { "min" };
-        interp.register_top_fn(
+        host.register_top_fn(
             name,
-            Arc::new(move |interp: &mut Interpreter, args: Vec<CallArgValue>| {
+            Arc::new(move |host: &mut dyn Host, args: Vec<CallArgValue>| {
                 Box::pin(async move {
                     let by_val = args
                         .iter()
@@ -152,7 +150,7 @@ fn install_min_max(interp: &mut Interpreter) {
                                 }
                             };
                             let mut best = items[0].clone();
-                            let mut best_key = interp
+                            let mut best_key = host
                                 .call_closure(
                                     &params,
                                     &body,
@@ -163,7 +161,7 @@ fn install_min_max(interp: &mut Interpreter) {
                                 )
                                 .await?;
                             for item in items.into_iter().skip(1) {
-                                let key = interp
+                                let key = host
                                     .call_closure(
                                         &params,
                                         &body,
@@ -182,11 +180,11 @@ fn install_min_max(interp: &mut Interpreter) {
                         }
                         None => {
                             // Use Comparable impl if items are structs.
-                            let cmp_task = interp.find_impl_task(&items[0], "compare");
+                            let cmp_task = host.find_impl_task(&items[0], "compare");
                             if let Some(task) = cmp_task {
                                 let mut best = items[0].clone();
                                 for item in items.into_iter().skip(1) {
-                                    let cmp_val = interp
+                                    let cmp_val = host
                                         .call_task(
                                             "compare",
                                             &task,
@@ -228,10 +226,10 @@ fn install_min_max(interp: &mut Interpreter) {
     }
 }
 
-fn install_top_level_agent_fns(interp: &mut Interpreter) {
-    interp.register_top_fn(
+fn install_top_level_agent_fns(host: &mut dyn Host) {
+    host.register_top_fn(
         "run",
-        Arc::new(|interp: &mut Interpreter, args: Vec<CallArgValue>| {
+        Arc::new(|host: &mut dyn Host, args: Vec<CallArgValue>| {
             Box::pin(async move {
                 let agent_name = match args.first().map(|a| &a.value) {
                     Some(Value::AgentRef(name)) => name.clone(),
@@ -243,32 +241,32 @@ fn install_top_level_agent_fns(interp: &mut Interpreter) {
                     }
                     None => return Err(miette::miette!("run() requires an agent argument")),
                 };
-                interp.start_agent(&agent_name).await?;
+                host.start_agent(&agent_name).await?;
                 Ok(Value::None)
             })
         }),
     );
 
-    interp.register_top_fn(
+    host.register_top_fn(
         "stop",
-        Arc::new(|interp: &mut Interpreter, args: Vec<CallArgValue>| {
+        Arc::new(|host: &mut dyn Host, args: Vec<CallArgValue>| {
             Box::pin(async move {
                 let agent_name = match args.first().map(|a| &a.value) {
                     Some(Value::AgentRef(name)) => name.clone(),
                     _ => return Err(miette::miette!("stop() requires an agent argument")),
                 };
-                interp.stop_agent(&agent_name).await?;
+                host.stop_agent(&agent_name).await?;
                 Ok(Value::None)
             })
         }),
     );
 }
 
-fn install_uuid_alias(interp: &mut Interpreter) {
-    interp.register_top_fn(
+fn install_uuid_alias(host: &mut dyn Host) {
+    host.register_top_fn(
         "uuid",
-        Arc::new(|interp: &mut Interpreter, _args: Vec<CallArgValue>| {
-            Box::pin(async move { interp.call_namespace_method("Uuid", "v4", vec![]).await })
+        Arc::new(|host: &mut dyn Host, _args: Vec<CallArgValue>| {
+            Box::pin(async move { host.call_namespace_method("Uuid", "v4", vec![]).await })
         }),
     );
 }

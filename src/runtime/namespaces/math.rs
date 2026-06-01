@@ -317,4 +317,44 @@ mod tests {
         let msg = format!("{err:?}");
         assert!(msg.contains("str"), "expected type name in error: {msg}");
     }
+
+    // ── MockHost tests (AC#3: Math testable without Interpreter) ──────────
+
+    #[tokio::test]
+    async fn sqrt_with_mock_host() {
+        use crate::interpreter::MockHost;
+        use crate::runtime::context::{MapEnv, NativeClock, NativeFileSystem, RuntimeContext};
+        use std::sync::Arc;
+
+        let ctx = RuntimeContext::test_context(
+            Arc::new(MapEnv::with(&[])),
+            Arc::new(NativeClock),
+            Arc::new(NativeFileSystem),
+        );
+        let mut host = MockHost::new(ctx);
+        let ns = namespace();
+        let result = ns.methods["sqrt"](&mut host, vec![float(4.0)])
+            .await
+            .unwrap();
+        assert_eq!(result, Value::Float(2.0));
+    }
+
+    #[tokio::test]
+    async fn pow_with_mock_host() {
+        use crate::interpreter::MockHost;
+        use crate::runtime::context::{MapEnv, NativeClock, NativeFileSystem, RuntimeContext};
+        use std::sync::Arc;
+
+        let ctx = RuntimeContext::test_context(
+            Arc::new(MapEnv::with(&[])),
+            Arc::new(NativeClock),
+            Arc::new(NativeFileSystem),
+        );
+        let mut host = MockHost::new(ctx);
+        let ns = namespace();
+        let result = ns.methods["pow"](&mut host, vec![float(2.0), float(8.0)])
+            .await
+            .unwrap();
+        assert_eq!(result, Value::Float(256.0));
+    }
 }

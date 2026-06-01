@@ -1,50 +1,50 @@
 use crate::interpreter::value::Value;
-use crate::interpreter::{Interpreter, Namespace};
+use crate::interpreter::{Host, Namespace};
 use crate::runtime::args::expect_str;
 use crate::runtime::context;
 use crate::runtime::namespace::{ns, positional};
 
-fn log_if_enabled(interp: &Interpreter, level: &str, msg: &str) {
+fn log_if_enabled(host: &dyn Host, level: &str, msg: &str) {
     let call_rank = context::log_level_rank(level).unwrap_or(1);
-    if call_rank >= interp.runtime.current_log_threshold() {
+    if call_rank >= host.runtime().current_log_threshold() {
         eprintln!("[{level}] {msg}");
     }
 }
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Log", {
-        "info" => |interp, args| Box::pin(async move {
+        "info" => |host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
-            log_if_enabled(interp, "info", &msg);
+            log_if_enabled(host, "info", &msg);
             Ok(Value::None)
         }),
-        "warn" => |interp, args| Box::pin(async move {
+        "warn" => |host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
-            log_if_enabled(interp, "warn", &msg);
+            log_if_enabled(host, "warn", &msg);
             Ok(Value::None)
         }),
-        "error" => |interp, args| Box::pin(async move {
+        "error" => |host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
-            log_if_enabled(interp, "error", &msg);
+            log_if_enabled(host, "error", &msg);
             Ok(Value::None)
         }),
-        "debug" => |interp, args| Box::pin(async move {
+        "debug" => |host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
-            log_if_enabled(interp, "debug", &msg);
+            log_if_enabled(host, "debug", &msg);
             Ok(Value::None)
         }),
-        "set_level" => |interp, args| Box::pin(async move {
+        "set_level" => |host, args| Box::pin(async move {
             let level = expect_str(&args, 0, "Log.set_level")?;
-            if !interp.runtime.set_log_threshold(level) {
+            if !host.runtime().set_log_threshold(level) {
                 return Err(miette::miette!(
                     "Log.set_level: `{level}` is not a valid level (expected debug|info|warn|error)"
                 ));
             }
             Ok(Value::None)
         }),
-        "level" => |interp, _args| Box::pin(async move {
+        "level" => |host, _args| Box::pin(async move {
             Ok(Value::String(
-                context::log_level_name(interp.runtime.current_log_threshold()).to_string(),
+                context::log_level_name(host.runtime().current_log_threshold()).to_string(),
             ))
         }),
     })

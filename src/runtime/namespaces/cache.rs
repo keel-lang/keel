@@ -5,43 +5,43 @@ use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Cache", {
-        "set" => |interp, args| Box::pin(async move {
+        "set" => |host, args| Box::pin(async move {
             let key = expect_str(&args, 0, "Cache.set")?.to_owned();
             let value = positional(&args, 1)
                 .cloned()
                 .ok_or_else(|| miette::miette!("Cache.set: missing value argument"))?;
 
             let expires_at = expect_duration_named(&args, "ttl", "Cache.set")?
-                .map(|secs| interp.runtime.clock.now_instant() + std::time::Duration::from_secs_f64(secs));
+                .map(|secs| host.runtime().clock.now_instant() + std::time::Duration::from_secs_f64(secs));
 
-            let cache = &interp.runtime.cache;
+            let cache = &host.runtime().cache;
             cache.lock().insert(key, (value, expires_at));
             Ok(Value::None)
         }),
-        "get" => |interp, args| Box::pin(async move {
+        "get" => |host, args| Box::pin(async move {
             let key = expect_str(&args, 0, "Cache.get")?;
 
-            let cache = &interp.runtime.cache;
+            let cache = &host.runtime().cache;
             let mut cache_lock = cache.lock();
 
             match cache_lock.get(key) {
                 None => Ok(Value::None),
-                Some((_, Some(expiry))) if interp.runtime.clock.now_instant() > *expiry => {
+                Some((_, Some(expiry))) if host.runtime().clock.now_instant() > *expiry => {
                     cache_lock.remove(key);
                     Ok(Value::None)
                 }
                 Some((v, _)) => Ok(v.clone()),
             }
         }),
-        "delete" => |interp, args| Box::pin(async move {
+        "delete" => |host, args| Box::pin(async move {
             let key = expect_str(&args, 0, "Cache.delete")?;
 
-            let cache = &interp.runtime.cache;
+            let cache = &host.runtime().cache;
             cache.lock().remove(key);
             Ok(Value::None)
         }),
-        "clear" => |interp, _args| Box::pin(async move {
-            let cache = &interp.runtime.cache;
+        "clear" => |host, _args| Box::pin(async move {
+            let cache = &host.runtime().cache;
             cache.lock().clear();
             Ok(Value::None)
         }),

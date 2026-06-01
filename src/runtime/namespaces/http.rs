@@ -81,7 +81,7 @@ pub(crate) fn namespace() -> Namespace {
         //     injection). For agent-aware behaviour, dispatch into a live
         //     agent via `Agent.send(MyAgent, data, event: "http_request")`.
         // See `docs/src/guide/connections.md` for the user-facing callout.
-        "serve" => |interp, args| Box::pin(async move {
+        "serve" => |host, args| Box::pin(async move {
             let port = match positional(&args, 0) {
                 None => 8080u16,
                 Some(_) => {
@@ -101,9 +101,9 @@ pub(crate) fn namespace() -> Namespace {
                 _ => None,
             }).ok_or_else(|| miette::miette!("Http.serve: missing closure argument"))?;
 
-            let closure_id = interp.register_closure("__http_serve__".to_string(), params, body);
-            let event_tx = interp.event_tx.clone();
-            let server_counter = interp.active_http_servers.clone();
+            let closure_id = host.register_closure("__http_serve__".to_string(), params, body);
+            let event_tx = host.clone_event_tx();
+            let server_counter = host.active_http_servers().clone();
 
             server_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 

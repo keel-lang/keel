@@ -6,6 +6,7 @@
 //! prelude, and structured `self.` state mutation.
 
 pub mod environment;
+pub mod host;
 pub mod value;
 
 mod agent;
@@ -24,6 +25,9 @@ pub(crate) use binary::{eval_binary, is_pascal_case};
 pub(crate) use binding::bind_value;
 pub use entry::{run_with_source, run_with_source_and_runtime};
 pub(crate) use error::{RuntimeError, RuntimeErrorKind, runtime_error};
+#[cfg(any(test, feature = "test-util"))]
+pub use host::MockHost;
+pub use host::{Host, HostFuture, LiveAgents};
 pub use state::{
     AgentDef, AgentInstance, BuiltinFn, CallArgValue, Event, Interpreter, Namespace,
     ScheduledClosure,

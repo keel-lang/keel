@@ -5,14 +5,14 @@ use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Io", {
-        "notify" => |_i, args| Box::pin(async move {
+        "notify" => |_host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
             human::notify(&msg);
             Ok(Value::None)
         }),
-        "show" => |interp, args| Box::pin(async move {
+        "show" => |host, args| Box::pin(async move {
             let v = positional(&args, 0).cloned().unwrap_or(Value::None);
-            human::show_with_repl(&v, interp.runtime.env.var("KEEL_REPL").as_deref() == Some("1"));
+            human::show_with_repl(&v, host.runtime().env.var("KEEL_REPL").as_deref() == Some("1"));
             Ok(Value::None)
         }),
         "ask" => |_i, args| Box::pin(async move {

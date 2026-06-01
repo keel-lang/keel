@@ -1,30 +1,30 @@
-use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
+use crate::interpreter::{Host, Namespace};
 use crate::runtime::args::{expect_str, expect_str_named, expect_str_value};
 use crate::runtime::namespace::{ns, positional};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Agent", {
-        "run" => |interp, args| Box::pin(async move {
+        "run" => |host, args| Box::pin(async move {
             let agent_name = match args.first().map(|a| &a.value) {
                 Some(Value::AgentRef(name)) => name.clone(),
                 _ => return Err(miette::miette!("Agent.run expects an agent argument")),
             };
-            interp.start_agent(&agent_name).await?;
+            host.start_agent(&agent_name).await?;
             Ok(Value::None)
         }),
-        "stop" => |interp, args| Box::pin(async move {
+        "stop" => |host, args| Box::pin(async move {
             let agent_name = match args.first().map(|a| &a.value) {
                 Some(Value::AgentRef(name)) => name.clone(),
                 _ => return Err(miette::miette!("Agent.stop expects an agent argument")),
             };
-            interp.stop_agent(&agent_name).await?;
+            host.stop_agent(&agent_name).await?;
             Ok(Value::None)
         }),
         // Agent.send(target, message) — posts `message` to the target
         // agent's `on message` handler via the event loop. Returns
         // immediately; the handler runs later in the target's context.
-        "send" => |interp, args| Box::pin(async move {
+        "send" => |host, args| Box::pin(async move {
             let target = match args.first().map(|a| &a.value) {
                 Some(Value::AgentRef(name)) => name.clone(),
                 _ => return Err(miette::miette!("Agent.send: first arg must be an agent")),
@@ -36,7 +36,7 @@ pub(crate) fn namespace() -> Namespace {
             let event_name = expect_str_named(&args, "event", "Agent.send")?
                 .unwrap_or("message")
                 .to_owned();
-            interp.enqueue_event(crate::interpreter::Event::Dispatch {
+            host.enqueue_event(crate::interpreter::Event::Dispatch {
                 agent_name: target,
                 event: event_name,
                 data,
@@ -53,7 +53,7 @@ pub(crate) fn namespace() -> Namespace {
         //   arg[0] = AgentRef(agent_name)
         //   arg[1] = handler name as string
         //   arg[2] = data payload
-        "delegate" => |interp, args| Box::pin(async move {
+        "delegate" => |host, args| Box::pin(async move {
             let (target, event, data) = match args.first().map(|a| &a.value) {
                 Some(Value::AgentHandlerRef(agent_name, handler_name)) => {
                     let data = args.get(1)
@@ -78,7 +78,7 @@ pub(crate) fn namespace() -> Namespace {
                      (use `Agent.delegate(Foo, \"handle\", data)`)"
                 )),
             };
-            interp.enqueue_event(crate::interpreter::Event::Dispatch {
+            host.enqueue_event(crate::interpreter::Event::Dispatch {
                 agent_name: target,
                 event,
                 data,
@@ -88,16 +88,16 @@ pub(crate) fn namespace() -> Namespace {
         // Agent.broadcast(team, data) — fan-out a `message` event to every
         // running agent whose `@team [...]` declaration includes the given
         // team name. Useful for system-wide signals to a labeled group.
-        "broadcast" => |interp, args| Box::pin(async move {
+        "broadcast" => |host, args| Box::pin(async move {
             let team = expect_str(&args, 0, "Agent.broadcast")?;
             let data = positional(&args, 1).cloned().unwrap_or(Value::None);
             let event_name = expect_str_named(&args, "event", "Agent.broadcast")?
                 .unwrap_or("message")
                 .to_owned();
 
-            let recipients = agents_in_team(interp, team);
+            let recipients = agents_in_team(host, team);
             for agent_name in recipients {
-                interp.enqueue_event(crate::interpreter::Event::Dispatch {
+                host.enqueue_event(crate::interpreter::Event::Dispatch {
                     agent_name,
                     event: event_name.clone(),
                     data: data.clone(),
@@ -110,11 +110,11 @@ pub(crate) fn namespace() -> Namespace {
 
 /// Return the names of every running agent whose `@team [...]` declaration
 /// contains `team`. Strings inside the list are matched literally.
-fn agents_in_team(interp: &crate::interpreter::Interpreter, team: &str) -> Vec<String> {
+fn agents_in_team(host: &dyn Host, team: &str) -> Vec<String> {
     use crate::ast::{AttributeBody, Expr, StringPart};
 
-    let instances: Vec<_> = interp
-        .live_agents
+    let instances: Vec<_> = host
+        .live_agents()
         .lock()
         .iter()
         .map(|(name, inst)| (name.clone(), inst.clone()))

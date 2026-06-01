@@ -5,20 +5,20 @@ use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Time", {
-        "now" => |interp, args| Box::pin(async move {
+        "now" => |host, args| Box::pin(async move {
             use chrono::SecondsFormat;
             if let Some(tz_str) = expect_str_named(&args, "tz", "Time.now")? {
                 let tz: chrono_tz::Tz = tz_str.parse().map_err(|_| {
                     miette::miette!("Time.now: unknown timezone {tz_str:?}. Use an IANA name like \"America/New_York\".")
                 })?;
-                let now = interp.runtime.clock.now_utc().with_timezone(&tz);
+                let now = host.runtime().clock.now_utc().with_timezone(&tz);
                 Ok(Value::String(now.to_rfc3339_opts(SecondsFormat::Millis, false)))
             } else {
-                Ok(Value::String(interp.runtime.clock.now_utc().to_rfc3339_opts(SecondsFormat::Millis, true)))
+                Ok(Value::String(host.runtime().clock.now_utc().to_rfc3339_opts(SecondsFormat::Millis, true)))
             }
         }),
-        "epoch_ms" => |interp, _args| Box::pin(async move {
-            let ms = interp.runtime.clock.now_utc().timestamp_millis();
+        "epoch_ms" => |host, _args| Box::pin(async move {
+            let ms = host.runtime().clock.now_utc().timestamp_millis();
             Ok(Value::Integer(ms))
         }),
         "parse" => |_i, args| Box::pin(async move {

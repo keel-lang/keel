@@ -5,16 +5,16 @@ use crate::runtime::namespace::ns;
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Env", {
-        "get" => |interp, args| Box::pin(async move {
+        "get" => |host, args| Box::pin(async move {
             let name = expect_str(&args, 0, "Env.get")?;
-            match interp.runtime.env.var(name) {
+            match host.runtime().env.var(name) {
                 Some(v) => Ok(Value::String(v)),
                 None => Ok(Value::None),
             }
         }),
-        "require" => |interp, args| Box::pin(async move {
+        "require" => |host, args| Box::pin(async move {
             let name = expect_str(&args, 0, "Env.require")?;
-            match interp.runtime.env.var(name) {
+            match host.runtime().env.var(name) {
                 Some(v) => Ok(Value::String(v)),
                 None => Err(miette::miette!("Env.require: `{name}` is not set")),
             }

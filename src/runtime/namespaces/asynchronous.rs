@@ -11,55 +11,14 @@ use crate::runtime::namespace::{ns, positional};
 pub(crate) fn namespace() -> Namespace {
     ns!("Async", {
         // Async.spawn(fn) — spawn fn as an independent Tokio task.
-        // Returns a handle (as a map with an id).
-        "spawn" => |interp, args| Box::pin(async move {
+        // Returns a handle map with `_id` and `_status` fields.
+        "spawn" => |host, args| Box::pin(async move {
             let (params, body) = args.iter().find_map(|a| match &a.value {
                 Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
                 _ => None,
             }).ok_or_else(|| miette::miette!("Async.spawn: missing closure argument"))?;
 
-            let handle_id = interp.runtime.next_async_handle_id();
-            let params_clone = params.clone();
-            let body_clone = body.clone();
-            let runtime = interp.runtime.clone();
-            let current_agent = interp.current_agent.clone();
-            let program_name = interp.program_name.clone();
-            // Snapshot the program's symbol tables so the spawned task can
-            // resolve user-defined tasks, enum types, and registered closures.
-            let globals = interp.globals.clone();
-            let agents = interp.agents.clone();
-            let enum_types = interp.enum_types.clone();
-            let struct_types = interp.struct_types.clone();
-            // Share the parent's event infrastructure so the spawned task can
-            // use Schedule.*, Agent.send, and Http.serve — events route to
-            // the main event loop via the shared channel and closure registry.
-            let closures = interp.closures.clone();
-            let next_closure_id = interp.next_closure_id.clone();
-            let event_tx = interp.event_tx.clone();
-            let active_http_servers = interp.active_http_servers.clone();
-            let live_agents = interp.live_agents.clone();
-
-            let handle = tokio::spawn(async move {
-                let mut local_interp =
-                    crate::interpreter::Interpreter::with_runtime(runtime);
-                local_interp.globals = globals;
-                local_interp.agents = agents;
-                local_interp.enum_types = enum_types;
-                local_interp.struct_types = struct_types;
-                local_interp.closures = closures;
-                local_interp.next_closure_id = next_closure_id;
-                local_interp.event_tx = event_tx;
-                local_interp.event_rx = None;
-                local_interp.active_http_servers = active_http_servers;
-                local_interp.live_agents = live_agents;
-                local_interp.current_agent = current_agent;
-                local_interp.program_name = program_name;
-                local_interp
-                    .call_closure(&params_clone, &body_clone, vec![])
-                    .await
-                    .map_err(|err| err.to_string())
-            });
-            interp.runtime.insert_async_task(handle_id, handle);
+            let handle_id = host.spawn_closure(params, body).await?;
 
             let mut handle_map = HashMap::new();
             handle_map.insert(MapKey::Str("_id".into()), Value::Integer(handle_id as i64));
@@ -67,7 +26,7 @@ pub(crate) fn namespace() -> Namespace {
 
             Ok(Value::Map(handle_map))
         }),
-        "join_all" => |interp, args| Box::pin(async move {
+        "join_all" => |host, args| Box::pin(async move {
             let handles_list = positional(&args, 0).cloned().unwrap_or(Value::List(vec![]));
 
             match handles_list {
@@ -76,8 +35,8 @@ pub(crate) fn namespace() -> Namespace {
                     for item in items {
                         let id = async_handle_id(&item)
                             .ok_or_else(|| miette::miette!("Async.join_all: invalid task handle"))?;
-                        let handle = interp
-                            .runtime
+                        let handle = host
+                            .runtime()
                             .take_async_task(id)
                             .ok_or_else(|| miette::miette!("Async.join_all: unknown task handle `{id}`"))?;
                         let value = handle
@@ -91,7 +50,7 @@ pub(crate) fn namespace() -> Namespace {
                 _ => Err(miette::miette!("Async.join_all: expected a list of handles")),
             }
         }),
-        "select" => |interp, args| Box::pin(async move {
+        "select" => |host, args| Box::pin(async move {
             let handles_list = positional(&args, 0).cloned().unwrap_or(Value::List(vec![]));
 
             match handles_list {
@@ -100,8 +59,8 @@ pub(crate) fn namespace() -> Namespace {
                     for item in items {
                         let id = async_handle_id(&item)
                             .ok_or_else(|| miette::miette!("Async.select: invalid task handle"))?;
-                        let handle = interp
-                            .runtime
+                        let handle = host
+                            .runtime()
                             .take_async_task(id)
                             .ok_or_else(|| miette::miette!("Async.select: unknown task handle `{id}`"))?;
                         handles.push(handle);

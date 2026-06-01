@@ -15,9 +15,9 @@ pub(crate) fn namespace() -> Namespace {
             set_version_and_variant(&mut bytes, 4);
             Ok(Value::Uuid(format_uuid(bytes)))
         }),
-        "v7" => |interp, _args| Box::pin(async move {
+        "v7" => |host, _args| Box::pin(async move {
             let mut bytes = random_bytes()?;
-            let ts = interp.runtime.clock.now_utc().timestamp_millis().max(0) as u64;
+            let ts = host.runtime().clock.now_utc().timestamp_millis().max(0) as u64;
             bytes[0] = ((ts >> 40) & 0xff) as u8;
             bytes[1] = ((ts >> 32) & 0xff) as u8;
             bytes[2] = ((ts >> 24) & 0xff) as u8;
@@ -312,5 +312,57 @@ mod tests {
             .await
             .expect("parse result");
         assert_eq!(value, Value::None);
+    }
+
+    // ── MockHost tests (AC#3: Uuid testable without Interpreter) ─────────
+
+    #[tokio::test]
+    async fn uuid_v4_with_mock_host() {
+        use crate::interpreter::MockHost;
+        use crate::runtime::context::{MapEnv, NativeClock, NativeFileSystem, RuntimeContext};
+        use std::sync::Arc;
+
+        let ctx = RuntimeContext::test_context(
+            Arc::new(MapEnv::with(&[])),
+            Arc::new(NativeClock),
+            Arc::new(NativeFileSystem),
+        );
+        let mut host = MockHost::new(ctx);
+        let ns = namespace();
+        let method = ns.methods.get("v4").unwrap();
+        let result = method(&mut host, vec![]).await.unwrap();
+        match result {
+            Value::Uuid(s) => assert_eq!(s.len(), 36, "UUID v4 is 36 chars with dashes"),
+            other => panic!("expected Uuid, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn uuid_v5_with_mock_host() {
+        use crate::interpreter::MockHost;
+        use crate::runtime::context::{MapEnv, NativeClock, NativeFileSystem, RuntimeContext};
+        use std::sync::Arc;
+
+        let ctx = RuntimeContext::test_context(
+            Arc::new(MapEnv::with(&[])),
+            Arc::new(NativeClock),
+            Arc::new(NativeFileSystem),
+        );
+        let mut host = MockHost::new(ctx);
+        let ns = namespace();
+        let method = ns.methods.get("v5").unwrap();
+        let result = method(
+            &mut host,
+            vec![
+                named("ns", Value::Uuid(UUID_DNS.to_string())),
+                named("name", Value::String("www.example.com".to_string())),
+            ],
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result,
+            Value::Uuid("2ed6657d-e927-568b-95e1-2665a8aea6a2".to_string())
+        );
     }
 }

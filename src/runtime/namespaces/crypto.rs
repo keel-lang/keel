@@ -361,4 +361,54 @@ mod tests {
             )
         );
     }
+
+    // ── MockHost tests (AC#3: Crypto testable without Interpreter) ────────
+
+    #[tokio::test]
+    async fn sha256_with_mock_host() {
+        use crate::interpreter::MockHost;
+        use crate::runtime::context::{MapEnv, NativeClock, NativeFileSystem, RuntimeContext};
+        use std::sync::Arc;
+
+        let ctx = RuntimeContext::test_context(
+            Arc::new(MapEnv::with(&[])),
+            Arc::new(NativeClock),
+            Arc::new(NativeFileSystem),
+        );
+        let mut host = MockHost::new(ctx);
+        let ns = namespace();
+        let method = ns.methods.get("sha256").unwrap();
+        let result = method(&mut host, vec![arg(Value::String("hello".into()))])
+            .await
+            .unwrap();
+        assert_eq!(
+            result,
+            Value::String(
+                "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".into()
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn random_token_with_mock_host() {
+        use crate::interpreter::MockHost;
+        use crate::runtime::context::{MapEnv, NativeClock, NativeFileSystem, RuntimeContext};
+        use std::sync::Arc;
+
+        let ctx = RuntimeContext::test_context(
+            Arc::new(MapEnv::with(&[])),
+            Arc::new(NativeClock),
+            Arc::new(NativeFileSystem),
+        );
+        let mut host = MockHost::new(ctx);
+        let ns = namespace();
+        let method = ns.methods.get("token").unwrap();
+        let result = method(&mut host, vec![arg(Value::Integer(16))])
+            .await
+            .unwrap();
+        match result {
+            Value::String(s) => assert_eq!(s.len(), 32, "16-byte token is 32 hex chars"),
+            other => panic!("expected string, got {other:?}"),
+        }
+    }
 }

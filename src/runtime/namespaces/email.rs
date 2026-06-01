@@ -6,10 +6,10 @@ use crate::runtime::{context, email};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Email", {
-        "fetch" => |interp, args| Box::pin(async move {
+        "fetch" => |host, args| Box::pin(async move {
             // `unread: true` is the v0.1 default (and only) filter.
             let _unread_only = expect_bool_named(&args, "unread", "Email.fetch")?.unwrap_or(true);
-            let Some(conn) = email_conn_from_env(interp.runtime.env.as_ref()) else {
+            let Some(conn) = email_conn_from_env(host.runtime().env.as_ref()) else {
                 eprintln!("  ⚠ Email.fetch: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — returning empty list");
                 return Ok(Value::List(vec![]));
             };
@@ -19,8 +19,8 @@ pub(crate) fn namespace() -> Namespace {
                 Err(e) => Err(miette::miette!("email fetch task join error: {e}")),
             }
         }),
-        "send" => |interp, args| Box::pin(async move {
-            let Some(conn) = email_conn_from_env(interp.runtime.env.as_ref()) else {
+        "send" => |host, args| Box::pin(async move {
+            let Some(conn) = email_conn_from_env(host.runtime().env.as_ref()) else {
                 eprintln!("  ⚠ Email.send: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — skipping");
                 return Ok(Value::None);
             };
@@ -59,8 +59,8 @@ pub(crate) fn namespace() -> Namespace {
         // Email.archive(message) — move a fetched email out of INBOX
         // into the folder named by IMAP_ARCHIVE_FOLDER (default `Archive`).
         // The message's UID is read from message.uid (added by Email.fetch).
-        "archive" => |interp, args| Box::pin(async move {
-            let Some(conn) = email_conn_from_env(interp.runtime.env.as_ref()) else {
+        "archive" => |host, args| Box::pin(async move {
+            let Some(conn) = email_conn_from_env(host.runtime().env.as_ref()) else {
                 eprintln!("  ⚠ Email.archive: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — skipping");
                 return Ok(Value::None);
             };
@@ -73,7 +73,7 @@ pub(crate) fn namespace() -> Namespace {
                 },
                 _ => return Err(miette::miette!("Email.archive: expected an email map argument")),
             };
-            let folder = interp.runtime.env.var("IMAP_ARCHIVE_FOLDER")
+            let folder = host.runtime().env.var("IMAP_ARCHIVE_FOLDER")
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Archive".to_string());
             match tokio::task::spawn_blocking(move || email::archive_email(&conn, uid, &folder)).await {

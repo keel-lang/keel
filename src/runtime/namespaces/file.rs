@@ -5,9 +5,9 @@ use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) fn namespace() -> Namespace {
     ns!("File", {
-        "read" => |interp, args| Box::pin(async move {
+        "read" => |host, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.read")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.read_to_string(std::path::Path::new(&path_inner))
@@ -17,10 +17,10 @@ pub(crate) fn namespace() -> Namespace {
             .map(Value::String)
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.read `{path}`: {e}")))
         }),
-        "write" => |interp, args| Box::pin(async move {
+        "write" => |host, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.write")?.to_owned();
             let content = expect_str(&args, 1, "File.write")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.write_string(std::path::Path::new(&path_inner), &content)
@@ -30,9 +30,9 @@ pub(crate) fn namespace() -> Namespace {
             .map(|_| Value::None)
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.write `{path}`: {e}")))
         }),
-        "exists" => |interp, args| Box::pin(async move {
+        "exists" => |host, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.exists")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             let exists = tokio::task::spawn_blocking(move || {
                 fs.exists(std::path::Path::new(&path_inner))
@@ -41,9 +41,9 @@ pub(crate) fn namespace() -> Namespace {
             .map_err(|e| miette::miette!("File.exists: {e}"))?;
             Ok(Value::Bool(exists))
         }),
-        "list" => |interp, args| Box::pin(async move {
+        "list" => |host, args| Box::pin(async move {
             let dir_path = expect_str(&args, 0, "File.list")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let dir_inner = dir_path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.read_dir_names(std::path::Path::new(&dir_inner))
@@ -53,9 +53,9 @@ pub(crate) fn namespace() -> Namespace {
             .map(|names| Value::List(names.into_iter().map(Value::String).collect()))
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.list `{dir_path}`: {e}")))
         }),
-        "mkdir" => |interp, args| Box::pin(async move {
+        "mkdir" => |host, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.mkdir")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.mkdir(std::path::Path::new(&path_inner))
@@ -65,9 +65,9 @@ pub(crate) fn namespace() -> Namespace {
             .map(|_| Value::None)
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.mkdir `{path}`: {e}")))
         }),
-        "remove" => |interp, args| Box::pin(async move {
+        "remove" => |host, args| Box::pin(async move {
             let path = expect_str(&args, 0, "File.remove")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.remove(std::path::Path::new(&path_inner))
@@ -77,10 +77,10 @@ pub(crate) fn namespace() -> Namespace {
             .map(|_| Value::None)
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.remove `{path}`: {e}")))
         }),
-        "copy" => |interp, args| Box::pin(async move {
+        "copy" => |host, args| Box::pin(async move {
             let src = expect_str(&args, 0, "File.copy")?.to_owned();
             let dst = expect_str(&args, 1, "File.copy")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let (src_inner, dst_inner) = (src.clone(), dst.clone());
             tokio::task::spawn_blocking(move || {
                 fs.copy_file(
@@ -93,9 +93,9 @@ pub(crate) fn namespace() -> Namespace {
             .map(|_| Value::None)
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.copy `{src}` -> `{dst}`: {e}")))
         }),
-        "glob" => |interp, args| Box::pin(async move {
+        "glob" => |host, args| Box::pin(async move {
             let pattern = expect_str(&args, 0, "File.glob")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let pat_inner = pattern.clone();
             tokio::task::spawn_blocking(move || fs.glob(&pat_inner))
             .await
@@ -103,10 +103,10 @@ pub(crate) fn namespace() -> Namespace {
             .map(|paths| Value::List(paths.into_iter().map(Value::String).collect()))
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.glob `{pattern}`: {e}")))
         }),
-        "move" => |interp, args| Box::pin(async move {
+        "move" => |host, args| Box::pin(async move {
             let src = expect_str(&args, 0, "File.move")?.to_owned();
             let dst = expect_str(&args, 1, "File.move")?.to_owned();
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             let (src_inner, dst_inner) = (src.clone(), dst.clone());
             tokio::task::spawn_blocking(move || {
                 fs.move_path(
@@ -119,9 +119,9 @@ pub(crate) fn namespace() -> Namespace {
             .map(|_| Value::None)
             .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.move `{src}` -> `{dst}`: {e}")))
         }),
-        "mktemp" => |interp, args| Box::pin(async move {
+        "mktemp" => |host, args| Box::pin(async move {
             let is_dir = expect_bool_named(&args, "dir", "File.mktemp")?.unwrap_or(false);
-            let fs = interp.runtime.file_system.clone();
+            let fs = host.runtime().file_system.clone();
             tokio::task::spawn_blocking(move || fs.mktemp(is_dir))
             .await
             .map_err(|e| miette::miette!("File.mktemp: {e}"))?

@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::interpreter::value::Value;
-use crate::interpreter::{Interpreter, Namespace};
+use crate::interpreter::{Host, Namespace};
 use crate::runtime::args::expect_str;
 use crate::runtime::context;
 use crate::runtime::namespace::{ns, positional};
@@ -92,8 +92,8 @@ fn classify_special_source(raw: &str) -> String {
 /// Decode the `@memory` attribute for the current agent.
 /// Returns `"session"` (the default), `"persistent"`, or `"none"`.
 /// Errors on any other value so programmers see a clear diagnostic.
-fn memory_mode(interp: &Interpreter) -> miette::Result<&'static str> {
-    match interp.current_memory_attr().as_deref() {
+fn memory_mode(host: &dyn Host) -> miette::Result<&'static str> {
+    match host.current_memory_attr().as_deref() {
         None | Some("session") => Ok("session"),
         Some("persistent") => Ok("persistent"),
         Some("none") => Ok("none"),
@@ -132,9 +132,9 @@ fn assert_memory_serializable(value: &Value) -> miette::Result<()> {
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Memory", {
-        "remember" => |interp, args| Box::pin(async move {
-            let (program_name, agent_name) = interp.require_agent_context("Memory.remember")?;
-            let mode = memory_mode(interp)?;
+        "remember" => |host, args| Box::pin(async move {
+            let (program_name, agent_name) = host.require_agent_context("Memory.remember")?;
+            let mode = memory_mode(host)?;
 
             let key = expect_str(&args, 0, "Memory.remember")?.to_owned();
             let value = positional(&args, 1)
@@ -147,7 +147,7 @@ pub(crate) fn namespace() -> Namespace {
                 )),
                 "persistent" => {
                     assert_memory_serializable(&value)?;
-                    let pm = interp.runtime.persistent_memory.clone();
+                    let pm = host.runtime().persistent_memory.clone();
                     tokio::task::spawn_blocking(move || {
                         pm.remember(&program_name, &agent_name, key, value)
                     })
@@ -157,15 +157,15 @@ pub(crate) fn namespace() -> Namespace {
                 }
                 _ => {
                     assert_memory_serializable(&value)?;
-                    interp.runtime.session_memory.remember(&agent_name, key, value);
+                    host.runtime().session_memory.remember(&agent_name, key, value);
                     Ok(Value::None)
                 }
             }
         }),
 
-        "recall" => |interp, args| Box::pin(async move {
-            let (program_name, agent_name) = interp.require_agent_context("Memory.recall")?;
-            let mode = memory_mode(interp)?;
+        "recall" => |host, args| Box::pin(async move {
+            let (program_name, agent_name) = host.require_agent_context("Memory.recall")?;
+            let mode = memory_mode(host)?;
 
             let key = expect_str(&args, 0, "Memory.recall")?.to_owned();
 
@@ -174,7 +174,7 @@ pub(crate) fn namespace() -> Namespace {
                     "CapabilityError: Memory.recall is not allowed — agent has @memory none"
                 )),
                 "persistent" => {
-                    let pm = interp.runtime.persistent_memory.clone();
+                    let pm = host.runtime().persistent_memory.clone();
                     tokio::task::spawn_blocking(move || {
                         pm.recall(&program_name, &agent_name, &key)
                     })
@@ -182,15 +182,15 @@ pub(crate) fn namespace() -> Namespace {
                     .map_err(|e| miette::miette!("Memory.recall: {e}"))?
                 }
                 _ => {
-                    let result = interp.runtime.session_memory.recall(&agent_name, &key);
+                    let result = host.runtime().session_memory.recall(&agent_name, &key);
                     Ok(result)
                 }
             }
         }),
 
-        "forget" => |interp, args| Box::pin(async move {
-            let (program_name, agent_name) = interp.require_agent_context("Memory.forget")?;
-            let mode = memory_mode(interp)?;
+        "forget" => |host, args| Box::pin(async move {
+            let (program_name, agent_name) = host.require_agent_context("Memory.forget")?;
+            let mode = memory_mode(host)?;
 
             let key = expect_str(&args, 0, "Memory.forget")?.to_owned();
 
@@ -199,7 +199,7 @@ pub(crate) fn namespace() -> Namespace {
                     "CapabilityError: Memory.forget is not allowed — agent has @memory none"
                 )),
                 "persistent" => {
-                    let pm = interp.runtime.persistent_memory.clone();
+                    let pm = host.runtime().persistent_memory.clone();
                     tokio::task::spawn_blocking(move || {
                         pm.forget(&program_name, &agent_name, &key)
                     })
@@ -208,7 +208,7 @@ pub(crate) fn namespace() -> Namespace {
                     .map(|_| Value::None)
                 }
                 _ => {
-                    interp.runtime.session_memory.forget(&agent_name, &key);
+                    host.runtime().session_memory.forget(&agent_name, &key);
                     Ok(Value::None)
                 }
             }

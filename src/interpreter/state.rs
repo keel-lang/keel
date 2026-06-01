@@ -16,12 +16,13 @@ use crate::types::interface::TypeEnv;
 
 use super::bind_value;
 use super::environment::Environment;
+use super::host::Host;
 use super::runtime_error;
 use super::value::Value;
 
 pub type BuiltinFn = Arc<
     dyn for<'a> Fn(
-            &'a mut Interpreter,
+            &'a mut dyn Host,
             Vec<CallArgValue>,
         ) -> Pin<Box<dyn Future<Output = Result<Value>> + Send + 'a>>
         + Send

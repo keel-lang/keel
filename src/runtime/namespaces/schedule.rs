@@ -1,5 +1,5 @@
 use crate::interpreter::value::Value;
-use crate::interpreter::{CallArgValue, Interpreter, Namespace};
+use crate::interpreter::{CallArgValue, Host, Namespace};
 use crate::runtime::args::{expect_duration, expect_str};
 use crate::runtime::namespace::ns;
 
@@ -10,13 +10,13 @@ pub(crate) fn namespace() -> Namespace {
         // of the enclosing agent. Must be called from an @on_start or
         // an agent task — outside an agent there's no context to bind
         // the closure to.
-        "every" => |interp, args| Box::pin(async move {
-            schedule_fire(interp, args, /* recurring */ true).await
+        "every" => |host, args| Box::pin(async move {
+            schedule_fire(host, args, /* recurring */ true).await
         }),
         // `Schedule.after(duration, () => { ... })` fires the closure
         // once after `duration`.
-        "after" => |interp, args| Box::pin(async move {
-            schedule_fire(interp, args, /* recurring */ false).await
+        "after" => |host, args| Box::pin(async move {
+            schedule_fire(host, args, /* recurring */ false).await
         }),
         // `Schedule.at(datetime_str, () => { ... })` fires the closure
         // once at the given absolute time. Accepts:
@@ -24,15 +24,15 @@ pub(crate) fn namespace() -> Namespace {
         //     `"2026-04-20T10:00:00+02:00"`
         //   - Naive local datetime: `"2026-04-20T10:00:00"` (treated as UTC)
         // If the target is already in the past, fires immediately.
-        "at" => |interp, args| Box::pin(async move {
-            schedule_at(interp, args).await
+        "at" => |host, args| Box::pin(async move {
+            schedule_at(host, args).await
         }),
         // `Schedule.cron(expr, () => { ... })` schedules a recurring closure
         // using a standard 5-field cron expression (minute hour day month weekday).
-        "cron" => |interp, args| Box::pin(async move {
-            schedule_cron(interp, args).await
+        "cron" => |host, args| Box::pin(async move {
+            schedule_cron(host, args).await
         }),
-        "sleep" => |_i, args| Box::pin(async move {
+        "sleep" => |_host, args| Box::pin(async move {
             let secs = expect_duration(&args, 0, "Schedule.sleep")?;
             tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
             Ok(Value::None)
@@ -40,13 +40,13 @@ pub(crate) fn namespace() -> Namespace {
     })
 }
 
-async fn schedule_at(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miette::Result<Value> {
+async fn schedule_at(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Result<Value> {
     let when_str = expect_str(&args, 0, "Schedule.at")?.to_owned();
 
     let target = parse_datetime(&when_str).ok_or_else(|| {
         miette::miette!("Schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime")
     })?;
-    let now = interp.runtime.clock.now_utc();
+    let now = host.runtime().clock.now_utc();
     let delay_secs = (target - now).num_seconds().max(0) as f64;
 
     let (params, body) = args
@@ -57,17 +57,12 @@ async fn schedule_at(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miett
         })
         .ok_or_else(|| miette::miette!("Schedule.at: missing closure argument"))?;
 
-    let agent_name = interp
-        .current_agent
-        .as_ref()
-        .ok_or_else(|| miette::miette!("Schedule.at must be called from within an agent"))?
-        .lock()
-        .def
-        .name
-        .clone();
+    let agent_name = host
+        .current_agent_name()
+        .ok_or_else(|| miette::miette!("Schedule.at must be called from within an agent"))?;
 
-    let closure_id = interp.register_closure(agent_name.clone(), params, body);
-    let tx = interp.event_tx.clone();
+    let closure_id = host.register_closure(agent_name.clone(), params, body);
+    let tx = host.clone_event_tx();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
         let _ = tx.send(crate::interpreter::Event::FireClosure {
@@ -107,7 +102,7 @@ pub(crate) fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
     None
 }
 
-async fn schedule_cron(interp: &mut Interpreter, args: Vec<CallArgValue>) -> miette::Result<Value> {
+async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Result<Value> {
     let expr_str = expect_str(&args, 0, "Schedule.cron")?.to_owned();
 
     let (params, body) = args
@@ -118,18 +113,13 @@ async fn schedule_cron(interp: &mut Interpreter, args: Vec<CallArgValue>) -> mie
         })
         .ok_or_else(|| miette::miette!("Schedule.cron: missing closure argument"))?;
 
-    let agent_name = interp
-        .current_agent
-        .as_ref()
-        .ok_or_else(|| miette::miette!("Schedule.cron must be called from within an agent"))?
-        .lock()
-        .def
-        .name
-        .clone();
+    let agent_name = host
+        .current_agent_name()
+        .ok_or_else(|| miette::miette!("Schedule.cron must be called from within an agent"))?;
 
-    let closure_id = interp.register_closure(agent_name.clone(), params, body);
-    let tx = interp.event_tx.clone();
-    let clock = interp.runtime.clock.clone();
+    let closure_id = host.register_closure(agent_name.clone(), params, body);
+    let tx = host.clone_event_tx();
+    let clock = host.runtime().clock.clone();
 
     // Parse and validate the cron expression (5 fields: minute hour day month weekday)
     let cron_spec = parse_cron_spec(&expr_str)
@@ -281,7 +271,7 @@ fn next_cron_execution(
 }
 
 async fn schedule_fire(
-    interp: &mut Interpreter,
+    host: &mut dyn Host,
     args: Vec<CallArgValue>,
     recurring: bool,
 ) -> miette::Result<Value> {
@@ -295,17 +285,12 @@ async fn schedule_fire(
         })
         .ok_or_else(|| miette::miette!("Schedule: missing closure argument"))?;
 
-    let agent_name = interp
-        .current_agent
-        .as_ref()
-        .ok_or_else(|| miette::miette!("Schedule must be called from within an agent"))?
-        .lock()
-        .def
-        .name
-        .clone();
+    let agent_name = host
+        .current_agent_name()
+        .ok_or_else(|| miette::miette!("Schedule must be called from within an agent"))?;
 
-    let closure_id = interp.register_closure(agent_name.clone(), params, body);
-    let tx = interp.event_tx.clone();
+    let closure_id = host.register_closure(agent_name.clone(), params, body);
+    let tx = host.clone_event_tx();
     let dur = std::time::Duration::from_secs_f64(duration);
 
     if recurring {
@@ -347,6 +332,7 @@ async fn schedule_fire(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interpreter::Interpreter;
     use chrono::{Datelike, TimeZone, Timelike};
 
     #[tokio::test]
