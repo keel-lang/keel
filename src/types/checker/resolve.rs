@@ -31,7 +31,7 @@ impl Checker<'_, '_> {
                     "float is not a valid map key type — NaN violates hash equality; use int instead",
                 ),
                 Ty::Nullable(_) => self.err("nullable types cannot be used as map keys"),
-                Ty::Struct(_) | Ty::Enum(_, _) => self.err(
+                Ty::Struct { .. } | Ty::Enum(_, _) => self.err(
                     "struct and enum keys are not yet supported as map keys \
                      — implement `interface Hashable` (coming in v0.2); \
                      use str, int, or bool",
@@ -66,7 +66,10 @@ impl Checker<'_, '_> {
                         if self.enum_variants.contains_key(n) {
                             Ty::Enum(n.clone(), vec![])
                         } else if let Some(fields) = self.structs.get(n) {
-                            Ty::Struct(fields.clone())
+                            Ty::Struct {
+                                name: Some(n.clone()),
+                                fields: fields.clone(),
+                            }
                         } else if let Some(t) = self.aliases.get(n) {
                             t.clone()
                         } else {
@@ -88,12 +91,13 @@ impl Checker<'_, '_> {
                 Box::new(self.resolve_type_with_env(v, env)),
             ),
             TypeExpr::Set(inner) => Ty::Set(Box::new(self.resolve_type_with_env(inner, env))),
-            TypeExpr::Struct(fields) => Ty::Struct(
-                fields
+            TypeExpr::Struct(fields) => Ty::Struct {
+                name: None,
+                fields: fields
                     .iter()
                     .map(|f| (f.name.clone(), self.resolve_type_with_env(&f.ty.kind, env)))
                     .collect(),
-            ),
+            },
             TypeExpr::Tuple(items) => Ty::Tuple(
                 items
                     .iter()
@@ -124,8 +128,9 @@ impl Checker<'_, '_> {
                         .zip(resolved_args.iter().cloned())
                         .collect();
                     return match &type_def {
-                        TypeDef::Struct(fields) => Ty::Struct(
-                            fields
+                        TypeDef::Struct(fields) => Ty::Struct {
+                            name: Some(name.clone()),
+                            fields: fields
                                 .iter()
                                 .map(|f| {
                                     (
@@ -134,7 +139,7 @@ impl Checker<'_, '_> {
                                     )
                                 })
                                 .collect(),
-                        ),
+                        },
                         TypeDef::Alias(ty_node) => {
                             self.resolve_type_with_env(&ty_node.kind, &inner_env)
                         }
@@ -204,7 +209,10 @@ impl Checker<'_, '_> {
                     }
                     // Generic struct: rebuild positional type args by matching
                     // concrete field types against the generic definition's fields.
-                    Ty::Struct(concrete_fields) => {
+                    Ty::Struct {
+                        fields: concrete_fields,
+                        ..
+                    } => {
                         if let Some((inner_params, TypeDef::Struct(gfields))) =
                             self.generic_decls.get(generic_name).cloned()
                         {

@@ -71,7 +71,7 @@ task run_demo() {
   Io.show(p.print())
   Io.show(c.print())
 
-  scores = [{ label: "B", val: 70 }, { label: "A", val: 95 }, { label: "C", val: 60 }]
+  scores: list[Score] = [{ label: "B", val: 70 }, { label: "A", val: 95 }, { label: "C", val: 60 }]
   sorted = scores.sort()
   for s in sorted {
     Io.show("{s.label}: {s.val}")

@@ -126,6 +126,8 @@ pub struct Interpreter {
     pub(crate) enum_types: HashMap<String, Vec<String>>,
     /// Struct type name → field (name, type_string) pairs. Populated from `type T { f: ty }`.
     pub(crate) struct_types: HashMap<String, Vec<(String, String)>>,
+    /// Struct alias name → canonical struct type name. Populated from `type Alias = T`.
+    pub(crate) struct_aliases: HashMap<String, String>,
     /// Known interfaces: interface_name → required method signatures.
     /// Pre-seeded with built-ins (Stringable); extended by `interface` declarations.
     pub(crate) interfaces: HashMap<String, Vec<TaskSig>>,
@@ -179,6 +181,7 @@ impl Interpreter {
             namespaces: HashMap::with_capacity(32),
             enum_types: HashMap::with_capacity(16),
             struct_types: HashMap::with_capacity(16),
+            struct_aliases: HashMap::with_capacity(16),
             interfaces: builtin_interfaces(),
             impl_methods: HashMap::with_capacity(16),
             type_env: TypeEnv::new(),

@@ -547,6 +547,195 @@ run(A)
 }
 
 // ---------------------------------------------------------------------------
+// v0.1.31 — Struct type identity (issue #16)
+
+#[test]
+fn named_struct_checker_rejects_wrong_named_type_at_call_site() {
+    // The checker must reject Score where Point is expected even when field shapes match.
+    let src = r#"
+type Point { x: int, y: int }
+type Score { x: int, y: int }
+task go(p: Point) -> int { p.x }
+task run_test() {
+  s: Score = { x: 1, y: 2 }
+  go(s)
+}
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed — Score is not assignable to Point");
+    assert!(
+        stderr.contains("Point") || stderr.contains("Score") || stderr.contains("mismatch"),
+        "expected a type error mentioning Point or Score: {stderr}"
+    );
+}
+
+#[test]
+fn nullable_struct_annotation_promotes_map_to_struct() {
+    // A nullable type annotation `Score?` must still promote a map literal to Value::Struct.
+    let src = r#"
+type Score { val: int }
+interface Gettable { task get_val(self) -> int }
+impl Gettable for Score {
+  task get_val(self) -> int { self.val }
+}
+task run_test() {
+  s: Score? = { val: 55 }
+  Io.show("{s.get_val()}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "should have passed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("55"), "expected 55: {stdout}");
+}
+
+#[test]
+fn distinct_named_structs_with_same_fields_are_not_interchangeable() {
+    // Two types with identical field shapes must not be assignable to each other.
+    let src = r#"
+type Point { x: int, y: int }
+type Offset { x: int, y: int }
+task use_point(p: Point) -> int { p.x }
+task run_test() {
+  o: Offset = { x: 1, y: 2 }
+  use_point(o)
+}
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(
+        !ok,
+        "should have failed — Offset is not assignable to Point"
+    );
+    assert!(
+        stderr.contains("Point") || stderr.contains("Offset") || stderr.contains("mismatch"),
+        "expected a type error mentioning Point or Offset: {stderr}"
+    );
+}
+
+#[test]
+fn anonymous_struct_literal_is_assignable_to_named_struct() {
+    // An untyped struct literal {x:1, y:2} is assignable to a named struct type.
+    let src = r#"
+type Point { x: int, y: int }
+task use_point(p: Point) -> int { p.x }
+task run_test() {
+  Io.show("{use_point({ x: 3, y: 4 })}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "should have passed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('3'), "expected 3: {stdout}");
+}
+
+#[test]
+fn named_struct_dispatch_requires_typed_variable() {
+    // Untyped map literals do not dispatch to named-struct impl methods.
+    // Assigning to a typed list[TypeName] variable promotes elements so dispatch works.
+    let src = r#"
+type Item { val: int }
+interface Gettable { task get_val(self) -> int }
+impl Gettable for Item {
+  task get_val(self) -> int { self.val }
+}
+task run_test() {
+  typed: list[Item] = [{ val: 42 }]
+  Io.show("{typed.first().get_val()}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "should have passed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("42"), "expected 42: {stdout}");
+}
+
+#[test]
+fn aliased_named_struct_annotation_promotes_to_canonical_type() {
+    // Alias annotations must tag the runtime value with the target struct name
+    // so nominal impl dispatch can find methods declared for the canonical type.
+    let src = r#"
+type Item { val: int }
+type Alias = Item
+interface Gettable { task get_val(self) -> int }
+impl Gettable for Item {
+  task get_val(self) -> int { self.val }
+}
+task run_test() {
+  x: Alias = { val: 42 }
+  Io.show("{x.get_val()}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("42"), "expected 42: {stdout}");
+}
+
+#[test]
+fn named_struct_describe_ty_shows_name() {
+    // describe_ty now returns the declared name for named structs,
+    // improving error messages throughout the checker.
+    let src = r#"
+type Score { val: int }
+task need_str(s: str) -> str { s }
+task run_test() {
+  sc: Score = { val: 10 }
+  need_str(sc)
+}
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed — Score is not str");
+    assert!(
+        stderr.contains("Score"),
+        "expected error mentioning Score by name: {stderr}"
+    );
+}
+
+#[test]
+fn int_keyed_map_is_not_promoted_to_struct() {
+    // Regression: a map with integer keys must NOT be promoted to a struct.
+    // Struct field names are always valid identifiers; "1" is not.
+    // The map should pass through as Value::Map and produce normal JSON output.
+    let src = r#"
+type Scores { a: int, b: int }
+task run_test() {
+  m: map[int, int] = {1: 10, 2: 20}
+  Io.show("{m.len()}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('2'), "expected len=2: {stdout}");
+}
+
+#[test]
+fn map_of_struct_values_promotes_elements_at_typed_param() {
+    // Regression for TypeExpr::Map arm in promote_value: when a task parameter
+    // is declared map[str, TypeName], each value in the map must be promoted to
+    // Value::Struct so impl dispatch works on the values.
+    let src = r#"
+type Score { val: int }
+interface Gettable { task get_val(self) -> int }
+impl Gettable for Score {
+  task get_val(self) -> int { self.val }
+}
+task use_scores(scores: map[str, Score]) -> int {
+  scores.get("alice").get_val()
+}
+task run_test() {
+  Io.show("{use_scores({ "alice": { val: 42 } })}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("42"), "expected 42: {stdout}");
+}
+
 // v0.1.13 — Destructuring
 // ---------------------------------------------------------------------------
 
@@ -2942,6 +3131,68 @@ run_test()
 }
 
 #[test]
+fn serializable_to_json_on_untagged_map_uses_custom_impl() {
+    // Regression: Json.stringify on a struct literal not bound to a typed variable
+    // must still invoke the Serializable impl when there is exactly one struct type
+    // whose field set exactly matches the map's keys.
+    let src = r#"
+type Event { name: str, score: int }
+impl Serializable for Event {
+  task to_json(self) -> str {
+    "name={self.name};score={self.score}"
+  }
+}
+task run_test() {
+  Io.show(Json.stringify({ name: "click", score: 7 }))
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("name=click;score=7"),
+        "expected custom to_json output: {stdout}"
+    );
+}
+
+#[test]
+fn serializable_ambiguous_field_set_falls_back_to_builtin() {
+    // When two struct types share the exact same field set, Json.stringify must
+    // not guess and must fall back to the built-in JSON serializer.
+    let src = r#"
+type A { x: int }
+type B { x: int }
+impl Serializable for A { task to_json(self) -> str { "A" } }
+impl Serializable for B { task to_json(self) -> str { "B" } }
+task run_test() {
+  out = Json.stringify({ x: 1 })
+  Io.show(out)
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    // Built-in serializer produces JSON, not "A" or "B".
+    assert!(
+        stdout.contains('{') || stdout.contains("null"),
+        "expected built-in JSON output: {stdout}"
+    );
+    assert!(
+        !stdout.contains('"') || stdout.contains('"'),
+        "got: {stdout}"
+    );
+    // Must not contain the custom impl output.
+    assert!(
+        !stdout.contains("\"A\"") && !stdout.trim().eq("A"),
+        "ambiguous dispatch fired: {stdout}"
+    );
+    assert!(
+        !stdout.contains("\"B\"") && !stdout.trim().eq("B"),
+        "ambiguous dispatch fired: {stdout}"
+    );
+}
+
+#[test]
 fn serializable_to_json_used_by_json_stringify() {
     let src = r#"
 type Event { name: str, score: int }
@@ -2996,7 +3247,7 @@ impl Comparable for Score {
   }
 }
 task run_test() {
-  items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  items: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
   sorted = items.sort()
   for s in sorted {
     Io.show("{s.val}")
@@ -3025,7 +3276,7 @@ impl Comparable for Score {
   }
 }
 task run_test() {
-  items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  items: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
   lo = items.min()
   hi = items.max()
   Io.show("{lo.val}")
@@ -3037,6 +3288,39 @@ run_test()
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.contains("10"), "min: {stdout}");
     assert!(stdout.contains("30"), "max: {stdout}");
+}
+
+#[test]
+fn iterable_struct_via_typed_binding_dispatches_items() {
+    // Regression for the dead Value::Map guard bug: a struct returned from a task
+    // with a declared return type is promoted to Value::Struct at the call boundary,
+    // so find_impl_task("items") fires correctly in the for loop.
+    let src = r#"
+type Range { lo: int, hi: int }
+impl Iterable for Range {
+  task items(self) -> list[int] {
+    result: list[int] = []
+    i = self.lo
+    while i <= self.hi {
+      result += [i]
+      i += 1
+    }
+    result
+  }
+}
+task make_range() -> Range { { lo: 2, hi: 4 } }
+task run_test() {
+  for n in make_range() {
+    Io.show("{n}")
+  }
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains('2'), "2: {stdout}");
+    assert!(stdout.contains('3'), "3: {stdout}");
+    assert!(stdout.contains('4'), "4: {stdout}");
 }
 
 #[test]

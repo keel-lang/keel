@@ -30,6 +30,23 @@ impl Interpreter {
                             .collect();
                         self.struct_types.insert(t.name.clone(), schema);
                     }
+                    TypeDef::Alias(ty_node) => {
+                        // If the alias names a struct, remember its canonical
+                        // runtime tag so `x: Alias = { ... }` dispatches as T.
+                        if let TypeExpr::Named(target) = &ty_node.kind
+                            && let Some(canonical) = self
+                                .struct_aliases
+                                .get(target.as_str())
+                                .cloned()
+                                .or_else(|| {
+                                    self.struct_types
+                                        .contains_key(target.as_str())
+                                        .then(|| target.clone())
+                                })
+                        {
+                            self.struct_aliases.insert(t.name.clone(), canonical);
+                        }
+                    }
                     _ => {}
                 }
                 Ok(())

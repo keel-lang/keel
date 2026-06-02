@@ -18,6 +18,7 @@ mod entry;
 mod error;
 mod expr;
 mod methods;
+mod promote;
 mod state;
 mod stmt;
 

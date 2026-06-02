@@ -157,7 +157,7 @@ impl Checker<'_, '_> {
                 }
                 let obj_ty = self.infer_expr(obj, scope);
                 match obj_ty.strip_nullable() {
-                    Ty::Struct(fields) => fields
+                    Ty::Struct { fields, .. } => fields
                         .iter()
                         .find(|(n, _)| n == field)
                         .map(|(_, t)| t.clone())
@@ -169,7 +169,7 @@ impl Checker<'_, '_> {
             Expr::NullFieldAccess(obj, field) => {
                 let obj_ty = self.infer_expr(obj, scope);
                 let field_ty = match obj_ty.strip_nullable() {
-                    Ty::Struct(fields) => fields
+                    Ty::Struct { fields, .. } => fields
                         .iter()
                         .find(|(n, _)| n == field)
                         .map(|(_, t)| t.clone())
@@ -233,15 +233,18 @@ impl Checker<'_, '_> {
                             let ty = self.infer_expr(value, scope);
                             inferred.push((key.as_str().unwrap_or("").to_string(), ty));
                         }
-                        Ty::Struct(inferred)
+                        Ty::Struct {
+                            name: None,
+                            fields: inferred,
+                        }
                     }
                 }
             }
 
             Expr::StructSpreadUpdate { base, overrides } => {
                 let base_ty = self.infer_expr(base, scope);
-                let base_fields = match base_ty.strip_nullable() {
-                    Ty::Struct(fields) => fields.clone(),
+                let (base_name, base_fields) = match base_ty.strip_nullable() {
+                    Ty::Struct { name, fields } => (name.clone(), fields.clone()),
                     Ty::Map(key_ty, val_ty) => {
                         let key_ty = key_ty.clone();
                         let val_ty = val_ty.clone();
@@ -301,7 +304,10 @@ impl Checker<'_, '_> {
                         ));
                     }
                 }
-                Ty::Struct(result_fields)
+                Ty::Struct {
+                    name: base_name,
+                    fields: result_fields,
+                }
             }
 
             Expr::ListLit(items) => {
@@ -311,6 +317,20 @@ impl Checker<'_, '_> {
                     let ty = self.infer_expr(e, scope);
                     if i == 0 {
                         element_ty = ty;
+                    } else {
+                        // Narrow nominal check: reject mixing differently-named
+                        // struct types in the same list literal.  Structural and
+                        // anonymous struct elements are left to the assignment
+                        // expect_at to validate against the declared element type.
+                        if let (Ty::Struct { name: Some(a), .. }, Ty::Struct { name: Some(b), .. }) =
+                            (&ty, &element_ty)
+                            && a != b
+                        {
+                            self.err_at(
+                                format!("list element type mismatch: expected `{b}`, got `{a}`"),
+                                e.span.clone(),
+                            );
+                        }
                     }
                 }
                 Ty::List(Box::new(element_ty))

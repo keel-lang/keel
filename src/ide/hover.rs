@@ -93,7 +93,7 @@ pub(crate) fn insert_binding(
         }
         Binding::Destruct(DestructPat::Struct(fields)) => {
             let struct_fields = match &ty {
-                Ty::Struct(f) => f.clone(),
+                Ty::Struct { fields: f, .. } => f.clone(),
                 _ => vec![],
             };
             for (source, local) in fields {

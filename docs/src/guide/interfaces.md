@@ -156,7 +156,10 @@ impl Comparable for Score {
   }
 }
 
-items = [{ val: 30 }, { val: 10 }, { val: 20 }]
+# Declare the list type so each element is tagged as Score.
+# Without the annotation, elements stay as anonymous maps and
+# Comparable.compare is never found.
+items: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
 Io.show("{items.sort()}")   # sorted ascending by val
 lo = items.min()
 hi = items.max()

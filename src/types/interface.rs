@@ -102,12 +102,13 @@ pub fn resolve_type_expr(te: &TypeExpr, env: &TypeEnv) -> Ty {
             Box::new(resolve_type_expr(v, env)),
         ),
         TypeExpr::Set(inner) => Ty::Set(Box::new(resolve_type_expr(inner, env))),
-        TypeExpr::Struct(fields) => Ty::Struct(
-            fields
+        TypeExpr::Struct(fields) => Ty::Struct {
+            name: None,
+            fields: fields
                 .iter()
                 .map(|f| (f.name.clone(), resolve_type_expr(&f.ty.kind, env)))
                 .collect(),
-        ),
+        },
         TypeExpr::Tuple(items) => {
             Ty::Tuple(items.iter().map(|t| resolve_type_expr(t, env)).collect())
         }
@@ -298,10 +299,10 @@ mod tests {
         ]);
         assert_eq!(
             resolve(&te),
-            Ty::Struct(vec![
-                ("body".to_owned(), Ty::Str),
-                ("count".to_owned(), Ty::Int),
-            ])
+            Ty::Struct {
+                name: None,
+                fields: vec![("body".to_owned(), Ty::Str), ("count".to_owned(), Ty::Int),],
+            }
         );
     }
 

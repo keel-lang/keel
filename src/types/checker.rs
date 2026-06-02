@@ -315,13 +315,25 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             }
             (Ty::Nullable(a), Ty::Nullable(b)) => self.types_match(a.as_ref(), b.as_ref()),
             (Ty::Enum(a, _), Ty::Enum(b, _)) => a == b,
-            (Ty::Struct(af), Ty::Struct(bf)) => {
-                af.len() == bf.len()
-                    && af
-                        .iter()
-                        .zip(bf.iter())
-                        .all(|((an, at), (bn, bt))| an == bn && self.types_match(at, bt))
-            }
+            (
+                Ty::Struct {
+                    name: an,
+                    fields: af,
+                },
+                Ty::Struct {
+                    name: bn,
+                    fields: bf,
+                },
+            ) => match (an, bn) {
+                (Some(a), Some(b)) => a == b,
+                _ => {
+                    af.len() == bf.len()
+                        && af
+                            .iter()
+                            .zip(bf.iter())
+                            .all(|((an, at), (bn, bt))| an == bn && self.types_match(at, bt))
+                }
+            },
             _ => false,
         }
     }
@@ -370,13 +382,65 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
         let actual_base = actual.strip_nullable();
         let expected_base = expected.strip_nullable();
 
+        // Recurse into compound types so struct-name differences propagate correctly
+        // through List/Set/Map/Tuple wrappers without hitting the raw `!=` fallback below.
+        if let (Ty::List(a), Ty::List(b)) = (actual_base, expected_base) {
+            return self.expect_at(a, b, context, span);
+        }
+        if let (Ty::Set(a), Ty::Set(b)) = (actual_base, expected_base) {
+            return self.expect_at(a, b, context, span);
+        }
+        if let (Ty::Map(ak, av), Ty::Map(ek, ev)) = (actual_base, expected_base) {
+            self.expect_at(ak, ek, context, span.clone());
+            self.expect_at(av, ev, context, span);
+            return;
+        }
+        if let (Ty::Tuple(a_items), Ty::Tuple(e_items)) = (actual_base, expected_base) {
+            if a_items.len() != e_items.len() {
+                self.errors.push(TypeDiagnostic::TypeMismatch {
+                    context: context.to_string(),
+                    expected: expected.clone(),
+                    actual: actual.clone(),
+                    span,
+                    help: None,
+                });
+                return;
+            }
+            for (a, e) in a_items.iter().zip(e_items.iter()) {
+                self.expect_at(a, e, context, span.clone());
+            }
+            return;
+        }
+
         // Struct structural compatibility: all expected fields must be present.
+        // When both sides carry an explicit name, also enforce nominal identity
+        // (Score is not assignable to Point even with identical fields).
         // Forward `span` into every recursive call so that nested field errors
         // carry the same precise location as the top-level mismatch instead of
         // falling back to the ambient `current_span`.
-        if let (Ty::Struct(actual_fields), Ty::Struct(expected_fields)) =
-            (actual_base, expected_base)
+        if let (
+            Ty::Struct {
+                name: act_name,
+                fields: actual_fields,
+            },
+            Ty::Struct {
+                name: exp_name,
+                fields: expected_fields,
+            },
+        ) = (actual_base, expected_base)
         {
+            if let (Some(a), Some(e)) = (act_name, exp_name)
+                && a != e
+            {
+                self.errors.push(TypeDiagnostic::TypeMismatch {
+                    context: context.to_string(),
+                    expected: expected.clone(),
+                    actual: actual.clone(),
+                    span,
+                    help: None,
+                });
+                return;
+            }
             for (exp_name, exp_ty) in expected_fields {
                 match actual_fields.iter().find(|(n, _)| n == exp_name) {
                     None => self.err_at(
@@ -402,7 +466,13 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
         // the same `{...}` form serves as both struct and map literal.
         // Forward `span` so value-type mismatches point to the argument, not
         // to the enclosing statement.
-        if let (Ty::Struct(actual_fields), Ty::Map(key_ty, value_ty)) = (actual_base, expected_base)
+        if let (
+            Ty::Struct {
+                fields: actual_fields,
+                ..
+            },
+            Ty::Map(key_ty, value_ty),
+        ) = (actual_base, expected_base)
             && (matches!(key_ty.as_ref(), Ty::Str) || key_ty.is_opaque())
         {
             for (name, act_ty) in actual_fields {

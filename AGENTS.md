@@ -66,6 +66,25 @@ keel lsp                 # language server (stdin/stdout)
 
 Say "release" or "ship a release" to run the shared release workflow in `.agents/skills/release/SKILL.md`. Claude should delegate to the `release-engineer` agent (`.claude/agents/release-engineer.md`), which wraps that shared checklist. Codex should use the `release` skill directly. Both tools must walk through every step and gate on explicit confirmation before committing, pushing, or tagging.
 
+## Runtime type dispatch checklist
+
+When writing or modifying code that dispatches on `TypeExpr` or `Value`:
+- **Enumerate ALL variants of the matched enum.** Justify every `_ =>` fallback in a comment.
+  `TypeExpr` variants that need explicit handling: `Named`, `List`, `Set`, `Map`, `Tuple`,
+  `Nullable`, `Struct` (inline), `Func`, `Generic`.
+- **Audit all exit paths in param/arg loops.** Variadic `break` and named-arg `continue` both
+  skip fall-through logic. Confirm any new logic runs on every exit path, not just the default one.
+
+When changing a type-system invariant (e.g. struct nominal identity, new kind of type):
+- **Grep all inference sites** that construct or compare that type — list literals, tuple
+  literals, struct-spread updates, for-loop iterables, etc. — and verify the new invariant
+  is enforced at every one of them.
+
+When writing uniqueness/disambiguation logic (e.g. picking the single matching candidate):
+- **Filter to the eligible set first, then check uniqueness within it.** A non-eligible
+  candidate counted before filtering produces false ambiguity and silently suppresses the
+  correct path.
+
 ## Namespace implementation checklist
 
 When writing a new stdlib namespace method:

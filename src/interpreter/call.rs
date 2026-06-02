@@ -1,9 +1,10 @@
 use miette::Result;
 
-use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, SpannedExpr, TaskDecl, TypeExpr};
+use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, SpannedExpr, TaskDecl};
 
 use super::bind_value;
 use super::environment::Environment;
+use super::promote::promote_value;
 use super::runtime_error;
 use super::state::{AgentDef, AllowedTools, CallArgValue, Interpreter};
 use super::stmt::StmtOutcome;
@@ -86,8 +87,18 @@ impl Interpreter {
                 _ => None,
             };
             if p.variadic {
-                // Collect all remaining positional args into a list.
-                let rest: Vec<Value> = positional[pos_idx..].iter().map(|v| (*v).clone()).collect();
+                // Collect and promote remaining positional args into a list.
+                let rest: Vec<Value> = positional[pos_idx..]
+                    .iter()
+                    .map(|v| {
+                        promote_value(
+                            (*v).clone(),
+                            &p.ty.kind,
+                            &self.struct_types,
+                            &self.struct_aliases,
+                        )
+                    })
+                    .collect();
                 bind_value(&p.name, Value::List(rest), &mut env)?;
                 break;
             }
@@ -102,41 +113,14 @@ impl Interpreter {
             } else {
                 Value::None
             };
-            // Tag plain map values that match a declared struct type annotation.
-            let v = if let TypeExpr::Named(type_name) = &p.ty.kind
-                && self.struct_types.contains_key(type_name.as_str())
-            {
-                match v {
-                    Value::Map(m) => {
-                        let fields = m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-                        Value::Struct(type_name.clone(), fields)
-                    }
-                    other => other,
-                }
-            } else {
-                v
-            };
+            let v = promote_value(v, &p.ty.kind, &self.struct_types, &self.struct_aliases);
             bind_value(&p.name, v, &mut env)?;
         }
         match self.exec_block(&decl.body, &mut env).await? {
             StmtOutcome::Value(v) | StmtOutcome::Return(v) => {
-                // Tag plain map return values that match the declared return type.
                 let v = match &decl.return_type {
                     Some(node) => {
-                        if let TypeExpr::Named(type_name) = &node.kind
-                            && self.struct_types.contains_key(type_name.as_str())
-                        {
-                            match v {
-                                Value::Map(m) => {
-                                    let fields =
-                                        m.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-                                    Value::Struct(type_name.clone(), fields)
-                                }
-                                other => other,
-                            }
-                        } else {
-                            v
-                        }
+                        promote_value(v, &node.kind, &self.struct_types, &self.struct_aliases)
                     }
                     None => v,
                 };

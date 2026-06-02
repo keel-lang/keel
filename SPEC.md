@@ -68,7 +68,7 @@ Keel uses a **structural type system with full inference** as its design target.
 
 ### 2.1 Design principles
 
-1. **Structural typing.** Types are shapes, not names. A value matches a type if it has the required fields. No explicit `implements`.
+1. **Nominal identity for named types, structural compatibility for anonymous shapes.** Two declared struct types `A` and `B` with identical fields are distinct types — `A` is not assignable to `B`. Anonymous struct literals `{x: 1}` are still structurally compatible with any named struct that has the required fields. No explicit `implements`.
 2. **Full inference.** Initializers, returns, and stdlib signatures drive inference. Explicit annotations override.
 3. **Algebraic data types.** Enums can carry associated data per variant.
 4. **Nullable safety.** Types are non-nullable by default. `?` marks a type as nullable.
@@ -192,7 +192,25 @@ type EmailInfo {
 task triage(email: {body: str, from: str}) -> Urgency { ... }
 ```
 
-**Width subtyping.** A value of type `A` is assignable to `B` if `A` has all fields of `B` with compatible types. Extra fields are allowed.
+**Named struct identity.** Each declared struct type is a distinct type. `type Point { x: int, y: int }` and `type Offset { x: int, y: int }` are not interchangeable even though they have the same fields.
+
+**Anonymous literals are structurally compatible.** An untyped literal `{x: 1, y: 2}` is assignable to any named struct type that has the required fields. Assign to a typed variable or pass to a typed parameter to tag the value with its declared type.
+
+**Width subtyping.** An anonymous literal assigned to a named struct type `B` must have all required fields of `B` with compatible types. Extra fields are allowed.
+
+**Impl dispatch requires a type tag.** `impl` methods are dispatched by the value's declared type name. A bare literal `{val: 30}` is an untagged map with no type name — to dispatch an `impl` method, the value must first be tagged by assigning to a typed variable or passing to a typed parameter:
+
+```keel
+type Score { val: int }
+impl Comparable for Score {
+  task compare(self, other: Score) -> int { self.val - other.val }
+}
+
+task run() {
+  scores: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  sorted = scores.sort()   # uses Comparable.compare
+}
+```
 
 **Generic structs:**
 
@@ -752,7 +770,7 @@ Io.show(p.print())    # → "(1.5, 2.0)"
 - Return types must match exactly.
 - `self` inside the block receives the struct value. Use `self.field` to access fields.
 
-**Dispatch rule.** The runtime identifies the concrete type by matching the struct's registered field names against the value's keys. When two types share identical field sets, method dispatch is ambiguous — add a distinguishing field or call `.method()` via an explicit variable with a declared type annotation.
+**Dispatch rule.** The runtime dispatches `impl` methods by the value's declared type tag. A value acquires its tag at the first typed boundary it crosses: a `let x: TypeName = ...` binding, a task parameter with a named type annotation, a task return with a named return type, or an `Ai.extract(…, as: TypeName)` call. List elements are promoted to `Value::Struct` when the list is assigned to a `list[TypeName]` variable. Untagged maps (struct literals not yet passed through a typed boundary) do not dispatch to any `impl` method.
 
 ### 5.3 Built-in interfaces
 

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use miette::Result;
 
 use super::environment::Environment;
@@ -66,8 +64,9 @@ fn optional_named_or_positional_str_arg<'a>(
 
 impl Interpreter {
     /// Find the `impl` TaskDecl for `method` on `value`.
-    /// For type-tagged `Value::Struct` this is O(1); for untagged `Value::Map`
-    /// (struct literals with no type annotation) a field-set fallback is used.
+    /// Only type-tagged `Value::Struct` values dispatch to impl methods.
+    /// Untagged `Value::Map` values do not — assign struct literals to a
+    /// typed variable (`x: TypeName = {...}`) to enable dispatch.
     /// Returns `None` if no impl is found.
     /// Clones the TaskDecl to avoid borrow-across-await issues.
     pub(crate) fn find_impl_task(
@@ -75,41 +74,13 @@ impl Interpreter {
         value: &Value,
         method: &str,
     ) -> Option<crate::ast::TaskDecl> {
-        match value {
-            Value::Struct(type_name, _) => self
-                .impl_methods
+        if let Value::Struct(type_name, _) = value {
+            self.impl_methods
                 .get(type_name.as_str())?
                 .get(method)
-                .cloned(),
-            Value::Map(m) => {
-                // Fallback for untagged maps (no type annotation at binding site).
-                // Only string keys participate in impl dispatch; int/bool-key maps
-                // never match struct-based impl methods.
-                let map_keys: HashSet<&str> = m
-                    .keys()
-                    .filter_map(|k| {
-                        if let MapKey::Str(s) = k {
-                            Some(s.as_str())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                self.impl_methods.iter().find_map(|(type_name, methods)| {
-                    methods.get(method).and_then(|task| {
-                        self.struct_types.get(type_name).and_then(|schema| {
-                            let type_fields: HashSet<&str> =
-                                schema.iter().map(|(k, _)| k.as_str()).collect();
-                            if type_fields.is_subset(&map_keys) {
-                                Some(task.clone())
-                            } else {
-                                None
-                            }
-                        })
-                    })
-                })
-            }
-            _ => None,
+                .cloned()
+        } else {
+            None
         }
     }
 

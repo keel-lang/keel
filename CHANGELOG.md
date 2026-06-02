@@ -12,6 +12,23 @@ All notable changes to Keel.
 
 ### Changed
 
+- **Named struct types are now nominally distinct.** Two declared struct types `A` and `B` with identical fields are no longer interchangeable. The checker raises a type error when a value of type `A` is passed where `B` is expected. Anonymous struct literals `{ x: 1, y: 2 }` remain structurally compatible with any named type that has the required fields, so existing patterns like `p: Point = { x: 1, y: 2 }` are unaffected.
+
+  `impl` dispatch is now based entirely on the value's type tag. List elements are promoted to their declared struct type when assigned to a `list[TypeName]` variable — use an explicit annotation to enable `impl` method dispatch on struct collections:
+
+  ```keel
+  type Score { val: int }
+  impl Comparable for Score {
+    task compare(self, other: Score) -> int { self.val - other.val }
+  }
+  task run() {
+    scores: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
+    sorted = scores.sort()   # uses Comparable.compare via type tag
+  }
+  ```
+
+  Error messages for named struct type mismatches now include the declared type name (`expected Score, got Point`) rather than the generic `struct`.
+
 - **Runtime namespace closures are now decoupled from the concrete interpreter.** A new `Host` trait abstracts the interpreter capabilities used by built-in namespaces (runtime backends, agent lifecycle, closure dispatch, type registries). All 23 prelude namespaces receive `&mut dyn Host` instead of `&mut Interpreter`, making each namespace independently testable and opening the door to sandboxed agents and alternate execution backends. A `MockHost` test double is gated behind the `test-util` feature for downstream testing. No user-visible language behaviour changes.
 
 - **Checker and LSP now consume a read-only HIR index.** Parsing now lowers into a high-level intermediate representation before semantic analysis. HIR assigns `SymbolId`s to declarations and binding sites, records resolved identifier references (including `self.task(...)` and `self.field` reads/writes) for editor navigation, and classifies brace literals as structs or maps once using their expected type when available. The interpreter intentionally remains AST-backed in this first phase. This internal boundary prevents checker and LSP logic from independently re-resolving syntax as future execution backends are added.

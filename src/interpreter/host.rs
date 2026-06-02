@@ -274,6 +274,7 @@ impl Host for Interpreter {
             let agents = self.agents.clone();
             let enum_types = self.enum_types.clone();
             let struct_types = self.struct_types.clone();
+            let struct_aliases = self.struct_aliases.clone();
             // Share event infrastructure so the spawned task can use
             // Schedule.*, Agent.send, and Http.serve.
             let closures = self.closures.clone();
@@ -288,6 +289,7 @@ impl Host for Interpreter {
                 local_interp.agents = agents;
                 local_interp.enum_types = enum_types;
                 local_interp.struct_types = struct_types;
+                local_interp.struct_aliases = struct_aliases;
                 local_interp.closures = closures;
                 local_interp.next_closure_id = next_closure_id;
                 local_interp.event_tx = event_tx;

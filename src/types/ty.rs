@@ -54,7 +54,12 @@ pub enum Ty {
     List(Box<Ty>),
     Map(Box<Ty>, Box<Ty>),
     Set(Box<Ty>),
-    Struct(Vec<(String, Ty)>),
+    Struct {
+        /// `Some(name)` for a named struct type (`type Score { val: int }`);
+        /// `None` for inline / anonymous struct shapes (`{body: str, from: str}`).
+        name: Option<String>,
+        fields: Vec<(String, Ty)>,
+    },
     Tuple(Vec<Ty>),
     Func(Vec<Ty>, Box<Ty>),
     /// Enum type.  The second field carries resolved type arguments for
@@ -130,7 +135,8 @@ pub(crate) fn describe_ty(ty: &Ty) -> String {
         Ty::List(inner) => format!("list[{}]", describe_ty(inner)),
         Ty::Map(k, v) => format!("map[{}, {}]", describe_ty(k), describe_ty(v)),
         Ty::Set(inner) => format!("set[{}]", describe_ty(inner)),
-        Ty::Struct(_) => "struct".into(),
+        Ty::Struct { name: Some(n), .. } => n.clone(),
+        Ty::Struct { .. } => "struct".into(),
         Ty::Tuple(items) => {
             let s: Vec<String> = items.iter().map(describe_ty).collect();
             format!("({})", s.join(", "))

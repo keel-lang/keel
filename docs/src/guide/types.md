@@ -110,7 +110,23 @@ task t(p: Pair[str, int]) {
 
 ## Structs
 
-Structs are structural types — any value with matching fields satisfies the type.
+Each declared struct type has a unique identity. Two types with the same fields
+are distinct types and are not interchangeable:
+
+```keel
+type Point  { x: int, y: int }
+type Offset { x: int, y: int }
+
+task move(p: Point) -> Point { ... }
+
+o: Offset = { x: 1, y: 2 }
+move(o)                         # error — Offset is not assignable to Point
+move({ x: 1, y: 2 })           # ok — anonymous literal is compatible with Point
+```
+
+An untyped struct literal `{ x: 1, y: 2 }` is an anonymous shape. It is
+structurally compatible with any named struct type that has the required fields.
+Assign to a typed variable or pass to a typed parameter to tag it:
 
 ```keel
 type EmailInfo {
@@ -126,16 +142,8 @@ task triage(email: {body: str, from: str}) -> Urgency {
 }
 ```
 
-You don't need to declare a struct to use it:
-
-```keel
-info = {name: "Alice", age: 30}   # inferred as {name: str, age: int}
-notify user info.name              # "Alice"
-```
-
-When a struct literal is assigned to a named struct type, the checker
-verifies every required field is present. Extra fields are allowed
-(structural subtyping):
+The checker verifies every required field is present. Extra fields on anonymous
+literals are allowed:
 
 ```keel
 type Person { name: str, age: int }
@@ -144,6 +152,26 @@ task t() {
   p: Person = { name: "Alice" }                        # error: missing field `age`
   q: Person = { name: "Bob", age: 30 }                 # ok
   r: Person = { name: "Eve", age: 25, extra: true }    # ok — extras allowed
+}
+```
+
+### Impl dispatch and typed collections
+
+`impl` methods are dispatched by the value's type tag. A struct literal only
+acquires its tag at the first typed boundary it crosses. For a list of struct
+values, declare the list type so each element is promoted:
+
+```keel
+type Score { val: int }
+impl Comparable for Score {
+  task compare(self, other: Score) -> int { self.val - other.val }
+}
+
+task run() {
+  # Without the annotation, elements stay as untagged maps and .sort() falls
+  # back to primitive ordering instead of using Comparable.compare.
+  scores: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
+  sorted = scores.sort()   # [10, 20, 30] — uses Comparable.compare
 }
 ```
 

@@ -66,7 +66,7 @@ impl Checker<'_, '_> {
             }
             Binding::Destruct(DestructPat::Struct(fields)) => {
                 let struct_fields: Vec<(String, Ty)> = match ty.strip_nullable() {
-                    Ty::Struct(f) => f.clone(),
+                    Ty::Struct { fields: f, .. } => f.clone(),
                     other if other.is_opaque() => {
                         for (_, local) in fields {
                             scope.define(
@@ -325,22 +325,17 @@ impl Checker<'_, '_> {
                         // Iterable type is opaque — element type is also opaque.
                         other.clone()
                     }
-                    Ty::Struct(fields) => {
-                        // Allow iterating over a struct that implements Iterable.
-                        // Find the struct's type name by matching its field set.
-                        let field_names: std::collections::HashSet<&str> =
-                            fields.iter().map(|(n, _)| n.as_str()).collect();
-                        let is_iterable = self.structs.iter().any(|(type_name, schema)| {
-                            let schema_names: std::collections::HashSet<&str> =
-                                schema.iter().map(|(n, _)| n.as_str()).collect();
-                            schema_names == field_names && self.iterable_types.contains(type_name)
-                        });
-                        if is_iterable {
+                    Ty::Struct { name: Some(n), .. } => {
+                        if self.iterable_types.contains(n.as_str()) {
                             Ty::Unknown(UnknownReason::InferenceLimitation)
                         } else {
-                            self.err("`for` expects a list, got struct".to_string());
+                            self.err(format!("`for` expects a list, got struct `{n}`"));
                             Ty::Error
                         }
+                    }
+                    Ty::Struct { .. } => {
+                        self.err("`for` expects a list, got anonymous struct".to_string());
+                        Ty::Error
                     }
                     other => {
                         self.err(format!("`for` expects a list, got {}", describe_ty(other)));

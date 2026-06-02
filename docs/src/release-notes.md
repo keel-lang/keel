@@ -4,6 +4,28 @@
 
 ## Unreleased
 
+### Nominal struct type identity
+
+Two declared struct types with identical fields are no longer interchangeable.
+`type Point { x: int, y: int }` and `type Offset { x: int, y: int }` are now
+distinct types — passing an `Offset` where a `Point` is expected is a compile-time
+error.
+
+Anonymous struct literals remain structurally compatible with any named type that
+has the required fields. `p: Point = { x: 1, y: 2 }` continues to work.
+
+`impl` dispatch is now based entirely on the value's declared type tag. To enable
+`impl` methods on a list of struct values, declare the list type so elements are
+tagged at assignment time:
+
+```keel
+scores: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
+sorted = scores.sort()   # Comparable.compare is used
+```
+
+Error messages for named struct mismatches now include the declared type name
+(`expected Score, got Point`) rather than the generic `struct`.
+
 ### Read-only HIR semantic index
 
 The checker and LSP now consume a read-only high-level intermediate representation

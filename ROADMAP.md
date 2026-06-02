@@ -157,6 +157,8 @@ Known technical debt to address post-v0.1:
 
 - ~~**Type-tagged struct values.**~~ Shipped alongside v0.1.28. `Value::Struct(TypeName, fields)` is now a distinct variant; impl dispatch is O(1) via direct type-name lookup. Field-set fallback retained for untagged map literals. Ambiguous dispatch between types sharing field names is eliminated.
 
+- ~~**Nominal struct type identity.**~~ Shipped. `Ty::Struct` now carries `name: Option<String>`. Named struct types are nominally distinct in the checker — `type A { x: int }` and `type B { x: int }` are no longer interchangeable. Anonymous struct literals remain structurally compatible with any named type that has the required fields. `impl` dispatch no longer falls back to field-set subset matching for untagged maps; list elements are promoted to their declared struct type at typed assignment boundaries. `describe_ty` now returns the declared name (e.g. `Score`) for named structs in error messages.
+
 - ~~**Name resolution extracted from `infer_expr`.**~~ Shipped. The dedicated HIR lowering pass now owns global identifier classification and resolved reference IDs. `infer_expr` no longer performs ad-hoc string comparisons against multiple lookup tables for `Ident`, `FieldAccess`, `MethodCall`, and `Call` arms. Adding a new prelude namespace requires only a catalog entry. Prerequisite for multi-file imports and cross-module visibility (tracked as a future item).
 
 - ~~**Read-only HIR semantic index.**~~ Shipped. Parser AST now lowers into `src/hir/` before checker and LSP analysis. HIR owns `SymbolId`s, resolved identifier references, and struct-vs-map brace-literal classification. Interpreter migration remains intentionally deferred until a second execution backend needs the shared representation.

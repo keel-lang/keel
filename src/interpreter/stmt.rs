@@ -4,10 +4,11 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{Block, Expr, Pattern, Stmt, StringPart, TypeExpr};
+use crate::ast::{Block, Expr, Pattern, Stmt, StringPart};
 
 use super::bind_value;
 use super::environment::Environment;
+use super::promote::promote_value;
 use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
 use super::{RuntimeError, runtime_error};
@@ -26,26 +27,13 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     let v = match ty {
-                        Some(ty_node) if matches!(&ty_node.kind, TypeExpr::Named(_)) => {
-                            let TypeExpr::Named(name) = &ty_node.kind else {
-                                unreachable!()
-                            };
-                            if self.struct_types.contains_key(name.as_str()) {
-                                match v {
-                                    Value::Map(m) => {
-                                        let fields = m
-                                            .into_iter()
-                                            .map(|(k, v)| (k.to_string(), v))
-                                            .collect();
-                                        Value::Struct(name.clone(), fields)
-                                    }
-                                    other => other,
-                                }
-                            } else {
-                                v
-                            }
-                        }
-                        _ => v,
+                        Some(ty_node) => promote_value(
+                            v,
+                            &ty_node.kind,
+                            &self.struct_types,
+                            &self.struct_aliases,
+                        ),
+                        None => v,
                     };
                     bind_value(binding, v, env)?;
                     Ok(StmtOutcome::Normal)
@@ -106,7 +94,9 @@ impl Interpreter {
                         return Ok(StmtOutcome::Return(*inner));
                     }
                     // Unwrap Iterable structs: call items() to get the list.
-                    let iter_v = if matches!(&iter_v, Value::Map(_) | Value::Struct(_, _)) {
+                    // Only Value::Struct carries a type tag; Value::Map never dispatches
+                    // to impl methods after the subset-fallback removal.
+                    let iter_v = if matches!(&iter_v, Value::Struct(_, _)) {
                         let task_opt = self.find_impl_task(&iter_v, "items");
                         if let Some(task) = task_opt {
                             self.call_task(
