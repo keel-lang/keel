@@ -1,7 +1,33 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::args::expect_str;
 use crate::runtime::namespace::ns;
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Env",
+        name: "get",
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::NullableStr),
+        doc: "Get an environment variable, returning none if it is unset.",
+    },
+    BuiltinMethod {
+        namespace: "Env",
+        name: "require",
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Get an environment variable, raising an error if it is unset.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Env", {

@@ -306,6 +306,7 @@ current = Log.level()   # "debug"
 | `Async.spawn(block)` | `(() -> T) -> handle` | async handle | Start a concurrent task; returns immediately |
 | `Async.join_all(handles)` | `(list[handle]) -> list[dynamic]` | `list[dynamic]` | Wait for all handles; results in input order |
 | `Async.select(handles)` | `(list[handle]) -> dynamic` | `dynamic` | Return the result of the first handle to complete |
+| `Async.sleep(duration)` | `(duration) -> none` | `none` | Pause execution for the given duration |
 
 ```keel
 task1 = Async.spawn(() => { fetch_price("BTC") })

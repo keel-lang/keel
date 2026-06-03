@@ -1,5 +1,31 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::runtime::namespace::ns;
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Search",
+        name: "web",
+        params: &[BuiltinParam {
+            name: "query",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Unknown,
+        doc: "Search the web and return a list of SearchResult values.",
+    },
+    BuiltinMethod {
+        namespace: "Search",
+        name: "news",
+        params: &[BuiltinParam {
+            name: "query",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Unknown,
+        doc: "Search for recent news and return a list of SearchResult values.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Search", {

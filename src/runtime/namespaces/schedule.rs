@@ -1,7 +1,66 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
 use crate::interpreter::{CallArgValue, Host, Namespace};
 use crate::runtime::args::{expect_duration, expect_str};
 use crate::runtime::namespace::ns;
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Schedule",
+        name: "every",
+        params: &[BuiltinParam {
+            name: "interval",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Schedule a task to run on a recurring interval.",
+    },
+    BuiltinMethod {
+        namespace: "Schedule",
+        name: "after",
+        params: &[BuiltinParam {
+            name: "delay",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Schedule a task to run after a delay.",
+    },
+    BuiltinMethod {
+        namespace: "Schedule",
+        name: "at",
+        params: &[BuiltinParam {
+            name: "time",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Schedule a task to run at a specific wall-clock time.",
+    },
+    BuiltinMethod {
+        namespace: "Schedule",
+        name: "cron",
+        params: &[BuiltinParam {
+            name: "expr",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Schedule a task using a cron expression.",
+    },
+    BuiltinMethod {
+        namespace: "Schedule",
+        name: "sleep",
+        params: &[BuiltinParam {
+            name: "duration",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Pause execution for the given duration.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Schedule", {
@@ -33,9 +92,7 @@ pub(crate) fn namespace() -> Namespace {
             schedule_cron(host, args).await
         }),
         "sleep" => |_host, args| Box::pin(async move {
-            let secs = expect_duration(&args, 0, "Schedule.sleep")?;
-            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
-            Ok(Value::None)
+            super::asynchronous::sleep_for_duration(args, "Schedule.sleep").await
         }),
     })
 }

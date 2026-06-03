@@ -1,7 +1,69 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
 use crate::interpreter::{Host, Namespace};
 use crate::runtime::args::{expect_str, expect_str_named, expect_str_value};
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Agent",
+        name: "run",
+        params: &[BuiltinParam {
+            name: "name",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Start a named agent.",
+    },
+    BuiltinMethod {
+        namespace: "Agent",
+        name: "stop",
+        params: &[BuiltinParam {
+            name: "name",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Stop a running agent.",
+    },
+    BuiltinMethod {
+        namespace: "Agent",
+        name: "send",
+        params: &[
+            BuiltinParam {
+                name: "name",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "message",
+                ty: TySpec::Dynamic,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Send a message to an agent's mailbox.",
+    },
+    BuiltinMethod {
+        namespace: "Agent",
+        name: "delegate",
+        params: &[],
+        result: BuiltinResult::Unknown,
+        doc: "Delegate a task to another agent and return its result.",
+    },
+    BuiltinMethod {
+        namespace: "Agent",
+        name: "broadcast",
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Broadcast a message to all running agents.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Agent", {

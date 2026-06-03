@@ -1,9 +1,209 @@
 use sha2::{Digest, Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
 use crate::interpreter::{CallArgValue, Namespace};
 use crate::runtime::args::{expect_int, expect_str, expect_str_named};
 use crate::runtime::namespace::{find_arg, ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "sha224",
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the SHA-224 hex digest of a string.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "sha256",
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the SHA-256 hex digest of a string.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "sha384",
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the SHA-384 hex digest of a string.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "sha512",
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the SHA-512 hex digest of a string.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "sha512_224",
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the SHA-512/224 hex digest of a string.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "sha512_256",
+        params: &[BuiltinParam {
+            name: "data",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the SHA-512/256 hex digest of a string.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "hmac_sha224",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the HMAC-SHA-224 hex digest.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "hmac_sha256",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the HMAC-SHA-256 hex digest.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "hmac_sha384",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the HMAC-SHA-384 hex digest.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "hmac_sha512",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the HMAC-SHA-512 hex digest.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "hmac_sha512_224",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the HMAC-SHA-512/224 hex digest.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "hmac_sha512_256",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "data",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the HMAC-SHA-512/256 hex digest.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "token",
+        params: &[BuiltinParam {
+            name: "len",
+            ty: TySpec::Int,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Generate a random URL-safe token of the given byte length.",
+    },
+    BuiltinMethod {
+        namespace: "Crypto",
+        name: "random_bytes",
+        params: &[BuiltinParam {
+            name: "len",
+            ty: TySpec::Int,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::ListOfInt),
+        doc: "Generate cryptographically random bytes as a list of integers.",
+    },
+];
 
 const DEFAULT_TOKEN_BYTES: usize = 32;
 // Keep accidental large allocations bounded while leaving plenty of room for

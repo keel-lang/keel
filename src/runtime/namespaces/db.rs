@@ -3,11 +3,24 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::args::expect_str;
 use crate::runtime::db_provider::{DbConnectionHandle, DbFuture};
 use crate::runtime::namespace::ns;
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
+    namespace: "Db",
+    name: "connect",
+    params: &[BuiltinParam {
+        name: "url",
+        ty: TySpec::Str,
+        optional: false,
+    }],
+    result: BuiltinResult::Fixed(TySpec::DbConnection),
+    doc: "Open a database connection and return a DbConnection.",
+}];
 
 // ── SQLite backend ────────────────────────────────────────────────────────────
 

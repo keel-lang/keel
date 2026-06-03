@@ -1,8 +1,74 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
 use crate::interpreter::{Host, Namespace};
 use crate::runtime::args::expect_str;
 use crate::runtime::context;
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Log",
+        name: "info",
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Emit an info-level log message.",
+    },
+    BuiltinMethod {
+        namespace: "Log",
+        name: "warn",
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Emit a warning-level log message.",
+    },
+    BuiltinMethod {
+        namespace: "Log",
+        name: "error",
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Emit an error-level log message.",
+    },
+    BuiltinMethod {
+        namespace: "Log",
+        name: "debug",
+        params: &[BuiltinParam {
+            name: "message",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Emit a debug-level log message.",
+    },
+    BuiltinMethod {
+        namespace: "Log",
+        name: "set_level",
+        params: &[BuiltinParam {
+            name: "level",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Set the minimum log level (\"debug\", \"info\", \"warn\", or \"error\").",
+    },
+    BuiltinMethod {
+        namespace: "Log",
+        name: "level",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Return the current log level as a string.",
+    },
+];
 
 fn log_if_enabled(host: &dyn Host, level: &str, msg: &str) {
     let call_rank = context::log_level_rank(level).unwrap_or(1);

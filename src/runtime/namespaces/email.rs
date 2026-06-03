@@ -1,8 +1,53 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::args::{expect_bool_named, expect_str_value};
 use crate::runtime::namespace::{find_arg, ns, positional};
 use crate::runtime::{context, email};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Email",
+        name: "fetch",
+        params: &[],
+        result: BuiltinResult::Unknown,
+        doc: "Fetch messages from the configured email inbox.",
+    },
+    BuiltinMethod {
+        namespace: "Email",
+        name: "send",
+        params: &[
+            BuiltinParam {
+                name: "to",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "subject",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "body",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Send an email.",
+    },
+    BuiltinMethod {
+        namespace: "Email",
+        name: "archive",
+        params: &[BuiltinParam {
+            name: "id",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Archive an email by its ID.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Email", {

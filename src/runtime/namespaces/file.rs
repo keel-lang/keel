@@ -1,7 +1,138 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
 use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_bool_named, expect_str};
 use crate::runtime::namespace::{make_typed_report, ns};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "File",
+        name: "read",
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Read a file and return its contents as a string.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "write",
+        params: &[
+            BuiltinParam {
+                name: "path",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "content",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Write a string to a file, creating or overwriting it.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "exists",
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Bool),
+        doc: "Return true if the path exists on the filesystem.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "list",
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::ListOfStr),
+        doc: "List the entries in a directory.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "mkdir",
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Create a directory and all intermediate parents.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "remove",
+        params: &[BuiltinParam {
+            name: "path",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Remove a file or directory.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "copy",
+        params: &[
+            BuiltinParam {
+                name: "src",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "dst",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Copy a file from src to dst.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "glob",
+        params: &[BuiltinParam {
+            name: "pattern",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::ListOfStr),
+        doc: "Return file paths that match a glob pattern.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "move",
+        params: &[
+            BuiltinParam {
+                name: "src",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "dst",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Move (rename) a file from src to dst.",
+    },
+    BuiltinMethod {
+        namespace: "File",
+        name: "mktemp",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Create a temporary file and return its path.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("File", {

@@ -1,6 +1,181 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Math",
+        name: "PI",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "The mathematical constant π (3.14159…).",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "E",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "The mathematical constant e (2.71828…).",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "sqrt",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the square root of x.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "pow",
+        params: &[
+            BuiltinParam {
+                name: "x",
+                ty: TySpec::Float,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "y",
+                ty: TySpec::Float,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return x raised to the power y.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "exp",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return e raised to the power x.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "log",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the natural logarithm of x.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "log2",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the base-2 logarithm of x.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "log10",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the base-10 logarithm of x.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "sin",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the sine of x (x in radians).",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "cos",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the cosine of x (x in radians).",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "tan",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the tangent of x (x in radians).",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "asin",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the arcsine of x in radians.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "acos",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the arccosine of x in radians.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "atan",
+        params: &[BuiltinParam {
+            name: "x",
+            ty: TySpec::Float,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the arctangent of x in radians.",
+    },
+    BuiltinMethod {
+        namespace: "Math",
+        name: "atan2",
+        params: &[
+            BuiltinParam {
+                name: "y",
+                ty: TySpec::Float,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "x",
+                ty: TySpec::Float,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return the four-quadrant arctangent of y and x in radians.",
+    },
+];
 
 fn as_num(v: &Value) -> Option<f64> {
     match v {

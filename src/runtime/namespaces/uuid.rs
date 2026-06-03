@@ -1,7 +1,54 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::args::{expect_str, expect_str_value};
 use crate::runtime::namespace::{find_arg, ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Uuid",
+        name: "v4",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Uuid),
+        doc: "Generate a random UUID v4.",
+    },
+    BuiltinMethod {
+        namespace: "Uuid",
+        name: "v7",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Uuid),
+        doc: "Generate a time-sortable UUID v7.",
+    },
+    BuiltinMethod {
+        namespace: "Uuid",
+        name: "v5",
+        params: &[
+            BuiltinParam {
+                name: "ns",
+                ty: TySpec::Uuid,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "name",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Uuid),
+        doc: "Generate a deterministic UUID v5 from a namespace UUID and a name.",
+    },
+    BuiltinMethod {
+        namespace: "Uuid",
+        name: "parse",
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::NullableUuid),
+        doc: "Parse a UUID string, returning none on failure.",
+    },
+];
 
 const UUID_DNS: &str = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
 const UUID_URL: &str = "6ba7b811-9dad-11d1-80b4-00c04fd430c8";

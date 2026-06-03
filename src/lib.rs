@@ -10,6 +10,7 @@
 #![warn(clippy::complexity)]
 
 pub mod ast;
+pub mod builtins;
 pub mod formatter;
 pub mod hir;
 pub mod ide;

@@ -1,10 +1,54 @@
 use sha2::{Digest, Sha256};
 
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
 use crate::interpreter::{Host, Namespace};
 use crate::runtime::args::expect_str;
 use crate::runtime::context;
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Memory",
+        name: "remember",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "value",
+                ty: TySpec::Str,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Store a value in agent memory.",
+    },
+    BuiltinMethod {
+        namespace: "Memory",
+        name: "recall",
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::NullableStr),
+        doc: "Retrieve a value from agent memory, returning none if absent.",
+    },
+    BuiltinMethod {
+        namespace: "Memory",
+        name: "forget",
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Delete a key from agent memory.",
+    },
+];
 
 // Memory.* is only valid inside an agent body; calls from top-level code or
 // plain tasks raise an error ("requires an agent context").

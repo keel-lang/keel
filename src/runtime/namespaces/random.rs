@@ -1,6 +1,42 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::namespace::{find_arg, ns};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Random",
+        name: "float",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Float),
+        doc: "Return a random float in the range [0, 1).",
+    },
+    BuiltinMethod {
+        namespace: "Random",
+        name: "int",
+        params: &[
+            BuiltinParam {
+                name: "min",
+                ty: TySpec::Int,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "max",
+                ty: TySpec::Int,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::Int),
+        doc: "Return a random integer in the inclusive range [min, max].",
+    },
+    BuiltinMethod {
+        namespace: "Random",
+        name: "bool",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::Bool),
+        doc: "Return a random boolean.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Random", {

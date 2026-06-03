@@ -1,7 +1,58 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::args::{expect_duration_named, expect_str};
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Cache",
+        name: "set",
+        params: &[
+            BuiltinParam {
+                name: "key",
+                ty: TySpec::Str,
+                optional: false,
+            },
+            BuiltinParam {
+                name: "value",
+                ty: TySpec::Dynamic,
+                optional: false,
+            },
+        ],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Store a value in the in-process cache.",
+    },
+    BuiltinMethod {
+        namespace: "Cache",
+        name: "get",
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::NullableDynamic),
+        doc: "Retrieve a cached value, returning none if absent.",
+    },
+    BuiltinMethod {
+        namespace: "Cache",
+        name: "delete",
+        params: &[BuiltinParam {
+            name: "key",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Remove a key from the cache.",
+    },
+    BuiltinMethod {
+        namespace: "Cache",
+        name: "clear",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Clear all entries from the cache.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Cache", {

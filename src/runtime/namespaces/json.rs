@@ -1,10 +1,39 @@
 use std::collections::HashSet;
 
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{CallArgValue, Namespace};
 use crate::runtime::args::expect_str;
 use crate::runtime::convert::{json_to_value, value_to_json};
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Json",
+        name: "parse",
+        params: &[BuiltinParam {
+            name: "s",
+            ty: TySpec::Str,
+            optional: false,
+        }],
+        // Unknown (ExternalDynamic): the JSON structure depends on runtime input and is
+        // not statically knowable. `keel check --strict` will flag unannotated bindings;
+        // users silence this with an explicit `let x: dynamic = Json.parse(...)`.
+        result: BuiltinResult::Unknown,
+        doc: "Parse a JSON string into a dynamic value.",
+    },
+    BuiltinMethod {
+        namespace: "Json",
+        name: "stringify",
+        params: &[BuiltinParam {
+            name: "value",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::Str),
+        doc: "Serialize a value to a JSON string.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Json", {

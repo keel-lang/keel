@@ -3,10 +3,54 @@ use std::future::{Future, poll_fn};
 use std::pin::Pin;
 use std::task::Poll;
 
-use crate::interpreter::Namespace;
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
+use crate::interpreter::{CallArgValue, Namespace};
 use crate::runtime::args::expect_duration;
 use crate::runtime::namespace::{ns, positional};
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Async",
+        name: "spawn",
+        params: &[],
+        result: BuiltinResult::Unknown,
+        doc: "Spawn a concurrent task and return a handle.",
+    },
+    BuiltinMethod {
+        namespace: "Async",
+        name: "join_all",
+        params: &[BuiltinParam {
+            name: "handles",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Unknown,
+        doc: "Wait for all async task handles to complete.",
+    },
+    BuiltinMethod {
+        namespace: "Async",
+        name: "select",
+        params: &[BuiltinParam {
+            name: "handles",
+            ty: TySpec::Dynamic,
+            optional: false,
+        }],
+        result: BuiltinResult::Unknown,
+        doc: "Return the result of the first completed task handle.",
+    },
+    BuiltinMethod {
+        namespace: "Async",
+        name: "sleep",
+        params: &[BuiltinParam {
+            name: "duration",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Pause execution for the given duration.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Async", {
@@ -90,11 +134,18 @@ pub(crate) fn namespace() -> Namespace {
             }
         }),
         "sleep" => |_i, args| Box::pin(async move {
-            let secs = expect_duration(&args, 0, "Async.sleep")?;
-            tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
-            Ok(Value::None)
+            sleep_for_duration(args, "Async.sleep").await
         }),
     })
+}
+
+pub(crate) async fn sleep_for_duration(
+    args: Vec<CallArgValue>,
+    caller: &str,
+) -> miette::Result<Value> {
+    let secs = expect_duration(&args, 0, caller)?;
+    tokio::time::sleep(std::time::Duration::from_secs_f64(secs)).await;
+    Ok(Value::None)
 }
 
 fn async_handle_id(value: &Value) -> Option<u64> {

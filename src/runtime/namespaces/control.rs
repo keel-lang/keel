@@ -1,8 +1,41 @@
+use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::args::{expect_duration, expect_str};
 use crate::runtime::namespace::{ns, positional};
 use crate::runtime::namespaces::schedule::parse_datetime;
+
+pub(crate) const SPEC: &[BuiltinMethod] = &[
+    BuiltinMethod {
+        namespace: "Control",
+        name: "retry",
+        params: &[],
+        result: BuiltinResult::Unknown,
+        doc: "Retry a task on failure with configurable backoff.",
+    },
+    BuiltinMethod {
+        namespace: "Control",
+        name: "with_timeout",
+        params: &[BuiltinParam {
+            name: "duration",
+            ty: TySpec::Duration,
+            optional: false,
+        }],
+        result: BuiltinResult::Unknown,
+        doc: "Run a task, raising an error if it exceeds the timeout.",
+    },
+    BuiltinMethod {
+        namespace: "Control",
+        name: "with_deadline",
+        params: &[BuiltinParam {
+            name: "deadline",
+            ty: TySpec::Datetime,
+            optional: false,
+        }],
+        result: BuiltinResult::Unknown,
+        doc: "Run a task, raising an error if it runs past the deadline.",
+    },
+];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("Control", {
