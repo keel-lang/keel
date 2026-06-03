@@ -158,6 +158,10 @@ impl Checker<'_, '_> {
                 ))
             }
             TypeExpr::Dynamic => Ty::Dynamic,
+            // SelfType is a synthetic receiver marker; it is replaced with the
+            // concrete implementing type before any type-checked method body
+            // runs, so it should never reach the resolver in practice.
+            TypeExpr::SelfType => Ty::Dynamic,
         }
     }
 

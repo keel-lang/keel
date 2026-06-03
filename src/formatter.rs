@@ -266,8 +266,8 @@ impl Fmt {
             if p.variadic {
                 self.push("...");
             }
-            // impl receiver: `self` has a placeholder type — emit bare `self`
-            if matches!(&p.ty.kind, TypeExpr::Named(n) if n == "__impl_self__") {
+            // impl receiver: emit bare `self` for the receiver param
+            if matches!(&p.ty.kind, TypeExpr::SelfType) {
                 self.push("self");
                 continue;
             }
@@ -1059,6 +1059,7 @@ impl Fmt {
                 format!("{name}[{}]", parts.join(", "))
             }
             TypeExpr::Dynamic => "dynamic".into(),
+            TypeExpr::SelfType => "self".into(),
         }
     }
 }

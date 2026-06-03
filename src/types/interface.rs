@@ -124,6 +124,9 @@ pub fn resolve_type_expr(te: &TypeExpr, env: &TypeEnv) -> Ty {
             Ty::Enum(name.clone(), resolved_args)
         }
         TypeExpr::Dynamic => Ty::Dynamic,
+        // SelfType is a synthetic receiver marker; conformance checking
+        // filters self params by binding name before reaching this function.
+        TypeExpr::SelfType => Ty::Dynamic,
     }
 }
 

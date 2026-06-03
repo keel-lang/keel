@@ -49,4 +49,14 @@ pub enum TypeExpr {
     Generic(String, Vec<TypeExpr>),
     /// Dynamic (FFI escape hatch)
     Dynamic,
+    /// Receiver `self` in an `interface` or `impl` method signature.
+    ///
+    /// This variant is synthetic — it is never written by users and never
+    /// appears in user-visible type positions.  The parser inserts it when it
+    /// encounters the `self` keyword as a method parameter; the interpreter
+    /// replaces it with the concrete implementing type before storing the
+    /// method.  All exhaustive `TypeExpr` match arms that do not otherwise
+    /// handle this variant should treat it as an internal marker (e.g. emit
+    /// `"self"` for display, or map to `Ty::Dynamic` for type resolution).
+    SelfType,
 }

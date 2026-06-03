@@ -7,7 +7,7 @@ use super::environment::Environment;
 use super::promote::promote_value;
 use super::runtime_error;
 use super::state::{AgentDef, AllowedTools, CallArgValue, Interpreter};
-use super::stmt::StmtOutcome;
+use super::stmt::{ExprFlow, StmtOutcome};
 use super::value::Value;
 
 impl Interpreter {
@@ -23,14 +23,9 @@ impl Interpreter {
             env.define(p.name.clone(), v);
         }
         match body {
-            LambdaBody::Expr(e) => {
-                let v = self.eval_expr(e, &mut env).await?;
-                if let Value::EarlyReturn(inner) = v {
-                    Ok(*inner)
-                } else {
-                    Ok(v)
-                }
-            }
+            LambdaBody::Expr(e) => match self.eval_expr(e, &mut env).await? {
+                ExprFlow::Value(v) | ExprFlow::Return(v) => Ok(v),
+            },
             LambdaBody::Block(block) => match self.exec_block(block, &mut env).await? {
                 StmtOutcome::Value(v) | StmtOutcome::Return(v) => Ok(v),
                 StmtOutcome::Normal => Ok(Value::None),
@@ -204,7 +199,10 @@ impl Interpreter {
             let included = match &entry.condition {
                 None => true,
                 Some(cond) => {
-                    matches!(self.eval_expr(cond, &mut env).await?, Value::Bool(true))
+                    matches!(
+                        self.eval_expr(cond, &mut env).await?,
+                        ExprFlow::Value(Value::Bool(true))
+                    )
                 }
             };
             if included {

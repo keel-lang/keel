@@ -171,13 +171,12 @@ impl Interpreter {
                 }
 
                 for method in &impl_decl.methods {
-                    // Fix up __impl_self__ placeholder with the concrete type name.
+                    // Replace the SelfType receiver with the concrete implementing type.
                     let mut fixed = method.clone();
                     for param in &mut fixed.params {
                         if let Binding::Ident(n) = &param.name
                             && n == "self"
                         {
-                            // Replace __impl_self__ placeholder with the concrete type.
                             // Preserve the original span (0..0 for synthetic, or the
                             // `self` keyword span for parsed methods).
                             param.ty.kind = TypeExpr::Named(type_name.clone());
@@ -316,6 +315,7 @@ fn type_display_str(te: &TypeExpr) -> String {
             format!("{{{}}}", fs.join(", "))
         }
         TypeExpr::Dynamic => "dynamic".to_string(),
+        TypeExpr::SelfType => "self".to_string(),
     }
 }
 

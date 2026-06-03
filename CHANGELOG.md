@@ -35,7 +35,17 @@ All notable changes to Keel.
 
 - **Type-checker diagnostics are now structured internally.** The checker returns `TypeDiagnostic` variants instead of a string-only `TypeError`, with structured data for undefined names, type mismatches, wrong arity, and non-exhaustive `when` checks. CLI and LSP rendering keep the same user-facing messages, while diagnostics now carry expected/actual types and precise spans for IDE tooling.
 
+### Changed
+
+- **`TypeExpr::SelfType` replaces the `"__impl_self__"` string sentinel.** The `self` receiver parameter in `interface` and `impl` method signatures is now represented by a typed `TypeExpr::SelfType` AST variant instead of a `TypeExpr::Named("__impl_self__")` string. All six exhaustive `TypeExpr` match sites (formatter, resolver, interface conformance, AST visitor, and two display helpers) have been updated. No user-visible behaviour changes.
+
+- **`ExprFlow` replaces `Value::EarlyReturn` for control-flow inside `eval_expr`.** Returning from inside an expression-position `if`/`when` body (e.g. `x = if cond { return 5 } else { 0 }`) now propagates through a dedicated `ExprFlow { Value(Value), Return(Value) }` type instead of a sentinel variant on the `Value` enum. `eval_expr` returns `Result<ExprFlow>`. The old in-band propagation silently dropped early returns that occurred inside list literals, tuple literals, enum variant field expressions, call arguments, and other expression arms where the `EarlyReturn` check was missing. Those paths now propagate correctly via `?`.
+
+- **Struct/map disambiguation is consolidated in HIR lowering.** Confirmed: the type checker's `Expr::StructLit` arm reads `hir.literal_kind()` exclusively, with no independent re-classification. HIR lowering is the single site where a brace literal is classified as a struct record or a map. (First established by the HIR commit; this release closes issue #15 by verifying the invariant holds.)
+
 ### Fixed
+
+- **`return` inside a list literal now propagates out of the enclosing task.** Previously, a `return` occurring as a sub-expression in a list literal (e.g. `nums = [1, if flag { return 42 } else { 0 }, 3]`) was stored as a stray value inside the list instead of exiting the task. The fix is a consequence of replacing `Value::EarlyReturn` with `ExprFlow` in `eval_expr`: every expression arm now propagates early returns via `?`.
 
 - **Typed runtime errors now propagate as structured values.** `AiError` and `AiSchemaError` were stored in a mutable `Interpreter` side-channel that `try/catch` read to reconstruct the caught value. A nested `try/catch` whose inner clause did not match would clear that slot before the outer clause could read it, so the outer catch lost its typed error. Typed errors now travel inside the runtime report itself, so each catch clause receives the exact error value produced by its failing call regardless of nesting. A regression test confirms a typed error survives propagation past a non-matching inner catch, and unit tests assert the typed payload is carried in the report (`downcast_ref::<RuntimeError>`) rather than a separate field.
 

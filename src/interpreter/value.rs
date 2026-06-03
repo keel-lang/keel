@@ -107,13 +107,6 @@ pub enum Value {
 
     /// A top-level built-in (by name) — `run`, `stop`, etc.
     BuiltinFn(String),
-
-    /// Sentinel produced when `return` appears inside an expression-position
-    /// `if`/`when` body. Propagates upward through `eval_expr` until it
-    /// reaches `exec_block` or a call boundary, which unwraps it into a real
-    /// `StmtOutcome::Return`. Never escapes the interpreter; user code never
-    /// observes this variant.
-    EarlyReturn(Box<Value>),
 }
 
 impl Value {
@@ -137,7 +130,6 @@ impl Value {
             Value::Namespace(_) => "namespace",
             Value::DbConnection(_, _) => "DbConnection",
             Value::BuiltinFn(_) => "builtin",
-            Value::EarlyReturn(_) => "early_return",
         }
     }
 
@@ -150,7 +142,6 @@ impl Value {
             Value::List(l) if l.is_empty() => false,
             Value::Range(lo, hi) if lo > hi => false,
             Value::DbConnection(_, _) => true,
-            Value::EarlyReturn(_) => false,
             _ => true,
         }
     }
@@ -298,7 +289,6 @@ impl fmt::Display for Value {
             Value::Namespace(name) => write!(f, "<namespace {name}>"),
             Value::DbConnection(url, _) => write!(f, "<DbConnection {url}>"),
             Value::BuiltinFn(name) => write!(f, "<builtin {name}>"),
-            Value::EarlyReturn(_) => write!(f, "<early-return>"),
         }
     }
 }

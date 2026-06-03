@@ -1711,6 +1711,39 @@ run(A)
     );
 }
 
+// ── Regression: return propagates through nested expression positions ─────────
+
+#[test]
+fn return_inside_list_literal_propagates() {
+    // Before ExprFlow, `return` nested in a list literal element was silently
+    // dropped into the list as a stray EarlyReturn value instead of exiting
+    // the enclosing task.
+    let src = r#"
+task get_early(flag: bool) -> int {
+    nums = [1, if flag { return 42 } else { 0 }, 3]
+    nums[0]
+}
+agent A {
+    @on_start {
+        Io.show(get_early(true))
+        Io.show(get_early(false))
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program exited non-zero\nstderr: {stderr}");
+    assert!(
+        stdout.contains("42"),
+        "return inside list element should exit task with 42:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("1"),
+        "no early return: task should return nums[0] = 1:\n{stdout}"
+    );
+}
+
 // ── Regression: named args for user-defined tasks (S1) ───────────────────────
 
 #[test]

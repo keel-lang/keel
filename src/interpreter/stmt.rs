@@ -22,10 +22,10 @@ impl Interpreter {
         Box::pin(async move {
             match stmt {
                 Stmt::Let { binding, ty, value } => {
-                    let v = self.eval_expr(value, env).await?;
-                    if let Value::EarlyReturn(inner) = v {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let v = match self.eval_expr(value, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     let v = match ty {
                         Some(ty_node) => promote_value(
                             v,
@@ -39,10 +39,10 @@ impl Interpreter {
                     Ok(StmtOutcome::Normal)
                 }
                 Stmt::SelfAssign { field, value, .. } => {
-                    let v = self.eval_expr(value, env).await?;
-                    if let Value::EarlyReturn(inner) = v {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let v = match self.eval_expr(value, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     if let Some(agent) = &self.current_agent {
                         let mut guard = agent.lock();
                         if guard
@@ -64,21 +64,21 @@ impl Interpreter {
                     }
                 }
                 Stmt::Expr(e) => {
-                    let v = self.eval_expr(e, env).await?;
+                    let v = match self.eval_expr(e, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     Ok(StmtOutcome::Value(v))
                 }
                 Stmt::Return(opt) => {
                     let v = match opt {
-                        Some(e) => {
-                            let v = self.eval_expr(e, env).await?;
-                            // If the return expression itself triggered an inner return
+                        Some(e) => match self.eval_expr(e, env).await? {
+                            ExprFlow::Value(v) => v,
+                            // If the return expression itself contained an inner return
                             // (e.g. `return if cond { return x } else { y }`), the
                             // inner return wins — propagate it unchanged.
-                            if let Value::EarlyReturn(inner) = v {
-                                return Ok(StmtOutcome::Return(*inner));
-                            }
-                            v
-                        }
+                            ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                        },
                         None => Value::None,
                     };
                     Ok(StmtOutcome::Return(v))
@@ -89,10 +89,10 @@ impl Interpreter {
                     filter,
                     body,
                 } => {
-                    let iter_v = self.eval_expr(iter, env).await?;
-                    if let Value::EarlyReturn(inner) = iter_v {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let iter_v = match self.eval_expr(iter, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     // Unwrap Iterable structs: call items() to get the list.
                     // Only Value::Struct carries a type tag; Value::Map never dispatches
                     // to impl methods after the subset-fallback removal.
@@ -142,8 +142,14 @@ impl Interpreter {
                         env.push_scope();
                         bind_value(binding, item, env)?;
                         if let Some(pred) = filter {
-                            let matched = self.eval_expr(pred, env).await?.is_truthy();
-                            if !matched {
+                            let pred_val = match self.eval_expr(pred, env).await? {
+                                ExprFlow::Value(v) => v,
+                                ExprFlow::Return(v) => {
+                                    env.pop_scope();
+                                    return Ok(StmtOutcome::Return(v));
+                                }
+                            };
+                            if !pred_val.is_truthy() {
                                 env.pop_scope();
                                 continue;
                             }
@@ -165,10 +171,10 @@ impl Interpreter {
                     then_body,
                     else_body,
                 } => {
-                    let c = self.eval_expr(cond, env).await?;
-                    if let Value::EarlyReturn(inner) = c {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let c = match self.eval_expr(cond, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     if c.is_truthy() {
                         self.exec_block(then_body, env).await
                     } else if let Some(eb) = else_body {
@@ -178,21 +184,28 @@ impl Interpreter {
                     }
                 }
                 Stmt::When { subject, arms } => {
-                    let s = self.eval_expr(subject, env).await?;
-                    if let Value::EarlyReturn(inner) = s {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let s = match self.eval_expr(subject, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     for arm in arms {
                         if let Some(bindings) = self.match_patterns(&arm.patterns, &s) {
                             env.push_scope();
                             for (k, v) in bindings {
                                 env.define(k, v);
                             }
-                            if let Some(guard) = &arm.guard
-                                && !self.eval_expr(guard, env).await?.is_truthy()
-                            {
-                                env.pop_scope();
-                                continue;
+                            if let Some(guard) = &arm.guard {
+                                let guard_val = match self.eval_expr(guard, env).await? {
+                                    ExprFlow::Value(v) => v,
+                                    ExprFlow::Return(v) => {
+                                        env.pop_scope();
+                                        return Ok(StmtOutcome::Return(v));
+                                    }
+                                };
+                                if !guard_val.is_truthy() {
+                                    env.pop_scope();
+                                    continue;
+                                }
                             }
                             let out = self.exec_block(&arm.body, env).await?;
                             env.pop_scope();
@@ -202,10 +215,10 @@ impl Interpreter {
                     Ok(StmtOutcome::Normal)
                 }
                 Stmt::AugAssign { name, op, rhs, .. } => {
-                    let rhs_val = self.eval_expr(rhs, env).await?;
-                    if let Value::EarlyReturn(inner) = rhs_val {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let rhs_val = match self.eval_expr(rhs, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     let current = env.get(name).cloned().unwrap_or(Value::None);
                     let result = crate::interpreter::binary::eval_binary(*op, current, rhs_val)?;
                     if !env.set(name, result) {
@@ -216,10 +229,10 @@ impl Interpreter {
                     Ok(StmtOutcome::Normal)
                 }
                 Stmt::Raise(e) => {
-                    let v = self.eval_expr(e, env).await?;
-                    if let Value::EarlyReturn(inner) = v {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
+                    let v = match self.eval_expr(e, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
                     let message = match &v {
                         Value::String(s) => s.clone(),
                         other => other.to_display_string(),
@@ -228,10 +241,10 @@ impl Interpreter {
                 }
                 Stmt::While { cond, body } => {
                     loop {
-                        let c = self.eval_expr(cond, env).await?;
-                        if let Value::EarlyReturn(inner) = c {
-                            return Ok(StmtOutcome::Return(*inner));
-                        }
+                        let c = match self.eval_expr(cond, env).await? {
+                            ExprFlow::Value(v) => v,
+                            ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                        };
                         if !c.is_truthy() {
                             break;
                         }
@@ -303,12 +316,7 @@ impl Interpreter {
                 // loop handler in exec_stmt catches them at the loop boundary.
                 StmtOutcome::Break => return Ok(StmtOutcome::Break),
                 StmtOutcome::Continue => return Ok(StmtOutcome::Continue),
-                StmtOutcome::Value(v) => {
-                    if let Value::EarlyReturn(inner) = v {
-                        return Ok(StmtOutcome::Return(*inner));
-                    }
-                    last = v;
-                }
+                StmtOutcome::Value(v) => last = v,
                 StmtOutcome::Normal => last = Value::None,
             }
         }
@@ -385,6 +393,22 @@ impl Interpreter {
             }
         }
     }
+}
+
+/// Control-flow signal returned by [`Interpreter::eval_expr`].
+///
+/// Keeps `return`-inside-expression propagation out of the [`Value`] enum.
+/// All variants are internal to the interpreter execution loop and never
+/// escape to user-visible code.
+#[derive(Debug, Clone)]
+pub(crate) enum ExprFlow {
+    /// Expression evaluated to a value normally.
+    Value(Value),
+    /// A `return` was encountered inside an expression-position `if`/`when`
+    /// body.  Propagates upward through [`Interpreter::eval_expr`] callers
+    /// until it reaches an [`exec_stmt`] or call boundary, which converts it
+    /// to [`StmtOutcome::Return`] or unwraps the inner value, respectively.
+    Return(Value),
 }
 
 #[derive(Debug, Clone)]

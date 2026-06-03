@@ -435,7 +435,7 @@ fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
     let self_param = || Param {
         name: Binding::Ident("self".to_string()),
         name_span: 0..0,
-        ty: Node::synthetic(TypeExpr::Named("__impl_self__".to_string())),
+        ty: Node::synthetic(TypeExpr::SelfType),
         default: None,
         variadic: false,
     };

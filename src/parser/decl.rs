@@ -129,7 +129,7 @@ pub(super) fn interface_decl() -> P<Decl> {
     let self_param = just(Token::SelfKw).map_with_span(|_, span: Span| Param {
         name: Binding::Ident("self".to_string()),
         name_span: span.clone(),
-        ty: Node::new(TypeExpr::Named("__impl_self__".to_string()), span),
+        ty: Node::new(TypeExpr::SelfType, span),
         default: None,
         variadic: false,
     });
@@ -504,7 +504,7 @@ pub(super) fn impl_decl() -> P<Decl> {
     let self_param = just(Token::SelfKw).map_with_span(|_, span: Span| Param {
         name: Binding::Ident("self".to_string()),
         name_span: span.clone(),
-        ty: Node::new(TypeExpr::Named("__impl_self__".to_string()), span),
+        ty: Node::new(TypeExpr::SelfType, span),
         default: None,
         variadic: false,
     });

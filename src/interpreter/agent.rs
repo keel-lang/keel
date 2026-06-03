@@ -9,6 +9,7 @@ use crate::ast::AttributeBody;
 use super::environment::Environment;
 use super::runtime_error;
 use super::state::{AgentInstance, CallArgValue, Interpreter};
+use super::stmt::ExprFlow;
 use super::value::Value;
 
 impl Interpreter {
@@ -54,10 +55,11 @@ impl Interpreter {
         let mut state = HashMap::new();
         for f in &def.state_fields {
             let mut tmp_env = Environment::new();
-            state.insert(
-                f.name.clone(),
-                self.eval_expr(&f.default, &mut tmp_env).await?,
-            );
+            let default = match self.eval_expr(&f.default, &mut tmp_env).await? {
+                ExprFlow::Value(v) => v,
+                ExprFlow::Return(v) => v,
+            };
+            state.insert(f.name.clone(), default);
         }
         let inst = Arc::new(Mutex::new(AgentInstance {
             def: def.clone(),

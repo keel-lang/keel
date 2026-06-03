@@ -540,5 +540,6 @@ fn type_display_str(te: &TypeExpr) -> String {
             format!("{{{}}}", fs.join(", "))
         }
         TypeExpr::Dynamic => "dynamic".to_string(),
+        TypeExpr::SelfType => "self".to_string(),
     }
 }

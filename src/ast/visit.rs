@@ -293,7 +293,7 @@ pub fn walk_pattern<V: Visitor + ?Sized>(v: &mut V, pattern: &Pattern) {
 /// Walks nested type expressions.
 pub fn walk_type_expr<V: Visitor + ?Sized>(v: &mut V, ty: &TypeExpr) {
     match ty {
-        TypeExpr::Named(_) | TypeExpr::Dynamic => {}
+        TypeExpr::Named(_) | TypeExpr::Dynamic | TypeExpr::SelfType => {}
         TypeExpr::Nullable(inner) | TypeExpr::List(inner) | TypeExpr::Set(inner) => {
             v.visit_type_expr(inner);
         }
