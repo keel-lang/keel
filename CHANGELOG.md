@@ -10,6 +10,20 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Fixed
+
+- **Parser now reports all syntax errors, not just the first.** When a source file contains syntax errors in multiple declarations, all of them are now surfaced — both in the LSP (as individual diagnostics) and in the CLI (as labeled spans in a single miette report). Previously, only the first error was collected and the rest were silently discarded. Implemented via declaration-level error recovery (`skip_then_retry_until`) in the program parser, plus updating `into_miette` to build one `LabeledSpan` per chumsky error. Fixes [#26](https://github.com/keel-lang/keel/issues/26).
+
+  ```keel
+  task greet(name: str) {
+    result =       # ← error 1 (incomplete expression)
+  }
+
+  task farewell(name: str) {
+    reply =        # ← error 2 (incomplete expression) — now visible too
+  }
+  ```
+
 ---
 
 ## [0.1.31] — 2026-06-04

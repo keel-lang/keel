@@ -4,6 +4,22 @@
 
 ## Unreleased
 
+### All syntax errors now reported at once
+
+The parser previously stopped at the first syntax error. If a file contained errors in two separate tasks, only the first was shown — requiring multiple edit-compile cycles to clear a freshly-written file.
+
+The parser now uses declaration-level error recovery: when a declaration fails to parse, it skips forward to the next declaration keyword and continues. All accumulated errors are reported together — both in the LSP (as individual diagnostics on the affected lines) and in the CLI (as labeled source spans in a single miette report).
+
+```keel
+task greet(name: str) {
+    result =       # ← error 1
+}
+
+task farewell(name: str) {
+    reply =        # ← error 2 — now visible without fixing error 1 first
+}
+```
+
 ---
 
 ## v0.1.31 — 2026-06-04

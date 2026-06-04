@@ -583,6 +583,15 @@ pub(super) fn program_parser() -> P<Program> {
         stmt_decl,
     ))
     .map_with_span(Node::new)
+    .recover_with(skip_then_retry_until([
+        Token::Task,
+        Token::Agent,
+        Token::Interface,
+        Token::Impl,
+        Token::Type,
+        Token::Extern,
+        Token::Use,
+    ]))
     .boxed();
 
     newlines()

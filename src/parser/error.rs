@@ -6,18 +6,16 @@
 use chumsky::prelude::*;
 use miette::NamedSource;
 
-use crate::lexer::{Span, Token};
+use crate::lexer::Token;
 
 pub(super) fn into_miette(
     errors: Vec<Simple<Token>>,
     named_src: &NamedSource<String>,
 ) -> miette::Report {
-    let err = &errors[0];
-    let span: Span = err.span();
-    miette::miette!(
-        labels = vec![miette::LabeledSpan::at(span, err.to_string())],
-        "Parse error: {}",
-        err
-    )
-    .with_source_code(named_src.clone())
+    let first = &errors[0];
+    let labels: Vec<_> = errors
+        .iter()
+        .map(|e| miette::LabeledSpan::at(e.span(), e.to_string()))
+        .collect();
+    miette::miette!(labels = labels, "Parse error: {}", first).with_source_code(named_src.clone())
 }

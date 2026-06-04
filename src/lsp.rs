@@ -719,6 +719,21 @@ mod tests {
     }
 
     #[test]
+    fn analyze_multiple_parse_errors() {
+        let diags = analyze("task a() {\n  x =\n}\ntask b() {\n  y =\n}\n");
+        assert!(
+            diags.len() >= 2,
+            "expected ≥2 parse diagnostics for two broken tasks, got {}: {diags:?}",
+            diags.len()
+        );
+        assert!(
+            diags
+                .iter()
+                .all(|d| d.severity == Some(DiagnosticSeverity::ERROR))
+        );
+    }
+
+    #[test]
     fn analyze_multiple_type_errors() {
         let diags = analyze(
             r#"

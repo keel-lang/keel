@@ -752,6 +752,20 @@ fn parse_error_on_unexpected_token() {
 }
 
 #[test]
+fn parse_errors_collected_from_multiple_declarations() {
+    // Two tasks each with a broken statement — both errors must surface.
+    let src = "task a() {\n  x =\n}\ntask b() {\n  y =\n}\n";
+    let named = miette::NamedSource::new("test.keel", src.to_string());
+    let tokens = keel_lang::lexer::lex(src, &named).expect("lex ok");
+    let report = keel_lang::parser::parse(tokens, src.len(), &named).unwrap_err();
+    let label_count = report.labels().map(|ls| ls.count()).unwrap_or(0);
+    assert!(
+        label_count >= 2,
+        "expected ≥2 error labels for two broken tasks, got {label_count}"
+    );
+}
+
+#[test]
 fn parse_when_expr_produces_expr_when_node() {
     use keel_lang::ast::{Expr, Stmt};
     let prog = parse_ok(
