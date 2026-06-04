@@ -13,7 +13,7 @@ use std::sync::atomic::AtomicU64;
 
 use miette::Result;
 use parking_lot::Mutex;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 
 use crate::ast::{LambdaBody, LambdaParam, TaskDecl};
 use crate::runtime::context::RuntimeContext;
@@ -114,8 +114,15 @@ pub trait Host: Send {
 
     // ── event infrastructure ──────────────────────────────────────────────
 
-    /// Clone the event sender for use in background Tokio tasks.
-    fn clone_event_tx(&self) -> UnboundedSender<Event>;
+    /// Return an owned event sender for use inside `tokio::spawn` background tasks.
+    ///
+    /// Background tasks cannot borrow `&dyn Host` beyond the spawn boundary, so they
+    /// need an owned `Sender` they can `move` into the async block. Use this from
+    /// `Schedule.*`, `Http.serve`, and `Async.spawn` setup code.
+    ///
+    /// For synchronous event posting from within a handler that already holds `&mut dyn Host`,
+    /// use `enqueue_event` instead — it maps queue-full to a catchable `RuntimeBusy` error.
+    fn background_event_tx(&self) -> Sender<Event>;
 
     /// Counter tracking active `Http.serve` listeners.
     fn active_http_servers(&self) -> &Arc<AtomicU64>;
@@ -241,7 +248,7 @@ impl Host for Interpreter {
         &self.struct_types
     }
 
-    fn clone_event_tx(&self) -> UnboundedSender<Event> {
+    fn background_event_tx(&self) -> Sender<Event> {
         self.event_tx.clone()
     }
 
@@ -433,8 +440,8 @@ impl Host for MockHost {
         unimplemented!("MockHost does not support struct_types")
     }
 
-    fn clone_event_tx(&self) -> UnboundedSender<Event> {
-        unimplemented!("MockHost does not support clone_event_tx")
+    fn background_event_tx(&self) -> Sender<Event> {
+        unimplemented!("MockHost does not support background_event_tx")
     }
 
     fn active_http_servers(&self) -> &Arc<AtomicU64> {

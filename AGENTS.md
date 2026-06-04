@@ -48,7 +48,7 @@ docs/               # mdBook documentation
 - Update `ROADMAP.md` when a feature ships, gets stubbed, or shifts scope.
 - **Update `docs/src/` for every feature/spec change — added, updated, or removed.** Touch `docs/src/release-notes.md` plus every relevant guide page in `docs/src/guide/` (and `docs/src/examples/`, `docs/src/cli/`, `docs/src/config/`). A release is not done until `mdbook build` runs clean over the updated pages. Touching only `release-notes.md` is not enough — the guide pages users land on from search must reflect the change too.
 - Tag partial / unimplemented features in `docs/src/` with `<span class="badge badge-soon">Coming soon</span>` plus a `> Status:` callout.
-- Env vars: `KEEL_OLLAMA_MODEL` (default model), `KEEL_MODEL_<ALIAS>` (per-alias model tags), `OLLAMA_HOST` (default `http://localhost:11434`), `KEEL_LLM=mock` (test mode), `KEEL_REPL=1` (REPL mode), `KEEL_ONESHOT=1` (exit after first idle window), `KEEL_TRACE=1` (verbose LLM call narration; `--trace` sets this), `KEEL_LOG_LEVEL=debug|info|warn|error` (threshold for `Log.*`; `--log-level` sets this).
+- Env vars: `KEEL_OLLAMA_MODEL` (default model), `KEEL_MODEL_<ALIAS>` (per-alias model tags), `OLLAMA_HOST` (default `http://localhost:11434`), `KEEL_LLM=mock` (test mode), `KEEL_REPL=1` (REPL mode), `KEEL_ONESHOT=1` (exit after first idle window), `KEEL_TRACE=1` (verbose LLM call narration; `--trace` sets this), `KEEL_LOG_LEVEL=debug|info|warn|error` (threshold for `Log.*`; `--log-level` sets this), `KEEL_EVENT_QUEUE_CAPACITY=<n>` (interpreter event queue depth; default 1024).
 
 ## CLI
 

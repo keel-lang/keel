@@ -407,6 +407,7 @@ type Error =
   | NullError
   | TypeError { expected: str, got: str }
   | ParseError { position: int }
+  | RuntimeBusy { message: str }
 # All variants implicitly carry message: str, source: str?
 ```
 
@@ -1360,8 +1361,11 @@ The two-tier model:
 |---|---|---|
 | Network failure / mock mode / timeout | Returns `none` | `??` or `when` |
 | LLM output didn't match the expected schema | Throws `AiSchemaError` | `try/catch` |
+| Event queue full (`Agent.send` / `.delegate` / `.broadcast`) | Throws `RuntimeBusy` | `try/catch` |
 
 `AiSchemaError` carries `message: str` and `got: str` (the raw LLM output that failed to match). It is caught by `catch err: AiSchemaError` or the catch-all `catch err: Error`.
+
+`RuntimeBusy` carries `message: str`. Thrown by `Agent.send`, `Agent.delegate`, and `Agent.broadcast` when the interpreter event queue is at capacity. The queue depth defaults to 1024 and is configurable via `KEEL_EVENT_QUEUE_CAPACITY`. HTTP requests that arrive when the queue is full receive a `503` response automatically — no `RuntimeBusy` is thrown to user code in that path. `Agent.broadcast` fails on the first `RuntimeBusy` and leaves remaining recipients undelivered.
 
 ### 11.2 Nullable-aware stdlib
 

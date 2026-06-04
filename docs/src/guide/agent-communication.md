@@ -193,6 +193,31 @@ agent Coordinator {
 broadcast is non-blocking — every recipient handles the event on its
 own mailbox in its own time.
 
+## Backpressure: RuntimeBusy
+
+The interpreter event queue is bounded (default 1024; tunable via `KEEL_EVENT_QUEUE_CAPACITY`).
+If the queue is full when `Agent.send`, `Agent.delegate`, or `Agent.broadcast` is called,
+the call raises a `RuntimeBusy` error instead of blocking.
+
+Catch it to apply your own backpressure strategy:
+
+```keel
+try {
+    Agent.send(Worker, payload)
+} catch e: RuntimeBusy {
+    Io.show("queue full — payload dropped")
+}
+```
+
+A full queue typically means the event loop is processing a slow handler (e.g. an LLM call)
+while producers are sending faster than the loop can drain. Strategies:
+- Catch and drop (log the miss)
+- Catch and retry after a delay (`Schedule.after(100.ms, ...)`)
+- Reduce the send rate on the producer side
+
+> `KEEL_EVENT_QUEUE_CAPACITY=<n>` overrides the 1024 default. Use a small value (e.g. 2)
+> in integration tests to deliberately trigger `RuntimeBusy` without flooding the queue.
+
 ## Key Properties
 
 | Property | Behaviour |
@@ -201,6 +226,7 @@ own mailbox in its own time.
 | **Default event** | Omitting `event:` routes to `on message` |
 | **No match** | Unhandled events are silently dropped |
 | **Send** | Non-blocking — sender continues immediately |
+| **Queue full** | `RuntimeBusy` error raised — catch to handle backpressure |
 | **Execution** | Handlers run one at a time — no race conditions on `self.` |
 | **Scope** | In-process only — no network, no serialization |
 

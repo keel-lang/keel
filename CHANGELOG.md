@@ -12,6 +12,24 @@ All notable changes to Keel.
 
 ### Changed
 
+- **Interpreter event queue is now bounded.** The event channel was previously unbounded (`tokio::sync::mpsc::unbounded_channel`), meaning scheduler ticks, HTTP requests, and `Agent.send` calls could grow memory without limit under sustained load. The queue is now bounded (default 1024; configurable via `KEEL_EVENT_QUEUE_CAPACITY`). Each producer uses non-blocking `try_send` so the event loop is never directly back-pressured:
+  - **Recurring scheduler ticks** (`Schedule.every`, `Schedule.cron`) — drop on overflow (coalesce). A skipped tick is harmless; the next tick fires on time.
+  - **One-shot schedulers** (`Schedule.after`, `Schedule.at`) and the initial fire of `Schedule.every` — wait for queue space rather than dropping. Delivery is guaranteed as long as the event loop is still running.
+  - **HTTP requests** (`Http.serve`) — return HTTP 503 to the caller when the queue is full.
+  - **Agent dispatch** (`Agent.send`, `Agent.delegate`, `Agent.broadcast`) — raise a catchable `RuntimeBusy` error.
+
+  `RuntimeBusy` is a structured error catchable in Keel `catch` clauses:
+
+  ```keel
+  try {
+      Agent.send(Worker, payload)
+  } catch e: RuntimeBusy {
+      Io.show("queue full — dropped: {e.message}")
+  }
+  ```
+
+  Set `KEEL_EVENT_QUEUE_CAPACITY=<n>` to tune the limit. The 1024 default is sufficient for typical agent workloads; lower values are useful in tests to trigger backpressure deliberately.
+
 - **Named struct types are now nominally distinct.** Two declared struct types `A` and `B` with identical fields are no longer interchangeable. The checker raises a type error when a value of type `A` is passed where `B` is expected. Anonymous struct literals `{ x: 1, y: 2 }` remain structurally compatible with any named type that has the required fields, so existing patterns like `p: Point = { x: 1, y: 2 }` are unaffected.
 
   `impl` dispatch is now based entirely on the value's type tag. List elements are promoted to their declared struct type when assigned to a `list[TypeName]` variable — use an explicit annotation to enable `impl` method dispatch on struct collections:

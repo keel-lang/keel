@@ -44,6 +44,9 @@ pub struct RuntimeContext {
     log_threshold: AtomicU8,
     async_handle_counter: AtomicU64,
     async_tasks: AsyncTaskHandle,
+    /// Maximum depth of the interpreter event queue. Configured via
+    /// `KEEL_EVENT_QUEUE_CAPACITY` (default 1024). Read-only after construction.
+    event_queue_capacity: usize,
 }
 
 impl RuntimeContext {
@@ -68,6 +71,7 @@ impl RuntimeContext {
             log_threshold: AtomicU8::new(config.log_threshold()),
             async_handle_counter: AtomicU64::new(0),
             async_tasks: Arc::new(Mutex::new(HashMap::new())),
+            event_queue_capacity: config.event_queue_capacity(),
             env,
         })
     }
@@ -93,6 +97,7 @@ impl RuntimeContext {
             log_threshold: AtomicU8::new(1),
             async_handle_counter: AtomicU64::new(0),
             async_tasks: Arc::new(Mutex::new(HashMap::new())),
+            event_queue_capacity: config::DEFAULT_EVENT_QUEUE_CAPACITY,
         })
     }
 
@@ -124,6 +129,10 @@ impl RuntimeContext {
     /// to every `Ai.*` operation that follows.
     pub fn set_trace(&self, on: bool) {
         self.trace.store(on, Ordering::Relaxed);
+    }
+
+    pub fn event_queue_capacity(&self) -> usize {
+        self.event_queue_capacity
     }
 
     pub fn next_async_handle_id(&self) -> u64 {

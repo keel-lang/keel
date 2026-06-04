@@ -4,6 +4,9 @@ use super::env::EnvProvider;
 /// Avoids an unnecessary `.unwrap()` at every `RuntimeConfig::from_env` call.
 const DEFAULT_LOG_RANK: u8 = 1;
 
+/// Default interpreter event queue depth. Overridable via `KEEL_EVENT_QUEUE_CAPACITY`.
+pub const DEFAULT_EVENT_QUEUE_CAPACITY: usize = 1024;
+
 pub fn log_level_rank(name: &str) -> Option<u8> {
     match name.to_ascii_lowercase().as_str() {
         "debug" => Some(0),
@@ -27,6 +30,7 @@ pub fn log_level_name(rank: u8) -> &'static str {
 pub struct RuntimeConfig {
     trace: bool,
     log_threshold: u8,
+    event_queue_capacity: usize,
 }
 
 impl RuntimeConfig {
@@ -36,10 +40,16 @@ impl RuntimeConfig {
             .var("KEEL_LOG_LEVEL")
             .and_then(|s| log_level_rank(&s))
             .unwrap_or(DEFAULT_LOG_RANK);
+        let event_queue_capacity = env
+            .var("KEEL_EVENT_QUEUE_CAPACITY")
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(DEFAULT_EVENT_QUEUE_CAPACITY);
 
         Self {
             trace,
             log_threshold,
+            event_queue_capacity,
         }
     }
 
@@ -63,5 +73,9 @@ impl RuntimeConfig {
             }
             None => false,
         }
+    }
+
+    pub fn event_queue_capacity(&self) -> usize {
+        self.event_queue_capacity
     }
 }

@@ -4,6 +4,30 @@
 
 ## Unreleased
 
+### Bounded event queue and backpressure
+
+The interpreter event queue is now bounded (default 1024; set `KEEL_EVENT_QUEUE_CAPACITY=<n>` to tune).
+Each producer uses non-blocking delivery with explicit overflow policy:
+
+| Producer | Overflow behaviour |
+|---|---|
+| `Schedule.every` / `Schedule.cron` (recurring ticks) | Drop (coalesce) — next tick fires on time |
+| `Schedule.after` / `Schedule.at` / `Schedule.every` first fire (one-shot) | Wait for queue space — delivery is guaranteed |
+| `Http.serve` | `503 Service Unavailable` returned to the HTTP client |
+| `Agent.send` / `Agent.delegate` / `Agent.broadcast` | `RuntimeBusy` error raised |
+
+`RuntimeBusy` is a typed, catchable error:
+
+```keel
+try {
+    Agent.send(Worker, payload)
+} catch e: RuntimeBusy {
+    Io.show("queue full — dropped: {e.message}")
+}
+```
+
+See [Agent Communication](./guide/agent-communication.md) for backpressure strategies.
+
 ### Nominal struct type identity
 
 Two declared struct types with identical fields are no longer interchangeable.

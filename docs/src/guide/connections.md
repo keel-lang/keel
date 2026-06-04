@@ -120,6 +120,7 @@ Http.serve(8080, (request) => {
 - Return a map with `status` (integer, 100–999) and `body` (string)
 - The server runs in a background task; `Http.serve` returns immediately
 - The event loop stays alive as long as at least one server is active, even with no running agents
+- **When the event queue is full**, incoming HTTP requests receive a `503 Service Unavailable` response automatically. No user code runs for that request.
 
 > **Handlers run outside any agent context.** An `Http.serve` handler
 > is a top-level closure — it fires on the event loop with no

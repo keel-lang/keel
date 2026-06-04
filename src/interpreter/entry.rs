@@ -375,7 +375,7 @@ mod tests {
         let mut interp = Interpreter::new();
         // Post a Shutdown event before running execute.
         // The event loop should process it and break.
-        interp.event_tx.send(Event::Shutdown).unwrap();
+        interp.event_tx.try_send(Event::Shutdown).unwrap();
         interp.execute(empty_program()).await.unwrap();
     }
 
@@ -407,13 +407,13 @@ mod tests {
         let request_json = r#"{"name":"test","count":42}"#;
         interp
             .event_tx
-            .send(Event::FireClosureWithArgs {
+            .try_send(Event::FireClosureWithArgs {
                 closure_id,
                 request_json: request_json.to_string(),
                 response_tx: tx,
             })
             .unwrap();
-        interp.event_tx.send(Event::Shutdown).unwrap();
+        interp.event_tx.try_send(Event::Shutdown).unwrap();
 
         // Run execute in background (it will block until events are processed)
         let handle = tokio::spawn(async move {
@@ -450,13 +450,13 @@ mod tests {
         // Post FireClosureWithArgs with a non-existent closure id
         interp
             .event_tx
-            .send(Event::FireClosureWithArgs {
+            .try_send(Event::FireClosureWithArgs {
                 closure_id: 99999, // doesn't exist
                 request_json: r#"{}"#.to_string(),
                 response_tx: tx,
             })
             .unwrap();
-        interp.event_tx.send(Event::Shutdown).unwrap();
+        interp.event_tx.try_send(Event::Shutdown).unwrap();
 
         let handle = tokio::spawn(async move {
             interp.execute(empty_program()).await.unwrap();
@@ -494,13 +494,13 @@ mod tests {
         // Send invalid JSON - the handler should fall back to Value::String
         interp
             .event_tx
-            .send(Event::FireClosureWithArgs {
+            .try_send(Event::FireClosureWithArgs {
                 closure_id,
                 request_json: "not valid json!!!".to_string(),
                 response_tx: tx,
             })
             .unwrap();
-        interp.event_tx.send(Event::Shutdown).unwrap();
+        interp.event_tx.try_send(Event::Shutdown).unwrap();
 
         let handle = tokio::spawn(async move {
             interp.execute(empty_program()).await.unwrap();
@@ -539,13 +539,13 @@ mod tests {
 
         interp
             .event_tx
-            .send(Event::FireClosureWithArgs {
+            .try_send(Event::FireClosureWithArgs {
                 closure_id,
                 request_json: r#"{"valid": true}"#.to_string(),
                 response_tx: tx,
             })
             .unwrap();
-        interp.event_tx.send(Event::Shutdown).unwrap();
+        interp.event_tx.try_send(Event::Shutdown).unwrap();
 
         let handle = tokio::spawn(async move {
             interp.execute(empty_program()).await.unwrap();

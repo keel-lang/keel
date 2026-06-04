@@ -273,34 +273,44 @@ run(Coordinator)
 }
 
 #[test]
-fn agent_send_accepts_startup_burst_above_bounded_queue_size() {
+fn agent_send_returns_runtime_busy_when_queue_full() {
+    // Use a capacity-2 queue so the 3rd Agent.send in @on_start triggers RuntimeBusy.
+    // The Keel code catches it and records the count — verifies the error is catchable.
     let src = r#"
 agent BurstBot {
-    state { count: int = 0 }
+    state {
+        sent: int = 0
+        caught: int = 0
+    }
 
     @on_start {
-        for i in 1..4097 {
-            Agent.send(BurstBot, i)
+        for i in 1..3 {
+            try {
+                Agent.send(BurstBot, i)
+                self.sent = self.sent + 1
+            } catch e: RuntimeBusy {
+                self.caught = self.caught + 1
+            }
         }
+        Io.show("sent={self.sent} caught={self.caught}")
     }
 
-    on message(n: int) {
-        self.count = self.count + 1
-        if self.count == 4097 {
-            Io.show("received={self.count}")
-        }
-    }
+    on message(n: int) { }
 }
 run(BurstBot)
 "#;
-    let (ok, stdout, stderr) = run_inline(src, false);
+    let (ok, stdout, stderr) = run_inline_with_env(src, &[("KEEL_EVENT_QUEUE_CAPACITY", "2")]);
     assert!(
         ok,
         "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(
-        stdout.contains("received=4097"),
-        "expected all burst events to be delivered\nstdout: {stdout}\nstderr: {stderr}"
+        stdout.contains("sent=2"),
+        "expected 2 successful sends with capacity-2 queue\nstdout: {stdout}"
+    );
+    assert!(
+        stdout.contains("caught=1"),
+        "expected 1 RuntimeBusy catch with 3 sends into capacity-2 queue\nstdout: {stdout}"
     );
 }
 

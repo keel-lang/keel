@@ -134,6 +134,14 @@ timeout  = 5.minutes + 30.seconds
 
 Both singular and plural forms work (`1.day`, `2.days`).
 
+## Overflow behavior
+
+Scheduled closures are delivered through the interpreter's bounded event queue (default 1024; `KEEL_EVENT_QUEUE_CAPACITY`). The overflow policy differs by schedule type:
+
+**Recurring** (`Schedule.every` tick loop, `Schedule.cron`): when the queue is full at the moment a tick fires, the tick is **dropped** and the schedule continues normally. This is a coalescing drop — a slow handler that misses one heartbeat does not accumulate a backlog of missed ticks, and the next tick fires on time.
+
+**One-shot** (`Schedule.after`, `Schedule.at`) and the **initial fire** of `Schedule.every`: these **wait for queue space** rather than dropping. Delivery is guaranteed as long as the event loop is still running — if the queue is momentarily full, the callback fires as soon as a slot opens. There is no `RuntimeBusy` error for schedule overflow — scheduler waits are silent and transparent to user code.
+
 ## Why a library, not keywords
 
 `Schedule.every`, `Schedule.after`, and `Schedule.at` are prelude functions rather than hard-coded keywords. This matters because common patterns — dynamic intervals like `every N.minutes` where `N` depends on state, cron expressions, pause/resume logic, user-defined event sources (webhooks, subscriptions) — all fight fixed keyword syntax. Keeping `Schedule.*` a library sidesteps every one of them. See [The Prelude & Interfaces](./prelude.md).

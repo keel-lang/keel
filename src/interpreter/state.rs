@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use miette::{NamedSource, Result};
 use parking_lot::Mutex;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 use crate::ast::{
     AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, Node, OnHandler, Param,
@@ -16,6 +17,7 @@ use crate::types::interface::TypeEnv;
 
 use super::bind_value;
 use super::environment::Environment;
+use super::error::RuntimeErrorKind;
 use super::host::Host;
 use super::runtime_error;
 use super::value::Value;
@@ -141,11 +143,12 @@ pub struct Interpreter {
     pub(crate) runtime: Arc<crate::runtime::context::RuntimeContext>,
     /// Sender for runtime events. Spawned tokio tasks (scheduler,
     /// message dispatcher) clone this to post events to the main loop.
-    pub(crate) event_tx: UnboundedSender<Event>,
+    /// Capacity is set from `RuntimeContext::event_queue_capacity`.
+    pub(crate) event_tx: Sender<Event>,
     /// Receiver end of the event channel. Owned by the interpreter
     /// between `new()` and `execute()`, then moved into the event
     /// loop. `execute()` will panic if called twice.
-    pub(crate) event_rx: Option<UnboundedReceiver<Event>>,
+    pub(crate) event_rx: Option<Receiver<Event>>,
     /// Registered closures keyed by id. Scheduled tasks post the id
     /// via `Event::FireClosure`; the event loop looks up the closure
     /// and invokes it in the correct agent context. Shared with any
@@ -172,7 +175,7 @@ impl Interpreter {
     }
 
     pub fn with_runtime(runtime: Arc<crate::runtime::context::RuntimeContext>) -> Self {
-        let (event_tx, event_rx) = unbounded_channel();
+        let (event_tx, event_rx) = channel(runtime.event_queue_capacity());
         let mut interp = Interpreter {
             globals: HashMap::with_capacity(64),
             agents: HashMap::with_capacity(16),
@@ -219,9 +222,16 @@ impl Interpreter {
     }
 
     pub(crate) fn enqueue_event(&self, event: Event) -> Result<()> {
-        self.event_tx
-            .send(event)
-            .map_err(|err| runtime_error(format!("event loop is closed: {err}")))
+        // try_send must be used (not .send().await) — the event loop is single-threaded
+        // and enqueue_event is called from within handlers running on that same thread.
+        // A blocking send would deadlock.
+        self.event_tx.try_send(event).map_err(|err| match err {
+            TrySendError::Full(_) => crate::runtime::namespace::make_typed_report(
+                RuntimeErrorKind::RuntimeBusy,
+                "event queue is full",
+            ),
+            TrySendError::Closed(_) => runtime_error("event loop is closed"),
+        })
     }
 
     /// Fire a registered closure in the named agent's context.

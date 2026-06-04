@@ -164,7 +164,7 @@ pub(crate) fn namespace() -> Namespace {
             }).ok_or_else(|| miette::miette!("Http.serve: missing closure argument"))?;
 
             let closure_id = host.register_closure("__http_serve__".to_string(), params, body);
-            let event_tx = host.clone_event_tx();
+            let event_tx = host.background_event_tx();
             let server_counter = host.active_http_servers().clone();
 
             server_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -188,11 +188,17 @@ pub(crate) fn namespace() -> Namespace {
                         }).to_string();
 
                         let (resp_tx, resp_rx) = tokio::sync::oneshot::channel::<String>();
-                        let _ = tx.send(crate::interpreter::Event::FireClosureWithArgs {
+                        if tx.try_send(crate::interpreter::Event::FireClosureWithArgs {
                             closure_id,
                             request_json: req_json,
                             response_tx: resp_tx,
-                        });
+                        }).is_err() {
+                            return Response::builder()
+                                .status(503)
+                                .body(Body::from(r#"{"status":503,"body":"server busy"}"#))
+                                .unwrap_or_else(|_| Response::new(Body::from("server busy")))
+                                .into_response();
+                        }
 
                         let resp_json = resp_rx.await.unwrap_or_else(|_| r#"{"status":500,"body":"error"}"#.into());
                         let v: serde_json::Value = serde_json::from_str(&resp_json).unwrap_or_else(|_| serde_json::json!({}));

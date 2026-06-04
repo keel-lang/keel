@@ -1,6 +1,8 @@
+use tokio::sync::mpsc::error::TrySendError;
+
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
-use crate::interpreter::{CallArgValue, Host, Namespace};
+use crate::interpreter::{CallArgValue, Event, Host, Namespace};
 use crate::runtime::args::{expect_duration, expect_str};
 use crate::runtime::namespace::ns;
 
@@ -119,13 +121,16 @@ async fn schedule_at(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Re
         .ok_or_else(|| miette::miette!("Schedule.at must be called from within an agent"))?;
 
     let closure_id = host.register_closure(agent_name.clone(), params, body);
-    let tx = host.clone_event_tx();
+    let tx = host.background_event_tx();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
-        let _ = tx.send(crate::interpreter::Event::FireClosure {
-            agent_name,
-            closure_id,
-        });
+        // Await queue space — one-shot callbacks must not be silently dropped.
+        let _ = tx
+            .send(Event::FireClosure {
+                agent_name,
+                closure_id,
+            })
+            .await;
     });
     Ok(Value::None)
 }
@@ -175,7 +180,7 @@ async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::
         .ok_or_else(|| miette::miette!("Schedule.cron must be called from within an agent"))?;
 
     let closure_id = host.register_closure(agent_name.clone(), params, body);
-    let tx = host.clone_event_tx();
+    let tx = host.background_event_tx();
     let clock = host.runtime().clock.clone();
 
     // Parse and validate the cron expression (5 fields: minute hour day month weekday)
@@ -191,14 +196,8 @@ async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::
                 );
                 tokio::time::sleep(delay).await;
 
-                if tx
-                    .send(crate::interpreter::Event::FireClosure {
-                        agent_name: agent_name.clone(),
-                        closure_id,
-                    })
-                    .is_err()
-                {
-                    break; // receiver dropped — event loop has exited
+                if !send_or_stop(&tx, agent_name.clone(), closure_id) {
+                    break;
                 }
             } else {
                 break;
@@ -347,43 +346,64 @@ async fn schedule_fire(
         .ok_or_else(|| miette::miette!("Schedule must be called from within an agent"))?;
 
     let closure_id = host.register_closure(agent_name.clone(), params, body);
-    let tx = host.clone_event_tx();
+    let tx = host.background_event_tx();
     let dur = std::time::Duration::from_secs_f64(duration);
 
     if recurring {
-        // Fire immediately, then on each tick.
-        let _ = tx.send(crate::interpreter::Event::FireClosure {
-            agent_name: agent_name.clone(),
-            closure_id,
-        });
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(dur);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            interval.tick().await; // consume the immediate tick (already fired above)
+            // The first tick fires immediately — use it as the initial fire.
+            // Await queue space so the guaranteed first delivery is never silently dropped.
+            interval.tick().await;
+            if tx
+                .send(Event::FireClosure {
+                    agent_name: agent_name.clone(),
+                    closure_id,
+                })
+                .await
+                .is_err()
+            {
+                return;
+            }
             loop {
                 interval.tick().await;
-                if tx
-                    .send(crate::interpreter::Event::FireClosure {
-                        agent_name: agent_name.clone(),
-                        closure_id,
-                    })
-                    .is_err()
-                {
-                    break; // receiver dropped — event loop has exited
+                if !send_or_stop(&tx, agent_name.clone(), closure_id) {
+                    break;
                 }
             }
         });
     } else {
         tokio::spawn(async move {
             tokio::time::sleep(dur).await;
-            let _ = tx.send(crate::interpreter::Event::FireClosure {
-                agent_name,
-                closure_id,
-            });
+            // Await queue space — one-shot callbacks must not be silently dropped.
+            let _ = tx
+                .send(Event::FireClosure {
+                    agent_name,
+                    closure_id,
+                })
+                .await;
         });
     }
 
     Ok(Value::None)
+}
+
+/// Send a `FireClosure` event from a recurring scheduler loop.
+/// Returns `true` to continue the loop, `false` when the receiver is gone.
+/// A full queue drops the tick (coalescing) rather than blocking.
+fn send_or_stop(
+    tx: &tokio::sync::mpsc::Sender<Event>,
+    agent_name: String,
+    closure_id: u64,
+) -> bool {
+    match tx.try_send(Event::FireClosure {
+        agent_name,
+        closure_id,
+    }) {
+        Ok(()) | Err(TrySendError::Full(_)) => true,
+        Err(TrySendError::Closed(_)) => false,
+    }
 }
 
 #[cfg(test)]

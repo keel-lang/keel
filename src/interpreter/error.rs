@@ -13,6 +13,7 @@ pub(crate) enum RuntimeErrorKind {
     File,
     Ai,
     AiSchema,
+    RuntimeBusy,
 }
 
 impl RuntimeErrorKind {
@@ -22,6 +23,7 @@ impl RuntimeErrorKind {
             Self::File => "FileError",
             Self::Ai => "AiError",
             Self::AiSchema => "AiSchemaError",
+            Self::RuntimeBusy => "RuntimeBusy",
         }
     }
 
@@ -31,6 +33,7 @@ impl RuntimeErrorKind {
             Self::File => "keel::runtime::FileError",
             Self::Ai => "keel::runtime::AiError",
             Self::AiSchema => "keel::runtime::AiSchemaError",
+            Self::RuntimeBusy => "keel::runtime::RuntimeBusy",
         }
     }
 }

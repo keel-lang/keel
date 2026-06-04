@@ -48,7 +48,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 |---|---|---|
 | `agent` declaration + `run` / `stop` | [x] | |
 | `@on_start` / `@on_stop` blocks | [x] | |
-| Per-agent serial mailbox + `on <event>` | [x] | |
+| Per-agent serial mailbox + `on <event>` | [x] | Bounded channel (1024 default; `KEEL_EVENT_QUEUE_CAPACITY`); overflow policy per producer — scheduler drops, HTTP returns 503, `Agent.send` raises `RuntimeBusy` |
 | `self.` state read/write | [x] | |
 | `self.task(...)` agent-local task calls | [x] | Bare `task(...)` stays lexical/global; cross-agent work uses mailbox APIs |
 | `readonly` state field modifier | [x] | Compiler + runtime enforcement; assignment to readonly field is an error |
