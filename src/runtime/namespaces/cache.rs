@@ -19,9 +19,14 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
                 ty: TySpec::Dynamic,
                 optional: false,
             },
+            BuiltinParam {
+                name: "ttl",
+                ty: TySpec::Duration,
+                optional: true,
+            },
         ],
         result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Store a value in the in-process cache.",
+        doc: "Store a value in the in-process cache, with an optional TTL duration.",
     },
     BuiltinMethod {
         namespace: "Cache",

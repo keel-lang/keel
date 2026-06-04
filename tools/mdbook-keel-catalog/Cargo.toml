@@ -1,0 +1,13 @@
+[package]
+name = "mdbook-keel-catalog"
+version = "0.1.0"
+edition = "2024"
+description = "mdBook preprocessor that expands {{#catalog Ns}} directives from the Keel prelude catalog"
+
+[[bin]]
+name = "mdbook-keel-catalog"
+path = "src/main.rs"
+
+[dependencies]
+keel-lang = { path = "../.." }
+serde_json = "1"

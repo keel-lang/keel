@@ -11,6 +11,9 @@ build-dir = "../target/book"
 [preprocessor.mermaid]
 command = "mdbook-mermaid"
 
+[preprocessor.keel-catalog]
+command = "mdbook-keel-catalog"
+
 [output.html]
 default-theme = "navy"
 preferred-dark-theme = "navy"

@@ -81,19 +81,7 @@ File.remove(tmp)
 
 ## Quick reference
 
-| Method | Returns | Notes |
-|---|---|---|
-| `File.read(path)` | `str` | raises `FileError` if file missing |
-| `File.write(path, content)` | `none` | creates parent dirs |
-| `File.exists(path)` | `bool` | true for files and directories |
-| `File.list(dir)` | `list[str]` | entry names only, not paths |
-| `File.mkdir(path)` | `none` | creates all missing parents |
-| `File.copy(src, dst)` | `none` | creates dst parent dirs |
-| `File.move(src, dst)` | `none` | atomic rename; creates dst parent dirs |
-| `File.remove(path)` | `none` | recursive for directories |
-| `File.glob(pattern)` | `list[str]` | empty list if no match |
-| `File.mktemp()` | `str` | temp file path; caller removes it |
-| `File.mktemp(dir: true)` | `str` | temp directory path; caller removes it |
+{{#catalog File}}
 
 ## Error handling
 

@@ -1,3 +1,6 @@
+[workspace]
+members = ["tools/mdbook-keel-catalog"]
+
 [package]
 name = "keel-lang"
 version = "0.1.31"

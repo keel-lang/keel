@@ -22,8 +22,14 @@ jobs:
 
       - name: Install mdBook
         run: |
-          cargo install mdbook
+          cargo install mdbook --version "^0.5"
           cargo install mdbook-mermaid
+
+      - name: Build mdbook-keel-catalog
+        run: cargo build -p mdbook-keel-catalog
+
+      - name: Add mdbook-keel-catalog to PATH
+        run: echo "$PWD/target/debug" >> "$GITHUB_PATH"
 
       - name: Build docs
         run: |

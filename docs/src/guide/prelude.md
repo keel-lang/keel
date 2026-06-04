@@ -77,11 +77,7 @@ max(people, by: p => p.age)            # {name: "Alice", age: 30}
 
 `Random` produces non-cryptographic pseudo-random values for simulation, sampling, games, and tests where security is not involved. Use `Crypto` for tokens, secrets, signatures, or key material.
 
-| Function | Signature | Returns | Notes |
-|---|---|---|---|
-| `Random.float()` | `() -> float` | `float` | Uniform in `[0.0, 1.0)` |
-| `Random.int(min:, max:)` | `(min: int, max: int) -> int` | `int` | Inclusive range; raises if `min > max` |
-| `Random.bool()` | `() -> bool` | `bool` | 50/50 boolean |
+{{#catalog Random}}
 
 ```keel
 roll = Random.int(min: 1, max: 6)
@@ -93,13 +89,9 @@ enabled = Random.bool()
 
 `Uuid` is a distinct value type, not a `str`. It displays and interpolates as a lowercase hyphenated UUID, and it can be converted explicitly with `.to_str()`.
 
-| Function | Signature | Returns | Notes |
-|---|---|---|---|
-| `uuid()` | `() -> Uuid` | `Uuid` | Alias for `Uuid.v4()` |
-| `Uuid.v4()` | `() -> Uuid` | `Uuid` | Random UUID |
-| `Uuid.v7()` | `() -> Uuid` | `Uuid` | Time-ordered UUID |
-| `Uuid.v5(ns:, name:)` | `(ns: Uuid, name: str) -> Uuid` | `Uuid` | Deterministic UUID from namespace + name |
-| `Uuid.parse(s)` | `(str) -> Uuid?` | `Uuid?` | `none` if invalid |
+`uuid()` is a free-function alias for `Uuid.v4()`.
+
+{{#catalog Uuid}}
 
 Namespace constants `Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, and `Uuid.X500` are available for `Uuid.v5`.
 
@@ -121,22 +113,7 @@ simple = id.format(as: "simple")
 
 `Crypto` provides security-grade primitives backed by the operating system CSPRNG. It is distinct from `Random`; use `Crypto` for tokens, secrets, signatures, digests, and other security-sensitive work.
 
-| Function | Signature | Returns | Notes |
-|---|---|---|---|
-| `Crypto.sha224(data)` | `(str) -> str` | `str` | SHA-224 hex digest |
-| `Crypto.sha256(data)` | `(str) -> str` | `str` | SHA-256 hex digest |
-| `Crypto.sha384(data)` | `(str) -> str` | `str` | SHA-384 hex digest |
-| `Crypto.sha512(data)` | `(str) -> str` | `str` | SHA-512 hex digest |
-| `Crypto.sha512_224(data)` | `(str) -> str` | `str` | SHA-512/224 hex digest |
-| `Crypto.sha512_256(data)` | `(str) -> str` | `str` | SHA-512/256 hex digest |
-| `Crypto.hmac_sha224(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-224 hex signature |
-| `Crypto.hmac_sha256(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-256 hex signature |
-| `Crypto.hmac_sha384(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-384 hex signature |
-| `Crypto.hmac_sha512(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-512 hex signature |
-| `Crypto.hmac_sha512_224(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-512/224 hex signature |
-| `Crypto.hmac_sha512_256(data, key:)` | `(str, key: str) -> str` | `str` | HMAC-SHA-512/256 hex signature |
-| `Crypto.token(bytes: 32)` | `(bytes: int = 32) -> str` | `str` | CSPRNG-backed hex token |
-| `Crypto.random_bytes(n)` | `(int) -> list[int]` | `list[int]` | CSPRNG bytes as integers `0..255` |
+{{#catalog Crypto}}
 
 ```keel
 digest = Crypto.sha256("hello")
@@ -152,13 +129,9 @@ bytes = Crypto.random_bytes(16)
 
 `Db` provides SQLite-backed durable storage. `Db.connect` returns a connection value; `.query` and `.exec` are called directly on that value.
 
-| Operation | Signature | Returns |
-|---|---|---|
-| `Db.connect(url)` | `(str) -> DbConnection` | Open connection |
-| `db.query(sql)` | `(str) -> list[map[str,dynamic]]` | SELECT rows |
-| `db.query(sql, params)` | `(str, list) -> list[map[str,dynamic]]` | SELECT with `?` params |
-| `db.exec(sql)` | `(str) -> int` | INSERT/UPDATE/DELETE; rows affected |
-| `db.exec(sql, params)` | `(str, list) -> int` | With `?` params |
+{{#catalog Db}}
+
+`db.query(sql)` and `db.exec(sql)` are called on a `DbConnection` value returned by `Db.connect`. Both accept an optional second argument `params: list` for `?` placeholder binding.
 
 **Connection URLs** use the `sqlite://` scheme:
 
@@ -205,10 +178,7 @@ analytics.exec("INSERT INTO daily_pnl VALUES (?)", [pnl])
 
 `Json.parse` and `Json.stringify` bridge between Keel values and JSON strings.
 
-| Function | Signature | Returns |
-|---|---|---|
-| `Json.parse(s)` | `(str) -> dynamic` | Parsed JSON value |
-| `Json.stringify(value)` | `(any) -> str` | JSON string |
+{{#catalog Json}}
 
 **`Json.parse` return-type semantics.** The result is `dynamic` — the type is not known statically. At runtime, JSON types map to Keel values as follows:
 
@@ -239,13 +209,7 @@ rows   = data.candles as list[dynamic]
 
 `Cache` is a process-scoped in-memory key-value store with optional TTL. It is shared across all agents in the same process — a convenient way to pass state between agents without serialising to disk.
 
-| Function | Signature | Notes |
-|---|---|---|
-| `Cache.set(key, value)` | `(str, any) -> none` | Store any value |
-| `Cache.set(key, value, ttl:)` | `(str, any, ttl: duration) -> none` | Store with expiry |
-| `Cache.get(key)` | `(str) -> dynamic?` | `none` if absent or expired |
-| `Cache.delete(key)` | `(str) -> none` | Remove a key |
-| `Cache.clear()` | `() -> none` | Remove all keys |
+{{#catalog Cache}}
 
 **`Cache.get` return-type semantics.** The return type is `dynamic?`. The stored type is preserved exactly — a value written as `str` is read back as `str`, a value written as `int` is read back as `int`. Use `as T` to recover a concrete type, and `??` to supply a default:
 
@@ -265,14 +229,7 @@ rate = (Cache.get("rate") ?? 0.0) as float
 
 `Log` writes structured messages at four severity levels. Output goes to stderr; messages below the current threshold are suppressed.
 
-| Function | Signature | Returns | Notes |
-|---|---|---|---|
-| `Log.debug(msg)` | `(any) -> none` | `none` | Verbose detail; suppressed at default `info` threshold |
-| `Log.info(msg)` | `(any) -> none` | `none` | Normal operational events |
-| `Log.warn(msg)` | `(any) -> none` | `none` | Recoverable anomalies |
-| `Log.error(msg)` | `(any) -> none` | `none` | Problems that need attention |
-| `Log.set_level(level)` | `(str) -> none` | `none` | Set threshold: `"debug"`, `"info"`, `"warn"`, or `"error"` |
-| `Log.level()` | `() -> str` | `str` | Return the current threshold as a string |
+{{#catalog Log}}
 
 The threshold can also be set before launch with `--log-level debug` (CLI flag) or `KEEL_LOG_LEVEL=debug` (env var). `Log.set_level` changes it at runtime.
 
@@ -290,10 +247,7 @@ current = Log.level()   # "debug"
 
 `Search` provides web and news search. Both methods return a list of `SearchResult` values.
 
-| Function | Signature | Returns |
-|---|---|---|
-| `Search.web(query)` | `(str) -> list[SearchResult]` | Web search results |
-| `Search.news(query)` | `(str) -> list[SearchResult]` | News search results |
+{{#catalog Search}}
 
 > **Status:** `Search` is registered in v0.1 and raises a clear "planned for v0.2" error at runtime. <span class="badge badge-soon">Coming soon</span>
 
@@ -301,12 +255,7 @@ current = Log.level()   # "debug"
 
 `Async` provides structured concurrency — run multiple tasks in parallel and collect their results.
 
-| Function | Signature | Returns | Notes |
-|---|---|---|---|
-| `Async.spawn(block)` | `(() -> T) -> handle` | async handle | Start a concurrent task; returns immediately |
-| `Async.join_all(handles)` | `(list[handle]) -> list[dynamic]` | `list[dynamic]` | Wait for all handles; results in input order |
-| `Async.select(handles)` | `(list[handle]) -> dynamic` | `dynamic` | Return the result of the first handle to complete |
-| `Async.sleep(duration)` | `(duration) -> none` | `none` | Pause execution for the given duration |
+{{#catalog Async}}
 
 ```keel
 task1 = Async.spawn(() => { fetch_price("BTC") })

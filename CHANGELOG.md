@@ -10,6 +10,20 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- **mdBook preprocessor for auto-generated namespace reference tables.** A new `tools/mdbook-keel-catalog` binary crate implements the mdBook preprocessor protocol. Any `{{#catalog Ns}}` directive in a `docs/src/**/*.md` file is expanded at `mdbook build` time to a `| Method | Signature | Description |` table sourced directly from `prelude::catalog()`. Adding a new method to a namespace's `SPEC` now automatically appears in the built docs with no manual table editing. Hand-written tables for `Random`, `Crypto`, `Log`, `Search`, `Async`, `Json`, `Cache`, `Uuid` (static methods), and `File` have been replaced with directives. Also fixes `Cache.set` SPEC to declare the optional `ttl: duration` parameter that was already accepted at runtime but not reflected in the catalog. Closes [#29](https://github.com/keel-lang/keel/issues/29).
+
+  ```keel
+  # docs/src/guide/prelude.md — before
+  | `Random.float()` | `() -> float` | `float` | Uniform in [0.0, 1.0) |
+  | `Random.int(min:, max:)` | `(min: int, max: int) -> int` | ... |
+  | `Random.bool()` | `() -> bool` | `bool` | 50/50 boolean |
+
+  # after — directive is expanded by mdbook-keel-catalog at build time
+  {{#catalog Random}}
+  ```
+
 ### Fixed
 
 - **Parser now reports all syntax errors, not just the first.** When a source file contains syntax errors in multiple declarations, all of them are now surfaced — both in the LSP (as individual diagnostics) and in the CLI (as labeled spans in a single miette report). Previously, only the first error was collected and the rest were silently discarded. Implemented via declaration-level error recovery (`skip_then_retry_until`) in the program parser, plus updating `into_miette` to build one `LabeledSpan` per chumsky error. Fixes [#26](https://github.com/keel-lang/keel/issues/26).

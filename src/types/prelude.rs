@@ -284,16 +284,20 @@ mod tests {
         }
     }
 
-    /// Every `Namespace.method` in the catalog must appear as the string
-    /// `"Namespace.method"` in at least one file under `docs/src/`.
+    /// Every `Namespace.method` in the catalog must be mentioned in docs.
     ///
-    /// If this test fails after you add a catalog entry, add a mention of the
-    /// new method to the appropriate guide page in `docs/src/guide/`.
+    /// A method is considered mentioned if either:
+    /// - The literal string `"Namespace.method"` appears in a `docs/src/**/*.md` file, OR
+    /// - A `{{#catalog Namespace}}` directive appears in any `docs/src/**/*.md` file
+    ///   (the preprocessor will expand it to a table covering all methods of that namespace).
+    ///
+    /// If this test fails after you add a catalog entry, either add a literal mention or
+    /// ensure the appropriate `{{#catalog Ns}}` directive is present in a guide page.
     #[test]
     fn catalog_methods_are_mentioned_in_docs() {
+        use std::collections::HashSet;
         use std::path::Path;
 
-        // Collect all docs text once.
         let docs_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/src");
         let mut docs = String::new();
         fn collect(dir: &Path, out: &mut String) {
@@ -312,8 +316,25 @@ mod tests {
         }
         collect(&docs_root, &mut docs);
 
+        // Collect namespaces covered by a {{#catalog Ns}} directive anywhere in the docs.
+        let covered_by_directive: HashSet<&str> = {
+            let mut set = HashSet::new();
+            for line in docs.lines() {
+                let trimmed = line.trim();
+                if let Some(rest) = trimmed.strip_prefix("{{#catalog ") {
+                    if let Some(ns) = rest.strip_suffix("}}") {
+                        set.insert(ns.trim());
+                    }
+                }
+            }
+            set
+        };
+
         let mut missing: Vec<String> = Vec::new();
         for entry in super::catalog() {
+            if covered_by_directive.contains(entry.namespace) {
+                continue;
+            }
             let key = format!("{}.{}", entry.namespace, entry.name);
             if !docs.contains(&key) {
                 missing.push(key);
@@ -322,8 +343,9 @@ mod tests {
 
         assert!(
             missing.is_empty(),
-            "The following catalog methods are not mentioned in any docs/src/**/*.md file.\n\
-             Add them to the appropriate guide page before merging:\n  {}",
+            "The following catalog methods are not mentioned in any docs/src/**/*.md file\n\
+             and their namespace has no {{{{#catalog Ns}}}} directive.\n\
+             Add a literal mention or a {{{{#catalog Ns}}}} directive to the appropriate guide page:\n  {}",
             missing.join("\n  ")
         );
     }
