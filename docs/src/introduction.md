@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [0.1.30](./release-notes.md)** — Systematic spans on every AST node, unified type system, and compile-time-checked handler references.
+> **Latest: [0.1.30](./release-notes.md)** — Semantic analysis now lowers through HIR while runtime APIs enforce declared inputs.
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

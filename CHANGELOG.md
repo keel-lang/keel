@@ -8,7 +8,39 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Semantic analysis now lowers through HIR while runtime APIs enforce declared inputs.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.1.31] — 2026-06-04
+
+Replace unbounded event queue with bounded channel and overflow policies.
+
+### Changed
+
+- **Interpreter event queue is now bounded.** The event channel was previously unbounded (`tokio::sync::mpsc::unbounded_channel`), meaning scheduler ticks, HTTP requests, and `Agent.send` calls could grow memory without limit under sustained load. The queue is now bounded (default 1024; configurable via `KEEL_EVENT_QUEUE_CAPACITY`). Each producer uses non-blocking `try_send` so the event loop is never directly back-pressured:
+  - **Recurring scheduler ticks** (`Schedule.every`, `Schedule.cron`) — drop on overflow (coalesce). A skipped tick is harmless; the next tick fires on time.
+  - **One-shot schedulers** (`Schedule.after`, `Schedule.at`) and the initial fire of `Schedule.every` — wait for queue space rather than dropping. Delivery is guaranteed as long as the event loop is still running.
+  - **HTTP requests** (`Http.serve`) — return HTTP 503 to the caller when the queue is full.
+  - **Agent dispatch** (`Agent.send`, `Agent.delegate`, `Agent.broadcast`) — raise a catchable `RuntimeBusy` error.
+
+  `RuntimeBusy` is a structured error catchable in Keel `catch` clauses:
+
+  ```keel
+  try {
+      Agent.send(Worker, payload)
+  } catch e: RuntimeBusy {
+      Io.show("queue full — dropped: {e.message}")
+  }
+  ```
+
+  Set `KEEL_EVENT_QUEUE_CAPACITY=<n>` to tune the limit. The 1024 default is sufficient for typical agent workloads; lower values are useful in tests to trigger backpressure deliberately.
+
+---
+
+## [0.1.30] — 2026-06-03
+
+Semantic analysis now lowers through HIR while runtime APIs enforce declared inputs.
 
 ### Changed
 

@@ -1,35 +1,23 @@
-# Bounded Event Queue — Backpressure Example
-#
-# Demonstrates that Agent.send raises RuntimeBusy when the interpreter
-# event queue is full, and that Keel code can catch and handle it.
-#
-# The queue capacity is 1024 by default. Set KEEL_EVENT_QUEUE_CAPACITY
-# to a smaller value to trigger RuntimeBusy more easily.
-#
-# Run (small queue to trigger backpressure):
-#   KEEL_LLM=mock KEEL_ONESHOT=1 KEEL_EVENT_QUEUE_CAPACITY=2 keel run examples/bounded_queue.keel
-
 agent BurstBot {
-    state {
-        sent: int = 0
-        dropped: int = 0
+  state {
+    sent: int = 0
+    dropped: int = 0
+  }
+  @on_start {
+    for i in 1..5 {
+      try {
+        Agent.send(BurstBot, i)
+        self.sent = self.sent + 1
+      } catch e: RuntimeBusy {
+        self.dropped = self.dropped + 1
+      }
     }
+    Io.show("sent={self.sent} dropped={self.dropped}")
+  }
 
-    @on_start {
-        for i in 1..5 {
-            try {
-                Agent.send(BurstBot, i)
-                self.sent = self.sent + 1
-            } catch e: RuntimeBusy {
-                self.dropped = self.dropped + 1
-            }
-        }
-        Io.show("sent={self.sent} dropped={self.dropped}")
-    }
-
-    on message(n: int) {
-        Io.show("handled={n}")
-    }
+  on message(n: int) {
+    Io.show("handled={n}")
+  }
 }
 
 run(BurstBot)
