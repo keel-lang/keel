@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [0.1.30](./release-notes.md)** — Semantic analysis now lowers through HIR while runtime APIs enforce declared inputs.
+> **Latest: [0.1.31](./release-notes.md)** — Replace unbounded event queue with bounded channel and overflow policies.
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
