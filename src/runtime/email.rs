@@ -13,6 +13,7 @@ pub struct EmailConnection {
     pub pass: String,
 }
 
+#[cfg(test)]
 impl EmailConnection {
     pub fn from_config(config: &[(String, Value)]) -> Result<Self, String> {
         let mut imap_host = String::new();
@@ -30,7 +31,6 @@ impl EmailConnection {
             }
         }
 
-        // Default SMTP host from IMAP host (common pattern)
         if smtp_host.is_empty() && !imap_host.is_empty() {
             smtp_host = imap_host.replace("imap.", "smtp.");
         }
@@ -48,6 +48,7 @@ impl EmailConnection {
     }
 }
 
+#[cfg(test)]
 fn config_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
     match value {
         Value::String(value) => Ok(value),

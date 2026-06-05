@@ -543,3 +543,2437 @@ fn type_display_str(te: &TypeExpr) -> String {
         TypeExpr::SelfType => "self".to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        Ty, TypeDiagnostic, check, definition_of, ident_at_offset, ident_span_at_offset, type_at,
+    };
+    use crate::hir::lower_ast;
+    use crate::lexer::lex;
+    use crate::parser::parse;
+    use miette::NamedSource;
+
+    fn type_errors(source: &str) -> Vec<String> {
+        let named = NamedSource::new("t.keel", source.to_string());
+        let tokens = lex(source, &named).expect("lex failed");
+        let program = parse(tokens, source.len(), &named).expect("parse failed");
+        check(&lower_ast(&program))
+            .into_iter()
+            .map(|e| e.message())
+            .collect()
+    }
+
+    fn type_errors_full(source: &str) -> Vec<TypeDiagnostic> {
+        let named = NamedSource::new("t.keel", source.to_string());
+        let tokens = lex(source, &named).expect("lex failed");
+        let program = parse(tokens, source.len(), &named).expect("parse failed");
+        check(&lower_ast(&program))
+    }
+
+    fn type_ok(source: &str) {
+        let errs = type_errors(source);
+        assert!(errs.is_empty(), "unexpected type errors: {errs:?}");
+    }
+
+    fn expect_error(source: &str, substring: &str) {
+        let errs = type_errors(source);
+        assert!(
+            errs.iter().any(|e| e.contains(substring)),
+            "expected error containing {substring:?}, got: {errs:?}"
+        );
+    }
+
+    // ─── Valid programs ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn valid_minimal_agent() {
+        type_ok(
+            r#"
+agent Greeter {
+  @role "hi"
+}
+
+run(Greeter)
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_task_with_return_type() {
+        type_ok(
+            r#"
+task greet(name: str) -> str {
+  "hello"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_enum_and_when() {
+        type_ok(
+            r#"
+type Urgency = low | medium | high | critical
+
+task triage(u: Urgency) {
+  when u {
+    low, medium => { return }
+    high, critical => { return }
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_self_inside_agent() {
+        type_ok(
+            r#"
+agent Counter {
+  @role "count"
+  state { count: int = 0 }
+
+  task increment() {
+    self.count = self.count + 1
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_agent_task_calls_sibling_via_self() {
+        type_ok(
+            r#"
+agent Bot {
+  @role "x"
+
+  task step() {
+    self.other()
+  }
+
+  task other() {
+    Io.notify("hi")
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_bare_agent_task_call_is_not_in_scope() {
+        expect_error(
+            r#"
+agent Bot {
+  @role "x"
+
+  task step() {
+    other()
+  }
+
+  task other() {
+    Io.notify("hi")
+  }
+}
+"#,
+            "undefined: `other`",
+        );
+    }
+
+    #[test]
+    fn error_direct_agent_task_call_is_rejected() {
+        expect_error(
+            r#"
+agent Worker {
+  @role "x"
+
+  task run() {
+    Io.notify("work")
+  }
+}
+
+task invoke() {
+  Worker.run()
+}
+"#,
+            "direct agent task calls",
+        );
+    }
+
+    // ─── Errors: undefined / scope ──────────────────────────────────────────────
+
+    #[test]
+    fn error_undefined_variable() {
+        expect_error(
+            r#"
+task t() {
+  x = unknown_thing
+}
+"#,
+            "undefined",
+        );
+    }
+
+    #[test]
+    fn error_self_outside_agent() {
+        expect_error(
+            r#"
+task t() {
+  self.count = 1
+}
+"#,
+            "outside an agent",
+        );
+    }
+
+    #[test]
+    fn error_self_unknown_state_field() {
+        expect_error(
+            r#"
+agent Counter {
+  @role "x"
+  state { count: int = 0 }
+
+  task bad() {
+    self.nope = 1
+  }
+}
+"#,
+            "no state field",
+        );
+    }
+
+    // ─── Errors: scope isolation for block-owning statements ────────────────────
+
+    #[test]
+    fn error_if_body_binding_does_not_leak() {
+        // A name bound inside an `if` body must not be visible after the block.
+        expect_error(
+            r#"
+task main() {
+  if true {
+    x = 1
+  }
+  Io.show(x)
+}
+"#,
+            "undefined: `x`",
+        );
+    }
+
+    #[test]
+    fn error_while_body_binding_does_not_leak() {
+        // A name bound inside a `while` body must not be visible after the block.
+        expect_error(
+            r#"
+task main() {
+  while false {
+    y = 1
+  }
+  Io.show(y)
+}
+"#,
+            "undefined: `y`",
+        );
+    }
+
+    #[test]
+    fn error_try_body_binding_does_not_leak() {
+        // A name bound inside the `try` body must not be visible after the block.
+        expect_error(
+            r#"
+task main() {
+  try {
+    z = 1
+  } catch e: Error { }
+  Io.show(z)
+}
+"#,
+            "undefined: `z`",
+        );
+    }
+
+    #[test]
+    fn error_param_default_with_undefined_name() {
+        // Undefined names in parameter default expressions must be caught.
+        expect_error(
+            r#"
+task main(x: int = missing) {
+  Io.show(x)
+}
+"#,
+            "undefined: `missing`",
+        );
+    }
+
+    // ─── Errors: exhaustiveness ─────────────────────────────────────────────────
+
+    #[test]
+    fn error_non_exhaustive_when() {
+        expect_error(
+            r#"
+type Urgency = low | medium | high | critical
+
+task t(u: Urgency) {
+  when u {
+    low => { return }
+    medium => { return }
+  }
+}
+"#,
+            "non-exhaustive",
+        );
+    }
+
+    #[test]
+    fn valid_when_with_wildcard() {
+        type_ok(
+            r#"
+type Urgency = low | medium | high | critical
+
+task t(u: Urgency) {
+  when u {
+    low => { return }
+    _ => { return }
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_when_on_non_enum_without_wildcard() {
+        expect_error(
+            r#"
+task t(code: int) {
+  when code {
+    200 => { return }
+    404 => { return }
+  }
+}
+"#,
+            "requires a `_`",
+        );
+    }
+
+    // ─── v0.1.4: let type annotations ──────────────────────────────────────────
+
+    #[test]
+    fn valid_let_annotation_matching_type() {
+        type_ok(
+            r#"
+task t() {
+  x: str = "hello"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_let_annotation_type_mismatch() {
+        expect_error(
+            r#"
+task t() {
+  x: int = "hello"
+}
+"#,
+            "expected int",
+        );
+    }
+
+    // ─── Errors: control flow ───────────────────────────────────────────────────
+
+    #[test]
+    fn error_if_condition_not_bool() {
+        expect_error(
+            r#"
+task t() {
+  if "hello" {
+    x = 1
+  }
+}
+"#,
+            "expected bool",
+        );
+    }
+
+    #[test]
+    fn error_for_over_non_list() {
+        expect_error(
+            r#"
+task t() {
+  for x in 42 {
+    y = x
+  }
+}
+"#,
+            "expects a list",
+        );
+    }
+
+    // ─── Errors: arity ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn error_too_many_args() {
+        expect_error(
+            r#"
+task greet(name: str) -> str {
+  "hi"
+}
+
+task call_it() {
+  x = greet("a", "b", "c")
+}
+"#,
+            "argument",
+        );
+    }
+
+    #[test]
+    fn valid_out_of_order_named_args_use_matching_literal_types() {
+        type_ok(
+            r#"
+type Record = { tag: int }
+
+task collect(record: Record, labels: map[str, int]) {}
+
+task call_it() {
+  collect(labels: {one: 1}, record: {tag: 2})
+}
+"#,
+        );
+    }
+
+    // ─── Enum inference via Ai.classify ─────────────────────────────────────────
+
+    #[test]
+    fn valid_classify_inferred_enum() {
+        // `Ai.classify(..., as: Mood) ?? Mood.neutral` unwraps the nullable so
+        // the result is Mood and `when` on it is exhaustive.
+        type_ok(
+            r#"
+type Mood = happy | neutral | sad
+
+task t(text: str) {
+  mood = Ai.classify(text, as: Mood) ?? Mood.neutral
+  when mood {
+    happy => { return }
+    neutral => { return }
+    sad => { return }
+  }
+}
+"#,
+        );
+    }
+
+    // ─── Rich enum variants ─────────────────────────────────────────────────────
+
+    #[test]
+    fn valid_rich_enum_variant() {
+        type_ok(
+            r#"
+type Action =
+  | reply { to: str, tone: str }
+  | archive
+
+task make() -> Action {
+  Action.reply { to: "x", tone: "friendly" }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_rich_variant_unknown() {
+        expect_error(
+            r#"
+type Action =
+  | reply { to: str }
+  | archive
+
+task make() -> Action {
+  Action.nope { to: "x" }
+}
+"#,
+            "no variant",
+        );
+    }
+
+    #[test]
+    fn error_classify_result_missing_variant() {
+        expect_error(
+            r#"
+type Mood = happy | neutral | sad
+
+task t(text: str) {
+  mood = Ai.classify(text, as: Mood) ?? Mood.neutral
+  when mood {
+    happy => { return }
+    sad => { return }
+  }
+}
+"#,
+            "non-exhaustive",
+        );
+    }
+
+    // ─── v0.1.5: nullable safety ────────────────────────────────────────────────
+
+    #[test]
+    fn error_nullable_passed_as_non_nullable() {
+        expect_error(
+            r#"
+task t() {
+  x: str = Env.get("KEY")
+}
+"#,
+            "use `!` to assert non-null",
+        );
+    }
+
+    #[test]
+    fn valid_nullable_unwrapped_with_assert() {
+        type_ok(
+            r#"
+task t() {
+  x: str = Env.get("KEY")!
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_nullable_coalesced() {
+        type_ok(
+            r#"
+task t() {
+  x: str = Env.get("KEY") ?? "default"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_non_nullable_assigned_to_nullable() {
+        type_ok(
+            r#"
+task t() {
+  x: str? = "hello"
+}
+"#,
+        );
+    }
+
+    // ─── nullable safety at call sites ───────────────────────────────────────────
+
+    #[test]
+    fn error_nullable_arg_at_top_level_task_call() {
+        expect_error(
+            r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(val)
+}
+"#,
+            "use `!` to assert non-null",
+        );
+    }
+
+    #[test]
+    fn valid_nullable_arg_unwrapped_at_call_site() {
+        type_ok(
+            r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(val!)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_nullable_arg_coalesced_at_call_site() {
+        type_ok(
+            r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(val ?? "default")
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_nullable_named_arg_at_task_call() {
+        expect_error(
+            r#"
+task process(x: str) {}
+task t() {
+  val: str? = Env.get("KEY")
+  process(x: val)
+}
+"#,
+            "use `!` to assert non-null",
+        );
+    }
+
+    #[test]
+    fn error_wrong_type_arg_at_task_call() {
+        expect_error(
+            r#"
+task process(x: str) {}
+task t() {
+  process(42)
+}
+"#,
+            "expected str, got int",
+        );
+    }
+
+    // ─── v0.1.5: return-type matching ──────────────────────────────────────────
+
+    #[test]
+    fn error_return_stmt_type_mismatch() {
+        expect_error(
+            r#"
+task t() -> str {
+  return 42
+}
+"#,
+            "return value: expected str",
+        );
+    }
+
+    #[test]
+    fn valid_return_stmt_matches_declared() {
+        type_ok(
+            r#"
+task t() -> str {
+  return "hello"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_task_no_return_type() {
+        type_ok(
+            r#"
+task t() {
+  return 42
+}
+"#,
+        );
+    }
+
+    // ─── v0.1.5: struct field checks ───────────────────────────────────────────
+
+    #[test]
+    fn error_missing_struct_field() {
+        expect_error(
+            r#"
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice" }
+}
+"#,
+            "missing field `age`",
+        );
+    }
+
+    #[test]
+    fn valid_struct_all_fields_present() {
+        type_ok(
+            r#"
+type Person { name: str, age: int }
+
+task t() {
+  p: Person = { name: "Alice", age: 30 }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_struct_extra_fields_allowed() {
+        type_ok(
+            r#"
+type Person { name: str }
+
+task t() {
+  p: Person = { name: "Alice", extra: 42 }
+}
+"#,
+        );
+    }
+
+    // ─── v0.1.5: generic list type inference ───────────────────────────────────
+
+    #[test]
+    fn valid_list_push_preserves_element_type() {
+        type_ok(
+            r#"
+task t() {
+  items: list[str] = ["a", "b"]
+  more = items.push("c")
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_list_concatenation_inferred() {
+        type_ok(
+            r#"
+task t() {
+  a = ["x", "y"]
+  b = ["z"]
+  all = a + b
+  for item in all {
+    Io.notify(item)
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_list_len_is_int() {
+        type_ok(
+            r#"
+task t() {
+  items = ["a", "b", "c"]
+  n: int = items.len()
+}
+"#,
+        );
+    }
+
+    // ─── v0.1.17: readonly state fields ────────────────────────────────────────
+
+    #[test]
+    fn valid_readonly_field_readable() {
+        type_ok(
+            r#"
+agent Bot {
+  state {
+    turns: int = 0
+    session_id: readonly str = "default"
+  }
+  task check() {
+    Io.notify(self.session_id)
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_readonly_field_assigned() {
+        expect_error(
+            r#"
+agent Bot {
+  state {
+    session_id: readonly str = "default"
+  }
+  task reset() {
+    self.session_id = "new"
+  }
+}
+"#,
+            "readonly",
+        );
+    }
+
+    #[test]
+    fn valid_list_filter_preserves_type() {
+        type_ok(
+            r#"
+task t() {
+  items = ["a", "bb", "ccc"]
+  short = items.filter(x => true)
+  for s in short {
+    Io.notify(s)
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_complex_type_expressions_resolve() {
+        type_ok(
+            r#"
+type Pair = (str, int)
+type Bag = dynamic
+
+task t(pair: Pair, bag: Bag) {
+  same_pair: Pair = pair
+  same_bag: Bag = bag
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_struct_destructure_from_non_struct() {
+        expect_error(
+            r#"
+task t() {
+  {name} = 42
+  Io.notify(name)
+}
+"#,
+            "cannot destructure int as a struct",
+        );
+    }
+
+    #[test]
+    fn error_tuple_destructure_from_non_tuple() {
+        expect_error(
+            r#"
+task t() {
+  (name, count) = {name: "a", count: 1}
+  Io.notify(name)
+}
+"#,
+            "cannot destructure struct as a tuple",
+        );
+    }
+
+    #[test]
+    fn type_at_reports_destructured_and_nested_bindings() {
+        let source = r#"
+type Item = {name: str, score: int}
+
+agent Bot {
+  state { session_id: readonly str = "s1" }
+
+  on scored({name: item_name, score: item_score}: Item) {
+    for loop_score in [1] {
+      try {
+        copied_name = "literal"
+      } catch caught_error: Error {
+        recovered = "fallback"
+      }
+    }
+  }
+}
+"#;
+
+        let cases = [
+            ("item_name", "str"),
+            ("item_score", "int"),
+            ("session_id", "str"),
+            ("loop_score", "int"),
+            ("copied_name", "str"),
+            ("caught_error", "Error"), // resolved as Unresolved("Error") — shows declared name
+            ("recovered", "str"),
+        ];
+
+        for (needle, expected) in cases {
+            let offset = source
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing {needle} in source"))
+                + 1;
+            let actual =
+                type_at(source, offset).unwrap_or_else(|| panic!("expected type for {needle}"));
+            assert!(
+                actual.contains(expected),
+                "expected {needle} to contain {expected:?}, got {actual:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ident_helpers_decline_non_identifier_offsets() {
+        let source = "task greet() -> str { \"hello\" }\n";
+        let quote = source.find('"').expect("string literal quote");
+
+        assert_eq!(ident_at_offset(source, quote), None);
+        assert_eq!(ident_span_at_offset(source, quote), None);
+        assert_eq!(definition_of(source, quote), None);
+        assert_eq!(type_at("task t( {", 2), None);
+    }
+
+    // ─── v0.1.19 additive checker fixes ─────────────────────────────────────────
+
+    #[test]
+    fn valid_set_literal_typed_as_set() {
+        // set[] literal — checker must not error; inferred as set[int]
+        type_ok(
+            r#"
+task go() {
+  s = set[1, 2, 3]
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_null_field_access_propagates_nullable() {
+        type_ok(
+            r#"
+type Info = { name: str, score: int }
+
+task go(x: Info?) {
+  n = x?.name
+  s = x?.score
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_null_coalesce_unwraps_nullable() {
+        type_ok(
+            r#"
+task go(x: str?) {
+  result: str = x ?? "default"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_lambda_block_body_return_type_inferred() {
+        type_ok(
+            r#"
+task go() {
+  items = [1, 2, 3]
+  doubled = items.map(x => {
+    x * 2
+  })
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_ai_extract_as_resolves_struct_type() {
+        type_ok(
+            r#"
+type Contact = { name: str, email: str }
+
+task go(text: str) {
+  result = Ai.extract(text, as: Contact)
+  name = result?.name
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_ai_decide_as_resolves_enum_type() {
+        type_ok(
+            r#"
+type Priority = low | medium | high
+
+task go(text: str) {
+  p = Ai.decide(text, as: Priority)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_implicit_return_expression_matches_declared() {
+        type_ok(
+            r#"
+task double(n: int) -> int {
+  n * 2
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_implicit_return_type_mismatch() {
+        expect_error(
+            r#"
+task greet() -> int {
+  "hello"
+}
+"#,
+            "implicit return",
+        );
+    }
+
+    #[test]
+    fn valid_implicit_return_skipped_for_return_stmt() {
+        // A task ending in `return` must not trigger the implicit-return check.
+        type_ok(
+            r#"
+task greet() -> str {
+  return "hello"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_implicit_return_skipped_for_when_stmt() {
+        // A task ending in `when` must not trigger the implicit-return check.
+        type_ok(
+            r#"
+type Color = red | green | blue
+
+task name(c: Color) -> str {
+  when c {
+    red => { return "red" }
+    green => { return "green" }
+    blue => { return "blue" }
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_if_expr_branches_same_type() {
+        type_ok(
+            r#"
+task go(x: int) -> int {
+  if x > 0 { x } else { 0 }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_if_expr_branches_type_mismatch() {
+        expect_error(
+            r#"
+task go(flag: bool) {
+  result = if flag { 1 } else { "oops" }
+}
+"#,
+            "branches must have the same type",
+        );
+    }
+
+    #[test]
+    fn valid_if_expr_return_branch_propagates_other_type() {
+        // When one branch exits via `return`, the if-expr takes the other branch's type.
+        type_ok(
+            r#"
+task classify(n: int) -> str {
+  label = if n > 0 { return "positive" } else { "other" }
+  label
+}
+"#,
+        );
+    }
+
+    // ─── v0.1.20: generic type declarations ────────────────────────────────────
+
+    #[test]
+    fn valid_generic_struct_instantiation() {
+        type_ok(
+            r#"
+type Paginated[T] {
+  items: list[T]
+  page: int
+  has_more: bool
+}
+
+task t(p: Paginated[str]) {
+  items: list[str] = p.items
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_struct_nested_params() {
+        // T flows through nested list inside a generic struct.
+        type_ok(
+            r#"
+type Wrapper[T] {
+  value: T
+}
+
+task t(w: Wrapper[int]) {
+  v: int = w.value
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_alias() {
+        // Generic alias that expands to a concrete list type.
+        type_ok(
+            r#"
+type Bag[T] = list[T]
+
+task t(items: Bag[str]) {
+  n: int = items.len()
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_enum_variant_exhaustive() {
+        // Generic enums register variant names; exhaustiveness check still works.
+        type_ok(
+            r#"
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both => { Io.notify("both") }
+    only_first => { Io.notify("first") }
+    only_second => { Io.notify("second") }
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_struct_multi_param() {
+        type_ok(
+            r#"
+type Pair[A, B] {
+  first: A
+  second: B
+}
+
+task t(p: Pair[str, int]) {
+  a: str = p.first
+  b: int = p.second
+}
+"#,
+        );
+    }
+
+    // ─── v0.1.20: function type syntax ─────────────────────────────────────────
+
+    #[test]
+    fn valid_func_type_alias_used_as_param() {
+        type_ok(
+            r#"
+type Handler = (str) -> bool
+
+task t(h: Handler) {
+  ok: bool = h("hello")
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_func_type_multi_param() {
+        type_ok(
+            r#"
+type Reducer = (str, int) -> str
+
+task t(r: Reducer) {
+  result: str = r("x", 1)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_func_type_alias() {
+        // type Predicate[T] = (T) -> bool — from SPEC §2.6
+        type_ok(
+            r#"
+type Predicate[T] = (T) -> bool
+
+task t(pred: Predicate[str]) {
+  ok: bool = pred("hello")
+}
+"#,
+        );
+    }
+
+    // ─── v0.1.20: generic enum variant field types ──────────────────────────────
+
+    #[test]
+    fn valid_generic_enum_variant_fields_typed() {
+        // Variant bindings resolve to substituted field types, not Unknown.
+        type_ok(
+            r#"
+type Pair[A, B] =
+  | both { first: A, second: B }
+  | only_first { value: A }
+  | only_second { value: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both { first, second } => {
+      f: str = first
+      s: int = second
+    }
+    only_first { value } => {
+      v: str = value
+    }
+    only_second { value } => {
+      v: int = value
+    }
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_enum_variant_nested_type() {
+        // Field type itself is a generic instantiation.
+        type_ok(
+            r#"
+type Box[T] {
+  value: T
+}
+
+type Wrapped[T] =
+  | some { inner: Box[T] }
+  | none_val
+
+task t(w: Wrapped[str]) {
+  when w {
+    some { inner } => {
+      b: Box[str] = inner
+    }
+    none_val => { Io.notify("empty") }
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_generic_enum_variant_field_wrong_type() {
+        // Assigning a variant field binding to the wrong type must be caught.
+        expect_error(
+            r#"
+type Pair[A, B] =
+  | both { first: A, second: B }
+
+task t(p: Pair[str, int]) {
+  when p {
+    both { first, second } => {
+      wrong: int = first
+    }
+  }
+}
+"#,
+            "expected int, got str",
+        );
+    }
+
+    // ─── Generic tasks ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn valid_generic_task_identity_inferred() {
+        type_ok(
+            r#"
+task identity[T](x: T) -> T { x }
+
+task main() {
+  s: str = identity("hello")
+  n: int = identity(42)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_task_return_type_inferred() {
+        type_ok(
+            r#"
+task wrap[T](x: T) -> list[T] { [x] }
+
+task main() {
+  xs: list[int] = wrap(1)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_generic_task_multi_param_inferred() {
+        type_ok(
+            r#"
+task first[A, B](a: A, b: B) -> A { a }
+
+task main() {
+  s: str = first("hi", 99)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_generic_task_return_type_mismatch() {
+        expect_error(
+            r#"
+task identity[T](x: T) -> T { x }
+
+task main() {
+  n: int = identity("oops")
+}
+"#,
+            "expected int, got str",
+        );
+    }
+
+    // ─── when as expression ─────────────────────────────────────────────────────
+
+    #[test]
+    fn valid_when_expr_string_arms() {
+        type_ok(
+            r#"
+task grade(score: str) -> str {
+  result: str = when score {
+    "A" => "excellent"
+    "B" => "good"
+    _   => "needs work"
+  }
+  result
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_when_expr_enum_subject() {
+        type_ok(
+            r#"
+type Priority = | low | medium | high
+
+task label(p: Priority) -> str {
+  when p {
+    low    => "low"
+    medium => "med"
+    high   => "high"
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_when_expr_int_arms() {
+        type_ok(
+            r#"
+task classify(n: int) -> str {
+  when n {
+    0 => "zero"
+    1 => "one"
+    _ => "many"
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_when_expr_mismatched_arm_types() {
+        expect_error(
+            r#"
+task t(x: str) -> str {
+  result = when x {
+    "a" => "ok"
+    _   => 42
+  }
+  result
+}
+"#,
+            "`when` expression arms must all have the same type",
+        );
+    }
+
+    #[test]
+    fn valid_when_expr_as_return_value() {
+        type_ok(
+            r#"
+type Mood = | happy | sad
+
+task describe(m: Mood) -> str {
+  when m {
+    happy => "great"
+    sad   => "meh"
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn invalid_zip_non_list_arg_is_type_error() {
+        expect_error(
+            r#"
+task t() {
+  result = [1, 2, 3].zip("hello")
+}
+"#,
+            "`.zip()` expects a list argument, got str",
+        );
+    }
+
+    // ─── operator type compatibility ───────────────────────────────────────────
+
+    #[test]
+    fn binop_str_plus_int_is_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        x = "hi" + 5
+    }
+}
+run(A)
+"#,
+            "cannot apply `+`",
+        );
+    }
+
+    #[test]
+    fn binop_str_minus_int_is_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        x = "hi" - 1
+    }
+}
+run(A)
+"#,
+            "cannot apply `-`",
+        );
+    }
+
+    #[test]
+    fn binop_str_lt_int_is_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        x = "hi" < 5
+    }
+}
+run(A)
+"#,
+            "cannot apply `<`",
+        );
+    }
+
+    #[test]
+    fn binop_bool_plus_int_is_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        x = true + 1
+    }
+}
+run(A)
+"#,
+            "cannot apply `+`",
+        );
+    }
+
+    #[test]
+    fn binop_list_minus_int_is_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        x = [1, 2] - 1
+    }
+}
+run(A)
+"#,
+            "cannot apply `-`",
+        );
+    }
+
+    #[test]
+    fn aug_assign_type_mismatch_is_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        x = 0
+        x += "oops"
+    }
+}
+run(A)
+"#,
+            "cannot apply `+`",
+        );
+    }
+
+    #[test]
+    fn binop_valid_numeric_combos() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        a = 1 + 1
+        b = 1.0 + 2
+        c = 1 + 2.0
+        d = 3.0 - 1.0
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn binop_valid_str_concat() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        x = "a" + "b"
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn binop_valid_list_concat() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        x = [1] + [2]
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn binop_valid_comparisons() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        a = 1 < 2
+        b = "a" < "b"
+        c = 1.0 >= 0
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn binop_equality_is_always_valid() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        x = 1 == "hello"
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn binop_unknown_operand_skips_check() {
+        // list.reduce() returns Unknown — should not trigger a type error when used as operand
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        v = [1, 2, 3].reduce()
+        x = v + 1
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    // ─── Variadic parameters ──────────────────────────────────────────────────────
+
+    #[test]
+    fn variadic_zero_args_ok() {
+        type_ok(
+            r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start { x = greet() }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn variadic_many_args_ok() {
+        type_ok(
+            r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start { x = greet("a", "b", "c") }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn variadic_spread_list_ok() {
+        type_ok(
+            r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start {
+        xs = ["a", "b"]
+        x = greet(...xs)
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn variadic_mixed_spread_ok() {
+        type_ok(
+            r#"
+task greet(...names: str) -> str { "ok" }
+agent A {
+    @on_start {
+        xs = ["b", "c"]
+        x = greet("a", ...xs)
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn variadic_wrong_type_error() {
+        expect_error(
+            r#"
+task add(...nums: int) -> int { 0 }
+agent A {
+    @on_start { x = add("oops") }
+}
+run(A)
+"#,
+            "variadic arg `nums`",
+        );
+    }
+
+    #[test]
+    fn variadic_list_without_spread_is_error() {
+        // Passing list[int] where int is expected — must use ...
+        expect_error(
+            r#"
+task add(...nums: int) -> int { 0 }
+agent A {
+    @on_start {
+        xs = [1, 2, 3]
+        x = add(xs)
+    }
+}
+run(A)
+"#,
+            "variadic arg `nums`",
+        );
+    }
+
+    #[test]
+    fn variadic_body_sees_list_type() {
+        // Inside the body, the variadic param should be list[str].
+        type_ok(
+            r#"
+task join(...words: str) -> str {
+    result: list[str] = words
+    "ok"
+}
+agent A {
+    @on_start { join("a", "b") }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn variadic_with_fixed_params_ok() {
+        type_ok(
+            r#"
+task fmt(prefix: str, ...parts: str) -> str { "ok" }
+agent A {
+    @on_start { fmt(">>", "a", "b", "c") }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn spread_on_fixed_arity_task_is_error() {
+        expect_error(
+            r#"
+task greet(name: str) -> str { name }
+agent A {
+    @on_start {
+        xs = ["alice", "bob"]
+        greet(...xs)
+    }
+}
+run(A)
+"#,
+            "spread args",
+        );
+    }
+
+    #[test]
+    fn min_max_spread_plus_scalar_ok() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        scores = [4, 9, 2]
+        hi = max(...scores, 99)
+        lo = min(...scores, 1)
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn min_max_multi_spread_ok() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        a = [4, 9]
+        b = [2, 7]
+        lo = min(...a, ...b)
+        hi = max(...a, ...b)
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    // ─── Subscript access (`list[i]`, `str[i]`) ────────────────────────────────
+
+    #[test]
+    fn subscript_list_ok() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        items: list[int] = [10, 20, 30]
+        x: int = items[0]
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn subscript_string_ok() {
+        type_ok(
+            r#"
+agent A {
+    @on_start {
+        word = "hello"
+        ch: str = word[1]
+    }
+}
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn subscript_non_int_index_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        items = [1, 2, 3]
+        x = items["bad"]
+    }
+}
+run(A)
+"#,
+            "subscript index must be int",
+        );
+    }
+
+    #[test]
+    fn subscript_set_type_error() {
+        expect_error(
+            r#"
+agent A {
+    @on_start {
+        s: int = 42
+        x = s[0]
+    }
+}
+run(A)
+"#,
+            "subscript",
+        );
+    }
+
+    // ─── while loop ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn while_bool_condition_is_valid() {
+        type_ok(
+            r#"
+task t() {
+    n = 0
+    while n < 10 {
+        n += 1
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn while_true_literal_is_valid() {
+        type_ok(
+            r#"
+task t() {
+    while true {
+        break
+    }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn while_non_bool_condition_is_error() {
+        expect_error(
+            r#"
+task t() {
+    while "oops" {
+        break
+    }
+}
+"#,
+            "`while` condition",
+        );
+    }
+
+    // ─── Db namespace ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn db_connect_is_valid() {
+        type_ok(
+            r#"
+task use_db() {
+    db = Db.connect("sqlite://:memory:")
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn db_query_result_supports_list_methods() {
+        type_ok(
+            r#"
+task use_db() {
+    db = Db.connect("sqlite://:memory:")
+    rows = db.query("SELECT 1", [])
+    n = rows.len()
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn db_exec_result_used_as_int() {
+        type_ok(
+            r#"
+task use_db() {
+    db = Db.connect("sqlite://:memory:")
+    affected = db.exec("DELETE FROM t", [])
+    ok = affected > 0
+}
+"#,
+        );
+    }
+
+    // ─── Agent.delegate type checking ────────────────────────────────────────────
+
+    #[test]
+    fn valid_agent_delegate_symbol_form() {
+        type_ok(
+            r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.run(Worker)
+        Agent.delegate(Worker.process, "hello")
+    }
+}
+run(Boss)
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_agent_delegate_string_form_checks_handler() {
+        type_ok(
+            r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.delegate(Worker, "process", "payload")
+    }
+}
+run(Boss)
+"#,
+        );
+    }
+
+    #[test]
+    fn error_agent_delegate_symbol_form_unknown_handler() {
+        expect_error(
+            r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.delegate(Worker.typo, "payload")
+    }
+}
+run(Boss)
+"#,
+            "agent `Worker` has no handler `typo`",
+        );
+    }
+
+    #[test]
+    fn error_agent_delegate_string_form_unknown_handler() {
+        expect_error(
+            r#"
+agent Worker {
+    on process(data: str) {
+        Io.show(data)
+    }
+}
+agent Boss {
+    @on_start {
+        Agent.delegate(Worker, "typo", "payload")
+    }
+}
+run(Boss)
+"#,
+            "agent `Worker` has no handler `typo`",
+        );
+    }
+
+    // ─── String interpolation parse errors (issue #14) ──────────────────────────
+
+    #[test]
+    fn error_malformed_interpolation_incomplete_binary_op() {
+        // Canonical {…} syntax: stray + without right operand.
+        expect_error(
+            r#"task go() { x = "{1 +}" }"#,
+            "invalid expression in string interpolation",
+        );
+    }
+
+    #[test]
+    fn error_malformed_interpolation_stray_token() {
+        // Unlexable characters in slot → empty token stream → ParseError.
+        expect_error(
+            r#"task go() { x = "{@@@}" }"#,
+            "invalid expression in string interpolation",
+        );
+    }
+
+    #[test]
+    fn valid_interpolation_simple_ident_unaffected() {
+        type_ok(
+            r#"
+task go(name: str) -> str {
+    "{name}"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_interpolation_expression_unaffected() {
+        type_ok(
+            r#"
+task go(a: int, b: int) -> str {
+    "{a + b}"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_interpolation_digit_separator_unaffected() {
+        // 1_000_000 must be treated as the integer 1000000, not parsed as
+        // Integer("1") followed by a stray identifier.
+        type_ok(
+            r#"
+task go(ms: int) -> str {
+    "{ms > 1_000_000_000}"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_interpolation_underscore_ident_unaffected() {
+        // An identifier like x1_2 must NOT have its underscore stripped;
+        // it must resolve as the variable x1_2, not x12.
+        type_ok(
+            r#"
+task go(x1_2: int) -> str {
+    "{x1_2}"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_interpolation_string_literal_underscore_unaffected() {
+        // A string literal "1_2" inside a slot must not have its underscore
+        // stripped; it must remain the string "1_2".
+        type_ok(
+            r#"
+task go() -> str {
+    "{"1_2"}"
+}
+"#,
+        );
+    }
+
+    // ─── Map literal value-type inference: opaque-first sentinel fix ─────────────
+    //
+    // Previously, `is_opaque()` was used as the "not yet set" sentinel for the
+    // inferred value type, causing any legitimately opaque first value
+    // (e.g. Json.parse → Unknown(ExternalDynamic)) to be overwritten by later
+    // concrete entries.  The fix replaces the sentinel with Option<Ty>.
+    //
+    // Observable consequence: assigning `{1: Json.parse("{}"), 2: "x"}` to an
+    // explicit `map[int, str]` binding used to pass (the buggy inference gave
+    // map[int, str]).  After the fix the inferred type is map[int, Unknown] which
+    // does not equal map[int, str], so the assignment is rejected.
+
+    #[test]
+    fn map_opaque_first_value_is_not_overwritten_by_concrete_second() {
+        // The map literal {1: Json.parse("{}"), 2: "x"} must be inferred as
+        // map[int, Unknown(ExternalDynamic)] — the first element's opaque type
+        // wins; the second concrete "x" must not silently overwrite it.
+        //
+        // Because Unknown is opaque, assigning map[int, Unknown] to map[int, str]
+        // is accepted without a cascade error (opaque types suppress diagnostics
+        // everywhere by design — they represent intentional dynamic data).  The
+        // invariant being protected here is the INFERENCE, not the assignment check.
+        type_ok(
+            r#"
+task go() -> int {
+  m: map[int, str] = {1: Json.parse("{}"), 2: "x"}
+  return 0
+}
+"#,
+        );
+    }
+
+    // ─── Type-annotation span (issue #8, stage 4) ────────────────────────────────
+    //
+    // When a `let` binding has an explicit type annotation and the inferred type
+    // does not match, the error span must point at the annotation token sequence,
+    // not the entire statement.
+
+    #[test]
+    fn type_mismatch_error_span_points_at_annotation() {
+        // Source: `x: str = 1`
+        // Byte layout (0-indexed):
+        //   task go() {\n  x: str = 1\n}
+        //   0123456789...
+        // We find the annotation "str" in the source and verify the error span
+        // covers exactly those bytes.
+        let src = "task go() {\n  x: str = 1\n}";
+        let errs = type_errors_full(src);
+        assert!(!errs.is_empty(), "expected a type mismatch error");
+
+        // At least one error must have a span that sits inside "str".
+        let ann_start = src.find("str").expect("'str' not found in source");
+        let ann_end = ann_start + "str".len();
+
+        let has_annotation_span = errs.iter().any(|e| {
+            let s = e.span();
+            // The span must overlap the annotation range.
+            s.start >= ann_start && s.end <= ann_end + 1
+        });
+        assert!(
+            has_annotation_span,
+            "expected error span to point at the type annotation 'str' ({ann_start}..{ann_end}), \
+         got spans: {:?}",
+            errs.iter().map(|e| e.span().clone()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn undefined_name_is_structured_with_identifier_span() {
+        let src = "task go() {\n  missing\n}";
+        let errs = type_errors_full(src);
+        let missing_start = src.find("missing").expect("'missing' not found in source");
+        let missing_end = missing_start + "missing".len();
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::UndefinedName { name, span }
+                    if name == "missing" && span.start == missing_start && span.end == missing_end
+            )),
+            "expected structured UndefinedName at identifier span, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn undefined_augmented_assignment_reports_one_checker_error() {
+        let src = "task go() {\n  missing += 1\n}";
+        let errs = type_errors_full(src);
+
+        assert_eq!(errs.len(), 1, "expected one diagnostic, got: {errs:?}");
+        assert_eq!(
+            errs[0].message(),
+            "augmented assignment to undefined variable `missing`"
+        );
+        let missing = src.find("missing").unwrap();
+        assert_eq!(errs[0].span(), &(missing..missing + "missing".len()));
+    }
+
+    #[test]
+    fn undefined_name_inside_interpolation_has_file_relative_span() {
+        let src = r#"task go() {
+  "hello { missing }"
+}"#;
+        let errs = type_errors_full(src);
+        let missing_start = src.find("missing").expect("'missing' not found in source");
+        let missing_end = missing_start + "missing".len();
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::UndefinedName { name, span }
+                    if name == "missing" && span.start == missing_start && span.end == missing_end
+            )),
+            "expected interpolated UndefinedName at identifier span, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn type_mismatch_is_structured_with_expected_and_actual_types() {
+        let src = "task go() {\n  x: str = 1\n}";
+        let errs = type_errors_full(src);
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::TypeMismatch {
+                    context,
+                    expected: Ty::Str,
+                    actual: Ty::Int,
+                    ..
+                } if context == "`x`"
+            )),
+            "expected structured TypeMismatch for `x`, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn wrong_arity_is_structured_with_call_span() {
+        let src = r#"
+task greet(name: str) {}
+
+task go() {
+  greet("Ada", "Lovelace")
+}
+"#;
+        let errs = type_errors_full(src);
+        let call_start = src.find("greet(\"Ada\"").expect("call not found");
+        let call_end = src[call_start..]
+            .find(')')
+            .map(|offset| call_start + offset + 1)
+            .expect("call end not found");
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::WrongArity {
+                    task_name,
+                    expected: 1,
+                    actual: 2,
+                    expected_params,
+                    span,
+                } if task_name == "greet"
+                    && expected_params == &vec!["name".to_string()]
+                    && span.start == call_start
+                    && span.end == call_end
+            )),
+            "expected structured WrongArity at call span, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn non_exhaustive_when_is_structured() {
+        let src = r#"
+type Status = open | closed
+
+task go(s: Status) {
+  when s {
+    open => { return }
+  }
+}
+"#;
+        let errs = type_errors_full(src);
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::NonExhaustiveWhen {
+                    enum_name,
+                    missing,
+                    ..
+                } if enum_name == "Status" && missing == &vec!["closed".to_string()]
+            )),
+            "expected structured NonExhaustiveWhen, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn map_concrete_first_opaque_second_accepts_the_opaque_entry() {
+        // When the first value is concrete (Str) the inferred value type is Str.
+        // The second opaque value (Json.parse → Unknown) is passed to `expect`
+        // against Str; because `actual.is_opaque()` is true, `expect` short-
+        // circuits with no error.  The assignment to map[int, str] should succeed.
+        type_ok(
+            r#"
+task go() -> int {
+  m: map[int, str] = {1: "x", 2: Json.parse("{}")}
+  return 0
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn interface_not_satisfied_is_structured_for_missing_method() {
+        let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person = { name: str }
+
+impl Greetable for Person {}
+"#;
+        let errs = type_errors_full(src);
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::InterfaceNotSatisfied {
+                    impl_name,
+                    interface_name,
+                    reason,
+                    ..
+                } if impl_name == "Person"
+                    && interface_name == "Greetable"
+                    && reason.contains("greet")
+            )),
+            "expected structured InterfaceNotSatisfied for missing method, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn interface_not_satisfied_is_structured_for_wrong_return_type() {
+        let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person = { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> int { 0 }
+}
+"#;
+        let errs = type_errors_full(src);
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::InterfaceNotSatisfied {
+                    impl_name,
+                    interface_name,
+                    reason,
+                    ..
+                } if impl_name == "Person"
+                    && interface_name == "Greetable"
+                    && reason.contains("greet")
+                    && reason.contains("str")
+            )),
+            "expected structured InterfaceNotSatisfied for wrong return type, got: {errs:?}"
+        );
+    }
+
+    #[test]
+    fn implicit_return_mismatch_span_points_at_result_expression() {
+        // Regression: block_type dispatches Stmt::Expr through infer_expr without
+        // calling check_stmt, so current_span was never set — the diagnostic used
+        // to land at byte 0 (beginning of file) instead of on the bad expression.
+        let src = "task go() -> str { 42 }";
+        let errs = type_errors_full(src);
+
+        let expr_start = src.find("42").expect("'42' not found");
+        let expr_end = expr_start + "42".len();
+
+        assert!(
+            errs.iter().any(|e| matches!(
+                e,
+                TypeDiagnostic::TypeMismatch { span, .. }
+                    if span.start >= expr_start && span.end <= expr_end + 1
+            )),
+            "expected TypeMismatch span to point at '42' ({expr_start}..{expr_end}), got: {:?}",
+            errs.iter().map(|e| e.span().clone()).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(test)]
+mod lsp_ide_tests {
+    use super::{definition_of, is_top_level_symbol, type_at, usages_of};
+
+    #[test]
+    fn lsp_hover_reports_let_binding_type() {
+        let src = "agent A {\n    @on_start {\n        items = [1, 2, 3]\n    }\n}\n";
+        // Cursor on `items` (line 2, column 8 → byte offset of `items` in source).
+        let offset = src.find("items").unwrap() + 1;
+        let label = type_at(src, offset).expect("hover should resolve `items`");
+        assert!(label.contains("list"), "expected list type, got: {label}");
+        assert!(
+            label.contains("int"),
+            "expected int element type, got: {label}"
+        );
+    }
+
+    #[test]
+    fn lsp_hover_reports_namespace() {
+        let src = "agent A { @on_start { Io.show(\"x\") } }\n";
+        let offset = src.find("Io").unwrap() + 1;
+        let label = type_at(src, offset).expect("hover on Io");
+        assert!(
+            label.contains("namespace"),
+            "expected namespace label, got: {label}"
+        );
+    }
+
+    #[test]
+    fn lsp_goto_definition_finds_task() {
+        let src = "task greet() -> str {\n    \"hello\"\n}\nagent A {\n    @on_start {\n        r = greet()\n    }\n}\n";
+        let offset = src.find("greet").unwrap() + 1;
+        let span = definition_of(src, offset);
+        assert!(
+            span.is_some(),
+            "definition_of should find `task greet` declaration"
+        );
+        let s = span.unwrap();
+        let name = &src[s.clone()];
+        assert_eq!(
+            name, "greet",
+            "span should cover the identifier, got: {name:?}"
+        );
+    }
+
+    #[test]
+    fn lsp_goto_definition_finds_state_field_from_read_and_write_sites() {
+        let src = "agent Counter {\n    state { count: int = 0 }\n    task tick() {\n        self.count = self.count + 1\n    }\n}\n";
+        let declaration = src.find("count:").unwrap();
+        let expected = declaration..declaration + "count".len();
+        let write = src.find("self.count =").unwrap() + "self.".len() + 1;
+        let read = src.rfind("self.count").unwrap() + "self.".len() + 1;
+
+        assert_eq!(definition_of(src, write), Some(expected.clone()));
+        assert_eq!(definition_of(src, read), Some(expected));
+    }
+
+    #[test]
+    fn lsp_goto_definition_uses_exact_method_declaration_span() {
+        let src = "agent First {\n    task work() {}\n}\nagent Second {\n    task work() {}\n}\n";
+        let declaration = src.rfind("work").unwrap();
+        let expected = declaration..declaration + "work".len();
+
+        assert_eq!(definition_of(src, declaration + 1), Some(expected));
+    }
+
+    #[test]
+    fn lsp_rename_gate_allows_top_level_declaration_in_broken_file() {
+        let src = "task stable() {}\ntask broken() {\n";
+        let offset = src.find("stable").unwrap() + 1;
+
+        assert!(is_top_level_symbol(src, offset));
+    }
+
+    #[test]
+    fn lsp_rename_gate_rejects_agent_method_declaration_in_broken_file() {
+        let src = "agent Bot {\n    task nested() {}\n";
+        let offset = src.find("nested").unwrap() + 1;
+
+        assert!(!is_top_level_symbol(src, offset));
+    }
+
+    #[test]
+    fn lsp_usages_of_finds_all_occurrences() {
+        let src = "task foo() -> str { \"x\" }\nagent A { @on_start { r = foo() s = foo() } }\n";
+        let spans = usages_of(src, "foo");
+        assert!(
+            spans.len() >= 3,
+            "expected at least 3 occurrences of `foo` (decl + 2 calls), got {}",
+            spans.len()
+        );
+    }
+}

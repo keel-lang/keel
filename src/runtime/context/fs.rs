@@ -111,6 +111,7 @@ impl FileSystem for NativeFileSystem {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct InMemoryFileSystem {
     files: Mutex<HashMap<PathBuf, String>>,
@@ -118,10 +119,12 @@ pub struct InMemoryFileSystem {
 }
 
 impl InMemoryFileSystem {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
+    #[allow(dead_code)]
     fn normalize(path: &Path) -> PathBuf {
         if path.is_absolute() {
             path.to_path_buf()

@@ -150,6 +150,7 @@ impl PersistentMemoryStore for NativePersistentMemoryStore {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Default)]
 pub struct InMemoryPersistentMemoryStore {
     values: Mutex<HashMap<(String, String), HashMap<String, Value>>>,

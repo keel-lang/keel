@@ -11,7 +11,7 @@ use std::sync::Arc;
 use miette::{NamedSource, Result};
 
 use crate::ast::Program;
-use crate::lint::LintWarning;
+use crate::diagnostics::LintWarning;
 use crate::runtime::context::RuntimeContext;
 use crate::types::diagnostics::TypeDiagnostic;
 use crate::{formatter, hir, interpreter, lexer, lint, parser, types};

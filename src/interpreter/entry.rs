@@ -10,20 +10,6 @@ use super::environment::Environment;
 use super::state::{CallArgValue, Event, Interpreter};
 use super::value::Value;
 
-pub async fn run_with_source(
-    program: Program,
-    source: Option<NamedSource<String>>,
-    source_path: Option<&std::path::Path>,
-) -> Result<()> {
-    run_with_source_and_runtime(
-        program,
-        source,
-        source_path,
-        crate::runtime::context::RuntimeContext::native(),
-    )
-    .await
-}
-
 pub async fn run_with_source_and_runtime(
     program: Program,
     source: Option<NamedSource<String>>,

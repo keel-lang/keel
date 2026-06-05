@@ -8,7 +8,6 @@ mod ai;
 mod common;
 mod language;
 mod lint;
-mod lsp;
 mod memory;
 mod namespaces;
 mod net;

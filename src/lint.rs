@@ -18,20 +18,8 @@ use std::collections::HashSet;
 
 use crate::ast::visit::{self, Visitor};
 use crate::ast::*;
+use crate::diagnostics::LintWarning;
 use crate::lexer::Span;
-
-// ---------------------------------------------------------------------------
-// Warning shape
-// ---------------------------------------------------------------------------
-
-#[derive(Debug)]
-pub struct LintWarning {
-    pub message: String,
-    pub span: Option<Span>,
-    pub hint: Option<String>,
-    /// Whether `keel lint --fix` can automatically remove this warning's source.
-    pub fixable: bool,
-}
 
 // ---------------------------------------------------------------------------
 // Entry point

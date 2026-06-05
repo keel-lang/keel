@@ -50,16 +50,6 @@ fn fail_on_type_errors(checked: &session::CheckedProgram, path: &Path) -> Result
     Ok(())
 }
 
-/// Execute a `.keel` file.
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be read, parsed, or type-checked,
-/// or if the interpreter encounters a runtime error.
-pub async fn run_file(path: &Path) -> Result<()> {
-    run_file_with_runtime(path, RuntimeContext::native()).await
-}
-
 /// Execute a `.keel` file with an explicit runtime context.
 ///
 /// # Errors
@@ -225,7 +215,7 @@ pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
 /// Returns the original source unchanged when there are no fixable warnings.
 /// Otherwise returns a new `String` with fixable lines removed.
 #[must_use]
-pub fn apply_lint_fixes(source: &str, warnings: &[lint::LintWarning]) -> String {
+pub fn apply_lint_fixes(source: &str, warnings: &[crate::diagnostics::LintWarning]) -> String {
     let mut ranges: Vec<(usize, usize)> = warnings
         .iter()
         .filter(|w| w.fixable)
@@ -269,4 +259,310 @@ pub fn apply_lint_fixes(source: &str, warnings: &[lint::LintWarning]) -> String 
         result.replace_range(start..end, "");
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        apply_lint_fixes, build_file, check_file, fmt_file, lint_file, run_file_with_runtime,
+    };
+    use crate::diagnostics::LintWarning;
+    use crate::runtime::context::RuntimeContext;
+    use std::io::Write as _;
+
+    fn write_keel_file(source: &str) -> tempfile::NamedTempFile {
+        let mut file = tempfile::Builder::new()
+            .suffix(".keel")
+            .tempfile()
+            .expect("create temporary keel file");
+        file.write_all(source.as_bytes())
+            .expect("write temporary keel file");
+        file
+    }
+
+    #[test]
+    fn pipeline_check_reports_missing_file_as_named_path_error() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let missing = dir.path().join("missing.keel");
+
+        let err = check_file(&missing, false).expect_err("missing file should fail");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("Could not read") && message.contains("missing.keel"),
+            "expected readable missing-file diagnostic, got: {message}"
+        );
+    }
+
+    #[test]
+    fn pipeline_format_rewrites_valid_program_in_place() {
+        let file = write_keel_file(
+            r#"
+task greet(name: str) -> str { "hi {name}" }
+"#,
+        );
+
+        fmt_file(file.path()).expect("format should succeed");
+
+        let formatted = std::fs::read_to_string(file.path()).expect("read formatted source");
+        assert!(
+            formatted.contains("task greet(name: str) -> str"),
+            "formatted output should retain task signature:\n{formatted}"
+        );
+        assert!(
+            formatted.ends_with('\n'),
+            "formatter should write a trailing newline:\n{formatted:?}"
+        );
+    }
+
+    #[test]
+    fn pipeline_lint_fix_removes_safe_unused_binding_and_keeps_program_valid() {
+        let file = write_keel_file(
+            r#"
+agent A {
+  @on_start {
+    unused = "hello"
+    Io.show("done")
+  }
+}
+run(A)
+"#,
+        );
+
+        let err = lint_file(file.path(), true).expect_err("lint warnings still fail command");
+        let fixed = std::fs::read_to_string(file.path()).expect("read fixed source");
+
+        assert!(
+            err.to_string().contains("lint warning"),
+            "expected lint warning summary, got: {err}"
+        );
+        assert!(
+            !fixed.contains("unused ="),
+            "fixable unused binding should be removed:\n{fixed}"
+        );
+        check_file(file.path(), false).expect("fixed program should still type-check");
+    }
+
+    #[test]
+    fn pipeline_build_reaches_deferred_vm_compiler_without_writing_bytecode() {
+        let file = write_keel_file(
+            r#"
+task answer() -> int {
+  42
+}
+"#,
+        );
+        let bytecode_path = file.path().with_extension("keelc");
+
+        let err = build_file(file.path()).expect_err("build is deferred in v0.1");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("deferred post-v0.1"),
+            "expected deferred build diagnostic, got: {message}"
+        );
+        assert!(
+            !bytecode_path.exists(),
+            "deferred build must not write stale bytecode at {}",
+            bytecode_path.display()
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_run_keelc_rejected_on_extension_before_reading_file() {
+        // The extension check fires before any I/O, so any .keelc file —
+        // valid, invalid, or empty — produces the same deferred error.
+        let file = tempfile::Builder::new()
+            .suffix(".keelc")
+            .tempfile()
+            .expect("create temporary keelc file");
+
+        let err = run_file_with_runtime(file.path(), RuntimeContext::native())
+            .await
+            .expect_err(".keelc execution should be rejected");
+
+        assert!(
+            err.to_string()
+                .contains("Bytecode execution (.keelc) is not yet supported"),
+            "expected bytecode-deferred diagnostic, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_run_file_reports_type_errors_before_execution() {
+        let file = write_keel_file(
+            r#"
+agent A {
+  @on_start {
+    x: int = "wrong"
+    Io.show("should not run")
+  }
+}
+run(A)
+"#,
+        );
+
+        let err = run_file_with_runtime(file.path(), RuntimeContext::native())
+            .await
+            .expect_err("type errors should prevent execution");
+
+        assert!(
+            err.to_string().contains("type error"),
+            "expected type error summary, got: {err}"
+        );
+    }
+
+    #[test]
+    fn pipeline_build_reports_type_errors_before_deferred_compiler() {
+        let file = write_keel_file(
+            r#"
+task answer() -> int {
+  return "wrong"
+}
+"#,
+        );
+
+        let err = build_file(file.path()).expect_err("type error should fail build");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("type error"),
+            "expected build type-error summary, got: {message}"
+        );
+    }
+
+    #[test]
+    fn pipeline_lint_clean_program_succeeds_without_fixes() {
+        let file = write_keel_file(
+            r#"
+task greet(name: str) -> str {
+  "hello {name}"
+}
+
+agent A {
+  @on_start {
+    msg = greet("keel")
+    Io.show(msg)
+  }
+}
+run(A)
+"#,
+        );
+
+        lint_file(file.path(), false).expect("clean program should lint cleanly");
+    }
+
+    #[test]
+    fn pipeline_lint_reports_type_errors_before_warnings() {
+        let file = write_keel_file(
+            r#"
+agent A {
+  @on_start {
+    unused = "still not the first problem"
+    x: int = "wrong"
+  }
+}
+run(A)
+"#,
+        );
+
+        let err = lint_file(file.path(), false).expect_err("type error should stop lint");
+
+        let message = err.to_string();
+        assert!(
+            message.contains("fix before linting"),
+            "expected lint type-check guard, got: {message}"
+        );
+    }
+
+    #[test]
+    fn apply_lint_fixes_two_non_overlapping_warnings_both_removed() {
+        let source = "aaa\nbbb\nccc\n";
+
+        let warnings = vec![
+            LintWarning {
+                message: "unused".into(),
+                span: Some(1..2),
+                fixable: true,
+                hint: None,
+            },
+            LintWarning {
+                message: "unused".into(),
+                span: Some(5..6),
+                fixable: true,
+                hint: None,
+            },
+        ];
+
+        let result = apply_lint_fixes(source, &warnings);
+        assert!(
+            !result.contains("aaa"),
+            "first fixable line should be removed:\n{result:?}"
+        );
+        assert!(
+            !result.contains("bbb"),
+            "second fixable line should be removed:\n{result:?}"
+        );
+        assert!(
+            result.contains("ccc"),
+            "unfixed line should remain:\n{result:?}"
+        );
+    }
+
+    #[test]
+    fn apply_lint_fixes_overlapping_ranges_do_not_panic() {
+        let source = "aaa\nbbb\nccc\n";
+
+        let warnings = vec![
+            LintWarning {
+                message: "unused".into(),
+                span: Some(0..4),
+                fixable: true,
+                hint: None,
+            },
+            LintWarning {
+                message: "unused".into(),
+                span: Some(4..8),
+                fixable: true,
+                hint: None,
+            },
+        ];
+
+        let result = apply_lint_fixes(source, &warnings);
+        assert!(
+            !result.contains("aaa"),
+            "first overlapping span should be removed:\n{result:?}"
+        );
+        assert!(
+            !result.contains("bbb"),
+            "second overlapping span should be removed:\n{result:?}"
+        );
+    }
+
+    // ── smoke: every example must pass `keel check` ──────────────────────────
+
+    #[test]
+    fn examples_all_parse() {
+        let examples_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples");
+        let mut names: Vec<String> = std::fs::read_dir(&examples_dir)
+            .expect("read examples directory")
+            .filter_map(|entry| {
+                let path = entry.expect("read examples entry").path();
+                if path.extension().and_then(|ext| ext.to_str()) == Some("keel") {
+                    path.file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .map(str::to_owned)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        names.sort();
+
+        for name in names {
+            let path = examples_dir.join(format!("{name}.keel"));
+            check_file(&path, false)
+                .unwrap_or_else(|e| panic!("`keel check {name}.keel` failed: {e}"));
+        }
+    }
 }

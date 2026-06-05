@@ -1,5 +1,7 @@
 //! VM machine — deferred post-v0.1 (see `compiler.rs`).
 
+#![allow(dead_code)]
+
 use super::bytecode::CompiledProgram;
 
 pub struct VM;

@@ -6,8 +6,8 @@ use clap::{Parser, Subcommand};
 use miette::Result;
 use std::path::PathBuf;
 
-use keel_lang::runtime::context::{NativeEnv, RuntimeConfig, RuntimeContext};
-use keel_lang::{lsp, pipeline, repl};
+use crate::runtime::context::{NativeEnv, RuntimeConfig, RuntimeContext};
+use crate::{lsp, pipeline, repl};
 
 #[derive(Parser)]
 #[command(

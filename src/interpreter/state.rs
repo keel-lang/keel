@@ -85,6 +85,7 @@ pub struct AgentInstance {
 
 /// Runtime event posted to the interpreter's mailbox from tokio tasks
 /// (schedulers, message dispatchers, …) and consumed by `execute`.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Event {
     /// Fire a registered closure on behalf of an agent.
@@ -106,6 +107,7 @@ pub enum Event {
 }
 
 /// A scheduled closure awaiting firing via an `Event::FireClosure`.
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct ScheduledClosure {
     pub agent_name: String,

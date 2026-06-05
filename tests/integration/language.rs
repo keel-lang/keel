@@ -4106,18 +4106,8 @@ task run_test() {
 }
 run_test()
 "#;
-    use keel_lang::formatter::format_program;
-    use keel_lang::lexer::lex;
-    use keel_lang::parser::parse;
-    use miette::NamedSource;
-    let named = NamedSource::new("t.keel", src.to_string());
-    let tokens = lex(src, &named).expect("lex");
-    let program = parse(tokens, src.len(), &named).expect("parse");
-    let once = format_program(&program);
-    let named2 = NamedSource::new("t.keel", once.clone());
-    let tokens2 = lex(&once, &named2).expect("lex 2");
-    let program2 = parse(tokens2, once.len(), &named2).expect("parse 2");
-    let twice = format_program(&program2);
+    let once = keel_lang::session::fmt_source(src, "t.keel").expect("fmt once");
+    let twice = keel_lang::session::fmt_source(&once, "t.keel").expect("fmt twice");
     assert_eq!(
         once, twice,
         "formatter not idempotent:\n--- once ---\n{once}\n--- twice ---\n{twice}"

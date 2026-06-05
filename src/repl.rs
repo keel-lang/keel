@@ -20,10 +20,6 @@ use crate::{lexer, parser};
 const PROMPT: &str = "keel> ";
 const CONT_PROMPT: &str = "  ... ";
 
-pub async fn start() -> Result<()> {
-    start_with_runtime(RuntimeContext::native()).await
-}
-
 pub async fn start_with_runtime(runtime: Arc<RuntimeContext>) -> Result<()> {
     println!("Keel REPL — v0.1 (alpha). Ctrl-D to exit.");
 

@@ -12,6 +12,7 @@
 ///
 /// Avoids heap allocation so [`BuiltinMethod`] entries can live in `static`
 /// storage. Convert to the full checker `Ty` with `types::prelude::ty_from_spec`.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TySpec {
     // Primitives
@@ -42,36 +43,6 @@ pub enum TySpec {
     ListOfMapStrDynamic,
     /// Caller must handle this case contextually (type is unknown statically).
     Unknown,
-}
-
-impl TySpec {
-    /// Render this type spec as the Keel source-language type string.
-    pub fn to_keel_str(self) -> &'static str {
-        match self {
-            TySpec::Int => "int",
-            TySpec::Float => "float",
-            TySpec::Str => "str",
-            TySpec::Bool => "bool",
-            TySpec::None_ => "none",
-            TySpec::Datetime => "datetime",
-            TySpec::Duration => "duration",
-            TySpec::Uuid => "Uuid",
-            TySpec::Dynamic => "dynamic",
-            TySpec::DbConnection => "DbConnection",
-            TySpec::NullableStr => "str?",
-            TySpec::NullableInt => "int?",
-            TySpec::NullableFloat => "float?",
-            TySpec::NullableUuid => "Uuid?",
-            TySpec::NullableDatetime => "datetime?",
-            TySpec::NullableDynamic => "dynamic?",
-            TySpec::ListOfStr => "list[str]",
-            TySpec::ListOfInt => "list[int]",
-            TySpec::ListOfListOfStr => "list[list[str]]",
-            TySpec::ListOfMapStrStr => "list[map[str, str]]",
-            TySpec::ListOfMapStrDynamic => "list[map[str, dynamic]]",
-            TySpec::Unknown => "unknown",
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +101,7 @@ pub struct BuiltinMethod {
     pub name: &'static str,
     /// Declared parameter list. Empty `&[]` means zero or variadic
     /// parameters that are not statically validated by the checker yet.
+    #[allow(dead_code)]
     pub params: &'static [BuiltinParam],
     /// How to compute the return type.
     pub result: BuiltinResult,

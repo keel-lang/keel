@@ -1,12 +1,12 @@
 use miette::Result;
 
-use crate::ast::{AttributeBody, Expr, LambdaBody, LambdaParam, SpannedExpr, TaskDecl};
+use crate::ast::{AttributeBody, LambdaBody, LambdaParam, TaskDecl};
 
 use super::bind_value;
 use super::environment::Environment;
 use super::promote::promote_value;
 use super::runtime_error;
-use super::state::{AgentDef, AllowedTools, CallArgValue, Interpreter};
+use super::state::{AllowedTools, CallArgValue, Interpreter};
 use super::stmt::{ExprFlow, StmtOutcome};
 use super::value::Value;
 
@@ -214,84 +214,5 @@ impl Interpreter {
             a.lock().allowed_tools = Some(AllowedTools(allowed));
         }
         Ok(())
-    }
-
-    /// Extract @limits from an agent's attributes.
-    /// Returns (timeout_secs, max_tokens, max_cost).
-    pub fn agent_limits(
-        &self,
-        agent: &AgentDef,
-    ) -> Option<(Option<f64>, Option<i64>, Option<f64>)> {
-        for attr in &agent.attributes {
-            if attr.name == "limits" {
-                let mut timeout = None;
-                let mut max_tokens = None;
-                let mut max_cost = None;
-
-                // Process a single (key-name, expr) pair into the limit slots.
-                // Base fields are visited first; overrides win on duplicates.
-                let mut apply = |key: &str, node: &SpannedExpr| {
-                    let expr = &node.kind;
-                    match key {
-                        "timeout" => {
-                            if let Expr::Duration { value, unit } = expr
-                                && let Expr::Integer(n) = &value.as_ref().kind
-                            {
-                                timeout = Some(Value::duration_seconds(*n, *unit));
-                            }
-                        }
-                        "max_tokens" => {
-                            if let Expr::Integer(n) = expr {
-                                max_tokens = Some(*n);
-                            }
-                        }
-                        "max_cost" => {
-                            if let Expr::Float(f) = expr {
-                                max_cost = Some(*f);
-                            } else if let Expr::Integer(n) = expr {
-                                max_cost = Some(*n as f64);
-                            }
-                        }
-                        _ => {}
-                    }
-                };
-
-                match &attr.body {
-                    AttributeBody::Expr(node) if matches!(&node.kind, Expr::StructLit(_)) => {
-                        let Expr::StructLit(f) = &node.kind else {
-                            unreachable!()
-                        };
-                        for (k, expr) in f {
-                            if let Some(name) = k.as_str() {
-                                apply(name, expr);
-                            }
-                        }
-                    }
-                    AttributeBody::Expr(node)
-                        if matches!(&node.kind, Expr::StructSpreadUpdate { .. }) =>
-                    {
-                        let Expr::StructSpreadUpdate { base, overrides } = &node.kind else {
-                            unreachable!()
-                        };
-                        if let Expr::StructLit(base_fields) = &base.as_ref().kind {
-                            for (k, expr) in base_fields {
-                                if let Some(name) = k.as_str() {
-                                    apply(name, expr);
-                                }
-                            }
-                        }
-                        for (k, expr) in overrides {
-                            apply(k.as_str(), expr);
-                        }
-                    }
-                    _ => continue,
-                }
-
-                if timeout.is_some() || max_tokens.is_some() || max_cost.is_some() {
-                    return Some((timeout, max_tokens, max_cost));
-                }
-            }
-        }
-        None
     }
 }

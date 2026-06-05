@@ -63,8 +63,7 @@ impl Environment {
         false
     }
 
-    /// Names bound in the top-level (outermost) scope. Used by the REPL
-    /// for `:env` introspection.
+    #[cfg(test)]
     pub fn top_scope_names(&self) -> Vec<String> {
         self.scopes
             .first()

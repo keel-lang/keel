@@ -1,7 +1,6 @@
 use std::io::{self, Read};
 
-use keel_lang::builtins::{BuiltinMethod, BuiltinResult};
-use keel_lang::types::prelude::catalog;
+use keel_lang::catalog::{BuiltinMethod, BuiltinResult, TySpec, catalog};
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -107,19 +106,46 @@ fn render_namespace_table(ns: &str) -> String {
     out
 }
 
+fn ty_spec_to_keel_str(spec: TySpec) -> &'static str {
+    match spec {
+        TySpec::Int => "int",
+        TySpec::Float => "float",
+        TySpec::Str => "str",
+        TySpec::Bool => "bool",
+        TySpec::None_ => "none",
+        TySpec::Datetime => "datetime",
+        TySpec::Duration => "duration",
+        TySpec::Uuid => "Uuid",
+        TySpec::Dynamic => "dynamic",
+        TySpec::DbConnection => "DbConnection",
+        TySpec::NullableStr => "str?",
+        TySpec::NullableInt => "int?",
+        TySpec::NullableFloat => "float?",
+        TySpec::NullableUuid => "Uuid?",
+        TySpec::NullableDatetime => "datetime?",
+        TySpec::NullableDynamic => "dynamic?",
+        TySpec::ListOfStr => "list[str]",
+        TySpec::ListOfInt => "list[int]",
+        TySpec::ListOfListOfStr => "list[list[str]]",
+        TySpec::ListOfMapStrStr => "list[map[str, str]]",
+        TySpec::ListOfMapStrDynamic => "list[map[str, dynamic]]",
+        TySpec::Unknown => "unknown",
+    }
+}
+
 fn render_signature(m: &BuiltinMethod) -> String {
     let params = m
         .params
         .iter()
         .map(|p| {
             let opt = if p.optional { "?" } else { "" };
-            format!("{}{}: {}", p.name, opt, p.ty.to_keel_str())
+            format!("{}{}: {}", p.name, opt, ty_spec_to_keel_str(p.ty))
         })
         .collect::<Vec<_>>()
         .join(", ");
 
     let ret = match m.result {
-        BuiltinResult::Fixed(spec) => spec.to_keel_str().to_string(),
+        BuiltinResult::Fixed(spec) => ty_spec_to_keel_str(spec).to_string(),
         BuiltinResult::AiExtract => "T?".to_string(),
         BuiltinResult::AiClassify => "Enum?".to_string(),
         BuiltinResult::Unknown => "dynamic".to_string(),

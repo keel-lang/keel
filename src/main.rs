@@ -1,8 +1,4 @@
-use miette::Result;
-
-mod cli;
-
 #[tokio::main]
-async fn main() -> Result<()> {
-    cli::run().await
+async fn main() -> miette::Result<()> {
+    keel_lang::run().await
 }

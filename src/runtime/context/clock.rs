@@ -34,18 +34,6 @@ impl FixedClock {
             instant: parking_lot::Mutex::new(Instant::now()),
         }
     }
-
-    pub fn advance(&self, d: std::time::Duration) {
-        let cd = chrono::Duration::from_std(d).unwrap_or(chrono::Duration::zero());
-        {
-            let mut utc = self.utc.lock();
-            *utc += cd;
-        }
-        {
-            let mut instant = self.instant.lock();
-            *instant += d;
-        }
-    }
 }
 
 #[cfg(any(test, feature = "test-util"))]

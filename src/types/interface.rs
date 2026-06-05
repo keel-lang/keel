@@ -173,23 +173,6 @@ pub struct Signature {
 /// documentation: `Dynamic` in the required position is a wildcard; otherwise
 /// structural `PartialEq` is used.
 ///
-/// # Examples
-///
-/// ```
-/// use keel_lang::types::interface::{Signature, TypeEnv, resolve_type_expr, signature_satisfies};
-/// use keel_lang::ast::TypeExpr;
-///
-/// let env = TypeEnv::new();
-/// let required = Signature {
-///     params: vec![],
-///     ret: resolve_type_expr(&TypeExpr::Named("str".into()), &env),
-/// };
-/// let actual = Signature {
-///     params: vec![],
-///     ret: resolve_type_expr(&TypeExpr::Named("str".into()), &env),
-/// };
-/// assert!(signature_satisfies(&required, &actual));
-/// ```
 pub fn signature_satisfies(required: &Signature, actual: &Signature) -> bool {
     if required.params.len() != actual.params.len() {
         return false;
@@ -372,5 +355,19 @@ mod tests {
             ret: Ty::Str,
         };
         assert!(!signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn signature_satisfies_matching_return_types() {
+        let env = TypeEnv::new();
+        let required = Signature {
+            params: vec![],
+            ret: resolve_type_expr(&TypeExpr::Named("str".into()), &env),
+        };
+        let actual = Signature {
+            params: vec![],
+            ret: resolve_type_expr(&TypeExpr::Named("str".into()), &env),
+        };
+        assert!(signature_satisfies(&required, &actual));
     }
 }

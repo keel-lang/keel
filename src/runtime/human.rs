@@ -4,20 +4,10 @@ use std::io::{self, Write};
 use colored::Colorize;
 
 use crate::interpreter::value::{MapKey, Value};
-use crate::runtime::context::EnvProvider;
 
 /// Display a notification to the user (non-blocking).
 pub fn notify(message: &str) {
     println!("  {} {}", "▸".bright_cyan(), message);
-}
-
-/// Show structured data to the user with formatted output.
-pub fn show(value: &Value) {
-    let repl_mode = crate::runtime::context::NativeEnv
-        .var("KEEL_REPL")
-        .as_deref()
-        == Some("1");
-    show_with_repl(value, repl_mode);
 }
 
 pub fn show_with_repl(value: &Value, repl_mode: bool) {

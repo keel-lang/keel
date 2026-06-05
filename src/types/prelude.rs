@@ -24,7 +24,7 @@ use crate::ast::{Binding, Node, Param, TaskSig, TypeExpr};
 use crate::types::ty::{Ty, UnknownReason};
 
 // Re-export the descriptor types so callers only need to import from here.
-pub use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
+pub use crate::builtins::{BuiltinMethod, BuiltinResult, TySpec};
 
 /// Convert a [`TySpec`] into the full [`Ty`] used by the checker.
 pub(crate) fn ty_from_spec(spec: TySpec) -> Ty {
@@ -321,10 +321,10 @@ mod tests {
             let mut set = HashSet::new();
             for line in docs.lines() {
                 let trimmed = line.trim();
-                if let Some(rest) = trimmed.strip_prefix("{{#catalog ") {
-                    if let Some(ns) = rest.strip_suffix("}}") {
-                        set.insert(ns.trim());
-                    }
+                if let Some(rest) = trimmed.strip_prefix("{{#catalog ")
+                    && let Some(ns) = rest.strip_suffix("}}")
+                {
+                    set.insert(ns.trim());
                 }
             }
             set
