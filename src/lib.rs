@@ -22,6 +22,7 @@ pub mod parser;
 pub mod pipeline;
 pub mod repl;
 pub mod runtime;
+pub mod session;
 pub mod types;
 pub mod vm;
 

@@ -1,8 +1,9 @@
-//! Compiler pipeline entry points for `keel run`, `check`, `fmt`, `build`, and `lint`.
+//! CLI entry points for `keel run`, `check`, `fmt`, `build`, and `lint`.
 //!
-//! These functions encode the canonical lex → parse → HIR → type-check → execute sequence.
-//! They live in the library so integration tests can call them directly without
-//! spawning the `keel` binary as a subprocess.
+//! Thin wrappers around `session::*` that add file I/O and stderr rendering.
+//! All side-effect-free compilation logic lives in `session.rs`; this module
+//! is responsible only for reading files, printing diagnostics, and returning
+//! exit-code-shaped `miette::Result<()>` values.
 
 #![warn(missing_docs)]
 
@@ -11,10 +12,13 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::lint;
 use crate::runtime::context::RuntimeContext;
-use crate::{formatter, hir, interpreter, lexer, lint, parser, types, vm};
+use crate::session;
+use crate::types::diagnostics::TypeDiagnostic;
+use crate::vm;
 
-fn load_and_parse(path: &Path) -> Result<(String, NamedSource<String>, crate::ast::Program)> {
+fn load_source(path: &Path) -> Result<(String, String)> {
     let source = fs::read_to_string(path)
         .into_diagnostic()
         .map_err(|e| miette::miette!("Could not read '{}': {}", path.display(), e))?;
@@ -22,27 +26,28 @@ fn load_and_parse(path: &Path) -> Result<(String, NamedSource<String>, crate::as
         .file_name()
         .map(|f| f.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".to_string());
-    let named_src = NamedSource::new(&filename, source.clone());
-    let tokens = lexer::lex(&source, &named_src)?;
-    let program = parser::parse(tokens, source.len(), &named_src)?;
-    Ok((source, named_src, program))
+    Ok((source, filename))
 }
 
 /// Print type errors in miette diagnostic format. Only called on error paths,
 /// so we hint the compiler to keep this out of the hot instruction cache.
-///
-/// # Errors
-///
-/// Nothing is returned; errors are printed to stderr. The caller is responsible
-/// for constructing a summary error after this function returns.
 #[cold]
-fn report_type_errors(
-    errors: &[types::diagnostics::TypeDiagnostic],
-    named_src: &NamedSource<String>,
-) {
+fn report_type_errors(errors: &[TypeDiagnostic], named_src: &NamedSource<String>) {
     for err in errors {
         eprintln!("{:?}", err.to_report(named_src));
     }
+}
+
+fn fail_on_type_errors(checked: &session::CheckedProgram, path: &Path) -> Result<()> {
+    if checked.has_errors() {
+        report_type_errors(&checked.diagnostics, &checked.source);
+        return Err(miette::miette!(
+            "{} type error(s) in {}",
+            checked.diagnostics.len(),
+            path.display()
+        ));
+    }
+    Ok(())
 }
 
 /// Execute a `.keel` file.
@@ -69,22 +74,11 @@ pub async fn run_file_with_runtime(path: &Path, runtime: Arc<RuntimeContext>) ->
         ));
     }
 
-    let (_, named_src, program) = load_and_parse(path)?;
-
-    let hir = hir::lower_ast(&program);
-    let errors = types::checker::check(&hir);
-    if !errors.is_empty() {
-        report_type_errors(&errors, &named_src);
-        return Err(miette::miette!(
-            "{} type error(s) in {}",
-            errors.len(),
-            path.display()
-        ));
-    }
-
-    interpreter::run_with_source_and_runtime(program, Some(named_src.clone()), Some(path), runtime)
-        .await?;
-    Ok(())
+    let (src, name) = load_source(path)?;
+    let (program, named_src) = session::parse_source(&src, &name)?;
+    let checked = session::check_source(program, named_src);
+    fail_on_type_errors(&checked, path)?;
+    session::run_source(checked, runtime, Some(path)).await
 }
 
 /// Type-check a `.keel` file without executing it.
@@ -93,23 +87,14 @@ pub async fn run_file_with_runtime(path: &Path, runtime: Arc<RuntimeContext>) ->
 ///
 /// Returns an error with a count if one or more type errors are found.
 pub fn check_file(path: &Path, strict: bool) -> Result<()> {
-    let (_, named_src, program) = load_and_parse(path)?;
-
-    let hir = hir::lower_ast(&program);
-    let errors = if strict {
-        types::checker::check_strict(&hir)
+    let (src, name) = load_source(path)?;
+    let (program, named_src) = session::parse_source(&src, &name)?;
+    let checked = if strict {
+        session::check_source_strict(program, named_src)
     } else {
-        types::checker::check(&hir)
+        session::check_source(program, named_src)
     };
-
-    if !errors.is_empty() {
-        report_type_errors(&errors, &named_src);
-        return Err(miette::miette!(
-            "{} type error(s) in {}",
-            errors.len(),
-            path.display()
-        ));
-    }
+    fail_on_type_errors(&checked, path)?;
 
     eprintln!("✓ {} is valid", path.display());
     Ok(())
@@ -121,23 +106,13 @@ pub fn check_file(path: &Path, strict: bool) -> Result<()> {
 ///
 /// Returns an error if parsing, type-checking, or compilation fails.
 pub fn build_file(path: &Path) -> Result<()> {
-    let (_, _, program) = load_and_parse(path)?;
+    let (src, name) = load_source(path)?;
+    let (program, named_src) = session::parse_source(&src, &name)?;
+    let checked = session::check_source(program, named_src);
+    fail_on_type_errors(&checked, path)?;
 
-    let hir = hir::lower_ast(&program);
-    let errors = types::checker::check(&hir);
-    if !errors.is_empty() {
-        for err in &errors {
-            eprintln!("  Type error: {err}");
-        }
-        return Err(miette::miette!(
-            "{} type error(s) in {}",
-            errors.len(),
-            path.display()
-        ));
-    }
-
-    let compiled =
-        vm::compiler::compile(&program).map_err(|e| miette::miette!("Compilation error: {e}"))?;
+    let compiled = vm::compiler::compile(&checked.ast)
+        .map_err(|e| miette::miette!("Compilation error: {e}"))?;
 
     let out_path = path.with_extension("keelc");
     let bytes = serde_json::to_vec_pretty(&compiled).into_diagnostic()?;
@@ -166,8 +141,8 @@ pub fn build_file(path: &Path) -> Result<()> {
 ///
 /// Returns an error if the file cannot be read, parsed, or written.
 pub fn fmt_file(path: &Path) -> Result<()> {
-    let (_, _, program) = load_and_parse(path)?;
-    let formatted = formatter::format_program(&program);
+    let (src, name) = load_source(path)?;
+    let formatted = session::fmt_source(&src, &name)?;
     fs::write(path, &formatted).into_diagnostic()?;
     eprintln!("✓ Formatted {}", path.display());
     Ok(())
@@ -180,20 +155,19 @@ pub fn fmt_file(path: &Path) -> Result<()> {
 /// Returns an error if type-checking fails (lint requires clean types), or if
 /// one or more lint warnings are found.
 pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
-    let (source, named_src, program) = load_and_parse(path)?;
-
-    let hir = hir::lower_ast(&program);
-    let type_errors = types::checker::check(&hir);
-    if !type_errors.is_empty() {
-        report_type_errors(&type_errors, &named_src);
+    let (src, name) = load_source(path)?;
+    let (program, named_src) = session::parse_source(&src, &name)?;
+    let checked = session::check_source(program, named_src);
+    if checked.has_errors() {
+        report_type_errors(&checked.diagnostics, &checked.source);
         return Err(miette::miette!(
             "{} type error(s) in {} — fix before linting",
-            type_errors.len(),
+            checked.diagnostics.len(),
             path.display()
         ));
     }
 
-    let warnings = lint::lint(&program);
+    let warnings = lint::lint(&checked.ast);
 
     if warnings.is_empty() {
         eprintln!("✓ {} — no lint warnings", path.display());
@@ -210,7 +184,7 @@ pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
                 labels = vec![miette::LabeledSpan::at(span.clone(), &label)],
                 "Lint warning"
             )
-            .with_source_code(named_src.clone());
+            .with_source_code(checked.source.clone());
             eprintln!("{:?}", report);
         } else {
             eprint!("  warning: {}", w.message);
@@ -227,7 +201,7 @@ pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
         .count();
 
     if fix && fixable_count > 0 {
-        let fixed_source = apply_lint_fixes(&source, &warnings);
+        let fixed_source = apply_lint_fixes(&src, &warnings);
         fs::write(path, &fixed_source).into_diagnostic()?;
         eprintln!("✓ Applied {fixable_count} fix(es) to {}", path.display());
     } else if !fix && fixable_count > 0 {

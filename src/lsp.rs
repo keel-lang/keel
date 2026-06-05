@@ -7,15 +7,13 @@
 
 use std::collections::HashMap;
 
-use miette::NamedSource;
 use parking_lot::Mutex;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
 use tower_lsp::{Client, LanguageServer, LspService, Server};
 
-use crate::hir;
-use crate::lexer::{self, Span};
-use crate::parser;
+use crate::lexer::Span;
+use crate::session;
 use crate::types::checker;
 use crate::types::prelude;
 
@@ -345,40 +343,27 @@ impl Backend {
 /// Run lex/parse/type-check and convert every failure into an LSP
 /// diagnostic. Empty vec means a clean file.
 pub fn analyze(text: &str) -> Vec<Diagnostic> {
-    let mut out = Vec::new();
-
-    let named = NamedSource::new("file", text.to_string());
-
-    let tokens = match lexer::lex(text, &named) {
-        Ok(t) => t,
-        Err(report) => {
-            for (message, span) in spans_from_report(&report) {
-                out.push(diag(text, span, message, DiagnosticSeverity::ERROR));
-            }
-            return out;
+    match session::parse_source(text, "file") {
+        Err(report) => spans_from_report(&report)
+            .into_iter()
+            .map(|(msg, span)| diag(text, span, msg, DiagnosticSeverity::ERROR))
+            .collect(),
+        Ok((program, source)) => {
+            let checked = session::check_source(program, source);
+            checked
+                .diagnostics
+                .iter()
+                .map(|err| {
+                    diag(
+                        text,
+                        err.span().clone(),
+                        err.message(),
+                        DiagnosticSeverity::ERROR,
+                    )
+                })
+                .collect()
         }
-    };
-
-    let program = match parser::parse(tokens, text.len(), &named) {
-        Ok(p) => p,
-        Err(report) => {
-            for (message, span) in spans_from_report(&report) {
-                out.push(diag(text, span, message, DiagnosticSeverity::ERROR));
-            }
-            return out;
-        }
-    };
-
-    let hir = hir::lower_ast(&program);
-    for err in checker::check(&hir) {
-        out.push(diag(
-            text,
-            err.span().clone(),
-            err.message(),
-            DiagnosticSeverity::ERROR,
-        ));
     }
-    out
 }
 
 /// Extract `(label, span)` pairs from a miette::Report. Keel's lexer
