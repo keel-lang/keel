@@ -37,6 +37,30 @@ pub enum SymbolKind {
     Binding,
 }
 
+impl SymbolKind {
+    /// Return `true` for symbols that are safe to rename with a file-wide
+    /// strategy: top-level tasks, agents, enums, type aliases, interfaces,
+    /// and externs.
+    pub fn is_top_level(self) -> bool {
+        matches!(
+            self,
+            Self::TopTask
+                | Self::Agent
+                | Self::Enum
+                | Self::TypeName
+                | Self::Interface
+                | Self::Extern
+        )
+    }
+
+    /// Return `true` for symbols that have a go-to-definition target:
+    /// everything covered by [`is_top_level`] plus agent/impl/interface
+    /// methods.
+    pub fn is_definition(self) -> bool {
+        self.is_top_level() || matches!(self, Self::Method)
+    }
+}
+
 /// Symbol declaration stored by the HIR.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Symbol {
@@ -171,6 +195,17 @@ impl<'ast> Hir<'ast> {
     pub fn symbol(&self, id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(id.0)
     }
+
+    /// Iterate all identifier reference spans together with their resolutions.
+    ///
+    /// Used by the LSP semantic index builder to extract owned navigation data
+    /// (hover types, go-to-definition targets, rename gates) without keeping the
+    /// `Hir` alive past the analysis phase.
+    pub fn iter_references(&self) -> impl Iterator<Item = (Span, Resolution)> + '_ {
+        self.references
+            .iter()
+            .map(|(&(start, end), &res)| (start..end, res))
+    }
 }
 
 /// Lower a parsed AST into a read-only HIR index.
@@ -234,7 +269,7 @@ impl<'ast> Lowerer<'ast> {
     }
 
     fn collect_globals(&mut self) {
-        for name in prelude_names() {
+        for name in prelude_names().iter().cloned() {
             self.globals.insert(
                 name,
                 Resolution {

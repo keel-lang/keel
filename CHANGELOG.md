@@ -26,6 +26,10 @@ All notable changes to Keel.
 
 ### Fixed
 
+- **LSP `rename` blocklist is now namespace-only and dynamically derived.** Previously a hardcoded list that drifted behind the catalog (missing `Math`, `Shell`, `Csv`), and the initial fix over-corrected by using `prelude_names()` — which also includes primitive types, symbol-hint words like `json`/`text`/`session`, and built-in interface names, causing user-defined tasks with those names to be silently un-renameable. The blocklist is now derived from `prelude::catalog()` namespace names only, so only actual namespaces (`Ai`, `Io`, `Http`, …) are protected; primitives and other identifiers are handled by a separate explicit list. Closes [#22](https://github.com/keel-lang/keel/issues/22).
+
+- **LSP hover on primitive type annotations returns `type \`int\`` instead of `namespace \`int\``.** Hovering over `int`, `str`, `bool`, `float`, `none`, `datetime`, `duration`, `list`, `map`, `set`, or `dynamic` in a type annotation now correctly labels them as `type`, not `namespace`. The regression was introduced when `prelude_names()` (which includes primitive type names) was checked before the more specific primitive-type branch in both `type_at` and the semantic index name-map builder.
+
 - **Parser now reports all syntax errors, not just the first.** When a source file contains syntax errors in multiple declarations, all of them are now surfaced — both in the LSP (as individual diagnostics) and in the CLI (as labeled spans in a single miette report). Previously, only the first error was collected and the rest were silently discarded. Implemented via declaration-level error recovery (`skip_then_retry_until`) in the program parser, plus updating `into_miette` to build one `LabeledSpan` per chumsky error. Fixes [#26](https://github.com/keel-lang/keel/issues/26).
 
   ```keel

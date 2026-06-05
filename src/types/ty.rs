@@ -118,6 +118,30 @@ impl Ty {
 }
 
 // ---------------------------------------------------------------------------
+// Primitive type name → hover label pairs
+// ---------------------------------------------------------------------------
+
+/// Mapping from every primitive type name as it appears in source to the
+/// hover label shown in the LSP.
+///
+/// Centralises the list so `type_at`, `build_semantic_index`, and any future
+/// consumer share one authoritative source.
+pub(crate) const PRIMITIVE_TYPE_LABELS: &[(&str, &str)] = &[
+    ("int", "type `int`"),
+    ("float", "type `float`"),
+    ("str", "type `str`"),
+    ("bool", "type `bool`"),
+    ("none", "type `none`"),
+    ("datetime", "type `datetime`"),
+    ("duration", "type `duration`"),
+    ("Uuid", "type `Uuid`"),
+    ("list", "type `list`"),
+    ("map", "type `map`"),
+    ("set", "type `set`"),
+    ("dynamic", "type `dynamic`"),
+];
+
+// ---------------------------------------------------------------------------
 // Human-readable descriptions
 // ---------------------------------------------------------------------------
 

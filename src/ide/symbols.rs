@@ -5,7 +5,7 @@
 //! source, then reads the declaration span through HIR symbol IDs,
 //! falling back to token-level scanning when parsing fails (e.g. mid-edit).
 
-use crate::hir::{Hir, SymbolKind};
+use crate::hir::Hir;
 use crate::lexer::{Span, Token};
 use logos::Logos;
 
@@ -95,17 +95,7 @@ pub fn is_top_level_symbol(text: &str, offset: usize) -> bool {
                 .iter()
                 .find(|symbol| symbol.name == name && symbol.span == ident_span)
         })
-        .is_some_and(|symbol| {
-            matches!(
-                symbol.kind,
-                SymbolKind::TopTask
-                    | SymbolKind::Agent
-                    | SymbolKind::Enum
-                    | SymbolKind::TypeName
-                    | SymbolKind::Interface
-                    | SymbolKind::Extern
-            )
-        })
+        .is_some_and(|symbol| symbol.kind.is_top_level())
 }
 
 /// Return whether `span` is the name token of a top-level declaration.
@@ -151,7 +141,7 @@ fn definition_of_in_hir(hir: &Hir<'_>, name: &str, ident_span: &Span) -> Option<
     hir.symbols()
         .iter()
         .find(|symbol| {
-            symbol.name == name && symbol.span == *ident_span && is_definition_symbol(symbol.kind)
+            symbol.name == name && symbol.span == *ident_span && symbol.kind.is_definition()
         })
         .or_else(|| {
             hir.resolve_global(name)
@@ -159,19 +149,6 @@ fn definition_of_in_hir(hir: &Hir<'_>, name: &str, ident_span: &Span) -> Option<
                 .and_then(|id| hir.symbol(id))
         })
         .map(|symbol| symbol.span.clone())
-}
-
-fn is_definition_symbol(kind: SymbolKind) -> bool {
-    matches!(
-        kind,
-        SymbolKind::TopTask
-            | SymbolKind::Agent
-            | SymbolKind::Enum
-            | SymbolKind::TypeName
-            | SymbolKind::Interface
-            | SymbolKind::Extern
-            | SymbolKind::Method
-    )
 }
 
 /// Token-level fallback for when the source cannot be parsed.

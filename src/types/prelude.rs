@@ -19,6 +19,7 @@
 //! call [`ty_from_spec`].
 
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 use crate::ast::{Binding, Node, Param, TaskSig, TypeExpr};
 use crate::types::ty::{Ty, UnknownReason};
@@ -85,23 +86,19 @@ pub(crate) fn catalog_method(namespace: &str, name: &str) -> Option<&'static Bui
 // Prelude names
 // ---------------------------------------------------------------------------
 
-/// Return the set of identifiers that are always in scope — prelude
-/// namespaces, built-in type names, top-level builtins, symbol hint
-/// keywords, and built-in interface names.
-///
-/// The checker pre-seeds its identifier table with this set so that
-/// references to `Ai`, `str`, `run`, `json`, `Stringable`, etc. do not
-/// produce spurious "undefined identifier" errors.
-pub(crate) fn prelude_names() -> HashSet<String> {
-    let mut prelude = HashSet::new();
-
-    // Prelude namespaces — derived from the catalog to stay in sync.
+static NAMESPACE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
     let mut seen = HashSet::new();
+    let mut out = HashSet::new();
     for entry in catalog() {
         if seen.insert(entry.namespace) {
-            prelude.insert(entry.namespace.to_string());
+            out.insert(entry.namespace.to_string());
         }
     }
+    out
+});
+
+static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    let mut prelude = NAMESPACE_NAMES.clone();
 
     // Top-level builtins
     for n in ["run", "stop", "min", "max", "uuid", "typeof"] {
@@ -140,8 +137,7 @@ pub(crate) fn prelude_names() -> HashSet<String> {
         prelude.insert(n.to_string());
     }
 
-    // Symbol identifiers used as hint args (see runtime::SYMBOL_IDENTS)
-    // and attribute-value keywords (`@memory persistent`, etc.).
+    // Symbol identifiers used as hint args and attribute-value keywords.
     for n in [
         "sentence",
         "sentences",
@@ -169,11 +165,7 @@ pub(crate) fn prelude_names() -> HashSet<String> {
         prelude.insert(n.to_string());
     }
 
-    // Built-in interface names (Stringable, Comparable, …) are not keywords —
-    // they're identifiers resolved at runtime.  Adding them to the prelude
-    // prevents spurious "undefined identifier" errors when the checker
-    // encounters `impl Stringable for Foo` before seeing any declaration of
-    // `Stringable` in the source file.
+    // Built-in interface names
     for iface in [
         "Stringable",
         "Comparable",
@@ -185,6 +177,32 @@ pub(crate) fn prelude_names() -> HashSet<String> {
     }
 
     prelude
+});
+
+/// Return only the catalog namespace names (`Ai`, `Io`, `Http`, …).
+///
+/// Narrower than [`prelude_names`]: excludes primitive type names, top-level
+/// builtins, symbol-hint keywords, and built-in interface names.  Use this
+/// when the distinction matters — hover labels, rename gating — so that user
+/// identifiers like `json`, `text`, or `session` are not misclassified as
+/// namespaces.
+///
+/// Result is computed once and cached for the lifetime of the process.
+pub(crate) fn namespace_names() -> &'static HashSet<String> {
+    &NAMESPACE_NAMES
+}
+
+/// Return the set of identifiers that are always in scope — prelude
+/// namespaces, built-in type names, top-level builtins, symbol hint
+/// keywords, and built-in interface names.
+///
+/// The checker pre-seeds its identifier table with this set so that
+/// references to `Ai`, `str`, `run`, `json`, `Stringable`, etc. do not
+/// produce spurious "undefined identifier" errors.
+///
+/// Result is computed once and cached for the lifetime of the process.
+pub(crate) fn prelude_names() -> &'static HashSet<String> {
+    &PRELUDE_NAMES
 }
 
 // ---------------------------------------------------------------------------
