@@ -5,10 +5,11 @@ use std::sync::Arc;
 
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
+use crate::interpreter::RuntimeErrorKind;
 use crate::interpreter::value::{MapKey, Value};
 use crate::runtime::args::expect_str;
 use crate::runtime::db_provider::{DbConnectionHandle, DbFuture};
-use crate::runtime::namespace::ns;
+use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
     namespace: "Db",
@@ -56,9 +57,9 @@ impl DbConnectionHandle for SqliteConnection {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
                 let locked = conn.lock();
-                let mut stmt = locked
-                    .prepare(&sql)
-                    .map_err(|e| miette::miette!("Db.query ({url}): {e}"))?;
+                let mut stmt = locked.prepare(&sql).map_err(|e| {
+                    make_typed_report(RuntimeErrorKind::Db, format!("Db.query ({url}): {e}"))
+                })?;
                 let col_count = stmt.column_count();
                 // Detect duplicate column names up front so each occurrence
                 // gets a unique key (e.g. SELECT a.id, b.id → "id_0", "id_1").
@@ -93,9 +94,16 @@ impl DbConnectionHandle for SqliteConnection {
                         }
                         Ok(Value::Map(map))
                     })
-                    .map_err(|e| miette::miette!("Db.query ({url}): {e}"))?;
+                    .map_err(|e| {
+                        make_typed_report(RuntimeErrorKind::Db, format!("Db.query ({url}): {e}"))
+                    })?;
                 let rows: rusqlite::Result<Vec<Value>> = mapped.collect();
-                rows.map_err(|e| miette::miette!("Db.query ({url}): row error: {e}"))
+                rows.map_err(|e| {
+                    make_typed_report(
+                        RuntimeErrorKind::Db,
+                        format!("Db.query ({url}): row error: {e}"),
+                    )
+                })
             })
             .await
             .map_err(|e| miette::miette!("Db.query: task join error: {e}"))?
@@ -115,7 +123,9 @@ impl DbConnectionHandle for SqliteConnection {
                 locked
                     .execute(&sql, rusqlite::params_from_iter(rusqlite_params.iter()))
                     .map(|n| n as i64)
-                    .map_err(|e| miette::miette!("Db.exec ({url}): {e}"))
+                    .map_err(|e| {
+                        make_typed_report(RuntimeErrorKind::Db, format!("Db.exec ({url}): {e}"))
+                    })
             })
             .await
             .map_err(|e| miette::miette!("Db.exec: task join error: {e}"))?
@@ -135,7 +145,7 @@ pub(crate) fn namespace() -> Namespace {
 
             let conn = tokio::task::spawn_blocking(move || {
                 rusqlite::Connection::open(&path_for_open)
-                    .map_err(|e| miette::miette!("Db.connect: cannot open `{path_for_open}`: {e}"))
+                    .map_err(|e| make_typed_report(RuntimeErrorKind::Db, format!("Db.connect: cannot open `{path_for_open}`: {e}")))
             })
             .await
             .map_err(|e| miette::miette!("Db.connect: task error: {e}"))??;
@@ -156,19 +166,26 @@ pub(crate) fn namespace() -> Namespace {
 fn parse_sqlite_url(url: &str) -> miette::Result<String> {
     if let Some(path) = url.strip_prefix("sqlite://") {
         if path.is_empty() {
-            return Err(miette::miette!(
-                "Db.connect: missing path in URL `{url}`; \
-                 use sqlite://path.db, sqlite:///abs/path.db, or sqlite://:memory:"
+            return Err(make_typed_report(
+                RuntimeErrorKind::Db,
+                format!(
+                    "Db.connect: missing path in URL `{url}`; \
+                     use sqlite://path.db, sqlite:///abs/path.db, or sqlite://:memory:"
+                ),
             ));
         }
         Ok(path.to_string())
     } else if url.starts_with("postgres://") || url.starts_with("mysql://") {
-        Err(miette::miette!(
-            "Db.connect: `{url}` — only sqlite:// is supported in v0.1"
+        Err(make_typed_report(
+            RuntimeErrorKind::Db,
+            format!("Db.connect: `{url}` — only sqlite:// is supported in v0.1"),
         ))
     } else {
-        Err(miette::miette!(
-            "Db.connect: unrecognized URL `{url}`; expected sqlite://path or sqlite://:memory:"
+        Err(make_typed_report(
+            RuntimeErrorKind::Db,
+            format!(
+                "Db.connect: unrecognized URL `{url}`; expected sqlite://path or sqlite://:memory:"
+            ),
         ))
     }
 }

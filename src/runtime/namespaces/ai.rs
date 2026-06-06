@@ -85,7 +85,6 @@ pub(crate) fn namespace() -> Namespace {
             match llm.classify(role.as_deref(), &rules, &input, &variants, &criteria, &model).await {
                 Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant, None)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::SchemaValidation { got }) => {
                     throw_typed_error(
                         RuntimeErrorKind::AiSchema,
@@ -95,6 +94,7 @@ pub(crate) fn namespace() -> Namespace {
                 }
                 // Network / timeout / mock failures: return none so `??` provides the default.
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
+                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
         }),
 
@@ -116,7 +116,6 @@ pub(crate) fn namespace() -> Namespace {
             match llm.summarize(role.as_deref(), &rules, &input, length, format, max, unit_val, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
                 Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
@@ -139,7 +138,6 @@ pub(crate) fn namespace() -> Namespace {
             {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
                 Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
@@ -199,7 +197,6 @@ pub(crate) fn namespace() -> Namespace {
                     }
                 }
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
                 Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
@@ -230,7 +227,6 @@ pub(crate) fn namespace() -> Namespace {
                     Ok(Value::Map(out))
                 }
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
                 Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
@@ -257,7 +253,6 @@ pub(crate) fn namespace() -> Namespace {
                     Ok(Value::Map(m))
                 }
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
                 Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }
@@ -274,7 +269,6 @@ pub(crate) fn namespace() -> Namespace {
             match llm.prompt(role.as_deref(), &rules, &system, &user, response_format, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::ConfigError(msg)) => Err(miette::miette!("{msg}")),
                 Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
                 Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
             }

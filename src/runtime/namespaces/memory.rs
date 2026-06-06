@@ -2,10 +2,10 @@ use sha2::{Digest, Sha256};
 
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::Value;
-use crate::interpreter::{Host, Namespace};
+use crate::interpreter::{Host, Namespace, RuntimeErrorKind};
 use crate::runtime::args::expect_str;
 use crate::runtime::context;
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::namespace::{make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
@@ -151,27 +151,16 @@ fn memory_mode(host: &dyn Host) -> miette::Result<&'static str> {
 /// Closures, agent refs, and namespace values serialize to null and would
 /// silently return `none` on recall — surface that as an error instead.
 fn assert_memory_serializable(value: &Value) -> miette::Result<()> {
-    match value {
-        Value::Closure(..) => Err(miette::miette!(
-            "Memory: cannot store a closure — only scalars, lists, and maps are supported"
-        )),
-        Value::Namespace(n) => Err(miette::miette!(
-            "Memory: cannot store namespace `{n}` — only scalars, lists, and maps are supported"
-        )),
-        Value::BuiltinFn(n) => Err(miette::miette!(
-            "Memory: cannot store built-in function `{n}` — only scalars, lists, and maps are supported"
-        )),
-        Value::AgentRef(_) => Err(miette::miette!(
-            "Memory: cannot store an agent reference — only scalars, lists, and maps are supported"
-        )),
-        Value::Task(n, _) => Err(miette::miette!(
-            "Memory: cannot store task `{n}` — only scalars, lists, and maps are supported"
-        )),
-        Value::Duration(_) => Err(miette::miette!(
-            "Memory: cannot store a duration literal — store the numeric value (e.g. seconds as int) instead"
-        )),
-        _ => Ok(()),
-    }
+    let msg: String = match value {
+        Value::Closure(..) => "Memory: cannot store a closure — only scalars, lists, and maps are supported".to_owned(),
+        Value::Namespace(n) => format!("Memory: cannot store namespace `{n}` — only scalars, lists, and maps are supported"),
+        Value::BuiltinFn(n) => format!("Memory: cannot store built-in function `{n}` — only scalars, lists, and maps are supported"),
+        Value::AgentRef(_) => "Memory: cannot store an agent reference — only scalars, lists, and maps are supported".to_owned(),
+        Value::Task(_, _) => "Memory: cannot store a task handle — only scalars, lists, and maps are supported".to_owned(),
+        Value::Duration(_) => "Memory: cannot store a duration literal — store the numeric value (e.g. seconds as int) instead".to_owned(),
+        _ => return Ok(()),
+    };
+    Err(make_typed_report(RuntimeErrorKind::Memory, msg))
 }
 
 pub(crate) fn namespace() -> Namespace {
@@ -186,8 +175,9 @@ pub(crate) fn namespace() -> Namespace {
                 .ok_or_else(|| miette::miette!("Memory.remember: missing value argument"))?;
 
             match mode {
-                "none" => Err(miette::miette!(
-                    "CapabilityError: Memory.remember is not allowed — agent has @memory none"
+                "none" => Err(make_typed_report(
+                    RuntimeErrorKind::Memory,
+                    "Memory.remember is not allowed — agent has @memory none",
                 )),
                 "persistent" => {
                     assert_memory_serializable(&value)?;
@@ -214,8 +204,9 @@ pub(crate) fn namespace() -> Namespace {
             let key = expect_str(&args, 0, "Memory.recall")?.to_owned();
 
             match mode {
-                "none" => Err(miette::miette!(
-                    "CapabilityError: Memory.recall is not allowed — agent has @memory none"
+                "none" => Err(make_typed_report(
+                    RuntimeErrorKind::Memory,
+                    "Memory.recall is not allowed — agent has @memory none",
                 )),
                 "persistent" => {
                     let pm = host.runtime().persistent_memory.clone();
@@ -239,8 +230,9 @@ pub(crate) fn namespace() -> Namespace {
             let key = expect_str(&args, 0, "Memory.forget")?.to_owned();
 
             match mode {
-                "none" => Err(miette::miette!(
-                    "CapabilityError: Memory.forget is not allowed — agent has @memory none"
+                "none" => Err(make_typed_report(
+                    RuntimeErrorKind::Memory,
+                    "Memory.forget is not allowed — agent has @memory none",
                 )),
                 "persistent" => {
                     let pm = host.runtime().persistent_memory.clone();

@@ -97,10 +97,10 @@ agent A {
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "expected CapabilityError for @memory none");
+    assert!(!ok, "expected MemoryError for @memory none");
     assert!(
-        stderr.contains("CapabilityError"),
-        "expected CapabilityError in stderr:\n{stderr}"
+        stderr.contains("MemoryError"),
+        "expected MemoryError in stderr:\n{stderr}"
     );
 }
 

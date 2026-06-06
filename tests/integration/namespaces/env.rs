@@ -39,6 +39,62 @@ run(A)
     );
 }
 
+#[test]
+fn env_require_missing_is_catchable_as_env_error() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            Env.require("__KEEL_TEST_MISSING__")
+        } catch e: EnvError {
+            Io.show("kind=EnvError")
+            Io.show("msg={e.message.len() > 0}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("kind=EnvError"),
+        "expected EnvError caught by specific type:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("msg=true"),
+        "expected message field populated:\n{stdout}"
+    );
+}
+
+#[test]
+fn json_parse_error_is_catchable_as_json_error() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            Json.parse("not valid json")
+        } catch e: JsonError {
+            Io.show("kind=JsonError")
+            Io.show("msg={e.message.len() > 0}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("kind=JsonError"),
+        "expected JsonError caught by specific type:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("msg=true"),
+        "expected message field populated:\n{stdout}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Log namespace
 // ---------------------------------------------------------------------------

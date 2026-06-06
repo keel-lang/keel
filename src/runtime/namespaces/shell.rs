@@ -4,10 +4,10 @@ use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_str, expect_str_named};
-use crate::runtime::namespace::ns;
+use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
     namespace: "Shell",
@@ -60,7 +60,7 @@ pub(crate) fn namespace() -> Namespace {
 
             let mut child = command
                 .spawn()
-                .map_err(|e| miette::miette!("Shell.run: failed to spawn `/bin/sh`: {e}"))?;
+                .map_err(|e| make_typed_report(RuntimeErrorKind::Shell, format!("Shell.run: failed to spawn `/bin/sh`: {e}")))?;
 
             if let Some(input) = stdin_input
                 && let Some(mut stdin_pipe) = child.stdin.take()
@@ -68,13 +68,13 @@ pub(crate) fn namespace() -> Namespace {
                 stdin_pipe
                     .write_all(input.as_bytes())
                     .await
-                    .map_err(|e| miette::miette!("Shell.run: failed to write stdin: {e}"))?;
+                    .map_err(|e| make_typed_report(RuntimeErrorKind::Shell, format!("Shell.run: failed to write stdin: {e}")))?;
             }
 
             let output = child
                 .wait_with_output()
                 .await
-                .map_err(|e| miette::miette!("Shell.run: process wait failed: {e}"))?;
+                .map_err(|e| make_typed_report(RuntimeErrorKind::Shell, format!("Shell.run: process wait failed: {e}")))?;
 
             let stdout_str = String::from_utf8_lossy(&output.stdout).into_owned();
             let stderr_str = String::from_utf8_lossy(&output.stderr).into_owned();

@@ -5,10 +5,11 @@ use crate::ast::{AttributeBody, LambdaBody, LambdaParam, TaskDecl};
 use super::bind_value;
 use super::environment::Environment;
 use super::promote::promote_value;
-use super::runtime_error;
 use super::state::{AllowedTools, CallArgValue, Interpreter};
 use super::stmt::{ExprFlow, StmtOutcome};
 use super::value::Value;
+use super::{RuntimeErrorKind, runtime_error};
+use crate::runtime::namespace::make_typed_report;
 
 impl Interpreter {
     pub async fn call_closure(
@@ -145,9 +146,10 @@ impl Interpreter {
                 .as_ref()
                 .map(|a| a.allows(ns_name, method));
             if allowed == Some(false) {
-                return Err(runtime_error(format!(
-                    "CapabilityError: `{ns_name}.{method}` is not allowed by @tools"
-                )));
+                return Err(make_typed_report(
+                    RuntimeErrorKind::Capability,
+                    format!("`{ns_name}.{method}` is not allowed by @tools"),
+                ));
             }
         }
 

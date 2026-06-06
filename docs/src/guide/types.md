@@ -228,13 +228,13 @@ subject = email?.subject ?? "(no subject)"   # str — guaranteed non-none
 
 The checker enforces the `?` boundary at every assignment, return, and
 call site. Passing a nullable where a non-nullable is expected is a
-compile-time error — use `!` to assert non-null (raises `NullError` at
-runtime if the value is `none`) or `??` to coalesce to a default.
+compile-time error — use `!` to assert non-null (raises a plain `Error`
+at runtime if the value is `none`) or `??` to coalesce to a default.
 
 ```keel
 task t() {
   x: str = Env.get("KEY")          # error: expected str, got str?
-  y: str = Env.get("KEY")!         # ok — raises NullError if missing
+  y: str = Env.get("KEY")!         # ok — raises Error if missing
   z: str = Env.get("KEY") ?? ""    # ok — falls back to ""
 }
 ```

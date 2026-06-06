@@ -41,7 +41,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "invalid Json.parse should fail");
     assert!(
-        stderr.contains("JsonError: Json.parse invalid JSON"),
+        stderr.contains("JsonError: Json.parse: invalid JSON"),
         "expected JsonError diagnostic:\n{stderr}"
     );
 }

@@ -59,3 +59,31 @@ run(MathErr)
         "expected error to be caught: {stdout}"
     );
 }
+
+#[test]
+fn math_error_is_catchable_by_specific_type() {
+    let src = r#"
+agent MathTyped {
+    @on_start {
+        try {
+            Math.sqrt(-4.0)
+        } catch e: MathError {
+            Io.show("kind=MathError")
+            Io.show("msg={e.message.len() > 0}")
+        }
+        stop(self)
+    }
+}
+run(MathTyped)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("kind=MathError"),
+        "expected MathError caught by specific type:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("msg=true"),
+        "expected message field populated:\n{stdout}"
+    );
+}

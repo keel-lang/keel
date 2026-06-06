@@ -1,8 +1,8 @@
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_duration, expect_str};
-use crate::runtime::namespace::{ns, positional};
+use crate::runtime::namespace::{make_typed_report, ns, positional};
 use crate::runtime::namespaces::schedule::parse_datetime;
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
@@ -79,7 +79,7 @@ pub(crate) fn namespace() -> Namespace {
             match tokio::time::timeout(dur, fut).await {
                 Ok(Ok(v)) => Ok(v),
                 Ok(Err(e)) => Err(e),
-                Err(_) => Err(miette::miette!("TimeoutError: Control.with_timeout exceeded {duration}s")),
+                Err(_) => Err(make_typed_report(RuntimeErrorKind::Timeout, format!("Control.with_timeout exceeded {duration}s"))),
             }
         }),
         // Control.with_deadline(datetime_str, fn) — abort fn if the
@@ -100,7 +100,7 @@ pub(crate) fn namespace() -> Namespace {
             match tokio::time::timeout(dur, fut).await {
                 Ok(Ok(v)) => Ok(v),
                 Ok(Err(e)) => Err(e),
-                Err(_) => Err(miette::miette!("DeadlineError: Control.with_deadline exceeded `{when_str}`")),
+                Err(_) => Err(make_typed_report(RuntimeErrorKind::Deadline, format!("Control.with_deadline exceeded `{when_str}`"))),
             }
         }),
     })

@@ -1,8 +1,8 @@
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_bool_named, expect_str_value};
-use crate::runtime::namespace::{find_arg, ns, positional};
+use crate::runtime::namespace::{find_arg, make_typed_report, ns, positional};
 use crate::runtime::{context, email};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
@@ -60,7 +60,7 @@ pub(crate) fn namespace() -> Namespace {
             };
             match tokio::task::spawn_blocking(move || email::fetch_emails(&conn)).await {
                 Ok(Ok(emails)) => Ok(Value::List(emails)),
-                Ok(Err(msg)) => Err(miette::miette!("{msg}")),
+                Ok(Err(msg)) => Err(email_err("Email.fetch", msg)),
                 Err(e) => Err(miette::miette!("email fetch task join error: {e}")),
             }
         }),
@@ -97,7 +97,7 @@ pub(crate) fn namespace() -> Namespace {
                 .unwrap_or_else(|| "(no subject)".to_string());
             match tokio::task::spawn_blocking(move || email::send_email(&conn, &to, &subject, &body)).await {
                 Ok(Ok(())) => Ok(Value::None),
-                Ok(Err(msg)) => Err(miette::miette!("{msg}")),
+                Ok(Err(msg)) => Err(email_err("Email.send", msg)),
                 Err(e) => Err(miette::miette!("email send task join error: {e}")),
             }
         }),
@@ -123,11 +123,15 @@ pub(crate) fn namespace() -> Namespace {
                 .unwrap_or_else(|| "Archive".to_string());
             match tokio::task::spawn_blocking(move || email::archive_email(&conn, uid, &folder)).await {
                 Ok(Ok(())) => Ok(Value::None),
-                Ok(Err(msg)) => Err(miette::miette!("{msg}")),
+                Ok(Err(msg)) => Err(email_err("Email.archive", msg)),
                 Err(e) => Err(miette::miette!("email archive task join error: {e}")),
             }
         }),
     })
+}
+
+fn email_err(caller: &str, msg: impl std::fmt::Display) -> miette::Report {
+    make_typed_report(RuntimeErrorKind::Email, format!("{caller}: {msg}"))
 }
 
 fn email_text_field<'a>(

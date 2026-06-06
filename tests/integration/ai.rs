@@ -189,7 +189,7 @@ run(A)
 #[test]
 fn try_catch_reraises_unmatched_error() {
     // A catch clause that doesn't match the thrown type re-propagates.
-    // Here we throw a NullError but only catch NetworkError — expect failure.
+    // Here we throw a NullError but only catch EnvError — expect failure.
     let src = r#"
 agent A {
   @role "tester"
@@ -197,7 +197,7 @@ agent A {
     try {
       val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
       x = val!
-    } catch err: NetworkError {
+    } catch err: EnvError {
       Io.show("should not reach")
     }
     stop(self)
@@ -318,7 +318,7 @@ agent A {
     try {
       try {
         Ai.classify("test", as: Mood)
-      } catch inner: NetworkError {
+      } catch inner: EnvError {
         Io.show("inner caught (unexpected)")
       }
     } catch outer: AiSchemaError {

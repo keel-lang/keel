@@ -10,6 +10,49 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- **Typed runtime errors for all stdlib namespaces.** Every stdlib namespace that can raise a catchable error now produces a named error type rather than an unclassified string. `try/catch` can now match `FileError`, `CsvError`, `DbError`, `MathError`, `MemoryError`, `EmailError`, `HttpError`, `ShellError`, `JsonError`, `EnvError`, `AiError`, `AiSchemaError`, `CapabilityError`, `TimeoutError`, `DeadlineError`, and `UserRaised` specifically, and `catch err: Error` still works as the catch-all. `raise` now produces `UserRaised` (previously an untyped plain error). Closes [#20](https://github.com/keel-lang/keel/issues/20).
+
+  ```keel
+  agent A {
+      @on_start {
+          try {
+              data = File.read("config.json")
+          } catch e: FileError {
+              data = "{}"
+          }
+
+          try {
+              rows = Csv.parse_records(data)
+          } catch e: CsvError {
+              Io.show("bad CSV: {e.message}")
+          }
+
+          try {
+              resp = Http.get("https://api.example.com")
+          } catch e: HttpError {
+              Io.show("network error: {e.message}")
+          }
+
+          try {
+              Control.with_timeout(5.seconds, () => { slow_op() })
+          } catch e: TimeoutError {
+              Io.show("timed out: {e.message}")
+          }
+
+          try {
+              raise "quota exceeded"
+          } catch e: UserRaised {
+              Io.show("raised: {e.message}")
+          }
+
+          stop(self)
+      }
+  }
+  run(A)
+  ```
+
 ---
 
 ## [0.1.32] — 2026-06-06

@@ -400,15 +400,27 @@ type Decision[T] { choice: T, reason: str, confidence: float }
 # Predefined namespace constants: Uuid.DNS, Uuid.URL, Uuid.OID, Uuid.X500
 
 type Error =
+  # Namespace-specific — catch these to handle a specific failure domain
+  | FileError { message: str }
+  | CsvError { message: str }
+  | DbError { message: str }
+  | CacheError { message: str }
+  | MathError { message: str }
+  | MemoryError { message: str }
+  | EmailError { message: str }
+  | HttpError { message: str }
+  | ShellError { message: str }
+  | JsonError { message: str }
+  | EnvError { message: str }
   | AiError { message: str }
   | AiSchemaError { message: str, got: str }
-  | NetworkError { status: int?, url: str }
-  | TimeoutError { duration: duration }
-  | NullError
-  | TypeError { expected: str, got: str }
-  | ParseError { position: int }
-  | RuntimeBusy { message: str }
-# All variants implicitly carry message: str, source: str?
+  # Cross-namespace — catch these for general conditions
+  | CapabilityError { message: str }   # @tools restriction
+  | TimeoutError { message: str }      # Control.with_timeout exceeded
+  | DeadlineError { message: str }     # Control.with_deadline exceeded
+  | UserRaised { message: str }        # raise statement
+  | RuntimeBusy { message: str }       # event queue full
+# All variants carry at minimum message: str
 ```
 
 ### 2.11 Variable bindings and mutability
@@ -1159,17 +1171,37 @@ task handle({body, from}: EmailInfo) { ... }  # in params
 
 ### 8.5 `try` / `catch`
 
-Catches by **variant matching** — the same mechanism as `when` on any enum. `Error` is the catch-all type.
+Catches by **variant matching**. `Error` is the catch-all type; every stdlib error is a subtype of it. Use a specific type name to handle a particular failure domain:
 
 ```keel
 try {
-  Email.send(reply, to: email.from)
-} catch err: NetworkError {
-  Control.retry(3, backoff: exponential, () => { Email.send(reply, to: email.from) })
-} catch err: Error {
-  Io.notify("Send failed: {err.message}")
+  data = File.read("config.json")
+} catch e: FileError {
+  data = "{}"                   # handle missing file specifically
+} catch e: Error {
+  Io.show("unexpected: {e.message}")
+}
+
+try {
+  resp = Http.get("https://api.example.com/data")
+} catch e: HttpError {
+  Io.show("network error: {e.message}")
+}
+
+try {
+  rows = Csv.parse_records(raw)
+} catch e: CsvError {
+  Io.show("bad CSV: {e.message}")
+}
+
+try {
+  Control.with_timeout(5.seconds, () => { slow_operation() })
+} catch e: TimeoutError {
+  Io.show("timed out: {e.message}")
 }
 ```
+
+All stdlib error types and their fields are listed in the error type registry (§2.10).
 
 ### 8.6 `raise`
 
@@ -1178,15 +1210,17 @@ Throws an error from a value. Symmetric with `try`/`catch` — you can throw as 
 ```keel
 raise "validation failed"
 
-# Caught by catch err: Error; err.message == "validation failed"
+# raise produces UserRaised; caught by any UserRaised or Error clause
 try {
   raise "quota exceeded"
+} catch err: UserRaised {
+  Io.notify("User raised: {err.message}")
 } catch err: Error {
-  Io.notify("Caught: {err.message}")
+  Io.notify("Other error: {err.message}")
 }
 ```
 
-`raise` accepts any expression. If the value is a string it is used as the error message directly. Otherwise the value's display representation becomes the message. `raise` is always caught by `catch err: Error`.
+`raise` accepts any expression. If the value is a string it is used as the error message directly. Otherwise the value's display representation becomes the message. `raise` produces a `UserRaised` error, which is also caught by `catch err: Error`.
 
 ### 8.7 Augmented assignment (`+=`, `-=`, `*=`, `/=`)
 
@@ -1463,7 +1497,7 @@ Keys are namespaced per `(program, agent)` pair — two programs that happen to 
 |---|---|
 | `@memory session` | In-process HashMap; cleared at process exit (default when attribute is omitted) |
 | `@memory persistent` | JSON file at `~/.keel/memory/<stem>_<hash12>/<agent>.json`; survives restarts |
-| `@memory none` | Any `Memory.*` call raises `CapabilityError` |
+| `@memory none` | Any `Memory.*` call raises `MemoryError` |
 
 #### Persistent storage path
 

@@ -117,6 +117,66 @@ run(A)
     );
 }
 
+#[test]
+fn control_with_timeout_is_catchable_as_timeout_error() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            Control.with_timeout(1.seconds, () => {
+                Async.sleep(60.seconds)
+            })
+        } catch e: TimeoutError {
+            Io.show("kind=TimeoutError")
+            Io.show("msg={e.message.len() > 0}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("kind=TimeoutError"),
+        "expected TimeoutError caught by specific type:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("msg=true"),
+        "expected message field populated:\n{stdout}"
+    );
+}
+
+#[test]
+fn control_with_deadline_past_is_catchable_as_deadline_error() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            Control.with_deadline("2020-01-01T00:00:00Z", () => {
+                Async.sleep(5.seconds)
+            })
+        } catch e: DeadlineError {
+            Io.show("kind=DeadlineError")
+            Io.show("msg={e.message.len() > 0}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("kind=DeadlineError"),
+        "expected DeadlineError caught by specific type:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("msg=true"),
+        "expected message field populated:\n{stdout}"
+    );
+}
+
 // ─── Control.retry error paths ───────────────────────────────────────────────
 
 #[test]

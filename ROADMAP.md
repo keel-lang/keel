@@ -163,6 +163,8 @@ Known technical debt to address post-v0.1:
 
 - ~~**Read-only HIR semantic index.**~~ Shipped. Parser AST now lowers into `src/hir/` before checker and LSP analysis. HIR owns `SymbolId`s, resolved identifier references, and struct-vs-map brace-literal classification. Interpreter migration remains intentionally deferred until a second execution backend needs the shared representation.
 
+- ~~**Typed runtime errors for all stdlib namespaces.**~~ Shipped. All catchable namespace errors now carry a stable `RuntimeErrorKind` (`FileError`, `CsvError`, `DbError`, `MathError`, `MemoryError`, `EmailError`, `HttpError`, `ShellError`, `JsonError`, `EnvError`, `AiError`, `AiSchemaError`, `CapabilityError`, `TimeoutError`, `DeadlineError`, `UserRaised`, `RuntimeBusy`). `try/catch` can match any specific type or use `Error` as the fallback. `raise` now produces `UserRaised`. The mutable interpreter side-channel (`last_typed_error`) was removed in the companion issue (#19); this issue finishes the migration by classifying all remaining `miette!` string errors.
+
 - **v1.0** is the first API-stable release. Semver begins at v1.0. Scope defined after real usage feedback from v0.1.
 
 One ship at a time.

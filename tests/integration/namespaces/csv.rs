@@ -244,3 +244,56 @@ run(A)
         "expected non-string cell error: {stdout}"
     );
 }
+
+#[test]
+fn csv_error_is_catchable_by_specific_type() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            Csv.parse_records("name,name\nAlice,Bob")
+        } catch e: CsvError {
+            Io.show("kind=CsvError")
+            Io.show("msg={e.message.len() > 0}")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("kind=CsvError"),
+        "expected CsvError to be caught by specific type:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("msg=true"),
+        "expected message field to be non-empty:\n{stdout}"
+    );
+}
+
+#[test]
+fn csv_error_is_also_caught_by_error_fallback() {
+    let src = r#"
+agent A {
+    @on_start {
+        try {
+            Csv.stringify(["not a row"])
+        } catch e: CsvError {
+            Io.show("specific=true")
+        } catch e: Error {
+            Io.show("specific=false")
+        }
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("specific=true"),
+        "CsvError should match the specific clause before the fallback:\n{stdout}"
+    );
+}

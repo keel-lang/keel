@@ -2,11 +2,11 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_int, expect_str, expect_str_value};
 use crate::runtime::convert::value_to_json;
-use crate::runtime::namespace::{find_arg, ns, positional};
+use crate::runtime::namespace::{find_arg, make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
@@ -307,10 +307,12 @@ async fn http_send(
         }
     }
 
-    let response = req
-        .send()
-        .await
-        .map_err(|e| miette::miette!("Http {method_upper} {url}: {e}"))?;
+    let response = req.send().await.map_err(|e| {
+        make_typed_report(
+            RuntimeErrorKind::Http,
+            format!("Http {method_upper} {url}: {e}"),
+        )
+    })?;
     let status = response.status().as_u16() as i64;
     let response_headers = response
         .headers()

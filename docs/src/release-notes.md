@@ -4,6 +4,49 @@
 
 ## Unreleased
 
+### Typed runtime errors for all stdlib namespaces
+
+Every stdlib namespace that can fail now raises a named, catchable error type. Previously, namespace errors embedded type names in message strings (`"CsvError: ..."`) without a consistent policy — `try/catch` could only match `Error` as a fallback and couldn't distinguish causes.
+
+Now each failure domain has its own type: `FileError`, `CsvError`, `DbError`, `MathError`, `MemoryError`, `EmailError`, `HttpError`, `ShellError`, `JsonError`, `EnvError`, `AiError`, `AiSchemaError`, `CapabilityError`, `TimeoutError`, `DeadlineError`, `UserRaised`, and `RuntimeBusy`. The `raise` statement now produces `UserRaised` instead of a plain error.
+
+`catch e: Error` continues to work as a catch-all for all types.
+
+```keel
+agent A {
+    @on_start {
+        try {
+            data = File.read("config.json")
+        } catch e: FileError {
+            data = "{}"
+        }
+
+        try {
+            rows = Csv.parse_records(data)
+        } catch e: CsvError {
+            Io.show("bad CSV: {e.message}")
+        }
+
+        try {
+            Control.with_timeout(5.seconds, () => { slow_op() })
+        } catch e: TimeoutError {
+            Io.show("timed out")
+        }
+
+        try {
+            raise "quota exceeded"
+        } catch e: UserRaised {
+            Io.show("raised: {e.message}")
+        }
+
+        stop(self)
+    }
+}
+run(A)
+```
+
+See the [Error Handling guide](guide/error-handling.md) for the full type registry.
+
 ---
 
 ## v0.1.32 — 2026-06-06

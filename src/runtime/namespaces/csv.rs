@@ -1,8 +1,8 @@
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::{MapKey, Value};
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_list, expect_str};
-use crate::runtime::namespace::ns;
+use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
@@ -47,8 +47,12 @@ fn parse_csv(text: &str) -> miette::Result<Vec<Vec<String>>> {
         .from_reader(text.as_bytes());
     let mut rows = Vec::new();
     for result in rdr.records() {
-        let record =
-            result.map_err(|e| miette::miette!("CsvError: failed to read CSV record: {e}"))?;
+        let record = result.map_err(|e| {
+            make_typed_report(
+                RuntimeErrorKind::Csv,
+                format!("failed to read CSV record: {e}"),
+            )
+        })?;
         rows.push(record.iter().map(str::to_owned).collect());
     }
     Ok(rows)
@@ -83,26 +87,31 @@ pub(crate) fn namespace() -> Namespace {
             let headers = rows[0].clone();
             for header in headers.iter() {
                 if header.is_empty() {
-                    return Err(miette::miette!(
-                        "CsvError: Csv.parse_records: header names must not be empty"
+                    return Err(make_typed_report(
+                        RuntimeErrorKind::Csv,
+                        "Csv.parse_records: header names must not be empty",
                     ));
                 }
             }
             let mut seen = std::collections::HashSet::new();
             for header in headers.iter() {
                 if !seen.insert(header.as_str()) {
-                    return Err(miette::miette!(
-                        "CsvError: Csv.parse_records: duplicate header name \"{header}\""
+                    return Err(make_typed_report(
+                        RuntimeErrorKind::Csv,
+                        format!("Csv.parse_records: duplicate header name \"{header}\""),
                     ));
                 }
             }
             let mut records: Vec<Value> = Vec::new();
             for row in &rows[1..] {
                 if row.len() > headers.len() {
-                    return Err(miette::miette!(
-                        "CsvError: Csv.parse_records: row has {} cells but header defines {} columns",
-                        row.len(),
-                        headers.len()
+                    return Err(make_typed_report(
+                        RuntimeErrorKind::Csv,
+                        format!(
+                            "Csv.parse_records: row has {} cells but header defines {} columns",
+                            row.len(),
+                            headers.len()
+                        ),
                     ));
                 }
                 let mut map = std::collections::HashMap::new();
@@ -129,9 +138,12 @@ pub(crate) fn namespace() -> Namespace {
                 let cells = match row_val {
                     Value::List(cells) => cells,
                     other => {
-                        return Err(miette::miette!(
-                            "CsvError: Csv.stringify expects each row to be a list, got {}",
-                            other.type_name()
+                        return Err(make_typed_report(
+                            RuntimeErrorKind::Csv,
+                            format!(
+                                "Csv.stringify expects each row to be a list, got {}",
+                                other.type_name()
+                            ),
                         ));
                     }
                 };
@@ -140,23 +152,27 @@ pub(crate) fn namespace() -> Namespace {
                     match v {
                         Value::String(s) => record.push(s.clone()),
                         other => {
-                            return Err(miette::miette!(
-                                "CsvError: Csv.stringify cell at column {} is {}, expected str",
-                                col,
-                                other.type_name()
+                            return Err(make_typed_report(
+                                RuntimeErrorKind::Csv,
+                                format!(
+                                    "Csv.stringify cell at column {} is {}, expected str",
+                                    col,
+                                    other.type_name()
+                                ),
                             ));
                         }
                     }
                 }
-                wtr.write_record(&record)
-                    .map_err(|e| miette::miette!("CsvError: Csv.stringify write failed: {e}"))?;
+                wtr.write_record(&record).map_err(|e| {
+                    make_typed_report(RuntimeErrorKind::Csv, format!("Csv.stringify write failed: {e}"))
+                })?;
             }
 
             let bytes = wtr
                 .into_inner()
-                .map_err(|e| miette::miette!("CsvError: Csv.stringify flush failed: {e}"))?;
+                .map_err(|e| make_typed_report(RuntimeErrorKind::Csv, format!("Csv.stringify flush failed: {e}")))?;
             let text = String::from_utf8(bytes)
-                .map_err(|e| miette::miette!("CsvError: Csv.stringify encoding error: {e}"))?;
+                .map_err(|e| make_typed_report(RuntimeErrorKind::Csv, format!("Csv.stringify encoding error: {e}")))?;
             Ok(Value::String(text))
         }),
     })

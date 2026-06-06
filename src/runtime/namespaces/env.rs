@@ -1,8 +1,8 @@
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
+use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::expect_str;
-use crate::runtime::namespace::ns;
+use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
@@ -42,7 +42,7 @@ pub(crate) fn namespace() -> Namespace {
             let name = expect_str(&args, 0, "Env.require")?;
             match host.runtime().env.var(name) {
                 Some(v) => Ok(Value::String(v)),
-                None => Err(miette::miette!("Env.require: `{name}` is not set")),
+                None => Err(make_typed_report(RuntimeErrorKind::Env, format!("Env.require: `{name}` is not set"))),
             }
         }),
     })

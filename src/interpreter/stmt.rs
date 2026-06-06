@@ -11,7 +11,8 @@ use super::environment::Environment;
 use super::promote::promote_value;
 use super::state::{CallArgValue, Interpreter};
 use super::value::Value;
-use super::{RuntimeError, runtime_error};
+use super::{RuntimeError, RuntimeErrorKind, runtime_error};
+use crate::runtime::namespace::make_typed_report;
 
 impl Interpreter {
     pub fn exec_stmt<'a>(
@@ -237,7 +238,7 @@ impl Interpreter {
                         Value::String(s) => s.clone(),
                         other => other.to_display_string(),
                     };
-                    Err(runtime_error(message))
+                    Err(make_typed_report(RuntimeErrorKind::UserRaised, message))
                 }
                 Stmt::While { cond, body } => {
                     loop {

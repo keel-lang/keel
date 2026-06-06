@@ -9,10 +9,30 @@ use super::value::Value;
 /// and as the machine-readable diagnostic code. Add variants here as namespaces
 /// are migrated to structured errors (see issue #20).
 #[derive(Debug)]
+// Variants that are defined but not yet wired to a namespace are intentional:
+// they exist so user code can catch them by name once the namespace migrates.
+#[allow(dead_code)]
 pub(crate) enum RuntimeErrorKind {
+    // Namespace-specific — users catch these individually
     File,
+    Csv,
     Ai,
     AiSchema,
+    Db,
+    Cache,
+    Math,
+    Memory,
+    Email,
+    Http,
+    Shell,
+    Json,
+    Env,
+    // Cross-namespace
+    Capability,
+    Io,
+    UserRaised,
+    Timeout,
+    Deadline,
     RuntimeBusy,
 }
 
@@ -21,19 +41,24 @@ impl RuntimeErrorKind {
     pub(crate) fn type_name(&self) -> &'static str {
         match self {
             Self::File => "FileError",
+            Self::Csv => "CsvError",
             Self::Ai => "AiError",
             Self::AiSchema => "AiSchemaError",
+            Self::Db => "DbError",
+            Self::Cache => "CacheError",
+            Self::Math => "MathError",
+            Self::Memory => "MemoryError",
+            Self::Email => "EmailError",
+            Self::Http => "HttpError",
+            Self::Shell => "ShellError",
+            Self::Json => "JsonError",
+            Self::Env => "EnvError",
+            Self::Capability => "CapabilityError",
+            Self::Io => "IoError",
+            Self::UserRaised => "UserRaised",
+            Self::Timeout => "TimeoutError",
+            Self::Deadline => "DeadlineError",
             Self::RuntimeBusy => "RuntimeBusy",
-        }
-    }
-
-    /// The stable miette diagnostic code exposed to CLI renderers and host integrations.
-    pub(crate) fn diagnostic_code(&self) -> &'static str {
-        match self {
-            Self::File => "keel::runtime::FileError",
-            Self::Ai => "keel::runtime::AiError",
-            Self::AiSchema => "keel::runtime::AiSchemaError",
-            Self::RuntimeBusy => "keel::runtime::RuntimeBusy",
         }
     }
 }
@@ -74,7 +99,10 @@ impl std::error::Error for RuntimeError {}
 
 impl miette::Diagnostic for RuntimeError {
     fn code<'a>(&'a self) -> Option<Box<dyn fmt::Display + 'a>> {
-        Some(Box::new(self.kind.diagnostic_code()))
+        Some(Box::new(format!(
+            "keel::runtime::{}",
+            self.kind.type_name()
+        )))
     }
 }
 

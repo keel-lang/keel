@@ -1,7 +1,7 @@
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
-use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
-use crate::runtime::namespace::{ns, positional};
+use crate::interpreter::{Namespace, RuntimeErrorKind};
+use crate::runtime::namespace::{make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
@@ -214,7 +214,7 @@ pub(crate) fn namespace() -> Namespace {
         "sqrt" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "sqrt")?;
             if x < 0.0 {
-                return Err(miette::miette!("Math.sqrt: argument must be non-negative, got {x}"));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.sqrt: argument must be non-negative, got {x}")));
             }
             Ok(Value::Float(x.sqrt()))
         }),
@@ -230,21 +230,21 @@ pub(crate) fn namespace() -> Namespace {
         "log" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "log")?;
             if x <= 0.0 {
-                return Err(miette::miette!("Math.log: argument must be positive, got {x}"));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.log: argument must be positive, got {x}")));
             }
             Ok(Value::Float(x.ln()))
         }),
         "log2" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "log2")?;
             if x <= 0.0 {
-                return Err(miette::miette!("Math.log2: argument must be positive, got {x}"));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.log2: argument must be positive, got {x}")));
             }
             Ok(Value::Float(x.log2()))
         }),
         "log10" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "log10")?;
             if x <= 0.0 {
-                return Err(miette::miette!("Math.log10: argument must be positive, got {x}"));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.log10: argument must be positive, got {x}")));
             }
             Ok(Value::Float(x.log10()))
         }),
@@ -260,14 +260,14 @@ pub(crate) fn namespace() -> Namespace {
         "asin" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "asin")?;
             if !(-1.0..=1.0).contains(&x) {
-                return Err(miette::miette!("Math.asin: argument must be in [-1, 1], got {x}"));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.asin: argument must be in [-1, 1], got {x}")));
             }
             Ok(Value::Float(x.asin()))
         }),
         "acos" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "acos")?;
             if !(-1.0..=1.0).contains(&x) {
-                return Err(miette::miette!("Math.acos: argument must be in [-1, 1], got {x}"));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.acos: argument must be in [-1, 1], got {x}")));
             }
             Ok(Value::Float(x.acos()))
         }),
