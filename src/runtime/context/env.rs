@@ -16,16 +16,16 @@ impl EnvProvider for NativeEnv {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 use std::collections::HashMap;
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 #[derive(Default)]
 pub struct MapEnv {
     values: HashMap<String, String>,
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl MapEnv {
     pub fn with(values: &[(&str, &str)]) -> Self {
         Self {
@@ -37,7 +37,7 @@ impl MapEnv {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl EnvProvider for MapEnv {
     fn var(&self, name: &str) -> Option<String> {
         self.values.get(name).cloned()

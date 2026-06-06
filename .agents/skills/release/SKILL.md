@@ -24,7 +24,7 @@ cargo run -- fmt examples/<changed>.keel
 ## Step 2 — Lint
 
 ```bash
-cargo clippy -- -D warnings
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 Zero warnings allowed. Fix every warning; never suppress with `#[allow(...)]` unless the suppression already existed.

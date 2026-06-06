@@ -589,7 +589,7 @@ impl LlmClient {
 
     /// Returns a clone of the internal `Arc<AtomicBool>` so callers can verify
     /// the trace flag is the same allocation shared with `RuntimeContext`.
-    #[cfg(any(test, feature = "test-util"))]
+    #[cfg(test)]
     #[allow(dead_code)]
     pub(crate) fn trace_flag(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.trace)

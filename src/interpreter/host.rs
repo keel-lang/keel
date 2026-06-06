@@ -339,7 +339,7 @@ impl Host for Interpreter {
 /// type with namespaces whose closures never call back into the interpreter;
 /// for namespaces that do (Agent, Control, Memory, …) define a purpose-built
 /// struct that implements `Host` with the specific methods those closures use.
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub struct MockHost {
     /// Backing runtime backends (env, clock, LLM, …).  Supply via
     /// `RuntimeContext::test_context(...)` to test namespaces that read
@@ -347,7 +347,7 @@ pub struct MockHost {
     pub runtime: Arc<RuntimeContext>,
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl MockHost {
     /// Create a `MockHost` backed by the given `RuntimeContext`.
     pub fn new(runtime: Arc<RuntimeContext>) -> Self {
@@ -355,7 +355,7 @@ impl MockHost {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl Host for MockHost {
     fn runtime(&self) -> &Arc<RuntimeContext> {
         &self.runtime

@@ -58,5 +58,3 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
-[features]
-test-util = []

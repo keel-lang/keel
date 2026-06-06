@@ -22,13 +22,13 @@ pub use env::{EnvProvider, NativeEnv};
 pub use fs::{FileSystem, NativeFileSystem};
 pub use memory::{NativePersistentMemoryStore, PersistentMemoryStore, SessionMemoryStore};
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub use clock::FixedClock;
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub use env::MapEnv;
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub use fs::InMemoryFileSystem;
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub use memory::InMemoryPersistentMemoryStore;
 
 pub struct RuntimeContext {
@@ -79,7 +79,7 @@ impl RuntimeContext {
 
     /// Construct a runtime context with mocked backends for deterministic
     /// unit testing. Only available in test builds.
-    #[cfg(any(test, feature = "test-util"))]
+    #[cfg(test)]
     pub fn test_context(
         env: Arc<dyn EnvProvider>,
         clock: Arc<dyn Clock>,
@@ -149,7 +149,7 @@ impl RuntimeContext {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
     use super::*;

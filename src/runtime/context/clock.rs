@@ -20,13 +20,13 @@ impl Clock for NativeClock {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub struct FixedClock {
     utc: parking_lot::Mutex<DateTime<Utc>>,
     instant: parking_lot::Mutex<Instant>,
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl FixedClock {
     pub fn new(utc: DateTime<Utc>) -> Self {
         Self {
@@ -36,7 +36,7 @@ impl FixedClock {
     }
 }
 
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 impl Clock for FixedClock {
     fn now_utc(&self) -> DateTime<Utc> {
         *self.utc.lock()

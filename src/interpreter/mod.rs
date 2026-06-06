@@ -27,7 +27,7 @@ pub(crate) use binding::bind_value;
 pub use entry::run_with_source_and_runtime;
 pub(crate) use error::{RuntimeError, RuntimeErrorKind, runtime_error};
 pub use host::Host;
-#[cfg(any(test, feature = "test-util"))]
+#[cfg(test)]
 pub use host::MockHost;
 pub use state::{BuiltinFn, CallArgValue, Event, Interpreter, Namespace};
 pub use stmt::StmtOutcome;
