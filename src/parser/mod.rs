@@ -1287,4 +1287,142 @@ task t(x: str) {
         assert_eq!(expr.span, name_start..name_start + "name".len());
         assert_eq!(&src[expr.span.clone()], "name");
     }
+
+    // ─── Deduplicated when/if grammar (#13) ──────────────────────────────────────
+
+    #[test]
+    fn when_stmt_span_covers_keyword() {
+        let src =
+            "task t(x: str) -> str {\n    when x {\n        _ => \"y\"\n    }\n    \"done\"\n}";
+        let prog = parse_ok(src);
+        match first_decl(&prog) {
+            Decl::Task(t) => {
+                let when_node = &t.body[0];
+                assert!(
+                    matches!(when_node.kind, Stmt::When { .. }),
+                    "expected Stmt::When"
+                );
+                assert!(
+                    src[when_node.span.clone()].starts_with("when"),
+                    "when stmt span must start at 'when' keyword, got: {:?}",
+                    &src[when_node.span.clone()]
+                );
+            }
+            other => panic!("expected Task, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn when_expr_span_covers_keyword() {
+        let src = "task t(x: str) -> str {\n    result = when x {\n        _ => \"y\"\n    }\n    result\n}";
+        let prog = parse_ok(src);
+        match first_decl(&prog) {
+            Decl::Task(t) => match &t.body[0].kind {
+                Stmt::Let { value, .. } => {
+                    assert!(
+                        matches!(value.kind, Expr::WhenExpr { .. }),
+                        "expected Expr::WhenExpr on RHS"
+                    );
+                    assert!(
+                        src[value.span.clone()].starts_with("when"),
+                        "when expr span must start at 'when' keyword, got: {:?}",
+                        &src[value.span.clone()]
+                    );
+                }
+                other => panic!("expected Stmt::Let, got {:?}", other),
+            },
+            other => panic!("expected Task, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn when_arm_span_identical_in_stmt_and_expr_context() {
+        // The arm pattern "ok" appears at the same position in both forms.
+        // Both should parse and produce identically-structured arms.
+        let stmt_src = "task t(x: str) -> str {\n    when x {\n        \"ok\" => \"yes\"\n        _ => \"no\"\n    }\n    \"done\"\n}";
+        let expr_src = "task t(x: str) -> str {\n    r = when x {\n        \"ok\" => \"yes\"\n        _ => \"no\"\n    }\n    r\n}";
+
+        let stmt_prog = parse_ok(stmt_src);
+        let expr_prog = parse_ok(expr_src);
+
+        let stmt_arms = match &first_decl(&stmt_prog) {
+            Decl::Task(t) => match &t.body[0].kind {
+                Stmt::When { arms, .. } => arms.clone(),
+                other => panic!("expected Stmt::When, got {:?}", other),
+            },
+            other => panic!("expected Task, got {:?}", other),
+        };
+
+        let expr_arms = match &first_decl(&expr_prog) {
+            Decl::Task(t) => match &t.body[0].kind {
+                Stmt::Let { value, .. } => match &value.kind {
+                    Expr::WhenExpr { arms, .. } => arms.clone(),
+                    other => panic!("expected Expr::WhenExpr, got {:?}", other),
+                },
+                other => panic!("expected Stmt::Let, got {:?}", other),
+            },
+            other => panic!("expected Task, got {:?}", other),
+        };
+
+        assert_eq!(
+            stmt_arms.len(),
+            expr_arms.len(),
+            "arm count must match between stmt and expr when"
+        );
+        for (i, (sa, ea)) in stmt_arms.iter().zip(expr_arms.iter()).enumerate() {
+            assert_eq!(
+                sa.patterns.len(),
+                ea.patterns.len(),
+                "arm {i} pattern count must match"
+            );
+            assert_eq!(
+                sa.body.len(),
+                ea.body.len(),
+                "arm {i} body statement count must match"
+            );
+            // Verify pattern *variant* matches — catches the case where one context
+            // parses a literal arm as Wildcard and the other as Literal.
+            for (j, (sp, ep)) in sa.patterns.iter().zip(ea.patterns.iter()).enumerate() {
+                let same_variant = matches!(
+                    (sp, ep),
+                    (Pattern::Wildcard, Pattern::Wildcard)
+                        | (Pattern::Ident(_), Pattern::Ident(_))
+                        | (Pattern::Literal(_), Pattern::Literal(_))
+                        | (Pattern::Variant { .. }, Pattern::Variant { .. })
+                );
+                assert!(same_variant, "arm {i} pattern {j}: stmt={sp:?} expr={ep:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn if_else_if_chain_at_stmt_position_parses() {
+        // Previously produced a parse error ("found 'if' but expected '{'").
+        let src =
+            "task t() -> str {\n    if true { \"a\" } else if false { \"b\" } else { \"c\" }\n}";
+        let prog = parse_ok(src);
+        match first_decl(&prog) {
+            Decl::Task(t) => {
+                assert_eq!(t.body.len(), 1, "expected one statement");
+                match &t.body[0].kind {
+                    Stmt::If {
+                        else_body: Some(else_block),
+                        ..
+                    } => {
+                        assert_eq!(
+                            else_block.len(),
+                            1,
+                            "else block must contain the else-if stmt"
+                        );
+                        assert!(
+                            matches!(else_block[0].kind, Stmt::If { .. }),
+                            "else block must contain Stmt::If (the else-if branch)"
+                        );
+                    }
+                    other => panic!("expected Stmt::If with Some(else_body), got {:?}", other),
+                }
+            }
+            other => panic!("expected Task, got {:?}", other),
+        }
+    }
 }

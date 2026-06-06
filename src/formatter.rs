@@ -467,15 +467,20 @@ impl Fmt {
                 self.dedent();
                 self.push("}");
                 if let Some(eb) = else_body {
-                    self.push(" else {");
-                    self.newline();
-                    self.indent();
-                    for s_node in eb {
-                        self.stmt(&s_node.kind);
+                    if eb.len() == 1 && matches!(eb[0].kind, Stmt::If { .. }) {
+                        self.push(" else ");
+                        self.stmt(&eb[0].kind);
+                    } else {
+                        self.push(" else {");
                         self.newline();
+                        self.indent();
+                        for s_node in eb {
+                            self.stmt(&s_node.kind);
+                            self.newline();
+                        }
+                        self.dedent();
+                        self.push("}");
                     }
-                    self.dedent();
-                    self.push("}");
                 }
             }
             Stmt::When { subject, arms } => {
@@ -852,12 +857,17 @@ impl Fmt {
                 }
                 s.push('}');
                 if let Some(eb) = else_body {
-                    s.push_str(" else {\n");
-                    self.write_block(s, eb, indent + 1);
-                    for _ in 0..indent {
-                        s.push_str(INDENT);
+                    if eb.len() == 1 && matches!(eb[0].kind, Stmt::If { .. }) {
+                        s.push_str(" else ");
+                        self.write_stmt(s, &eb[0].kind, indent);
+                    } else {
+                        s.push_str(" else {\n");
+                        self.write_block(s, eb, indent + 1);
+                        for _ in 0..indent {
+                            s.push_str(INDENT);
+                        }
+                        s.push('}');
                     }
-                    s.push('}');
                 }
             }
             Stmt::When { subject, arms } => {

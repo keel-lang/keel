@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::lexer::Token;
 
 use super::common::{
-    P, ident, integer_lit, newlines, plain_string, sep, struct_destruct_pat, tuple_destruct_pat,
+    P, block_with, ident, if_body, newlines, struct_destruct_pat, tuple_destruct_pat, when_arm,
 };
 use super::types::spanned_type_expr;
 
@@ -27,12 +27,7 @@ pub(super) fn stmt_parser() -> P<Node<Stmt>> {
 /// recursion when building trailing-block / lambda-block support.
 pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
     recursive(|stmt: Recursive<Token, Node<Stmt>, Simple<Token>>| {
-        let block = just(Token::LBrace)
-            .ignore_then(newlines())
-            .ignore_then(stmt.clone().separated_by(sep()).allow_trailing())
-            .then_ignore(newlines())
-            .then_ignore(just(Token::RBrace))
-            .boxed();
+        let block = block_with(stmt.clone().boxed());
 
         // Matches one augmented-assignment operator and returns its BinOp.
         let aug_op = choice([
@@ -192,12 +187,35 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
             .map(|(cond, body)| Stmt::While { cond, body })
             .boxed();
 
-        let if_stmt = just(Token::If)
-            .ignore_then(expr.clone())
-            .then(block.clone())
-            .then(just(Token::Else).ignore_then(block.clone()).or_not())
+        // Recursive so that `else if` chains parse correctly at statement
+        // position.  The inner recursion returns the raw (cond, then, else)
+        // triple WITHOUT consuming `?? default`, so the NullCoalesce suffix
+        // can only fire once at the outermost level.  If `if_stmt_rec` also
+        // parsed `??`, an `else if y {} ?? val` branch would greedily consume
+        // the `??` before the outer combinator could see it.
+        let if_chain: P<(SpannedExpr, Block, Option<Block>)> = recursive(
+            |if_chain_rec: Recursive<Token, (SpannedExpr, Block, Option<Block>), Simple<Token>>| {
+                let else_arm = if_chain_rec
+                    .map_with_span(|(cond, then_body, else_body), span| {
+                        vec![Node::new(
+                            Stmt::If {
+                                cond,
+                                then_body,
+                                else_body,
+                            },
+                            span,
+                        )]
+                    })
+                    .or(block.clone())
+                    .boxed();
+                if_body(expr.clone(), block.clone(), else_arm)
+            },
+        )
+        .boxed();
+
+        let if_stmt: P<Stmt> = if_chain
             .then(just(Token::NullCoalesce).ignore_then(expr.clone()).or_not())
-            .map_with_span(|(((cond, then_body), else_body), null_coalesce), span| {
+            .map_with_span(|((cond, then_body, else_body), null_coalesce), span| {
                 if let Some(default) = null_coalesce {
                     // `if { } else { } ?? default` → expression statement.
                     let if_span = cond.span.start..default.span.start;
@@ -223,61 +241,13 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
             })
             .boxed();
 
-        // when arm pattern
-        let pattern = just(Token::Ident("_".to_string()))
-            .to(Pattern::Wildcard)
-            .or(ident()
-                .then(
-                    just(Token::LBrace)
-                        .ignore_then(
-                            ident()
-                                .or(just(Token::Ident("_".to_string())).to("_".to_string()))
-                                .separated_by(just(Token::Comma))
-                                .allow_trailing(),
-                        )
-                        .then_ignore(just(Token::RBrace))
-                        .or_not(),
-                )
-                .map(|(name, bindings)| match bindings {
-                    Some(b) => Pattern::Variant { name, bindings: b },
-                    None => Pattern::Ident(name),
-                }))
-            .or(plain_string().map_with_span(|s, span| {
-                Pattern::Literal(Node::new(
-                    Expr::StringLit(vec![StringPart::Literal(s)]),
-                    span,
-                ))
-            }))
-            .or(integer_lit()
-                .map_with_span(|n, span| Pattern::Literal(Node::new(Expr::Integer(n), span))))
-            .boxed();
-
-        let when_arm_body = block
-            .clone()
-            .or(expr.clone().map(|e| {
-                let span = e.span.clone();
-                vec![Node::new(Stmt::Expr(e), span)]
-            }))
-            .boxed();
-
-        let when_arm = pattern
-            .separated_by(just(Token::Comma))
-            .at_least(1)
-            .then(just(Token::Where).ignore_then(expr.clone()).or_not())
-            .then_ignore(just(Token::FatArrow))
-            .then(when_arm_body)
-            .map(|((patterns, guard), body)| WhenArm {
-                patterns,
-                guard,
-                body,
-            })
-            .boxed();
+        let arm = when_arm(expr.clone(), block.clone());
 
         let when_stmt = just(Token::When)
             .ignore_then(expr.clone())
             .then_ignore(just(Token::LBrace))
             .then_ignore(newlines())
-            .then(when_arm.separated_by(newlines()).allow_trailing())
+            .then(arm.separated_by(newlines()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
             .map(|(subject, arms)| Stmt::When { subject, arms })
@@ -325,13 +295,6 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
 }
 
 /// A block at the top-level of a declaration body (task, impl method, on handler).
-/// Distinct from the inner `block` built inside `stmt_parser_with`, which is
-/// constructed with the in-progress recursive statement handle.
 pub(super) fn block_toplevel() -> P<Block> {
-    just(Token::LBrace)
-        .ignore_then(newlines())
-        .ignore_then(stmt_parser().separated_by(sep()).allow_trailing())
-        .then_ignore(newlines())
-        .then_ignore(just(Token::RBrace))
-        .boxed()
+    block_with(stmt_parser())
 }

@@ -10,8 +10,8 @@ use crate::ast::*;
 use crate::lexer::Token;
 
 use super::common::{
-    P, field_name, field_sep, ident, integer_lit, map_key, map_lit_key, newlines, plain_string,
-    sep, string_lit,
+    P, block_with, field_name, field_sep, ident, if_body, map_key, map_lit_key, newlines,
+    string_lit, when_arm,
 };
 use super::types::spanned_type_expr;
 
@@ -53,18 +53,12 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
     recursive(|expr: Recursive<Token, SpannedExpr, Simple<Token>>| {
         // ── Inner block parser for trailing-block calls ──────────
         //
-        // Blocks inside expressions (lambda bodies, trailing blocks on
-        // method calls) need to contain full statements, which in turn
-        // contain expressions. To avoid construction-time mutual
-        // recursion between `expr_parser` and `stmt_parser`, we build
-        // the statement parser here with our own `expr` handle.
+        // Blocks inside expressions need full statements, which in turn
+        // contain expressions.  We build the statement parser with our own
+        // `expr` handle to break the mutual-construction recursion, then
+        // delegate the `{ stmts }` wrapping to the shared `block_with`.
         let inner_stmt = super::stmt::stmt_parser_with(expr.clone().boxed());
-        let inner_block = just(Token::LBrace)
-            .ignore_then(newlines())
-            .ignore_then(inner_stmt.separated_by(sep()).allow_trailing())
-            .then_ignore(newlines())
-            .then_ignore(just(Token::RBrace))
-            .boxed();
+        let inner_block = block_with(inner_stmt);
 
         // ── Literals ─────────────────────────────────────────────
         let int_lit = select! { Token::Integer(s) => s }
@@ -270,22 +264,16 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
             .boxed();
 
         // ── If-expression (usable on any RHS) ────────────────────
-        // Recursive so that `else if` chains work: the else-branch is either
-        // another if-expression (wrapped as a single spanned Stmt::Expr) or a { block }.
+        // Recursive so that `else if` chains work.  The else-block passed to
+        // `if_body` either recurses into another `if_expr` (wrapped as a
+        // single-statement block) or falls back to a plain `inner_block`.
         let if_expr = recursive(|if_expr: Recursive<Token, SpannedExpr, Simple<Token>>| {
-            just(Token::If)
-                .ignore_then(expr.clone())
-                .then(inner_block.clone())
-                .then(
-                    just(Token::Else)
-                        .ignore_then(
-                            if_expr
-                                .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)])
-                                .or(inner_block.clone()),
-                        )
-                        .or_not(),
-                )
-                .map_with_span(|((cond, then_body), else_body), span| {
+            let else_arm = if_expr
+                .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)])
+                .or(inner_block.clone())
+                .boxed();
+            if_body(expr.clone().boxed(), inner_block.clone(), else_arm).map_with_span(
+                |(cond, then_body, else_body), span| {
                     Node::new(
                         Expr::IfExpr {
                             cond: Box::new(cond),
@@ -294,63 +282,18 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                         },
                         span,
                     )
-                })
+                },
+            )
         })
         .boxed();
 
-        let we_pattern = just(Token::Ident("_".to_string()))
-            .to(Pattern::Wildcard)
-            .or(ident()
-                .then(
-                    just(Token::LBrace)
-                        .ignore_then(
-                            ident()
-                                .or(just(Token::Ident("_".to_string())).to("_".to_string()))
-                                .separated_by(just(Token::Comma))
-                                .allow_trailing(),
-                        )
-                        .then_ignore(just(Token::RBrace))
-                        .or_not(),
-                )
-                .map(|(name, bindings)| match bindings {
-                    Some(b) => Pattern::Variant { name, bindings: b },
-                    None => Pattern::Ident(name),
-                }))
-            .or(plain_string().map_with_span(|s, span| {
-                Pattern::Literal(Node::new(
-                    Expr::StringLit(vec![StringPart::Literal(s)]),
-                    span,
-                ))
-            }))
-            .or(integer_lit()
-                .map_with_span(|n, span| Pattern::Literal(Node::new(Expr::Integer(n), span))))
-            .boxed();
-
-        let we_arm_body = inner_block
-            .clone()
-            .or(expr
-                .clone()
-                .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)]))
-            .boxed();
-
-        let we_arm = we_pattern
-            .separated_by(just(Token::Comma))
-            .at_least(1)
-            .then(just(Token::Where).ignore_then(expr.clone()).or_not())
-            .then_ignore(just(Token::FatArrow))
-            .then(we_arm_body)
-            .map(|((patterns, guard), body)| WhenArm {
-                patterns,
-                guard,
-                body,
-            })
-            .boxed();
+        let arm = when_arm(expr.clone().boxed(), inner_block.clone());
 
         let when_expr = just(Token::When)
             .ignore_then(expr.clone())
             .then_ignore(just(Token::LBrace))
             .then_ignore(newlines())
-            .then(we_arm.separated_by(newlines()).allow_trailing())
+            .then(arm.separated_by(newlines()).allow_trailing())
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
             .map_with_span(|(subject, arms), span| {

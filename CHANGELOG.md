@@ -42,6 +42,20 @@ All notable changes to Keel.
   }
   ```
 
+- **`else if` chains now parse correctly at statement position.** Previously, writing `if cond { } else if cond2 { }` as a top-level statement produced a parse error ("found 'if' but expected '{'"). The statement-form `if` parser was not recursive, so only expression-form `if` supported `else if` chaining. Both forms now share the same `if_body` combinator in `common.rs` and are backed by a `recursive()` frame, making `else if` valid in all positions. Also deduplicates `when` arm and block grammar — `pattern`, `when_arm`, `block_with`, and `if_body` are now each defined once in `parser/common.rs` and called by both statement and expression parsers. Closes [#13](https://github.com/keel-lang/keel/issues/13).
+
+  ```keel
+  task classify(score: float) -> str {
+      if score > 0.8 {
+          "high"
+      } else if score > 0.5 {
+          "medium"
+      } else {
+          "low"
+      }
+  }
+  ```
+
 ---
 
 ## [0.1.31] — 2026-06-04

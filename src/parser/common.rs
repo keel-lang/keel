@@ -1,10 +1,11 @@
 //! Shared low-level parser primitives: newlines, separators, identifiers,
-//! field names, and literal helpers.  All grammar sub-modules import from
-//! here rather than duplicating these building blocks.
+//! field names, literal helpers, and reusable control-flow combinators.
+//! All grammar sub-modules import from here rather than duplicating these
+//! building blocks.
 
 use chumsky::prelude::*;
 
-use crate::ast::MapLitKey;
+use crate::ast::{Block, Expr, MapLitKey, Node, Pattern, SpannedExpr, Stmt, StringPart, WhenArm};
 use crate::lexer::{Span, Token};
 
 pub(super) type P<T> = BoxedParser<'static, Token, T, Simple<Token>>;
@@ -200,5 +201,90 @@ pub(super) fn integer_lit() -> P<i64> {
             s.parse::<i64>()
                 .map_err(|_| Simple::custom(span, format!("integer literal `{s}` overflows i64")))
         })
+        .boxed()
+}
+
+// ---------------------------------------------------------------------------
+// Shared control-flow combinators
+// ---------------------------------------------------------------------------
+
+/// Pattern parser for `when` arms — used by both statement and expression `when`.
+pub(super) fn when_pattern() -> P<Pattern> {
+    just(Token::Ident("_".to_string()))
+        .to(Pattern::Wildcard)
+        .or(ident()
+            .then(
+                just(Token::LBrace)
+                    .ignore_then(ident().separated_by(just(Token::Comma)).allow_trailing())
+                    .then_ignore(just(Token::RBrace))
+                    .or_not(),
+            )
+            .map(|(name, bindings)| match bindings {
+                Some(b) => Pattern::Variant { name, bindings: b },
+                None => Pattern::Ident(name),
+            }))
+        .or(plain_string().map_with_span(|s, span| {
+            Pattern::Literal(Node::new(
+                Expr::StringLit(vec![StringPart::Literal(s)]),
+                span,
+            ))
+        }))
+        .or(integer_lit()
+            .map_with_span(|n, span| Pattern::Literal(Node::new(Expr::Integer(n), span))))
+        .boxed()
+}
+
+/// A `{ stmt* }` block parameterised on the statement parser to use.
+/// Replaces the three previously separate block builders (`block` inside
+/// `stmt_parser_with`, `inner_block` inside `expr_parser`, and
+/// `block_toplevel()`), all of which had identical structure.
+pub(super) fn block_with(stmt: P<Node<Stmt>>) -> P<Block> {
+    just(Token::LBrace)
+        .ignore_then(newlines())
+        .ignore_then(stmt.separated_by(sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RBrace))
+        .boxed()
+}
+
+/// A single `when` arm (`pattern [, pattern]* [where guard] => body`).
+/// Parameterised on `expr` (for guards and single-expression bodies) and
+/// `block` (for block bodies).  Used by both `when` statement and expression.
+pub(super) fn when_arm(expr: P<SpannedExpr>, block: P<Block>) -> P<WhenArm> {
+    let arm_body = block
+        .or(expr
+            .clone()
+            .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)]))
+        .boxed();
+
+    when_pattern()
+        .separated_by(just(Token::Comma))
+        .at_least(1)
+        .then(just(Token::Where).ignore_then(expr).or_not())
+        .then_ignore(just(Token::FatArrow))
+        .then(arm_body)
+        .map(|((patterns, guard), body)| WhenArm {
+            patterns,
+            guard,
+            body,
+        })
+        .boxed()
+}
+
+/// Core `if cond block [else else_block]` grammar, returning the three parts
+/// as a tuple.  The caller supplies `else_block` — typically a `.or(block)`
+/// combined with a recursive self-reference — so that both `if_stmt` (which
+/// adds `else if` via recursive `Stmt::If`) and `if_expr` (which recurses into
+/// `Expr::IfExpr`) can share this foundation.
+pub(super) fn if_body(
+    expr: P<SpannedExpr>,
+    then_block: P<Block>,
+    else_block: P<Block>,
+) -> P<(SpannedExpr, Block, Option<Block>)> {
+    just(Token::If)
+        .ignore_then(expr)
+        .then(then_block)
+        .then(just(Token::Else).ignore_then(else_block).or_not())
+        .map(|((cond, then_body), else_body)| (cond, then_body, else_body))
         .boxed()
 }

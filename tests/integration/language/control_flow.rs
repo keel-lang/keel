@@ -345,3 +345,59 @@ run(A)
         "mixed named+positional should sum to 51:\n{stdout}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Issue #13 — else-if at statement position (was a parse error before dedup)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn if_else_if_chain_statement_form_executes() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 2
+        if x == 1 {
+            Io.show("one")
+        } else if x == 2 {
+            Io.show("two")
+        } else {
+            Io.show("other")
+        }
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("two"),
+        "expected 'two' branch for x == 2, stdout:\n{stdout}"
+    );
+}
+
+#[test]
+fn if_else_if_chain_three_branches_statement_form() {
+    let src = r#"
+agent A {
+    @on_start {
+        x = 3
+        if x == 1 {
+            Io.show("one")
+        } else if x == 2 {
+            Io.show("two")
+        } else if x == 3 {
+            Io.show("three")
+        } else {
+            Io.show("other")
+        }
+    }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("three"),
+        "expected 'three' branch for x == 3, stdout:\n{stdout}"
+    );
+}
