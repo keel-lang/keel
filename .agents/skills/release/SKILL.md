@@ -185,6 +185,14 @@ Do not proceed until the answer is an explicit yes.
 
 ## Step 11 — Tag (after confirmation only)
 
+Before tagging, verify HEAD contains the version bump:
+
+```bash
+git show HEAD:Cargo.toml | grep '^version'
+```
+
+The output must show `version = "<version>"`. If it does not, the release commit was never made — stop and commit before tagging.
+
 ```bash
 git tag v<version>
 git push origin v<version>
