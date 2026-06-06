@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [0.1.31](./release-notes.md)** — Replace unbounded event queue with bounded channel and overflow policies.
+> **Latest: [%%VERSION%%](./release-notes.md)** — Deduplicate grammar, report all parse errors, auto-generate docs
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

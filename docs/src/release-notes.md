@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.32 — 2026-06-06
+
 ### All syntax errors now reported at once
 
 The parser previously stopped at the first syntax error. If a file contained errors in two separate tasks, only the first was shown — requiring multiple edit-compile cycles to clear a freshly-written file.

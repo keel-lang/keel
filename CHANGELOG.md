@@ -10,6 +10,11 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.32] — 2026-06-06
+
+
 ### Added
 
 - **mdBook preprocessor for auto-generated namespace reference tables.** A new `tools/mdbook-keel-catalog` binary crate implements the mdBook preprocessor protocol. Any `{{#catalog Ns}}` directive in a `docs/src/**/*.md` file is expanded at `mdbook build` time to a `| Method | Signature | Description |` table sourced directly from `prelude::catalog()`. Adding a new method to a namespace's `SPEC` now automatically appears in the built docs with no manual table editing. Hand-written tables for `Random`, `Crypto`, `Log`, `Search`, `Async`, `Json`, `Cache`, `Uuid` (static methods), and `File` have been replaced with directives. Also fixes `Cache.set` SPEC to declare the optional `ttl: duration` parameter that was already accepted at runtime but not reflected in the catalog. Closes [#29](https://github.com/keel-lang/keel/issues/29).
