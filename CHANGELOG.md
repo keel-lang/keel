@@ -10,6 +10,12 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.1.33] — 2026-06-07
+
+All stdlib errors are now typed — distinguish causes in try/catch blocks.
+
 ### Added
 
 - **Typed runtime errors for all stdlib namespaces.** Every stdlib namespace that can raise a catchable error now produces a named error type rather than an unclassified string. `try/catch` can now match `FileError`, `CsvError`, `DbError`, `MathError`, `MemoryError`, `EmailError`, `HttpError`, `ShellError`, `JsonError`, `EnvError`, `AiError`, `AiSchemaError`, `CapabilityError`, `TimeoutError`, `DeadlineError`, and `UserRaised` specifically, and `catch err: Error` still works as the catch-all. `raise` now produces `UserRaised` (previously an untyped plain error). Closes [#20](https://github.com/keel-lang/keel/issues/20).
@@ -20,25 +26,25 @@ All notable changes to Keel.
           try {
               data = File.read("config.json")
           } catch e: FileError {
-              data = "{}"
+              Io.show("file error: {e.message}")
           }
 
           try {
-              rows = Csv.parse_records(data)
+              rows = Csv.parse_records("{}")
           } catch e: CsvError {
-              Io.show("bad CSV: {e.message}")
+              Io.show("CSV error: {e.message}")
           }
 
           try {
               resp = Http.get("https://api.example.com")
           } catch e: HttpError {
-              Io.show("network error: {e.message}")
+              Io.show("HTTP error: {e.message}")
           }
 
           try {
-              Control.with_timeout(5.seconds, () => { slow_op() })
+              Control.with_timeout(5.seconds, () => { "ok" })
           } catch e: TimeoutError {
-              Io.show("timed out: {e.message}")
+              Io.show("timeout error: {e.message}")
           }
 
           try {

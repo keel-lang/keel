@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.1.33 — 2026-06-07
+
 ### Typed runtime errors for all stdlib namespaces
 
 Every stdlib namespace that can fail now raises a named, catchable error type. Previously, namespace errors embedded type names in message strings (`"CsvError: ..."`) without a consistent policy — `try/catch` could only match `Error` as a fallback and couldn't distinguish causes.
@@ -18,19 +22,19 @@ agent A {
         try {
             data = File.read("config.json")
         } catch e: FileError {
-            data = "{}"
+            Io.show("file error: {e.message}")
         }
 
         try {
-            rows = Csv.parse_records(data)
+            rows = Csv.parse_records("{}")
         } catch e: CsvError {
-            Io.show("bad CSV: {e.message}")
+            Io.show("CSV error: {e.message}")
         }
 
         try {
-            Control.with_timeout(5.seconds, () => { slow_op() })
+            Control.with_timeout(5.seconds, () => { "ok" })
         } catch e: TimeoutError {
-            Io.show("timed out")
+            Io.show("timeout error: {e.message}")
         }
 
         try {

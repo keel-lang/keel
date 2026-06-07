@@ -3,7 +3,7 @@ members = ["tools/mdbook-keel-catalog"]
 
 [package]
 name = "keel-lang"
-version = "0.1.32"
+version = "0.1.33"
 edition = "2024"
 description = "Keel — a programming language where AI agents are first-class citizens"
 license = "MIT"

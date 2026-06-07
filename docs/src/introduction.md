@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [%%VERSION%%](./release-notes.md)** — Deduplicate grammar, report all parse errors, auto-generate docs
+> **Latest: [%%VERSION%%](./release-notes.md)** — All stdlib errors are now typed — distinguish causes in try/catch blocks.
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 
