@@ -11,7 +11,7 @@ use crate::lexer::Token;
 
 use super::common::{
     P, block_with, field_name, field_sep, ident, if_body, map_key, map_lit_key, newlines,
-    string_lit, when_arm,
+    string_lit, when_arm, when_body,
 };
 use super::types::spanned_type_expr;
 
@@ -289,13 +289,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
 
         let arm = when_arm(expr.clone().boxed(), inner_block.clone());
 
-        let when_expr = just(Token::When)
-            .ignore_then(expr.clone())
-            .then_ignore(just(Token::LBrace))
-            .then_ignore(newlines())
-            .then(arm.separated_by(newlines()).allow_trailing())
-            .then_ignore(newlines())
-            .then_ignore(just(Token::RBrace))
+        let when_expr = when_body(expr.clone().boxed(), arm)
             .map_with_span(|(subject, arms), span| {
                 Node::new(
                     Expr::WhenExpr {

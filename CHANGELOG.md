@@ -8,9 +8,13 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% share when-block parsing
 
 ---
+
+### Changed
+
+- Parser internals now share the `when` block wrapper between statement and expression contexts, keeping arm parsing rules consistent across both forms.
 
 ## [0.1.33] — 2026-06-07
 

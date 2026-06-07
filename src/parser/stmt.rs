@@ -10,7 +10,7 @@ use crate::ast::*;
 use crate::lexer::Token;
 
 use super::common::{
-    P, block_with, ident, if_body, newlines, struct_destruct_pat, tuple_destruct_pat, when_arm,
+    P, block_with, ident, if_body, struct_destruct_pat, tuple_destruct_pat, when_arm, when_body,
 };
 use super::types::spanned_type_expr;
 
@@ -243,13 +243,7 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
 
         let arm = when_arm(expr.clone(), block.clone());
 
-        let when_stmt = just(Token::When)
-            .ignore_then(expr.clone())
-            .then_ignore(just(Token::LBrace))
-            .then_ignore(newlines())
-            .then(arm.separated_by(newlines()).allow_trailing())
-            .then_ignore(newlines())
-            .then_ignore(just(Token::RBrace))
+        let when_stmt = when_body(expr.clone(), arm)
             .map(|(subject, arms)| Stmt::When { subject, arms })
             .boxed();
 

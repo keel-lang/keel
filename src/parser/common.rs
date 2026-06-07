@@ -271,6 +271,18 @@ pub(super) fn when_arm(expr: P<SpannedExpr>, block: P<Block>) -> P<WhenArm> {
         .boxed()
 }
 
+/// Core `when subject { arm* }` grammar shared by statements and expressions.
+pub(super) fn when_body(expr: P<SpannedExpr>, arm: P<WhenArm>) -> P<(SpannedExpr, Vec<WhenArm>)> {
+    just(Token::When)
+        .ignore_then(expr)
+        .then_ignore(just(Token::LBrace))
+        .then_ignore(newlines())
+        .then(arm.separated_by(newlines()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RBrace))
+        .boxed()
+}
+
 /// Core `if cond block [else else_block]` grammar, returning the three parts
 /// as a tuple.  The caller supplies `else_block` — typically a `.or(block)`
 /// combined with a recursive self-reference — so that both `if_stmt` (which
