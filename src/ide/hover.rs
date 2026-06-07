@@ -13,8 +13,7 @@ use crate::lexer::Span;
 use crate::types::checker::Checker;
 use crate::types::prelude::namespace_names;
 use crate::types::scope::Scope;
-use crate::types::ty::PRIMITIVE_TYPE_LABELS;
-use crate::types::ty::{Ty, UnknownReason, describe_ty};
+use crate::types::ty::{Ty, UnknownReason, describe_ty, prelude_label_for};
 
 /// Resolve the inferred type for the identifier at `offset` (UTF-8 byte
 /// offset into `text`). Returns `None` if the cursor is not on an
@@ -22,7 +21,7 @@ use crate::types::ty::{Ty, UnknownReason, describe_ty};
 pub fn type_at(text: &str, offset: usize) -> Option<String> {
     let name = ident_at_offset(text, offset)?;
 
-    if let Some(&(_, label)) = PRIMITIVE_TYPE_LABELS.iter().find(|(n, _)| *n == name) {
+    if let Some(label) = prelude_label_for(&name) {
         return Some(label.to_string());
     }
     if namespace_names().contains(name.as_str()) {

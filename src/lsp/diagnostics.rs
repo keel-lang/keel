@@ -14,8 +14,6 @@ use crate::ide::hover::build_types;
 use crate::lexer::{Span, Token};
 use crate::session;
 use crate::types::checker;
-use crate::types::prelude::namespace_names;
-use crate::types::ty::PRIMITIVE_TYPE_LABELS;
 use logos::Logos;
 
 use super::position::byte_range_to_lsp;
@@ -31,8 +29,9 @@ pub(crate) struct SemanticIndex {
     /// Reference span → type-description string (scope-correct via HIR SymbolId).
     pub(crate) span_types: HashMap<Span, String>,
     /// Name-keyed fallback for binding declaration sites not tracked as
-    /// references in the HIR (e.g. the LHS of a `let` statement), and for
-    /// prelude namespace / primitive type hover labels.
+    /// references in the HIR (e.g. the LHS of a `let` statement).
+    /// Prelude namespace and primitive type labels are *not* stored here;
+    /// they are resolved at query time from process-wide static data.
     pub(crate) name_types: HashMap<String, String>,
     /// Reference span or declaration span → declaration span (go-to-definition).
     pub(crate) definitions: HashMap<Span, Span>,
@@ -84,22 +83,9 @@ pub(crate) fn analyze_document(text: &str) -> (Vec<Diagnostic>, Option<SemanticI
 
 fn build_semantic_index(text: &str, program: &crate::ast::Program, hir: &Hir<'_>) -> SemanticIndex {
     // ── 1. Single Checker pass for both SymbolId-keyed and name-keyed types ──
-    let (symbol_types, mut name_types) = build_types(program, hir);
+    let (symbol_types, name_types) = build_types(program, hir);
 
-    // ── 2. Add namespace and primitive type labels to the name-keyed map ────
-    // Primitive types first so they win over any namespace name collision.
-    for &(name, label) in PRIMITIVE_TYPE_LABELS {
-        name_types
-            .entry(name.to_string())
-            .or_insert_with(|| label.to_string());
-    }
-    for ns in namespace_names() {
-        name_types
-            .entry(ns.clone())
-            .or_insert_with(|| format!("namespace `{ns}`"));
-    }
-
-    // ── 3. Single pass over references → span_types, definitions, top_level_refs ──
+    // ── 2. Single pass over references → span_types, definitions, top_level_refs ──
     let mut span_types: HashMap<Span, String> = HashMap::new();
     let mut definitions: HashMap<Span, Span> = HashMap::new();
     let mut top_level_refs: HashSet<Span> = HashSet::new();
@@ -118,7 +104,7 @@ fn build_semantic_index(text: &str, program: &crate::ast::Program, hir: &Hir<'_>
         }
     }
 
-    // ── 4. Declaration sites in definitions/top_level_refs + usages seed ───
+    // ── 3. Declaration sites in definitions/top_level_refs + usages seed ───
     // Single pass: declaration sites, top-level refs, and usages map keys.
     let mut usages: HashMap<String, Vec<Span>> = HashMap::new();
     for symbol in hir.symbols() {
@@ -133,7 +119,7 @@ fn build_semantic_index(text: &str, program: &crate::ast::Program, hir: &Hir<'_>
         }
     }
 
-    // ── 5. Single-pass usages collection ─────────────────────────────────
+    // ── 4. Single-pass usages collection ─────────────────────────────────
     // One tokenizer pass over the file fills every pre-seeded entry,
     // replacing N independent `usages_of` calls (one per top-level symbol).
     if !usages.is_empty() {
@@ -357,7 +343,7 @@ task t() {
 
 #[cfg(test)]
 mod analyze_tests {
-    use super::analyze;
+    use super::{analyze, analyze_document};
     use tower_lsp::lsp_types::DiagnosticSeverity;
 
     #[test]
@@ -419,5 +405,31 @@ task t(u: U) {
             msg.is_some(),
             "expected undefined diagnostic; got {diags:?}"
         );
+    }
+
+    /// Structural invariant: prelude primitives and namespace names must NOT be
+    /// stored in `name_types`. They are resolved at hover time from process-wide
+    /// static data. If someone reintroduces the insertion loops in
+    /// `build_semantic_index` this test will fail.
+    #[test]
+    fn semantic_index_name_types_excludes_prelude_labels() {
+        let (_, index) = analyze_document("task t() { x = 1 }\n");
+        let idx = index.expect("clean program should produce an index");
+        assert!(
+            idx.name_types.contains_key("x"),
+            "name_types must contain user binding `x` (build_types must be populating it)"
+        );
+        for &(name, _) in crate::types::ty::PRIMITIVE_TYPE_LABELS {
+            assert!(
+                !idx.name_types.contains_key(name),
+                "name_types must not store prelude primitive `{name}`"
+            );
+        }
+        for ns in crate::types::prelude::namespace_names() {
+            assert!(
+                !idx.name_types.contains_key(ns.as_str()),
+                "name_types must not store prelude namespace `{ns}`"
+            );
+        }
     }
 }

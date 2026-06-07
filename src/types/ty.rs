@@ -141,6 +141,14 @@ pub(crate) const PRIMITIVE_TYPE_LABELS: &[(&str, &str)] = &[
     ("dynamic", "type `dynamic`"),
 ];
 
+/// Return the hover label for a primitive type name, or `None` if not a primitive.
+pub(crate) fn prelude_label_for(name: &str) -> Option<&'static str> {
+    PRIMITIVE_TYPE_LABELS
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, label)| *label)
+}
+
 // ---------------------------------------------------------------------------
 // Human-readable descriptions
 // ---------------------------------------------------------------------------
