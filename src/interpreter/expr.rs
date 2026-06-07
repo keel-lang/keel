@@ -257,7 +257,7 @@ impl Interpreter {
                     // Agent handler reference: `Foo.process` where Foo is a registered
                     // agent. Produces an AgentHandlerRef consumed by Agent.delegate.
                     if let Expr::Ident(name) = &obj.as_ref().kind
-                        && self.agents.contains_key(name)
+                        && self.store.agents.contains_key(name)
                     {
                         return Ok(ExprFlow::Value(Value::AgentHandlerRef(
                             name.clone(),
@@ -269,7 +269,7 @@ impl Interpreter {
                     // an EnumVariant directly (don't evaluate `obj`, which
                     // might not be bound as a Value).
                     if let Expr::Ident(name) = &obj.as_ref().kind
-                        && !self.agents.contains_key(name)
+                        && !self.store.agents.contains_key(name)
                         && self
                             .globals
                             .get(name)

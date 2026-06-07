@@ -21,6 +21,7 @@ mod methods;
 mod promote;
 mod state;
 mod stmt;
+mod store;
 
 pub(crate) use binary::{eval_binary, is_pascal_case};
 pub(crate) use binding::bind_value;

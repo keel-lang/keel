@@ -60,7 +60,7 @@ pub trait Host: Send {
     ) -> HostFuture<'a, Value>;
 
     /// Look up an `impl` method on a value's type.
-    fn find_impl_task(&self, value: &Value, method: &str) -> Option<TaskDecl>;
+    fn find_impl_task(&self, value: &Value, method: &str) -> Option<Arc<TaskDecl>>;
 
     /// Dispatch a namespace method call by name.
     fn call_namespace_method<'a>(
@@ -187,7 +187,7 @@ impl Host for Interpreter {
         Box::pin(Interpreter::call_task(self, name, decl, args))
     }
 
-    fn find_impl_task(&self, value: &Value, method: &str) -> Option<TaskDecl> {
+    fn find_impl_task(&self, value: &Value, method: &str) -> Option<Arc<TaskDecl>> {
         Interpreter::find_impl_task(self, value, method)
     }
 
@@ -278,7 +278,7 @@ impl Host for Interpreter {
             // Snapshot program symbol tables so the spawned task can resolve
             // user-defined tasks, enum/struct types, and registered closures.
             let globals = self.globals.clone();
-            let agents = self.agents.clone();
+            let store = self.store.clone();
             let enum_types = self.enum_types.clone();
             let struct_types = self.struct_types.clone();
             let struct_aliases = self.struct_aliases.clone();
@@ -293,7 +293,7 @@ impl Host for Interpreter {
             let handle = tokio::spawn(async move {
                 let mut local_interp = Interpreter::with_runtime(runtime);
                 local_interp.globals = globals;
-                local_interp.agents = agents;
+                local_interp.store = store;
                 local_interp.enum_types = enum_types;
                 local_interp.struct_types = struct_types;
                 local_interp.struct_aliases = struct_aliases;
@@ -379,7 +379,7 @@ impl Host for MockHost {
         unimplemented!("MockHost does not support call_task")
     }
 
-    fn find_impl_task(&self, _value: &Value, _method: &str) -> Option<TaskDecl> {
+    fn find_impl_task(&self, _value: &Value, _method: &str) -> Option<Arc<TaskDecl>> {
         unimplemented!("MockHost does not support find_impl_task")
     }
 

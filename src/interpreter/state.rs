@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{Receiver, Sender, channel};
 
+use super::store::ProgramStore;
 use crate::ast::{
     AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, Node, OnHandler, Param,
     StateField, StringPart, TaskDecl, TaskSig, TypeExpr,
@@ -52,7 +53,7 @@ pub struct AgentDef {
     pub name: String,
     pub attributes: Vec<AttributeDecl>,
     pub state_fields: Vec<StateField>,
-    pub tasks: Vec<TaskDecl>,
+    pub tasks: Vec<Arc<TaskDecl>>,
     pub handlers: Vec<OnHandler>,
 }
 
@@ -118,8 +119,8 @@ pub struct ScheduledClosure {
 pub struct Interpreter {
     /// Top-level name → value (types, tasks, agent defs, namespaces).
     pub(crate) globals: HashMap<String, Value>,
-    /// Agent definitions available to `run(...)`.
-    pub(crate) agents: HashMap<String, Arc<AgentDef>>,
+    /// Interned declaration tables (impl methods, agent definitions).
+    pub(crate) store: ProgramStore,
     /// Live agent instances started via `run()`, keyed by agent name.
     pub(crate) live_agents: Arc<Mutex<HashMap<String, Arc<Mutex<AgentInstance>>>>>,
     /// Currently-executing agent (for `self.` access inside tasks).
@@ -138,9 +139,6 @@ pub struct Interpreter {
     /// Type-resolution environment built from `type` declarations before any
     /// `impl` conformance checks run.  Used by [`crate::types::interface`].
     pub(crate) type_env: TypeEnv,
-    /// Interface impl methods: type_name → method_name → TaskDecl.
-    /// Populated from `impl Interface for Type { task method(self) -> R { ... } }`.
-    pub(crate) impl_methods: HashMap<String, HashMap<String, TaskDecl>>,
     /// Runtime backends for nondeterministic boundaries.
     pub(crate) runtime: Arc<crate::runtime::context::RuntimeContext>,
     /// Sender for runtime events. Spawned tokio tasks (scheduler,
@@ -180,7 +178,7 @@ impl Interpreter {
         let (event_tx, event_rx) = channel(runtime.event_queue_capacity());
         let mut interp = Interpreter {
             globals: HashMap::with_capacity(64),
-            agents: HashMap::with_capacity(16),
+            store: ProgramStore::new(),
             live_agents: Arc::new(Mutex::new(HashMap::new())),
             current_agent: None,
             namespaces: HashMap::with_capacity(32),
@@ -188,7 +186,6 @@ impl Interpreter {
             struct_types: HashMap::with_capacity(16),
             struct_aliases: HashMap::with_capacity(16),
             interfaces: builtin_interfaces(),
-            impl_methods: HashMap::with_capacity(16),
             type_env: TypeEnv::new(),
             runtime,
             event_tx,

@@ -182,17 +182,18 @@ impl Interpreter {
                             param.ty.kind = TypeExpr::Named(type_name.clone());
                         }
                     }
-                    self.impl_methods
+                    self.store
+                        .impl_methods
                         .entry(type_name.clone())
                         .or_default()
-                        .insert(method.name.clone(), fixed);
+                        .insert(method.name.clone(), Arc::new(fixed));
                 }
                 Ok(())
             }
             Decl::Task(t) => {
                 self.globals.insert(
                     t.name.clone(),
-                    Value::Task(t.name.clone(), Box::new(t.clone())),
+                    Value::Task(t.name.clone(), Arc::new(t.clone())),
                 );
                 Ok(())
             }
@@ -220,7 +221,7 @@ impl Interpreter {
                         .items
                         .iter()
                         .filter_map(|it| match it {
-                            AgentItem::Task(t) => Some(t.clone()),
+                            AgentItem::Task(t) => Some(Arc::new(t.clone())),
                             _ => None,
                         })
                         .collect(),
@@ -276,7 +277,7 @@ impl Interpreter {
 
                 self.globals
                     .insert(a.name.clone(), Value::AgentRef(a.name.clone()));
-                self.agents.insert(a.name.clone(), Arc::new(def));
+                self.store.agents.insert(a.name.clone(), Arc::new(def));
                 Ok(())
             }
             Decl::Stmt(_) => Ok(()), // executed in pass 2
@@ -516,9 +517,9 @@ mod tests {
         interp.register_decl(&decl).unwrap();
 
         match interp.globals.get("do_thing") {
-            Some(Value::Task(name, boxed)) => {
+            Some(Value::Task(name, decl)) => {
                 assert_eq!(name, "do_thing");
-                assert_eq!(boxed.name, "do_thing");
+                assert_eq!(decl.name, "do_thing");
             }
             other => panic!("expected Value::Task, got {other:?}"),
         }
@@ -543,7 +544,7 @@ mod tests {
         ));
 
         // agents map has the definition
-        let def = interp.agents.get("Bot").unwrap();
+        let def = interp.store.agents.get("Bot").unwrap();
         assert_eq!(def.name, "Bot");
         assert!(def.attributes.is_empty());
         assert!(def.state_fields.is_empty());
@@ -588,7 +589,7 @@ mod tests {
         });
         interp.register_decl(&decl).unwrap();
 
-        let def = interp.agents.get("FullBot").unwrap();
+        let def = interp.store.agents.get("FullBot").unwrap();
         assert_eq!(def.attributes.len(), 1);
         assert_eq!(def.attributes[0].name, "role");
         assert_eq!(def.state_fields.len(), 1);
@@ -626,7 +627,7 @@ mod tests {
         });
         interp.register_decl(&decl).unwrap();
 
-        let def = interp.agents.get("StateBot").unwrap();
+        let def = interp.store.agents.get("StateBot").unwrap();
         assert_eq!(def.state_fields.len(), 2);
         assert!(def.tasks.is_empty());
         assert!(def.handlers.is_empty());
@@ -659,7 +660,7 @@ mod tests {
         });
         interp.register_decl(&decl).unwrap();
 
-        let def = interp.agents.get("TaskBot").unwrap();
+        let def = interp.store.agents.get("TaskBot").unwrap();
         assert_eq!(def.tasks.len(), 2);
         assert!(def.state_fields.is_empty());
         assert!(def.handlers.is_empty());
@@ -692,7 +693,7 @@ mod tests {
         });
         interp.register_decl(&decl).unwrap();
 
-        let def = interp.agents.get("HandlerBot").unwrap();
+        let def = interp.store.agents.get("HandlerBot").unwrap();
         assert_eq!(def.handlers.len(), 2);
         assert!(def.tasks.is_empty());
         assert!(def.state_fields.is_empty());

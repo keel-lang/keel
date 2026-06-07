@@ -1,4 +1,8 @@
+use std::sync::Arc;
+
 use miette::Result;
+
+use crate::ast::TaskDecl;
 
 use super::environment::Environment;
 use super::runtime_error;
@@ -68,14 +72,10 @@ impl Interpreter {
     /// Untagged `Value::Map` values do not — assign struct literals to a
     /// typed variable (`x: TypeName = {...}`) to enable dispatch.
     /// Returns `None` if no impl is found.
-    /// Clones the TaskDecl to avoid borrow-across-await issues.
-    pub(crate) fn find_impl_task(
-        &self,
-        value: &Value,
-        method: &str,
-    ) -> Option<crate::ast::TaskDecl> {
+    pub(crate) fn find_impl_task(&self, value: &Value, method: &str) -> Option<Arc<TaskDecl>> {
         if let Value::Struct(type_name, _) = value {
-            self.impl_methods
+            self.store
+                .impl_methods
                 .get(type_name.as_str())?
                 .get(method)
                 .cloned()

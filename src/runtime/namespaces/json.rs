@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
@@ -82,7 +83,7 @@ pub(crate) fn namespace() -> Namespace {
                         // Count only struct types that implement Serializable (have to_json),
                         // so that a non-serializable struct with identical fields doesn't
                         // make the match ambiguous and suppress the custom serializer.
-                        let mut unique: Option<(String, crate::ast::TaskDecl)> = None;
+                        let mut unique: Option<(String, Arc<crate::ast::TaskDecl>)> = None;
                         for (name, schema) in host.struct_types() {
                             let schema_keys: HashSet<&str> =
                                 schema.iter().map(|(k, _)| k.as_str()).collect();

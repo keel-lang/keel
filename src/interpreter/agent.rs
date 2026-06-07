@@ -48,6 +48,7 @@ impl Interpreter {
 impl Interpreter {
     pub async fn start_agent(&mut self, agent_name: &str) -> Result<()> {
         let def = self
+            .store
             .agents
             .get(agent_name)
             .cloned()

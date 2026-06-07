@@ -79,8 +79,8 @@ pub enum Value {
     /// UUID value stored in canonical lowercase hyphenated form.
     Uuid(String),
 
-    /// A callable task (name, boxed declaration).
-    Task(String, Box<TaskDecl>),
+    /// A callable task (name, Arc-wrapped declaration).
+    Task(String, Arc<TaskDecl>),
 
     /// Reference to an agent by name
     AgentRef(String),
@@ -377,7 +377,7 @@ mod tests {
             return_type: None,
             body: vec![],
         };
-        assert_eq!(Value::Task("t".into(), Box::new(td)).type_name(), "task");
+        assert_eq!(Value::Task("t".into(), Arc::new(td)).type_name(), "task");
         assert_eq!(Value::AgentRef("a".into()).type_name(), "agent");
         let p = LambdaParam {
             name: "x".into(),
@@ -610,7 +610,7 @@ mod tests {
             return_type: None,
             body: vec![],
         };
-        let v = Value::Task("my_task".into(), Box::new(td));
+        let v = Value::Task("my_task".into(), Arc::new(td));
         assert_eq!(format!("{v}"), "<task my_task>");
     }
 
