@@ -214,11 +214,16 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
         .boxed();
 
         let if_stmt: P<Stmt> = if_chain
-            .then(just(Token::NullCoalesce).ignore_then(expr.clone()).or_not())
+            .then(
+                just(Token::NullCoalesce)
+                    .map_with_span(|_, span| span)
+                    .then(expr.clone())
+                    .or_not(),
+            )
             .map_with_span(|((cond, then_body, else_body), null_coalesce), span| {
-                if let Some(default) = null_coalesce {
+                if let Some((null_coalesce_span, default)) = null_coalesce {
                     // `if { } else { } ?? default` → expression statement.
-                    let if_span = cond.span.start..default.span.start;
+                    let if_span = span.start..null_coalesce_span.end;
                     let if_expr = Node::new(
                         Expr::IfExpr {
                             cond: Box::new(cond),

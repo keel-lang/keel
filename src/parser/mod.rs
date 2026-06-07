@@ -1425,4 +1425,29 @@ task t(x: str) {
             other => panic!("expected Task, got {:?}", other),
         }
     }
+
+    #[test]
+    fn null_coalesced_if_stmt_if_expr_span_includes_operator() {
+        let src = r#"task t() -> str { if true { "yes" } else { "no" } ?? "fallback" }"#;
+        let prog = parse_ok(src);
+        let Decl::Task(t) = first_decl(&prog) else {
+            panic!("expected Decl::Task")
+        };
+        let Stmt::Expr(expr) = &t.body[0].kind else {
+            panic!("expected Stmt::Expr")
+        };
+        let Expr::NullCoalesce(left, default) = &expr.kind else {
+            panic!("expected Expr::NullCoalesce")
+        };
+
+        assert!(
+            matches!(left.kind, Expr::IfExpr { .. }),
+            "expected left side to be Expr::IfExpr"
+        );
+        assert_eq!(
+            &src[left.span.clone()],
+            r#"if true { "yes" } else { "no" } ??"#
+        );
+        assert_eq!(&src[default.span.clone()], r#""fallback""#);
+    }
 }

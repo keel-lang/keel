@@ -8,13 +8,17 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% share when-block parsing
+%%TAGLINE%% tighten parser spans and share when-block parsing
 
 ---
 
 ### Changed
 
 - Parser internals now share the `when` block wrapper between statement and expression contexts, keeping arm parsing rules consistent across both forms.
+
+### Fixed
+
+- Parser spans for null-coalesced `if` statements now include the `??` operator in the synthesized `IfExpr`, so LSP diagnostics and IDE lookups cover the full conditional expression.
 
 ## [0.1.33] — 2026-06-07
 
