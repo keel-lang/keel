@@ -71,8 +71,11 @@ pub(crate) fn build_types(
     let mut symbol_types: HashMap<SymbolId, String> = HashMap::new();
     let mut name_bindings: HashMap<String, Ty> = HashMap::new();
 
-    collect_symbol_decl_types(program, &decl_ids, &mut checker, &mut symbol_types);
-    collect_decl_bindings(program, &mut checker, &mut name_bindings);
+    // Single traversal populates both maps; avoids double infer_expr calls.
+    visit_decl_bindings(program, &mut checker, |binding, span, ty| {
+        insert_binding_symbol(binding, span, ty.clone(), &decl_ids, &mut symbol_types);
+        insert_binding(binding, ty, &mut name_bindings);
+    });
 
     let name_types = name_bindings
         .into_iter()
@@ -83,15 +86,10 @@ pub(crate) fn build_types(
 }
 
 // ---------------------------------------------------------------------------
-// Binding collectors (used by type_at and build_name_types)
+// Binding collectors
 // ---------------------------------------------------------------------------
 
-pub(crate) fn insert_binding(
-    binding: &Binding,
-    ty: Ty,
-    _c: &mut Checker<'_, '_>,
-    out: &mut HashMap<String, Ty>,
-) {
+pub(crate) fn insert_binding(binding: &Binding, ty: Ty, out: &mut HashMap<String, Ty>) {
     match binding {
         Binding::Ident(name) => {
             out.insert(name.clone(), ty);
@@ -126,224 +124,109 @@ pub(crate) fn insert_binding(
     }
 }
 
-pub(crate) fn collect_decl_bindings(
+fn collect_decl_bindings(
     program: &Program,
     c: &mut Checker<'_, '_>,
     out: &mut HashMap<String, Ty>,
 ) {
-    for node in &program.declarations {
-        match &node.kind {
-            Decl::Stmt(stmt_node) => collect_stmt_bindings(&stmt_node.kind, c, out),
-            Decl::Task(t) => {
-                for p in &t.params {
-                    insert_binding(&p.name, c.resolve_type(&p.ty.kind), c, out);
-                }
-                for s_node in &t.body {
-                    collect_stmt_bindings(&s_node.kind, c, out);
-                }
-            }
-            Decl::Agent(decl) => {
-                for it in &decl.items {
-                    match it {
-                        AgentItem::State(fields) => {
-                            for sf in fields {
-                                out.insert(sf.name.clone(), c.resolve_type(&sf.ty.kind));
-                            }
-                        }
-                        AgentItem::Task(t) => {
-                            for p in &t.params {
-                                insert_binding(&p.name, c.resolve_type(&p.ty.kind), c, out);
-                            }
-                            for s_node in &t.body {
-                                collect_stmt_bindings(&s_node.kind, c, out);
-                            }
-                        }
-                        AgentItem::On(h) => {
-                            if let Some(p) = &h.param {
-                                insert_binding(&p.name, c.resolve_type(&p.ty.kind), c, out);
-                            }
-                            for s_node in &h.body {
-                                collect_stmt_bindings(&s_node.kind, c, out);
-                            }
-                        }
-                        AgentItem::Attribute(attr) => {
-                            if let AttributeBody::Block(block) = &attr.body {
-                                for s_node in block {
-                                    collect_stmt_bindings(&s_node.kind, c, out);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-pub(crate) fn collect_stmt_bindings(
-    stmt: &Stmt,
-    c: &mut Checker<'_, '_>,
-    out: &mut HashMap<String, Ty>,
-) {
-    match stmt {
-        Stmt::Let { binding, ty, value } => {
-            let mut scope = Scope::new();
-            let inferred = c.infer_expr(value, &mut scope);
-            let bound = ty
-                .as_ref()
-                .map(|t| c.resolve_type(&t.kind))
-                .unwrap_or(inferred);
-            insert_binding(binding, bound, c, out);
-        }
-        Stmt::For {
-            binding,
-            iter,
-            body,
-            ..
-        } => {
-            let mut scope = Scope::new();
-            let iter_ty = c.infer_expr(iter, &mut scope);
-            let elem = match iter_ty.strip_nullable() {
-                Ty::List(inner) => *inner.clone(),
-                _ => Ty::Unknown(UnknownReason::InferenceLimitation),
-            };
-            insert_binding(binding, elem, c, out);
-            for s_node in body {
-                collect_stmt_bindings(&s_node.kind, c, out);
-            }
-        }
-        Stmt::If {
-            then_body,
-            else_body,
-            ..
-        } => {
-            for s_node in then_body {
-                collect_stmt_bindings(&s_node.kind, c, out);
-            }
-            if let Some(eb) = else_body {
-                for s_node in eb {
-                    collect_stmt_bindings(&s_node.kind, c, out);
-                }
-            }
-        }
-        Stmt::When { arms, .. } => {
-            for arm in arms {
-                for s_node in &arm.body {
-                    collect_stmt_bindings(&s_node.kind, c, out);
-                }
-            }
-        }
-        Stmt::While { body, .. } => {
-            for s_node in body {
-                collect_stmt_bindings(&s_node.kind, c, out);
-            }
-        }
-        Stmt::TryCatch { body, catches } => {
-            for s_node in body {
-                collect_stmt_bindings(&s_node.kind, c, out);
-            }
-            for catch in catches {
-                out.insert(catch.name.clone(), c.resolve_type(&catch.ty.kind));
-                for s_node in &catch.body {
-                    collect_stmt_bindings(&s_node.kind, c, out);
-                }
-            }
-        }
-        _ => {}
-    }
+    visit_decl_bindings(program, c, |binding, _span, ty| {
+        insert_binding(binding, ty, out);
+    });
 }
 
 // ---------------------------------------------------------------------------
-// SymbolId-keyed type collection (internal helpers for build_types)
+// Generic AST binding visitor
 // ---------------------------------------------------------------------------
 
-fn collect_symbol_decl_types(
+/// Walk every binding site in `program`, calling `visitor` with `(binding, span, ty)`.
+///
+/// Covers: top-level `task` params and bodies, `agent` state fields, task/on
+/// params and bodies, `impl` method params and bodies, `when` arm
+/// `Pattern::Variant` destructures (span = `0..0`, type = `Unknown`), `let`,
+/// `for`, `if`/`else`, `while`, `when` bodies, and `try/catch` clauses.
+///
+/// Spans match what the HIR records for each symbol: `stmt_span` for `let`/`for`,
+/// `name_span` for params and state fields, `ty.span` for catch-clause names.
+///
+/// Any new binding site in the AST requires only one edit here.
+fn visit_decl_bindings<F: FnMut(&Binding, &Span, Ty)>(
     program: &Program,
-    decl_ids: &HashMap<(String, Span), SymbolId>,
     c: &mut Checker<'_, '_>,
-    out: &mut HashMap<SymbolId, String>,
+    mut visitor: F,
 ) {
     for node in &program.declarations {
         match &node.kind {
             Decl::Stmt(stmt_node) => {
-                collect_stmt_symbol_types(&stmt_node.kind, &stmt_node.span, decl_ids, c, out);
+                visit_stmt_bindings(&stmt_node.kind, &stmt_node.span, c, &mut visitor);
             }
             Decl::Task(t) => {
                 for p in &t.params {
-                    let ty = c.resolve_type(&p.ty.kind);
-                    insert_binding_symbol(&p.name, &p.name_span, ty, decl_ids, out);
+                    visitor(&p.name, &p.name_span, c.resolve_type(&p.ty.kind));
                 }
-                for s_node in &t.body {
-                    collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-                }
+                recurse_body(&t.body, c, &mut visitor);
             }
             Decl::Agent(decl) => {
                 for it in &decl.items {
                     match it {
                         AgentItem::State(fields) => {
                             for sf in fields {
-                                let ty = c.resolve_type(&sf.ty.kind);
-                                insert_symbol(&sf.name, &sf.name_span, ty, decl_ids, out);
+                                visitor(
+                                    &Binding::Ident(sf.name.clone()),
+                                    &sf.name_span,
+                                    c.resolve_type(&sf.ty.kind),
+                                );
                             }
                         }
                         AgentItem::Task(t) => {
                             for p in &t.params {
-                                let ty = c.resolve_type(&p.ty.kind);
-                                insert_binding_symbol(&p.name, &p.name_span, ty, decl_ids, out);
+                                visitor(&p.name, &p.name_span, c.resolve_type(&p.ty.kind));
                             }
-                            for s_node in &t.body {
-                                collect_stmt_symbol_types(
-                                    &s_node.kind,
-                                    &s_node.span,
-                                    decl_ids,
-                                    c,
-                                    out,
-                                );
-                            }
+                            recurse_body(&t.body, c, &mut visitor);
                         }
                         AgentItem::On(h) => {
                             if let Some(p) = &h.param {
-                                let ty = c.resolve_type(&p.ty.kind);
-                                insert_binding_symbol(&p.name, &p.name_span, ty, decl_ids, out);
+                                visitor(&p.name, &p.name_span, c.resolve_type(&p.ty.kind));
                             }
-                            for s_node in &h.body {
-                                collect_stmt_symbol_types(
-                                    &s_node.kind,
-                                    &s_node.span,
-                                    decl_ids,
-                                    c,
-                                    out,
-                                );
-                            }
+                            recurse_body(&h.body, c, &mut visitor);
                         }
                         AgentItem::Attribute(attr) => {
                             if let AttributeBody::Block(block) = &attr.body {
-                                for s_node in block {
-                                    collect_stmt_symbol_types(
-                                        &s_node.kind,
-                                        &s_node.span,
-                                        decl_ids,
-                                        c,
-                                        out,
-                                    );
-                                }
+                                recurse_body(block, c, &mut visitor);
                             }
                         }
                     }
                 }
             }
+            Decl::Impl(decl) => {
+                for method in &decl.methods {
+                    for p in &method.params {
+                        visitor(&p.name, &p.name_span, c.resolve_type(&p.ty.kind));
+                    }
+                    recurse_body(&method.body, c, &mut visitor);
+                }
+            }
+            // Decl::Type / Decl::Interface / Decl::Extern / Decl::Use / Decl::Stmt
+            // introduce no locally-scoped let/for/param bindings visible to hover.
             _ => {}
         }
     }
 }
 
-fn collect_stmt_symbol_types(
+fn recurse_body<F: FnMut(&Binding, &Span, Ty)>(
+    body: &[Node<Stmt>],
+    c: &mut Checker<'_, '_>,
+    visitor: &mut F,
+) {
+    for s_node in body {
+        visit_stmt_bindings(&s_node.kind, &s_node.span, c, visitor);
+    }
+}
+
+fn visit_stmt_bindings<F: FnMut(&Binding, &Span, Ty)>(
     stmt: &Stmt,
     stmt_span: &Span,
-    decl_ids: &HashMap<(String, Span), SymbolId>,
     c: &mut Checker<'_, '_>,
-    out: &mut HashMap<SymbolId, String>,
+    visitor: &mut F,
 ) {
     match stmt {
         Stmt::Let { binding, ty, value } => {
@@ -353,8 +236,7 @@ fn collect_stmt_symbol_types(
                 .as_ref()
                 .map(|t| c.resolve_type(&t.kind))
                 .unwrap_or(inferred);
-            // HIR stores let-binding symbols with span = stmt_span.
-            insert_binding_symbol(binding, stmt_span, bound, decl_ids, out);
+            visitor(binding, stmt_span, bound);
         }
         Stmt::For {
             binding,
@@ -368,54 +250,56 @@ fn collect_stmt_symbol_types(
                 Ty::List(inner) => *inner.clone(),
                 _ => Ty::Unknown(UnknownReason::InferenceLimitation),
             };
-            // HIR stores for-binding symbols with span = for-stmt span.
-            insert_binding_symbol(binding, stmt_span, elem, decl_ids, out);
-            for s_node in body {
-                collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-            }
+            visitor(binding, stmt_span, elem);
+            recurse_body(body, c, visitor);
         }
         Stmt::If {
             then_body,
             else_body,
             ..
         } => {
-            for s_node in then_body {
-                collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-            }
+            recurse_body(then_body, c, visitor);
             if let Some(eb) = else_body {
-                for s_node in eb {
-                    collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-                }
+                recurse_body(eb, c, visitor);
             }
         }
         Stmt::When { arms, .. } => {
+            // HIR records variant-destructure names with exprless_span (0..0);
+            // their type is not inferrable without subject-type analysis.
             for arm in arms {
-                for s_node in &arm.body {
-                    collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
+                for pattern in &arm.patterns {
+                    if let Pattern::Variant { bindings, .. } = pattern {
+                        for name in bindings {
+                            visitor(
+                                &Binding::Ident(name.clone()),
+                                &(0..0),
+                                Ty::Unknown(UnknownReason::InferenceLimitation),
+                            );
+                        }
+                    }
                 }
+                recurse_body(&arm.body, c, visitor);
             }
         }
         Stmt::While { body, .. } => {
-            for s_node in body {
-                collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-            }
+            recurse_body(body, c, visitor);
         }
         Stmt::TryCatch { body, catches } => {
-            for s_node in body {
-                collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-            }
+            recurse_body(body, c, visitor);
             for catch in catches {
                 let ty = c.resolve_type(&catch.ty.kind);
-                // HIR stores catch-binding symbols with span = catch.ty.span.
-                insert_symbol(&catch.name, &catch.ty.span, ty, decl_ids, out);
-                for s_node in &catch.body {
-                    collect_stmt_symbol_types(&s_node.kind, &s_node.span, decl_ids, c, out);
-                }
+                // HIR stores catch-clause symbols with span = catch.ty.span.
+                visitor(&Binding::Ident(catch.name.clone()), &catch.ty.span, ty);
+                recurse_body(&catch.body, c, visitor);
             }
         }
         _ => {}
     }
 }
+
+// ---------------------------------------------------------------------------
+// SymbolId-keyed insert helpers (used by the symbol closure in build_types)
+// ---------------------------------------------------------------------------
 
 /// Insert a single named binding's type, keyed by its HIR SymbolId.
 ///
