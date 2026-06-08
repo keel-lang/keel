@@ -344,6 +344,13 @@ mod tests {
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
         assert!(labels.contains(&"Ai"), "should contain namespace Ai");
         assert!(labels.contains(&"agent"), "should contain keyword agent");
+        assert!(labels.contains(&"test"), "should contain contextual test");
+        assert!(labels.contains(&"mock"), "should contain contextual mock");
+        assert!(labels.contains(&"setup"), "should contain contextual setup");
+        assert!(
+            labels.contains(&"assert"),
+            "should contain contextual assert"
+        );
         assert!(
             labels.contains(&"classify"),
             "should contain method classify"

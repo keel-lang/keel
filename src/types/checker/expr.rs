@@ -19,6 +19,16 @@ use super::{
     binop::{check_binop, infer_binary},
 };
 
+fn mock_target_from_expr(expr: &SpannedExpr) -> Option<(&str, &str)> {
+    let Expr::FieldAccess(object, method) = &expr.kind else {
+        return None;
+    };
+    let Expr::Ident(namespace) = &object.as_ref().kind else {
+        return None;
+    };
+    Some((namespace.as_str(), method.as_str()))
+}
+
 impl Checker<'_, '_> {
     pub(crate) fn infer_expr(&mut self, spanned: &SpannedExpr, scope: &mut Scope) -> Ty {
         let expr = &spanned.kind;
@@ -101,6 +111,21 @@ impl Checker<'_, '_> {
             Expr::SelfRef => Ty::Unknown(UnknownReason::InferenceLimitation),
 
             Expr::FieldAccess(obj, field) => {
+                if matches!(field.as_str(), "called" | "call_count")
+                    && let Some((namespace, method)) = mock_target_from_expr(obj)
+                    && prelude::catalog_method(namespace, method).is_some()
+                {
+                    if self.current_test_mocks.as_ref().is_some_and(|mocks| {
+                        mocks.contains(&(namespace.to_string(), method.to_string()))
+                    }) {
+                        return if field == "called" { Ty::Bool } else { Ty::Int };
+                    }
+                    self.err(format!(
+                        "`{namespace}.{method}.{field}` requires \
+                         `testing.mock({namespace}.{method}).returns(...)` in the current test"
+                    ));
+                    return Ty::Error;
+                }
                 // Resolve ident-qualified field access through the name index
                 // before falling through to value-level struct field access.
                 if let Expr::Ident(name) = &obj.as_ref().kind {
@@ -659,6 +684,48 @@ impl Checker<'_, '_> {
                     .iter()
                     .map(|a| self.infer_expr(&a.value, scope))
                     .collect();
+                if let Expr::Ident(namespace) = &object.as_ref().kind
+                    && namespace == "testing"
+                    && method == "mock"
+                {
+                    if self.current_test_mocks.is_none() {
+                        self.err("`testing.mock(...)` can only be used inside a test block");
+                        return Ty::Error;
+                    }
+                    let Some(target_arg) = args.first() else {
+                        self.err("`testing.mock(...)` requires a namespace method target");
+                        return Ty::Error;
+                    };
+                    let Some((target_namespace, target_method)) =
+                        mock_target_from_expr(&target_arg.value)
+                    else {
+                        self.err("`testing.mock(...)` requires a namespace method target");
+                        return Ty::Error;
+                    };
+                    if prelude::catalog_method(target_namespace, target_method).is_none() {
+                        self.err(format!(
+                            "unknown mock target `{target_namespace}.{target_method}`"
+                        ));
+                        return Ty::Error;
+                    }
+                    return Ty::Unknown(UnknownReason::InferenceLimitation);
+                }
+                if method == "called_with"
+                    && let Some((namespace, target_method)) = mock_target_from_expr(object)
+                    && prelude::catalog_method(namespace, target_method).is_some()
+                {
+                    if self.current_test_mocks.as_ref().is_some_and(|mocks| {
+                        mocks.contains(&(namespace.to_string(), target_method.to_string()))
+                    }) {
+                        return Ty::Bool;
+                    }
+                    self.err(format!(
+                        "`{namespace}.{target_method}.called_with(...)` requires \
+                         `testing.mock({namespace}.{target_method}).returns(...)` in the \
+                         current test"
+                    ));
+                    return Ty::Error;
+                }
                 if matches!(&object.as_ref().kind, Expr::SelfRef) {
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{method}(...)` used outside an agent"));

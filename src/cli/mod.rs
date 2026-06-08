@@ -38,6 +38,23 @@ enum Commands {
         /// Path to the .keel file
         file: PathBuf,
     },
+    /// Execute test blocks in a Keel program
+    Test {
+        /// Path to a .keel file or directory
+        file: PathBuf,
+        /// Run only tests whose name contains this text
+        #[arg(long, value_name = "TEXT")]
+        filter: Option<String>,
+        /// List matching tests without running them
+        #[arg(long)]
+        list: bool,
+        /// Stop after the first failing test
+        #[arg(long)]
+        fail_fast: bool,
+        /// Print only failures and the final summary
+        #[arg(long)]
+        quiet: bool,
+    },
     /// Type-check an Keel program without executing
     Check {
         /// Path to the .keel file
@@ -118,6 +135,24 @@ pub async fn run() -> Result<()> {
         Commands::Run { file } => {
             let runtime = RuntimeContext::native_with_config(runtime_config);
             pipeline::run_file_with_runtime(&file, runtime).await
+        }
+        Commands::Test {
+            file,
+            filter,
+            list,
+            fail_fast,
+            quiet,
+        } => {
+            let runtime = RuntimeContext::native_with_config(runtime_config);
+            pipeline::test_file_with_runtime(
+                &file,
+                runtime,
+                filter.as_deref(),
+                list,
+                fail_fast,
+                quiet,
+            )
+            .await
         }
         Commands::Check { file, strict } => pipeline::check_file(&file, strict),
         Commands::Init { name } => init::project(name),

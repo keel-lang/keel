@@ -4,7 +4,7 @@
 
 use std::io::{Read as _, Write as _};
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 
@@ -26,6 +26,22 @@ pub fn run_example(name: &str) -> (bool, String, String) {
         .arg(&example)
         .output()
         .expect("failed to run keel binary");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
+pub fn test_example(name: &str) -> (bool, String, String) {
+    let bin = keel_binary();
+    let example = project_root().join("examples").join(format!("{name}.keel"));
+    let output = Command::new(&bin)
+        .env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .arg("test")
+        .arg(&example)
+        .output()
+        .expect("failed to run keel test");
     let ok = output.status.success();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
@@ -119,6 +135,93 @@ pub fn run_inline(src: &str, trace: bool) -> (bool, String, String) {
         cmd.env("KEEL_TRACE", "1");
     }
     let output = cmd.output().expect("run keel");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
+pub fn test_inline(src: &str) -> (bool, String, String) {
+    test_inline_with_options(src, None, false)
+}
+
+pub fn test_inline_with_env(src: &str, envs: &[(&str, &str)]) -> (bool, String, String) {
+    test_inline_with_options_and_env(src, None, false, false, false, envs)
+}
+
+pub fn test_inline_with_filter(src: &str, filter: Option<&str>) -> (bool, String, String) {
+    test_inline_with_options(src, filter, false)
+}
+
+pub fn test_inline_list(src: &str, filter: Option<&str>) -> (bool, String, String) {
+    test_inline_with_options(src, filter, true)
+}
+
+pub fn test_inline_fail_fast(src: &str) -> (bool, String, String) {
+    test_inline_with_options_and_env(src, None, false, true, false, &[])
+}
+
+pub fn test_inline_quiet(src: &str) -> (bool, String, String) {
+    test_inline_with_options_and_env(src, None, false, false, true, &[])
+}
+
+pub fn test_path(path: &Path, args: &[&str]) -> (bool, String, String) {
+    let bin = keel_binary();
+    let mut cmd = Command::new(&bin);
+    cmd.env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .arg("test")
+        .arg(path);
+    for arg in args {
+        cmd.arg(arg);
+    }
+    let output = cmd.output().expect("run keel test");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
+fn test_inline_with_options(src: &str, filter: Option<&str>, list: bool) -> (bool, String, String) {
+    test_inline_with_options_and_env(src, filter, list, false, false, &[])
+}
+
+fn test_inline_with_options_and_env(
+    src: &str,
+    filter: Option<&str>,
+    list: bool,
+    fail_fast: bool,
+    quiet: bool,
+    envs: &[(&str, &str)],
+) -> (bool, String, String) {
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("tempfile");
+    tmp.write_all(src.as_bytes()).expect("write tempfile");
+    let path = tmp.path().to_owned();
+    let bin = keel_binary();
+    let mut cmd = Command::new(&bin);
+    cmd.env("KEEL_ONESHOT", "1")
+        .env("KEEL_LLM", "mock")
+        .arg("test")
+        .arg(&path);
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
+    if let Some(filter) = filter {
+        cmd.arg("--filter").arg(filter);
+    }
+    if list {
+        cmd.arg("--list");
+    }
+    if fail_fast {
+        cmd.arg("--fail-fast");
+    }
+    if quiet {
+        cmd.arg("--quiet");
+    }
+    let output = cmd.output().expect("run keel test");
     let ok = output.status.success();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();

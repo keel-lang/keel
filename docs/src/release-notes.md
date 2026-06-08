@@ -4,6 +4,37 @@
 
 ## Unreleased
 
+### Built-in test blocks
+
+Keel now has a first language-level test runner:
+
+```keel
+use std/testing
+
+type Severity = low | medium | critical
+
+task classify(text: str) -> Severity {
+    Ai.classify(text, as: Severity) ?? Severity.low
+}
+
+test "mocked classify returns critical" {
+    testing.mock(Ai.classify).returns(Severity.critical)
+    assert classify("payment outage") == Severity.critical, "expected critical"
+}
+```
+
+Run tests with:
+
+```bash
+keel test triage.keel
+```
+
+Use `keel test triage.keel --filter classify` to run only tests whose names contain `classify`, `keel test triage.keel --list` to print matching test names without running them, `--fail-fast` to stop after the first failure, or `--quiet` to print only failures and the final summary. Passing a directory, such as `keel test examples/`, recursively runs `.keel` files with test blocks.
+
+`use std/testing` brings the `testing` namespace into scope. `testing.mock(Namespace.method).returns(value)` overrides one prelude namespace method for the current test only. Repeating a mock target returns values in order, then repeats the final value. Mocked methods expose `Namespace.method.called`, `Namespace.method.call_count`, and `Namespace.method.called_with(...)` metadata inside the same test. `setup { ... }` prepares bindings for the current test body. `test "name" for case in cases { ... }` runs one indexed case per item in the `cases` list. `assert expr` requires a boolean expression and fails the test when it evaluates to `false`; `assert expr, "message"` customizes the failure message. Files with no test blocks print `0 tests found`. Result lines include per-test elapsed time, failed tests include source locations when available, and the final summary includes total suite time. `keel run` ignores test blocks, so production execution remains unchanged.
+
+`test`, `setup`, and `assert` are contextual syntax words rather than new reserved keywords.
+
 ---
 
 ## v0.1.33 — 2026-06-07

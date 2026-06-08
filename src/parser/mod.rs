@@ -1450,4 +1450,127 @@ task t(x: str) {
         );
         assert_eq!(&src[default.span.clone()], r#""fallback""#);
     }
+
+    #[test]
+    fn parse_test_block_with_testing_mock_and_assert() {
+        let src = r#"
+use std/testing
+
+type Severity = low | critical
+
+test "triage" {
+  testing.mock(Ai.classify).returns(Severity.critical)
+  assert true
+}
+"#;
+        let prog = parse_ok(src);
+        let Decl::Test(test) = &prog.declarations[2].kind else {
+            panic!("expected Decl::Test")
+        };
+        assert_eq!(test.name, "triage");
+        assert!(test.param.is_none());
+        assert!(test.setup.is_empty());
+        assert_eq!(test.body.len(), 2);
+        assert!(matches!(
+            test.body[1].kind,
+            Stmt::Assert { message: None, .. }
+        ));
+    }
+
+    #[test]
+    fn parse_test_block_with_setup() {
+        let src = r#"
+test "setup" {
+  setup {
+    expected = "ready"
+  }
+
+  assert expected == "ready"
+}
+"#;
+        let prog = parse_ok(src);
+        let Decl::Test(test) = &prog.declarations[0].kind else {
+            panic!("expected Decl::Test")
+        };
+        assert_eq!(test.setup.len(), 1);
+        assert_eq!(test.body.len(), 1);
+    }
+
+    #[test]
+    fn parse_parameterized_test_block() {
+        let src = r#"
+test "cases" for case in [{ value: 1 }] {
+  assert case.value == 1
+}
+"#;
+        let prog = parse_ok(src);
+        let Decl::Test(test) = &prog.declarations[0].kind else {
+            panic!("expected Decl::Test")
+        };
+        let param = test.param.as_ref().expect("expected test parameter");
+        assert_eq!(param.name, "case");
+        assert!(matches!(&param.cases.kind, Expr::ListLit(_)));
+        assert_eq!(test.body.len(), 1);
+    }
+
+    #[test]
+    fn parse_assert_with_message() {
+        let src = r#"
+test "message" {
+  assert false, "custom failure"
+}
+"#;
+        let prog = parse_ok(src);
+        let Decl::Test(test) = &prog.declarations[0].kind else {
+            panic!("expected Decl::Test")
+        };
+        let Stmt::Assert {
+            cond: _,
+            message: Some(message),
+        } = &test.body[0].kind
+        else {
+            panic!("expected assertion with message")
+        };
+        assert!(matches!(&message.kind, Expr::StringLit(_)));
+    }
+
+    #[test]
+    fn testing_contextual_words_remain_identifiers_elsewhere() {
+        let src = r#"
+task t(test: str, mock: str, assert: bool) -> str {
+  value = test
+  assert_name = mock
+  value
+}
+"#;
+        let prog = parse_ok(src);
+        let Decl::Task(task) = first_decl(&prog) else {
+            panic!("expected Decl::Task")
+        };
+        assert_eq!(task.params.len(), 3);
+        assert!(matches!(task.body[0].kind, Stmt::Let { .. }));
+    }
+
+    #[test]
+    fn bare_assert_call_remains_expression_statement() {
+        let src = r#"
+task assert(message: str) -> str {
+  message
+}
+
+assert("hello")
+"#;
+        let prog = parse_ok(src);
+        let Decl::Stmt(stmt) = &prog.declarations[1].kind else {
+            panic!("expected Decl::Stmt")
+        };
+        let Stmt::Expr(expr) = &stmt.kind else {
+            panic!("expected expression statement")
+        };
+        let Expr::Call { callee, args } = &expr.kind else {
+            panic!("expected call expression")
+        };
+        assert!(matches!(&callee.as_ref().kind, Expr::Ident(name) if name == "assert"));
+        assert_eq!(args.len(), 1);
+    }
 }

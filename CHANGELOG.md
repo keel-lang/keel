@@ -8,9 +8,28 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% tighten parser spans and share when-block parsing
+%%TAGLINE%% add built-in Keel test blocks with std/testing mocks
 
 ---
+
+### Added
+
+- Built-in Keel test blocks. `keel test <path>` now runs top-level `test "name" { ... }` blocks without executing top-level program statements, and directory paths recursively discover `.keel` files with test blocks. `--filter <text>` runs only tests whose names contain the filter text, `--list` prints matching tests without running them, `--fail-fast` stops after the first failing test, `--quiet` prints only failures and the final summary, and paths with no tests report `0 tests found`. Test results color `PASS` green and `FAIL` red when color output is enabled, with muted per-test elapsed time after the test name, source locations for failed statements when available, and total suite time in the final summary. Tests support `setup { ... }` blocks, parameterized `test "name" for case in cases { ... }` blocks, `use std/testing` plus repeated `testing.mock(Namespace.method).returns(value)` sequences scoped to a single test, mock metadata via `Namespace.method.called`, `Namespace.method.call_count`, and `Namespace.method.called_with(...)`, and `assert expr` statements checked as booleans by the type checker; `assert expr, "message"` provides a custom failure message. `test`, `setup`, and `assert` are contextual syntax words, not new reserved keywords. Closes [#53](https://github.com/keel-lang/keel/issues/53).
+
+  ```keel
+  use std/testing
+
+  type Severity = low | medium | critical
+
+  task classify(text: str) -> Severity {
+      Ai.classify(text, as: Severity) ?? Severity.low
+  }
+
+  test "mocked classify returns critical" {
+      testing.mock(Ai.classify).returns(Severity.critical)
+      assert classify("payment outage") == Severity.critical, "expected critical"
+  }
+  ```
 
 ### Changed
 

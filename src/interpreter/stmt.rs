@@ -84,6 +84,35 @@ impl Interpreter {
                     };
                     Ok(StmtOutcome::Return(v))
                 }
+                Stmt::Assert { cond, message } => {
+                    let value = match self.eval_expr(cond, env).await? {
+                        ExprFlow::Value(v) => v,
+                        ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                    };
+                    match value {
+                        Value::Bool(true) => Ok(StmtOutcome::Normal),
+                        Value::Bool(false) => {
+                            let message = match message {
+                                Some(message) => match self.eval_expr(message, env).await? {
+                                    ExprFlow::Value(Value::String(s)) => s,
+                                    ExprFlow::Value(other) => {
+                                        return Err(runtime_error(format!(
+                                            "`assert` message expected str, got {}",
+                                            other.type_name()
+                                        )));
+                                    }
+                                    ExprFlow::Return(v) => return Ok(StmtOutcome::Return(v)),
+                                },
+                                None => "assertion failed".to_string(),
+                            };
+                            Err(runtime_error(message))
+                        }
+                        other => Err(runtime_error(format!(
+                            "`assert` expected bool, got {}",
+                            other.type_name()
+                        ))),
+                    }
+                }
                 Stmt::For {
                     binding,
                     iter,

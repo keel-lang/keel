@@ -12,6 +12,7 @@ use miette::{NamedSource, Result};
 
 use crate::ast::Program;
 use crate::diagnostics::LintWarning;
+use crate::interpreter::TestOutcome;
 use crate::runtime::context::RuntimeContext;
 use crate::types::diagnostics::TypeDiagnostic;
 use crate::{formatter, hir, interpreter, lexer, lint, parser, types};
@@ -115,6 +116,42 @@ pub async fn run_source(
         runtime,
     )
     .await
+}
+
+/// Execute all test blocks in a type-checked program.
+///
+/// Refuses to run a program that has type errors. Each test is executed by the
+/// interpreter with its own test-local mock overlay.
+///
+/// # Errors
+///
+/// Returns an error if `checked.has_errors()`, or if test discovery fails.
+pub async fn test_source(
+    checked: CheckedProgram,
+    runtime: Arc<RuntimeContext>,
+    source_path: Option<&Path>,
+    filter: Option<&str>,
+    fail_fast: bool,
+) -> Result<Vec<TestOutcome>> {
+    if checked.has_errors() {
+        return Err(miette::miette!(
+            "{} type error(s) — cannot execute tests with type errors",
+            checked.diagnostics.len()
+        ));
+    }
+    interpreter::run_tests_with_source_and_runtime(
+        checked.ast,
+        Some(checked.source),
+        source_path,
+        runtime,
+        filter,
+        fail_fast,
+    )
+    .await
+}
+
+pub fn test_names(checked: &CheckedProgram, filter: Option<&str>) -> Vec<String> {
+    interpreter::test_names(&checked.ast, filter)
 }
 
 /// Format source text and return the formatted string.

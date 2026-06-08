@@ -1,7 +1,14 @@
+use std/testing
+
 type Urgency = low | medium | high | critical
 
 task safe_classify(text: str) -> Urgency {
   Ai.classify(text, as: Urgency) ?? Urgency.medium
+}
+
+test "safe classify uses mocked urgency" {
+  testing.mock(Ai.classify).returns(Urgency.critical)
+  assert safe_classify("server is down!") == Urgency.critical
 }
 
 agent ErrorDemo {

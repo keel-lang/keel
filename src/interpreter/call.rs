@@ -5,7 +5,7 @@ use crate::ast::{AttributeBody, LambdaBody, LambdaParam, TaskDecl};
 use super::bind_value;
 use super::environment::Environment;
 use super::promote::promote_value;
-use super::state::{AllowedTools, CallArgValue, Interpreter};
+use super::state::{AllowedTools, CallArgValue, Interpreter, RecordedMockCall};
 use super::stmt::{ExprFlow, StmtOutcome};
 use super::value::Value;
 use super::{RuntimeErrorKind, runtime_error};
@@ -153,6 +153,26 @@ impl Interpreter {
             }
         }
 
+        let mocked = {
+            let mut test_mocks = self.test_mocks.lock();
+            test_mocks
+                .get_mut(&(ns_name.to_string(), method.to_string()))
+                .map(|state| {
+                    state.calls.push(RecordedMockCall { args: args.clone() });
+                    if state.returns.len() > 1 {
+                        state.returns.remove(0)
+                    } else {
+                        state.returns.first().cloned().unwrap_or(Value::None)
+                    }
+                })
+        };
+        if let Some(mocked) = mocked {
+            if ns_name == "Ai" && method == "classify" {
+                return self.mocked_classify_result(&args, mocked);
+            }
+            return Ok(mocked);
+        }
+
         let f = {
             let ns = self
                 .namespaces
@@ -163,6 +183,31 @@ impl Interpreter {
             })?
         };
         f(self, args).await
+    }
+
+    fn mocked_classify_result(&self, args: &[CallArgValue], mocked: Value) -> Result<Value> {
+        let expected_enum = args.iter().find_map(|arg| {
+            if arg.name.as_deref() == Some("as")
+                && let Value::Namespace(name) = &arg.value
+            {
+                return Some(name.as_str());
+            }
+            None
+        });
+
+        match (&mocked, expected_enum) {
+            (Value::EnumVariant(actual_enum, _, _), Some(expected)) if actual_enum == expected => {
+                Ok(mocked)
+            }
+            (Value::EnumVariant(actual_enum, _, _), Some(expected)) => Err(make_typed_report(
+                RuntimeErrorKind::Ai,
+                format!(
+                    "mocked Ai.classify returned `{actual_enum}` but call expected `{expected}`"
+                ),
+            )),
+            (Value::EnumVariant(_, _, _), None) => Ok(mocked),
+            _ => Ok(mocked),
+        }
     }
 
     /// Evaluate `@tools` guards for the current agent turn.

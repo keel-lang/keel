@@ -22,6 +22,7 @@ mod random;
 mod schedule;
 mod search;
 mod shell;
+mod testing;
 mod time;
 pub(crate) mod uuid;
 
@@ -56,6 +57,7 @@ pub(crate) fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
         schedule::SPEC,
         search::SPEC,
         shell::SPEC,
+        testing::SPEC,
         time::SPEC,
         uuid::SPEC,
     ];
@@ -68,7 +70,7 @@ pub(crate) fn install(host: &mut dyn Host) {
     }
 }
 
-fn namespaces() -> [Namespace; 23] {
+fn namespaces() -> [Namespace; 24] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -92,6 +94,7 @@ fn namespaces() -> [Namespace; 23] {
         crypto::namespace(),
         math::namespace(),
         shell::namespace(),
+        testing::namespace(),
         csv::namespace(),
     ]
 }
@@ -129,6 +132,7 @@ mod tests {
             (schedule::SPEC, schedule::namespace()),
             (search::SPEC, search::namespace()),
             (shell::SPEC, shell::namespace()),
+            (testing::SPEC, testing::namespace()),
             (time::SPEC, time::namespace()),
             (uuid::SPEC, uuid::namespace()),
         ];

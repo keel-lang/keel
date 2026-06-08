@@ -84,6 +84,8 @@ pub(crate) struct Checker<'hir, 'ast> {
     current_agent: Option<String>,
     /// Declared return type of the task currently being checked.
     current_return_ty: Option<Ty>,
+    /// Mock targets declared by the test currently being checked.
+    current_test_mocks: Option<HashSet<(String, String)>>,
     /// Span of the statement currently being checked. Set at the top of
     /// `check_stmt` so every `err()` call within a statement — including
     /// errors raised by `infer_expr` — automatically gets a location.
@@ -133,6 +135,7 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             agents: HashMap::new(),
             current_agent: None,
             current_return_ty: None,
+            current_test_mocks: None,
             current_span: None,
             strict: false,
         }

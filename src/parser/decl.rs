@@ -9,7 +9,7 @@ use crate::ast::*;
 use crate::lexer::{Span, Token};
 
 use super::common::{
-    P, field_name, field_sep, ident, newlines, plain_string, sep, spanned_ident,
+    P, field_name, field_sep, ident, newlines, plain_string, sep, spanned_ident, string_lit,
     struct_destruct_pat,
 };
 use super::types::spanned_type_expr;
@@ -345,6 +345,80 @@ pub(super) fn task_decl() -> P<TaskDecl> {
 }
 
 // ---------------------------------------------------------------------------
+// Test declaration
+// ---------------------------------------------------------------------------
+
+pub(super) fn test_decl() -> P<Decl> {
+    #[derive(Clone)]
+    enum TestItem {
+        Setup(Block),
+        Stmt(crate::ast::Node<crate::ast::Stmt>),
+    }
+
+    let setup = just(Token::Ident("setup".to_string()))
+        .ignore_then(super::stmt::block_toplevel())
+        .map(TestItem::Setup)
+        .boxed();
+
+    let body_item = setup
+        .or(super::stmt::stmt_parser().map(TestItem::Stmt))
+        .boxed();
+
+    let param = just(Token::For)
+        .ignore_then(spanned_ident())
+        .then_ignore(just(Token::In))
+        .then(super::expr::expr_parser())
+        .map(|((name, name_span), cases)| TestParam {
+            name,
+            name_span,
+            cases,
+        })
+        .or_not()
+        .boxed();
+
+    just(Token::Ident("test".to_string()))
+        .ignore_then(
+            string_lit()
+                .map(|s| super::common::unescape_plain(&s))
+                .map_with_span(|name, name_span| (name, name_span)),
+        )
+        .then(param)
+        .then_ignore(just(Token::LBrace))
+        .then_ignore(newlines())
+        .then(body_item.separated_by(sep()).allow_trailing())
+        .then_ignore(newlines())
+        .then_ignore(just(Token::RBrace))
+        .try_map(|(((name, name_span), param), items), span| {
+            let mut setup = Vec::new();
+            let mut body = Vec::new();
+            let mut seen_stmt = false;
+            for item in items {
+                match item {
+                    TestItem::Setup(block) if !seen_stmt => setup.extend(block),
+                    TestItem::Setup(_) => {
+                        return Err(Simple::custom(
+                            span,
+                            "`setup` blocks must appear before assertions and other test statements",
+                        ));
+                    }
+                    TestItem::Stmt(stmt) => {
+                        seen_stmt = true;
+                        body.push(stmt);
+                    }
+                }
+            }
+            Ok(Decl::Test(TestDecl {
+                name,
+                name_span,
+                param,
+                setup,
+                body,
+            }))
+        })
+        .boxed()
+}
+
+// ---------------------------------------------------------------------------
 // Agent declaration
 // ---------------------------------------------------------------------------
 
@@ -578,6 +652,7 @@ pub(super) fn program_parser() -> P<Program> {
         impl_decl(),
         extern_decl(),
         task_decl().map(Decl::Task),
+        test_decl(),
         agent_decl(),
         use_decl(),
         stmt_decl,
@@ -585,6 +660,7 @@ pub(super) fn program_parser() -> P<Program> {
     .map_with_span(Node::new)
     .recover_with(skip_then_retry_until([
         Token::Task,
+        Token::Ident("test".to_string()),
         Token::Agent,
         Token::Interface,
         Token::Impl,

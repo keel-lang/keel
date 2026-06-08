@@ -1,3 +1,5 @@
+use std/testing
+
 type Severity = low | medium | high | critical
 
 type Action =
@@ -41,6 +43,18 @@ task choose_action(severity: Severity) -> Action {
     high => Action.notify { channel: "#incidents" }
     medium, low => Action.log
   }
+}
+
+test "severity classification can be mocked" {
+  testing.mock(Ai.classify).returns(Severity.critical)
+  incident: Incident = { id: "INC-999", title: "Checkout outage", service: "payments" }
+  assert classify_severity(incident) == Severity.critical
+}
+
+test "choose action maps severities" {
+  assert choose_action(Severity.critical) == Action.page { who: "primary on-call" }
+  assert choose_action(Severity.high) == Action.notify { channel: "#incidents" }
+  assert choose_action(Severity.low) == Action.log
 }
 
 agent OnCall {

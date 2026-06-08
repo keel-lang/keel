@@ -90,6 +90,9 @@ static NAMESPACE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
     let mut seen = HashSet::new();
     let mut out = HashSet::new();
     for entry in catalog() {
+        if entry.namespace == "testing" {
+            continue;
+        }
         if seen.insert(entry.namespace) {
             out.insert(entry.namespace.to_string());
         }
@@ -305,6 +308,9 @@ mod tests {
     fn all_catalog_namespaces_are_in_prelude_names() {
         let names = prelude_names();
         for entry in super::catalog() {
+            if entry.namespace == "testing" {
+                continue;
+            }
             assert!(
                 names.contains(entry.namespace),
                 "catalog namespace `{}` missing from prelude_names()",

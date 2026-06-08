@@ -67,6 +67,10 @@ pub(crate) fn completion_items() -> Vec<CompletionItem> {
         "false",
         "none",
         "set",
+        "test",
+        "mock",
+        "setup",
+        "assert",
     ];
     for kw in keywords {
         completions.push(CompletionItem {

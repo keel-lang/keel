@@ -25,7 +25,9 @@ mod store;
 
 pub(crate) use binary::{eval_binary, is_pascal_case};
 pub(crate) use binding::bind_value;
-pub use entry::run_with_source_and_runtime;
+pub use entry::{
+    TestOutcome, run_tests_with_source_and_runtime, run_with_source_and_runtime, test_names,
+};
 pub(crate) use error::{RuntimeError, RuntimeErrorKind, runtime_error};
 pub use host::Host;
 #[cfg(test)]

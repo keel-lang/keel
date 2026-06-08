@@ -14,6 +14,197 @@ use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 use super::{Checker, binop::check_binop};
 
+fn mock_registration_target_from_expr(expr: &SpannedExpr) -> Option<(String, String)> {
+    let Expr::MethodCall {
+        object,
+        method,
+        args: returns_args,
+    } = &expr.kind
+    else {
+        return None;
+    };
+    if method != "returns" || returns_args.is_empty() {
+        return None;
+    }
+    let Expr::MethodCall {
+        object: mock_object,
+        method: mock_method,
+        args: mock_args,
+    } = &object.as_ref().kind
+    else {
+        return None;
+    };
+    if mock_method != "mock" {
+        return None;
+    }
+    let Expr::Ident(namespace) = &mock_object.as_ref().kind else {
+        return None;
+    };
+    if namespace != "testing" {
+        return None;
+    }
+    let target = mock_args.first()?;
+    let Expr::FieldAccess(target_object, target_method) = &target.value.kind else {
+        return None;
+    };
+    let Expr::Ident(target_namespace) = &target_object.as_ref().kind else {
+        return None;
+    };
+    Some((target_namespace.clone(), target_method.clone()))
+}
+
+fn collect_mock_targets_from_expr(expr: &SpannedExpr, out: &mut HashSet<(String, String)>) {
+    if let Some(target) = mock_registration_target_from_expr(expr) {
+        out.insert(target);
+    }
+    match &expr.kind {
+        Expr::StructLit(fields) => {
+            for (_, value) in fields {
+                collect_mock_targets_from_expr(value, out);
+            }
+        }
+        Expr::StructSpreadUpdate { base, overrides } => {
+            collect_mock_targets_from_expr(base, out);
+            for (_, value) in overrides {
+                collect_mock_targets_from_expr(value, out);
+            }
+        }
+        Expr::ListLit(items) | Expr::SetLit(items) | Expr::TupleLit(items) => {
+            for item in items {
+                collect_mock_targets_from_expr(item, out);
+            }
+        }
+        Expr::BinaryOp { left, right, .. }
+        | Expr::NullCoalesce(left, right)
+        | Expr::Pipeline(left, right)
+        | Expr::Range(left, right) => {
+            collect_mock_targets_from_expr(left, out);
+            collect_mock_targets_from_expr(right, out);
+        }
+        Expr::UnaryOp { expr, .. }
+        | Expr::NullFieldAccess(expr, _)
+        | Expr::NullAssert(expr)
+        | Expr::Duration { value: expr, .. }
+        | Expr::Cast { expr, .. } => collect_mock_targets_from_expr(expr, out),
+        Expr::FieldAccess(object, _) => collect_mock_targets_from_expr(object, out),
+        Expr::Call { callee, args } => {
+            collect_mock_targets_from_expr(callee, out);
+            for arg in args {
+                collect_mock_targets_from_expr(&arg.value, out);
+            }
+        }
+        Expr::MethodCall { object, args, .. } => {
+            collect_mock_targets_from_expr(object, out);
+            for arg in args {
+                collect_mock_targets_from_expr(&arg.value, out);
+            }
+        }
+        Expr::Index { object, index } => {
+            collect_mock_targets_from_expr(object, out);
+            collect_mock_targets_from_expr(index, out);
+        }
+        Expr::IfExpr {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_mock_targets_from_expr(cond, out);
+            collect_mock_targets_from_block(then_body, out);
+            collect_mock_targets_from_block(else_body, out);
+        }
+        Expr::WhenExpr { subject, arms } => {
+            collect_mock_targets_from_expr(subject, out);
+            for arm in arms {
+                for pattern in &arm.patterns {
+                    if let Pattern::Literal(expr) = pattern {
+                        collect_mock_targets_from_expr(expr, out);
+                    }
+                }
+                if let Some(guard) = &arm.guard {
+                    collect_mock_targets_from_expr(guard, out);
+                }
+                collect_mock_targets_from_block(&arm.body, out);
+            }
+        }
+        Expr::Lambda { body, .. } => match body {
+            LambdaBody::Expr(expr) => collect_mock_targets_from_expr(expr, out),
+            LambdaBody::Block(block) => collect_mock_targets_from_block(block, out),
+        },
+        Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::StringLit(_)
+        | Expr::Bool(_)
+        | Expr::None_
+        | Expr::Ident(_)
+        | Expr::SelfAccess { .. }
+        | Expr::SelfRef
+        | Expr::EnumVariant { .. } => {}
+    }
+}
+
+fn collect_mock_targets_from_stmt(stmt: &Stmt, out: &mut HashSet<(String, String)>) {
+    match stmt {
+        Stmt::Let { value, .. }
+        | Stmt::SelfAssign { value, .. }
+        | Stmt::Return(Some(value))
+        | Stmt::Raise(value)
+        | Stmt::AugAssign { rhs: value, .. }
+        | Stmt::Expr(value) => collect_mock_targets_from_expr(value, out),
+        Stmt::Assert { cond, message } => {
+            collect_mock_targets_from_expr(cond, out);
+            if let Some(message) = message {
+                collect_mock_targets_from_expr(message, out);
+            }
+        }
+        Stmt::For {
+            iter, filter, body, ..
+        } => {
+            collect_mock_targets_from_expr(iter, out);
+            if let Some(filter) = filter {
+                collect_mock_targets_from_expr(filter, out);
+            }
+            collect_mock_targets_from_block(body, out);
+        }
+        Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            collect_mock_targets_from_expr(cond, out);
+            collect_mock_targets_from_block(then_body, out);
+            if let Some(else_body) = else_body {
+                collect_mock_targets_from_block(else_body, out);
+            }
+        }
+        Stmt::When { subject, arms } => {
+            collect_mock_targets_from_expr(subject, out);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_mock_targets_from_expr(guard, out);
+                }
+                collect_mock_targets_from_block(&arm.body, out);
+            }
+        }
+        Stmt::While { cond, body } => {
+            collect_mock_targets_from_expr(cond, out);
+            collect_mock_targets_from_block(body, out);
+        }
+        Stmt::TryCatch { body, catches } => {
+            collect_mock_targets_from_block(body, out);
+            for catch in catches {
+                collect_mock_targets_from_block(&catch.body, out);
+            }
+        }
+        Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+    }
+}
+
+fn collect_mock_targets_from_block(block: &Block, out: &mut HashSet<(String, String)>) {
+    for stmt in block {
+        collect_mock_targets_from_stmt(&stmt.kind, out);
+    }
+}
+
 impl Checker<'_, '_> {
     /// Second-pass validation: walk all task, agent, and top-level statement
     /// declarations and type-check their bodies.
@@ -29,6 +220,10 @@ impl Checker<'_, '_> {
                 Decl::Task(t) => {
                     self.current_agent = None;
                     self.check_task(t);
+                }
+                Decl::Test(t) => {
+                    self.current_agent = None;
+                    self.check_test(t);
                 }
                 Decl::Agent(a) => {
                     self.current_agent = Some(a.name.clone());
@@ -56,6 +251,39 @@ impl Checker<'_, '_> {
     /// bare names injected into lexical scope.
     fn fresh_scope(&self) -> Scope {
         Scope::new()
+    }
+
+    fn check_test(&mut self, test: &TestDecl) {
+        let mut scope = self.fresh_scope();
+        let mut mock_targets = HashSet::new();
+        collect_mock_targets_from_block(&test.setup, &mut mock_targets);
+        collect_mock_targets_from_block(&test.body, &mut mock_targets);
+        let saved_test_mocks = self.current_test_mocks.replace(mock_targets);
+        if let Some(param) = &test.param {
+            let cases_ty = self.infer_expr(&param.cases, &mut scope);
+            let item_ty = match cases_ty.strip_nullable() {
+                Ty::List(inner) => *inner.clone(),
+                other if other.is_opaque() => other.clone(),
+                other => {
+                    self.err_at(
+                        format!(
+                            "parameterized test cases must be a list, got {}",
+                            describe_ty(other)
+                        ),
+                        param.cases.span.clone(),
+                    );
+                    Ty::Error
+                }
+            };
+            scope.define(param.name.clone(), item_ty);
+        }
+        for stmt in &test.setup {
+            self.check_stmt(&stmt.kind, stmt.span.clone(), &mut scope);
+        }
+        for stmt in &test.body {
+            self.check_stmt(&stmt.kind, stmt.span.clone(), &mut scope);
+        }
+        self.current_test_mocks = saved_test_mocks;
     }
 
     /// Bind `binding` to `ty` in `scope`, expanding destructure patterns field by field.
@@ -403,6 +631,14 @@ impl Checker<'_, '_> {
             }
             Stmt::Raise(e) => {
                 self.infer_expr(e, scope);
+            }
+            Stmt::Assert { cond, message } => {
+                let ty = self.infer_expr(cond, scope);
+                self.expect(&ty, &Ty::Bool, "`assert` condition");
+                if let Some(message) = message {
+                    let ty = self.infer_expr(message, scope);
+                    self.expect(&ty, &Ty::Str, "`assert` message");
+                }
             }
             Stmt::While { cond, body } => {
                 let cond_ty = self.infer_expr(cond, scope);

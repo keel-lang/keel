@@ -18,6 +18,13 @@ task sla_minutes(severity: Severity) -> int {
   }
 }
 
+test "sla minutes match severity policy" {
+  assert sla_minutes(Severity.critical) == 15
+  assert sla_minutes(Severity.high) == 60
+  assert sla_minutes(Severity.medium) == 240
+  assert sla_minutes(Severity.low) == 1440
+}
+
 agent SLAPlanner {
   @role "SLA compliance monitor — every incident must have a target and a named owner"
   @rules [

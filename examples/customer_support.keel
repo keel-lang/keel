@@ -1,3 +1,5 @@
+use std/testing
+
 type Priority = low | medium | high | critical
 
 type Category = billing | technical | account | general
@@ -12,6 +14,22 @@ task prioritize(ticket: { body: str }) -> Priority {
 
 task respond(ticket: { body: str, from: str }, category: Category) -> str {
   Ai.draft("support response to {ticket.body}", tone: "empathetic and professional", guidance: "address the {category} issue directly") ?? "(could not draft response)"
+}
+
+test "categorize uses mocked category" {
+  testing.mock(Ai.classify).returns(Category.billing)
+  assert categorize({ body: "payment failed" }) == Category.billing
+}
+
+test "prioritize uses mocked priority" {
+  testing.mock(Ai.classify).returns(Priority.high)
+  assert prioritize({ body: "overcharged twice" }) == Priority.high
+}
+
+test "respond uses mocked draft" {
+  testing.mock(Ai.draft).returns("We can help with billing.")
+  reply = respond({ body: "payment failed", from: "ada@example.com" }, Category.billing)
+  assert reply == "We can help with billing."
 }
 
 agent SupportBot {

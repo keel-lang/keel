@@ -18,6 +18,7 @@
 - [Agent Communication & Mailbox](./guide/agent-communication.md)
 - [Control Flow](./guide/control-flow.md)
 - [Collections & Lambdas](./guide/collections.md)
+- [Testing](./guide/testing.md)
 - [Error Handling](./guide/error-handling.md)
 - [Interfaces](./guide/interfaces.md)
 - [The Prelude & Interfaces](./guide/prelude.md)
@@ -38,6 +39,7 @@
 # CLI Reference
 
 - [keel run](./cli/run.md)
+- [keel test](./cli/test.md)
 - [keel check](./cli/check.md)
 - [keel lint](./cli/lint.md)
 - [keel build](./cli/build.md)

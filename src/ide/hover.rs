@@ -165,6 +165,9 @@ fn visit_decl_bindings<F: FnMut(&Binding, &Span, Ty)>(
                 }
                 recurse_body(&t.body, c, &mut visitor);
             }
+            Decl::Test(t) => {
+                recurse_body(&t.body, c, &mut visitor);
+            }
             Decl::Agent(decl) => {
                 for it in &decl.items {
                     match it {

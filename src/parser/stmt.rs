@@ -134,6 +134,13 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
             .map(Stmt::Raise)
             .boxed();
 
+        let assert_stmt = just(Token::Ident("assert".to_string()))
+            .then_ignore(just(Token::LParen).not().rewind())
+            .ignore_then(expr.clone())
+            .then(just(Token::Comma).ignore_then(expr.clone()).or_not())
+            .map(|(cond, message)| Stmt::Assert { cond, message })
+            .boxed();
+
         let break_stmt = just(Token::Break).to(Stmt::Break).boxed();
         let continue_stmt = just(Token::Continue).to(Stmt::Continue).boxed();
 
@@ -277,6 +284,7 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
             let_stmt,
             return_stmt,
             raise_stmt,
+            assert_stmt,
             break_stmt,
             continue_stmt,
             destruct_for_stmt,

@@ -1,3 +1,5 @@
+use std/testing
+
 type Severity = info | warning | error
 
 type ReviewResult {
@@ -11,6 +13,16 @@ task review_code(diff: str) -> str {
 
 task assess_risk(diff: str) -> Severity {
   Ai.classify(diff, as: Severity, considering: { "changes authentication or authorization": Severity.error, "modifies database schema": Severity.warning, "formatting or comment changes only": Severity.info }) ?? Severity.warning
+}
+
+test "risk assessment can be mocked" {
+  testing.mock(Ai.classify).returns(Severity.error)
+  assert assess_risk("changes authentication") == Severity.error
+}
+
+test "review text can be mocked" {
+  testing.mock(Ai.draft).returns("check auth boundary")
+  assert review_code("+ changed auth") == "check auth boundary"
 }
 
 agent CodeReviewer {

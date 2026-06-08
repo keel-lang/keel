@@ -76,6 +76,7 @@ pub fn walk_decl<V: Visitor + ?Sized>(v: &mut V, decl: &Decl, _span: &Span) {
             }
         }
         Decl::Task(task_decl) => walk_task_decl(v, task_decl),
+        Decl::Test(test_decl) => walk_test_decl(v, test_decl),
         Decl::Extern(extern_decl) => walk_extern_decl(v, extern_decl),
         Decl::Agent(agent_decl) => walk_agent_decl(v, agent_decl),
         Decl::Use(UseDecl { kind }) => match kind {
@@ -176,6 +177,12 @@ pub fn walk_stmt<V: Visitor + ?Sized>(v: &mut V, stmt: &Stmt, _span: &Span) {
         }
         Stmt::AugAssign { rhs, .. } => v.visit_expr(rhs),
         Stmt::Raise(expr) => v.visit_expr(expr),
+        Stmt::Assert { cond, message } => {
+            v.visit_expr(cond);
+            if let Some(message) = message {
+                v.visit_expr(message);
+            }
+        }
         Stmt::Break | Stmt::Continue => {}
         Stmt::Expr(expr) => v.visit_expr(expr),
     }
@@ -371,6 +378,14 @@ fn walk_task_decl<V: Visitor + ?Sized>(v: &mut V, decl: &TaskDecl) {
     if let Some(return_type) = &decl.return_type {
         v.visit_type_expr(&return_type.kind);
     }
+    v.visit_block(&decl.body);
+}
+
+fn walk_test_decl<V: Visitor + ?Sized>(v: &mut V, decl: &TestDecl) {
+    if let Some(param) = &decl.param {
+        v.visit_expr(&param.cases);
+    }
+    v.visit_block(&decl.setup);
     v.visit_block(&decl.body);
 }
 

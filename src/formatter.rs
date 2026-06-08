@@ -113,6 +113,7 @@ impl Fmt {
             Decl::Interface(i) => self.interface_decl(i),
             Decl::Impl(i) => self.impl_decl(i),
             Decl::Task(t) => self.task_decl(t),
+            Decl::Test(t) => self.test_decl(t),
             Decl::Extern(e) => self.extern_decl(e),
             Decl::Agent(a) => self.agent_decl(a),
             Decl::Use(u) => self.use_decl(u),
@@ -249,6 +250,42 @@ impl Fmt {
         self.push(" {");
         self.newline();
         self.indent();
+        for stmt_node in &t.body {
+            self.stmt(&stmt_node.kind);
+            self.newline();
+        }
+        self.dedent();
+        self.push("}");
+        self.newline();
+    }
+
+    fn test_decl(&mut self, t: &TestDecl) {
+        self.push(&format!("test {}", quote_plain_string(&t.name)));
+        if let Some(param) = &t.param {
+            self.push(&format!(
+                " for {} in {}",
+                param.name,
+                self.expr_str(&param.cases)
+            ));
+        }
+        self.push(" {");
+        self.newline();
+        self.indent();
+        if !t.setup.is_empty() {
+            self.push("setup {");
+            self.newline();
+            self.indent();
+            for stmt_node in &t.setup {
+                self.stmt(&stmt_node.kind);
+                self.newline();
+            }
+            self.dedent();
+            self.push("}");
+            self.newline();
+            if !t.body.is_empty() {
+                self.newline();
+            }
+        }
         for stmt_node in &t.body {
             self.stmt(&stmt_node.kind);
             self.newline();
@@ -526,6 +563,14 @@ impl Fmt {
             Stmt::Raise(e) => {
                 self.push("raise ");
                 self.push(&self.expr_str(e));
+            }
+            Stmt::Assert { cond, message } => {
+                self.push("assert ");
+                self.push(&self.expr_str(cond));
+                if let Some(message) = message {
+                    self.push(", ");
+                    self.push(&self.expr_str(message));
+                }
             }
             Stmt::Break => self.push("break"),
             Stmt::Continue => self.push("continue"),
@@ -809,6 +854,14 @@ impl Fmt {
                 s.push_str("raise ");
                 s.push_str(&self.expr_at(e, indent));
             }
+            Stmt::Assert { cond, message } => {
+                s.push_str("assert ");
+                s.push_str(&self.expr_at(cond, indent));
+                if let Some(message) = message {
+                    s.push_str(", ");
+                    s.push_str(&self.expr_at(message, indent));
+                }
+            }
             Stmt::Return(Some(e)) => {
                 s.push_str("return ");
                 s.push_str(&self.expr_at(e, indent));
@@ -993,6 +1046,12 @@ impl Fmt {
                 format!("{name} {}= {}", binop_str(*op), self.expr_str(rhs))
             }
             Stmt::Raise(e) => format!("raise {}", self.expr_str(e)),
+            Stmt::Assert { cond, message } => match message {
+                Some(message) => {
+                    format!("assert {}, {}", self.expr_str(cond), self.expr_str(message))
+                }
+                None => format!("assert {}", self.expr_str(cond)),
+            },
             Stmt::Break => "break".into(),
             Stmt::Continue => "continue".into(),
             _ => "...".into(), // fallback for complex stmts inline
@@ -1072,6 +1131,23 @@ impl Fmt {
             TypeExpr::SelfType => "self".into(),
         }
     }
+}
+
+fn quote_plain_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// Emit a struct/map key as a bare identifier when it's a valid ident,

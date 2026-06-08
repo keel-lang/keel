@@ -10,6 +10,7 @@ pub enum Decl {
     Interface(InterfaceDecl),
     Impl(ImplDecl),
     Task(TaskDecl),
+    Test(TestDecl),
     Extern(ExternDecl),
     Agent(AgentDecl),
     Use(UseDecl),
@@ -91,6 +92,25 @@ pub struct TaskDecl {
     /// Return-type annotation together with its source span, if present.
     pub return_type: Option<Node<TypeExpr>>,
     pub body: Block,
+}
+
+/// `test "name" { setup { ... } assert expr }`.
+#[derive(Debug, Clone)]
+pub struct TestDecl {
+    pub name: String,
+    /// Byte span of the test name string.
+    pub name_span: Span,
+    pub param: Option<TestParam>,
+    pub setup: Block,
+    pub body: Block,
+}
+
+/// A parameterized test case source: `test "name" for case in cases { ... }`.
+#[derive(Debug, Clone)]
+pub struct TestParam {
+    pub name: String,
+    pub name_span: Span,
+    pub cases: SpannedExpr,
 }
 
 #[derive(Debug, Clone)]

@@ -1357,6 +1357,42 @@ Events land in the agent's mailbox. The runtime processes them one at a time. A 
 
 ---
 
+### 9.5 Test blocks
+
+Top-level test blocks are executed by `keel test`:
+
+```keel
+use std/testing
+
+type Severity = low | medium | critical
+
+task classify(text: str) -> Severity {
+  Ai.classify(text, as: Severity) ?? Severity.low
+}
+
+test "mocked classify returns critical" {
+  testing.mock(Ai.classify).returns(Severity.critical)
+  assert classify("payment outage") == Severity.critical
+}
+```
+
+`keel test file.keel` type-checks the file, registers declarations, and executes each `test "name" { ... }` block. Parameterized tests use `test "name" for case in cases { ... }`, where `cases` must evaluate to a list; each list item runs as a separate test case named `name [index]` with `case` bound for `setup` and the test body. `keel test dir/` recursively discovers `.keel` files with test blocks and skips files without tests. `keel test file.keel --filter text` executes only tests whose names contain `text`; if no tests match, the command fails. `keel test file.keel --list` lists test names without running them, and can be combined with `--filter`. `--fail-fast` stops after the first failing test. `--quiet` suppresses passing result lines while still printing failures and the final summary. Failed tests print the source location of the failing statement when available. If an unfiltered file or directory has no tests, the command prints `0 tests found` and exits successfully. Top-level statements such as `run(A)` are not executed by `keel test`. Normal `keel run` ignores test blocks.
+
+Inside a test block:
+
+- `use std/testing` brings the `testing` namespace into scope for test helpers.
+- `testing.mock(Namespace.method).returns(value)` overrides one prelude namespace method for the current test only.
+- Repeating the same mock target returns values in order; after the sequence is exhausted, the final value repeats.
+- Mocked methods expose test-local metadata: `Namespace.method.called: bool`, `Namespace.method.call_count: int`, and `Namespace.method.called_with(...): bool`.
+- `setup { ... }` runs before the assertion/body statements in the same test and can bind values used by the body.
+- `assert expr` requires `expr: bool`; `false` fails the current test. `assert expr, message` uses a custom `str` failure message.
+- Each test gets its own mock set, so mocks do not leak between tests.
+- Capability checks still apply. A mock replaces the method result; it does not grant an agent access to a namespace disallowed by `@tools`.
+
+`test`, `setup`, and `assert` are contextual syntax words, not reserved keywords. They remain legal identifiers outside the positions above.
+
+---
+
 ## 10. Reserved Keywords
 
 This is the complete set. If a word is not on this list, it is an identifier.
@@ -1378,6 +1414,8 @@ That's it.
 Namespaces (`Ai`, `Io`, `Http`, `Schedule`, `Async`, …) are identifiers, not keywords. Same for `run`, `stop`, `spawn`, `delegate`, `broadcast` — prelude functions.
 
 Attribute names (`@role`, `@model`, `@tools`, …) are identifiers. Only the `@` prefix is syntax.
+
+Testing words (`test`, `setup`, `assert`) are contextual syntax words, not reserved keywords.
 
 Duration units (`seconds`, `minutes`, `hours`, `days`, `weeks`) are **identifiers recognized by the lexer in the `INT "."` position**, not reserved words.
 
@@ -2035,7 +2073,7 @@ Every feature is designed for tooling.
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
-Decl        <- Agent / TaskDecl / TypeDecl / InterfaceDecl / ExternDecl / UseStmt
+Decl        <- Agent / TaskDecl / TestDecl / TypeDecl / InterfaceDecl / ExternDecl / UseStmt
 
 Agent       <- "agent" IDENT "{" (Attribute / StateBlock / TaskDecl / OnHandler)* "}"
 Attribute   <- "@" IDENT AttributeBody
@@ -2048,6 +2086,9 @@ Params      <- Param ("," Param)* ("," VariadicParam)? ("," NamedParam)*
              / VariadicParam ("," NamedParam)*
 VariadicParam <- "..." IDENT ":" Type                                    # collected as list[T] inside body
 NamedParam  <- IDENT ":" Type ("=" Expr)?                               # named, may have default
+TestDecl    <- "test" STRING TestParam? "{" (SetupBlock / Stmt)* "}"
+TestParam   <- "for" IDENT "in" Expr
+SetupBlock  <- "setup" Block
 InterfaceDecl <- "interface" IDENT "{" (TaskSig)* "}"
 TaskSig     <- "task" IDENT "(" Params? ")" ("->" Type)?
 
@@ -2104,9 +2145,10 @@ WhenArm     <- Pattern ("," Pattern)* ("where" Expr)? "=>" (Expr / Block)
 Pattern     <- VariantPat / StructPat / TuplePat / IDENT / "_" / Literal
 
 # --- Statements ---
-Stmt        <- ReturnStmt / RaiseStmt / AugAssignStmt / AugSelfAssign / AssignStmt / SelfAssign / ForStmt / TryStmt / ExprStmt
+Stmt        <- ReturnStmt / RaiseStmt / AssertStmt / AugAssignStmt / AugSelfAssign / AssignStmt / SelfAssign / ForStmt / TryStmt / ExprStmt
 ReturnStmt  <- "return" Expr?
 RaiseStmt   <- "raise" Expr
+AssertStmt  <- "assert" Expr ("," Expr)?
 AugOp       <- "+=" / "-=" / "*=" / "/="
 AugAssignStmt <- IDENT AugOp Expr                   # desugars to x = x op rhs
 AugSelfAssign <- "self" "." IDENT AugOp Expr        # desugars to self.f = self.f op rhs

@@ -84,6 +84,12 @@ impl Linter {
                     self.check_block_unused(&t.body);
                     self.check_block_ai_outside_agent(&t.body);
                 }
+                Decl::Test(t) => {
+                    self.check_block_unused(&t.setup);
+                    self.check_block_unused(&t.body);
+                    self.check_block_ai_outside_agent(&t.setup);
+                    self.check_block_ai_outside_agent(&t.body);
+                }
                 Decl::Agent(a) => {
                     // Rule 4
                     self.check_agent_state(a);
@@ -298,6 +304,13 @@ fn all_ident_reads(program: &Program) -> HashSet<String> {
     for node in &program.declarations {
         match &node.kind {
             Decl::Task(t) => collect_ident_reads_in_block(&t.body, &mut reads),
+            Decl::Test(t) => {
+                if let Some(param) = &t.param {
+                    collect_ident_reads_in_expr(&param.cases, &mut reads);
+                }
+                collect_ident_reads_in_block(&t.setup, &mut reads);
+                collect_ident_reads_in_block(&t.body, &mut reads);
+            }
             Decl::Agent(a) => {
                 for item in &a.items {
                     match item {

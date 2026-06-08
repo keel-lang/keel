@@ -11,4 +11,5 @@ mod stringable;
 mod strings;
 mod structs;
 mod subscripts;
+mod testing;
 mod types;

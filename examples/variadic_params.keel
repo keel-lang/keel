@@ -14,6 +14,15 @@ task sum_with_bonus(bonus: int, ...nums: int) -> int {
   total
 }
 
+test "join concatenates variadic words" {
+  assert join("Hello", ", ", "world", "!") == "Hello, world!"
+}
+
+test "sum with bonus accepts spread arguments" {
+  xs = [4, 5, 6]
+  assert sum_with_bonus(10, 1, 2, 3, ...xs) == 31
+}
+
 agent Demo {
   @role "variadic demo"
   @on_start {

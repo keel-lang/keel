@@ -116,6 +116,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 |---|---|---|
 | `keel run` | [x] | Execute a .keel program |
 | `keel check` | [x] | Type-check only, no execution; `--strict` rejects unknown-typed bindings |
+| `keel test` | [x] | Execute top-level `test` blocks with test-local `mock Ns.method => value` overrides and `assert` statements |
 | `keel fmt` | [x] | Auto-format; idempotent round-trip against the AST |
 | `keel init` | [x] | Scaffold a new project |
 | `keel repl` | [x] | Interactive REPL; multi-line input, persistent environment |

@@ -9,9 +9,13 @@
 
 use miette::{IntoDiagnostic, NamedSource, Result};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
+use colored::Colorize;
+
+use crate::interpreter::TestOutcome;
 use crate::lint;
 use crate::runtime::context::RuntimeContext;
 use crate::session;
@@ -50,6 +54,14 @@ fn fail_on_type_errors(checked: &session::CheckedProgram, path: &Path) -> Result
     Ok(())
 }
 
+fn load_checked_source(path: &Path) -> Result<session::CheckedProgram> {
+    let (src, name) = load_source(path)?;
+    let (program, named_src) = session::parse_source(&src, &name)?;
+    let checked = session::check_source(program, named_src);
+    fail_on_type_errors(&checked, path)?;
+    Ok(checked)
+}
+
 /// Execute a `.keel` file with an explicit runtime context.
 ///
 /// # Errors
@@ -69,6 +81,251 @@ pub async fn run_file_with_runtime(path: &Path, runtime: Arc<RuntimeContext>) ->
     let checked = session::check_source(program, named_src);
     fail_on_type_errors(&checked, path)?;
     session::run_source(checked, runtime, Some(path)).await
+}
+
+/// Execute all `test` blocks in a `.keel` file.
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be read, parsed, or type-checked, or if
+/// one or more tests fail.
+pub async fn test_file_with_runtime(
+    path: &Path,
+    runtime: Arc<RuntimeContext>,
+    filter: Option<&str>,
+    list: bool,
+    fail_fast: bool,
+    quiet: bool,
+) -> Result<()> {
+    if path.is_dir() {
+        return test_directory_with_runtime(path, runtime, filter, list, fail_fast, quiet).await;
+    }
+
+    let checked = load_checked_source(path)?;
+
+    if list {
+        let names = session::test_names(&checked, filter);
+        if names.is_empty() {
+            eprintln!("0 tests found");
+        } else {
+            for name in names {
+                eprintln!("{name}");
+            }
+        }
+        return Ok(());
+    }
+
+    let suite_started = Instant::now();
+    let outcomes = session::test_source(checked, runtime, Some(path), filter, fail_fast).await?;
+    let suite_elapsed = suite_started.elapsed();
+    if outcomes.is_empty() && filter.is_none() {
+        eprintln!("0 tests found");
+        return Ok(());
+    }
+    if outcomes.is_empty()
+        && let Some(filter) = filter
+    {
+        return Err(miette::miette!(
+            "no tests matched filter `{filter}` in {}",
+            path.display()
+        ));
+    }
+    let passed = outcomes.iter().filter(|outcome| outcome.passed).count();
+    let failed = outcomes.len().saturating_sub(passed);
+
+    print_test_outcomes(&outcomes, None, quiet);
+
+    if failed == 0 {
+        print_test_summary(passed, failed, suite_elapsed);
+        return Ok(());
+    }
+
+    print_test_summary(passed, failed, suite_elapsed);
+
+    Err(miette::miette!(
+        "{passed} passed, {failed} failed in {}",
+        path.display()
+    ))
+}
+
+async fn test_directory_with_runtime(
+    dir: &Path,
+    runtime: Arc<RuntimeContext>,
+    filter: Option<&str>,
+    list: bool,
+    fail_fast: bool,
+    quiet: bool,
+) -> Result<()> {
+    let files = discover_test_files(dir)?;
+    if files.is_empty() {
+        eprintln!("0 tests found");
+        return Ok(());
+    }
+
+    if list {
+        let mut listed = 0_usize;
+        for file in files {
+            let checked = load_checked_source(&file)?;
+            for name in session::test_names(&checked, filter) {
+                eprintln!("{}: {name}", file.display());
+                listed += 1;
+            }
+        }
+        if listed == 0 {
+            eprintln!("0 tests found");
+        }
+        return Ok(());
+    }
+
+    let suite_started = Instant::now();
+    let mut passed = 0_usize;
+    let mut failed = 0_usize;
+    let mut matched = 0_usize;
+
+    for file in files {
+        let checked = load_checked_source(&file)?;
+        let outcomes = session::test_source(
+            checked,
+            Arc::clone(&runtime),
+            Some(&file),
+            filter,
+            fail_fast,
+        )
+        .await?;
+        if outcomes.is_empty() {
+            continue;
+        }
+        matched += outcomes.len();
+        passed += outcomes.iter().filter(|outcome| outcome.passed).count();
+        failed += outcomes.iter().filter(|outcome| !outcome.passed).count();
+        print_test_outcomes(&outcomes, Some(&file), quiet);
+        if fail_fast && outcomes.iter().any(|outcome| !outcome.passed) {
+            break;
+        }
+    }
+
+    if matched == 0 {
+        if let Some(filter) = filter {
+            return Err(miette::miette!(
+                "no tests matched filter `{filter}` in {}",
+                dir.display()
+            ));
+        }
+        eprintln!("0 tests found");
+        return Ok(());
+    }
+
+    let suite_elapsed = suite_started.elapsed();
+    print_test_summary(passed, failed, suite_elapsed);
+
+    if failed == 0 {
+        return Ok(());
+    }
+
+    Err(miette::miette!(
+        "{passed} passed, {failed} failed in {}",
+        dir.display()
+    ))
+}
+
+fn discover_test_files(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    collect_test_files(dir, &mut files)?;
+    files.sort();
+    Ok(files)
+}
+
+fn collect_test_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(dir)
+        .into_diagnostic()
+        .map_err(|e| miette::miette!("Could not read directory '{}': {}", dir.display(), e))?
+    {
+        let path = entry.into_diagnostic()?.path();
+        if path.is_dir() {
+            collect_test_files(&path, files)?;
+        } else if path.extension().and_then(|ext| ext.to_str()) == Some("keel") {
+            let source = fs::read_to_string(&path)
+                .into_diagnostic()
+                .map_err(|e| miette::miette!("Could not read '{}': {}", path.display(), e))?;
+            if source.contains("test \"") {
+                files.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn print_test_outcomes(outcomes: &[TestOutcome], path: Option<&Path>, quiet: bool) {
+    for outcome in outcomes {
+        let elapsed = format_test_duration(outcome.elapsed).dimmed();
+        let name = match path {
+            Some(path) => format!("{}: {}", path.display(), outcome.name),
+            None => outcome.name.clone(),
+        };
+        if outcome.passed {
+            if quiet {
+                continue;
+            }
+            eprintln!("{} {} {}", "PASS".green(), name, elapsed);
+        } else {
+            eprintln!("{} {} {}", "FAIL".red(), name, elapsed);
+            if let Some(location) = &outcome.failure_location {
+                eprintln!("  {location}");
+            }
+            if let Some(error) = &outcome.error {
+                eprintln!("  {error}");
+            }
+        }
+    }
+}
+
+fn print_test_summary(passed: usize, failed: usize, elapsed: Duration) {
+    if failed == 0 {
+        eprintln!(
+            "{} in {}",
+            format_passed_summary(passed).green(),
+            format_test_duration_value(elapsed).dimmed()
+        );
+        return;
+    }
+
+    eprintln!(
+        "{}, {} in {}",
+        format_passed_summary(passed).green(),
+        format_failed_summary(failed).red(),
+        format_test_duration_value(elapsed).dimmed()
+    );
+}
+
+fn format_test_duration(duration: Duration) -> String {
+    format!("({})", format_test_duration_value(duration))
+}
+
+fn format_test_duration_value(duration: Duration) -> String {
+    let millis = duration.as_millis();
+    if millis == 0 {
+        return "<1ms".to_string();
+    }
+    if millis < 1_000 {
+        return format!("{millis}ms");
+    }
+    format!("{:.2}s", duration.as_secs_f64())
+}
+
+fn format_passed_summary(passed: usize) -> String {
+    format!(
+        "{} test{} passed",
+        passed,
+        if passed == 1 { "" } else { "s" }
+    )
+}
+
+fn format_failed_summary(failed: usize) -> String {
+    format!(
+        "{} test{} failed",
+        failed,
+        if failed == 1 { "" } else { "s" }
+    )
 }
 
 /// Type-check a `.keel` file without executing it.
@@ -264,7 +521,9 @@ pub fn apply_lint_fixes(source: &str, warnings: &[crate::diagnostics::LintWarnin
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_lint_fixes, build_file, check_file, fmt_file, lint_file, run_file_with_runtime,
+        apply_lint_fixes, build_file, check_file, fmt_file, format_failed_summary,
+        format_passed_summary, format_test_duration, format_test_duration_value, lint_file,
+        run_file_with_runtime,
     };
     use crate::diagnostics::LintWarning;
     use crate::runtime::context::RuntimeContext;
@@ -472,6 +731,34 @@ run(A)
         assert!(
             message.contains("fix before linting"),
             "expected lint type-check guard, got: {message}"
+        );
+    }
+
+    #[test]
+    fn test_duration_format_reports_sub_millisecond_runs() {
+        assert_eq!(
+            format_test_duration(std::time::Duration::from_micros(500)),
+            "(<1ms)"
+        );
+        assert_eq!(
+            format_test_duration(std::time::Duration::from_millis(12)),
+            "(12ms)"
+        );
+        assert_eq!(
+            format_test_duration(std::time::Duration::from_millis(1_250)),
+            "(1.25s)"
+        );
+    }
+
+    #[test]
+    fn suite_summary_formats_counts_and_elapsed_time() {
+        assert_eq!(format_passed_summary(1), "1 test passed");
+        assert_eq!(format_passed_summary(2), "2 tests passed");
+        assert_eq!(format_failed_summary(1), "1 test failed");
+        assert_eq!(format_failed_summary(2), "2 tests failed");
+        assert_eq!(
+            format_test_duration_value(std::time::Duration::from_micros(500)),
+            "<1ms"
         );
     }
 

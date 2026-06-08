@@ -131,6 +131,16 @@ enum ArgsResult {
     Return(Value),
 }
 
+fn mock_target_from_expr(expr: &SpannedExpr) -> Option<(&str, &str)> {
+    let Expr::FieldAccess(object, method) = &expr.kind else {
+        return None;
+    };
+    let Expr::Ident(namespace) = &object.as_ref().kind else {
+        return None;
+    };
+    Some((namespace.as_str(), method.as_str()))
+}
+
 impl Interpreter {
     pub(crate) fn eval_expr<'a>(
         &'a mut self,
@@ -247,6 +257,43 @@ impl Interpreter {
                 }
 
                 Expr::FieldAccess(obj, field) => {
+                    if matches!(field.as_str(), "called" | "call_count")
+                        && let Some((namespace, method)) = mock_target_from_expr(obj)
+                    {
+                        return match field.as_str() {
+                            "called" => self
+                                .test_mock_called(namespace, method)
+                                .map(Value::Bool)
+                                .map(ExprFlow::Value)
+                                .ok_or_else(|| {
+                                    runtime_error(format!(
+                                        "`{namespace}.{method}.{field}` requires \
+                                         `testing.mock({namespace}.{method}).returns(...)` in \
+                                         the current test"
+                                    ))
+                                }),
+                            "call_count" => self
+                                .test_mock_call_count(namespace, method)
+                                .map(Value::Integer)
+                                .map(ExprFlow::Value)
+                                .ok_or_else(|| {
+                                    runtime_error(format!(
+                                        "`{namespace}.{method}.{field}` requires \
+                                         `testing.mock({namespace}.{method}).returns(...)` in \
+                                         the current test"
+                                    ))
+                                }),
+                            _ => unreachable!("metadata field was prefiltered"),
+                        };
+                    }
+                    if let Expr::Ident(namespace) = &obj.as_ref().kind
+                        && crate::types::prelude::catalog_method(namespace, field).is_some()
+                    {
+                        return Ok(ExprFlow::Value(Value::MockTarget {
+                            namespace: namespace.clone(),
+                            method: field.clone(),
+                        }));
+                    }
                     if let Expr::Ident(name) = &obj.as_ref().kind
                         && name == "Uuid"
                         && let Some(value) =
@@ -552,6 +599,40 @@ impl Interpreter {
                         ArgsResult::Args(a) => a,
                         ArgsResult::Return(v) => return Ok(ExprFlow::Return(v)),
                     };
+                    if method == "returns" {
+                        let obj_val = match self.eval_expr(object, env).await? {
+                            ExprFlow::Value(v) => v,
+                            early => return Ok(early),
+                        };
+                        if let Value::MockHandle { namespace, method } = obj_val {
+                            let value = arg_values
+                                .into_iter()
+                                .next()
+                                .map(|arg| arg.value)
+                                .unwrap_or(Value::None);
+                            self.register_test_mock_return(&namespace, &method, value);
+                            return Ok(ExprFlow::Value(Value::None));
+                        }
+                        return Err(runtime_error(format!(
+                            "`.returns(...)` can only be called on a mock, got {}",
+                            obj_val.type_name()
+                        )));
+                    }
+                    if method == "called_with"
+                        && let Some((namespace, target_method)) = mock_target_from_expr(object)
+                    {
+                        return self
+                            .test_mock_called_with(namespace, target_method, &arg_values)
+                            .map(Value::Bool)
+                            .map(ExprFlow::Value)
+                            .ok_or_else(|| {
+                                runtime_error(format!(
+                                    "`{namespace}.{target_method}.called_with(...)` requires \
+                                     `testing.mock({namespace}.{target_method}).returns(...)` in \
+                                     the current test"
+                                ))
+                            });
+                    }
                     if matches!(&object.as_ref().kind, Expr::SelfRef) {
                         return self
                             .call_current_agent_task(method, arg_values)

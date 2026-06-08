@@ -635,7 +635,7 @@ mod tests {
 
     #[test]
     fn removed_keywords_are_identifiers() {
-        let src = "classify draft every fetch send ask confirm notify role model tools";
+        let src = "classify draft every fetch send ask confirm notify role model tools test mock setup assert";
         let toks = tokens(src);
         assert_eq!(
             toks,
@@ -651,6 +651,10 @@ mod tests {
                 Token::Ident("role".into()),
                 Token::Ident("model".into()),
                 Token::Ident("tools".into()),
+                Token::Ident("test".into()),
+                Token::Ident("mock".into()),
+                Token::Ident("setup".into()),
+                Token::Ident("assert".into()),
             ]
         );
     }

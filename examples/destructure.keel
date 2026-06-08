@@ -4,6 +4,11 @@ task summarise({ body, from }: Email) -> str {
   return "From {from}: {body}"
 }
 
+test "summarise destructures email fields" {
+  email: Email = { body: "hello", from: "alice@example.com", subject: "hi" }
+  assert summarise(email) == "From alice@example.com: hello"
+}
+
 agent Inbox {
   @on_start {
     emails = [{ body: "hello", from: "alice@example.com", subject: "hi" }, { body: "world", from: "bob@example.com", subject: "hey" }]

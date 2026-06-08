@@ -77,6 +77,31 @@ impl RuntimeContext {
         })
     }
 
+    /// Construct an isolated runtime with the same host-facing backends.
+    ///
+    /// Used by `keel test` so each test gets fresh session memory, cache,
+    /// async handles, and LLM client state while preserving CLI/env settings.
+    pub fn isolated_from(base: &Arc<Self>) -> Arc<Self> {
+        let trace = Arc::new(AtomicBool::new(base.trace_enabled()));
+        Arc::new(Self {
+            env: Arc::clone(&base.env),
+            clock: Arc::clone(&base.clock),
+            file_system: Arc::clone(&base.file_system),
+            session_memory: Arc::new(SessionMemoryStore::default()),
+            persistent_memory: Arc::new(NativePersistentMemoryStore::new(Arc::clone(&base.env))),
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            llm: Arc::new(LlmClient::from_env_with_trace(
+                base.env.as_ref(),
+                Arc::clone(&trace),
+            )),
+            trace,
+            log_threshold: AtomicU8::new(base.current_log_threshold()),
+            async_handle_counter: AtomicU64::new(0),
+            async_tasks: Arc::new(Mutex::new(HashMap::new())),
+            event_queue_capacity: base.event_queue_capacity(),
+        })
+    }
+
     /// Construct a runtime context with mocked backends for deterministic
     /// unit testing. Only available in test builds.
     #[cfg(test)]

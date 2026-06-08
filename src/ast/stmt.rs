@@ -79,6 +79,11 @@ pub enum Stmt {
     },
     /// `raise expr` — throws an error; caught by `catch err: Error`.
     Raise(SpannedExpr),
+    /// `assert expr[, message]` — test assertion.
+    Assert {
+        cond: SpannedExpr,
+        message: Option<SpannedExpr>,
+    },
     /// `while cond { ... }` — repeat body until condition is false.
     While { cond: SpannedExpr, body: Block },
     /// `break` — exits the nearest enclosing loop.

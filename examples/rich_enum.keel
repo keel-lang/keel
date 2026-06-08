@@ -13,6 +13,12 @@ task describe(a: Action) -> str {
   }
 }
 
+test "describe formats rich enum variants" {
+  assert describe(Action.reply { to: "alice@example.com", tone: "friendly" }) == "reply to alice@example.com (friendly)"
+  assert describe(Action.forward { to: "ops@example.com" }) == "forward to ops@example.com"
+  assert describe(Action.archive) == "archive"
+}
+
 agent Demo {
   @role "Rich enum demo"
 

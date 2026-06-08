@@ -280,7 +280,7 @@ impl Interpreter {
                 self.store.agents.insert(a.name.clone(), Arc::new(def));
                 Ok(())
             }
-            Decl::Stmt(_) => Ok(()), // executed in pass 2
+            Decl::Test(_) | Decl::Stmt(_) => Ok(()), // executed by their dedicated pass
         }
     }
 }

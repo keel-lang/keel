@@ -1,3 +1,5 @@
+use std/testing
+
 type Urgency = low | medium | high | critical
 
 task triage(email: { body: str, from: str, subject: str }) -> Urgency {
@@ -10,6 +12,23 @@ task brief(email: { body: str }) -> str {
 
 task compose(email: { body: str, from: str }, guidance: str? = none) -> str {
   if guidance != none { Ai.draft("response to {email.body}", tone: "professional", guidance: guidance) } else { Ai.draft("response to {email.body}", tone: "friendly", max_length: 150) } ?? "(draft failed)"
+}
+
+test "triage uses mocked urgency" {
+  testing.mock(Ai.classify).returns(Urgency.high)
+  email = { body: "deadline tomorrow", from: "ada@example.com", subject: "urgent" }
+  assert triage(email) == Urgency.high
+}
+
+test "brief uses mocked summary" {
+  testing.mock(Ai.summarize).returns("Needs a reply.")
+  assert brief({ body: "Can you review this today?" }) == "Needs a reply."
+}
+
+test "compose uses mocked draft" {
+  testing.mock(Ai.draft).returns("Thanks, I will handle it.")
+  email = { body: "Can you review this?", from: "ada@example.com" }
+  assert compose(email) == "Thanks, I will handle it."
 }
 
 agent EmailAssistant {

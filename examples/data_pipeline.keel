@@ -13,6 +13,8 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/data_pipeline.keel
 
+use std/testing
+
 type Status = valid | invalid | needs_review
 
 type Record {
@@ -40,6 +42,32 @@ task enrich(r: Record) -> str {
     "one-line profile summary for {r.name} (score: {r.score})",
     format: prose
   ) ?? "{r.name}: score {r.score}"
+}
+
+test "validate maps records to statuses" for case in [
+  { record: { name: "Alice", email: "alice@co.com", score: 95 }, expected: Status.valid },
+  { record: { name: "Bob", email: "", score: 72 }, expected: Status.invalid },
+  { record: { name: "Charlie", email: "charlie@co.com", score: 150 }, expected: Status.needs_review }
+] {
+  record: Record = case.record
+  assert validate(record) == case.expected
+}
+
+test "enrich uses setup and mocked draft sequence" {
+  setup {
+    alice: Record = { name: "Alice", email: "alice@co.com", score: 95 }
+    diana: Record = { name: "Diana", email: "diana@co.com", score: 88 }
+  }
+
+  testing.mock(Ai.draft).returns("Alice: top account")
+  testing.mock(Ai.draft).returns("Diana: renewal candidate")
+
+  assert enrich(alice) == "Alice: top account"
+  assert enrich(diana) == "Diana: renewal candidate"
+  assert enrich(alice) == "Diana: renewal candidate"
+  assert Ai.draft.called
+  assert Ai.draft.call_count == 3
+  assert Ai.draft.called_with("one-line profile summary for Alice (score: 95)")
 }
 
 agent DataPipeline {

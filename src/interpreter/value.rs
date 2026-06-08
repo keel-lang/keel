@@ -97,6 +97,18 @@ pub enum Value {
     /// interpreter's namespace registry.
     Namespace(String),
 
+    /// Test-only reference to a mockable namespace method.
+    MockTarget {
+        namespace: String,
+        method: String,
+    },
+
+    /// Test-only handle returned by `testing.mock(target)`.
+    MockHandle {
+        namespace: String,
+        method: String,
+    },
+
     /// An open database connection.
     ///
     /// Stores the original URL for display and a shared backend handle.
@@ -128,6 +140,8 @@ impl Value {
             Value::AgentHandlerRef(_, _) => "agent_handler",
             Value::Closure(_, _) => "closure",
             Value::Namespace(_) => "namespace",
+            Value::MockTarget { .. } => "mock_target",
+            Value::MockHandle { .. } => "mock",
             Value::DbConnection(_, _) => "DbConnection",
             Value::BuiltinFn(_) => "builtin",
         }
@@ -141,7 +155,7 @@ impl Value {
             Value::String(s) if s.is_empty() => false,
             Value::List(l) if l.is_empty() => false,
             Value::Range(lo, hi) if lo > hi => false,
-            Value::DbConnection(_, _) => true,
+            Value::DbConnection(_, _) | Value::MockTarget { .. } | Value::MockHandle { .. } => true,
             _ => true,
         }
     }
@@ -287,6 +301,10 @@ impl fmt::Display for Value {
                 write!(f, "<closure ({})>", names.join(", "))
             }
             Value::Namespace(name) => write!(f, "<namespace {name}>"),
+            Value::MockTarget { namespace, method } => {
+                write!(f, "<mock target {namespace}.{method}>")
+            }
+            Value::MockHandle { namespace, method } => write!(f, "<mock {namespace}.{method}>"),
             Value::DbConnection(url, _) => write!(f, "<DbConnection {url}>"),
             Value::BuiltinFn(name) => write!(f, "<builtin {name}>"),
         }
@@ -333,6 +351,26 @@ impl PartialEq for Value {
                 a1 == a2 && b1 == b2
             }
             (Value::Namespace(a), Value::Namespace(b)) => a == b,
+            (
+                Value::MockTarget {
+                    namespace: a_ns,
+                    method: a_method,
+                },
+                Value::MockTarget {
+                    namespace: b_ns,
+                    method: b_method,
+                },
+            )
+            | (
+                Value::MockHandle {
+                    namespace: a_ns,
+                    method: a_method,
+                },
+                Value::MockHandle {
+                    namespace: b_ns,
+                    method: b_method,
+                },
+            ) => a_ns == b_ns && a_method == b_method,
             (Value::DbConnection(_, a), Value::DbConnection(_, b)) => Arc::ptr_eq(a, b),
             (Value::BuiltinFn(a), Value::BuiltinFn(b)) => a == b,
             _ => false,

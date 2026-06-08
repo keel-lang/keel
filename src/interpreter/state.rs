@@ -38,6 +38,48 @@ pub struct CallArgValue {
     pub value: Value,
 }
 
+#[derive(Clone)]
+pub(crate) struct RecordedMockCall {
+    pub args: Vec<CallArgValue>,
+}
+
+#[derive(Clone)]
+pub(crate) struct TestMockState {
+    pub returns: Vec<Value>,
+    pub calls: Vec<RecordedMockCall>,
+}
+
+fn mock_call_matches(actual: &[CallArgValue], expected: &[CallArgValue]) -> bool {
+    let actual_positionals: Vec<&Value> = actual
+        .iter()
+        .filter(|arg| arg.name.is_none())
+        .map(|arg| &arg.value)
+        .collect();
+    let expected_positionals: Vec<&Value> = expected
+        .iter()
+        .filter(|arg| arg.name.is_none())
+        .map(|arg| &arg.value)
+        .collect();
+
+    if expected_positionals.len() > actual_positionals.len()
+        || expected_positionals
+            .iter()
+            .zip(actual_positionals.iter())
+            .any(|(expected, actual)| *expected != *actual)
+    {
+        return false;
+    }
+
+    expected
+        .iter()
+        .filter_map(|arg| arg.name.as_deref().map(|name| (name, &arg.value)))
+        .all(|(expected_name, expected_value)| {
+            actual.iter().any(|arg| {
+                arg.name.as_deref() == Some(expected_name) && &arg.value == expected_value
+            })
+        })
+}
+
 /// A prelude namespace (e.g. `Io`, `Schedule`) — a map of method name
 /// to implementation. The interpreter resolves `Ns.method(...)` by
 /// looking up the namespace in the root scope, then the method in its
@@ -127,6 +169,8 @@ pub struct Interpreter {
     pub(crate) current_agent: Option<Arc<Mutex<AgentInstance>>>,
     /// Prelude namespaces installed at startup.
     pub(crate) namespaces: HashMap<String, Namespace>,
+    /// Test-local namespace method override sequences and call metadata.
+    pub(crate) test_mocks: Arc<Mutex<HashMap<(String, String), TestMockState>>>,
     /// Simple-enum type name → variant names. Populated from `type X = a | b` declarations.
     pub(crate) enum_types: HashMap<String, Vec<String>>,
     /// Struct type name → field (name, type_string) pairs. Populated from `type T { f: ty }`.
@@ -182,6 +226,7 @@ impl Interpreter {
             live_agents: Arc::new(Mutex::new(HashMap::new())),
             current_agent: None,
             namespaces: HashMap::with_capacity(32),
+            test_mocks: Arc::new(Mutex::new(HashMap::new())),
             enum_types: HashMap::with_capacity(16),
             struct_types: HashMap::with_capacity(16),
             struct_aliases: HashMap::with_capacity(16),
@@ -198,6 +243,58 @@ impl Interpreter {
         };
         crate::runtime::install_prelude(&mut interp);
         interp
+    }
+
+    pub(crate) fn set_test_mocks(&mut self, mocks: HashMap<(String, String), TestMockState>) {
+        self.test_mocks = Arc::new(Mutex::new(mocks));
+    }
+
+    pub(crate) fn register_test_mock_return(
+        &mut self,
+        namespace: &str,
+        method: &str,
+        value: Value,
+    ) {
+        self.test_mocks
+            .lock()
+            .entry((namespace.to_string(), method.to_string()))
+            .or_insert_with(|| TestMockState {
+                returns: Vec::new(),
+                calls: Vec::new(),
+            })
+            .returns
+            .push(value);
+    }
+
+    pub(crate) fn test_mock_called(&self, namespace: &str, method: &str) -> Option<bool> {
+        self.test_mocks
+            .lock()
+            .get(&(namespace.to_string(), method.to_string()))
+            .map(|state| !state.calls.is_empty())
+    }
+
+    pub(crate) fn test_mock_call_count(&self, namespace: &str, method: &str) -> Option<i64> {
+        self.test_mocks
+            .lock()
+            .get(&(namespace.to_string(), method.to_string()))
+            .map(|state| state.calls.len() as i64)
+    }
+
+    pub(crate) fn test_mock_called_with(
+        &self,
+        namespace: &str,
+        method: &str,
+        expected_args: &[CallArgValue],
+    ) -> Option<bool> {
+        self.test_mocks
+            .lock()
+            .get(&(namespace.to_string(), method.to_string()))
+            .map(|state| {
+                state
+                    .calls
+                    .iter()
+                    .any(|call| mock_call_matches(&call.args, expected_args))
+            })
     }
 
     /// Register a closure for later firing via `Event::FireClosure`.

@@ -280,6 +280,22 @@ impl<'ast> Lowerer<'ast> {
         }
 
         for node in &self.program.declarations {
+            if let crate::ast::Decl::Use(UseDecl {
+                kind: UseKind::Package(segments),
+            }) = &node.kind
+                && segments == &["std".to_string(), "testing".to_string()]
+            {
+                self.globals.insert(
+                    "testing".to_string(),
+                    Resolution {
+                        symbol: None,
+                        kind: NameKind::PreludeNamespace,
+                    },
+                );
+            }
+        }
+
+        for node in &self.program.declarations {
             if let crate::ast::Decl::Type(decl) = &node.kind {
                 let kind = match &decl.def {
                     TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => NameKind::Enum,
@@ -396,6 +412,16 @@ impl<'ast> Lowerer<'ast> {
                 }
             }
             crate::ast::Decl::Task(decl) => self.lower_task(decl, false),
+            crate::ast::Decl::Test(decl) => {
+                self.push_scope();
+                if let Some(param) = &decl.param {
+                    self.lower_expr(&param.cases, None);
+                    self.define_local(&param.name, param.name_span.clone());
+                }
+                self.lower_block(&decl.setup, None);
+                self.lower_block(&decl.body, None);
+                self.pop_scope();
+            }
             crate::ast::Decl::Extern(decl) => {
                 for param in &decl.params {
                     self.add_binding(&param.name, param.name_span.clone());
@@ -554,6 +580,12 @@ impl<'ast> Lowerer<'ast> {
                 self.lower_expr(rhs, None);
             }
             Stmt::Raise(expr) => self.lower_expr(expr, None),
+            Stmt::Assert { cond, message } => {
+                self.lower_expr(cond, None);
+                if let Some(message) = message {
+                    self.lower_expr(message, None);
+                }
+            }
             Stmt::While { cond, body } => {
                 self.lower_expr(cond, None);
                 self.push_scope();
