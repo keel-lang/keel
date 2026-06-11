@@ -7,7 +7,7 @@ use crate::runtime::namespace::{ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Log",
+        namespace: "log",
         name: "info",
         params: &[BuiltinParam {
             name: "message",
@@ -18,7 +18,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Emit an info-level log message.",
     },
     BuiltinMethod {
-        namespace: "Log",
+        namespace: "log",
         name: "warn",
         params: &[BuiltinParam {
             name: "message",
@@ -29,7 +29,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Emit a warning-level log message.",
     },
     BuiltinMethod {
-        namespace: "Log",
+        namespace: "log",
         name: "error",
         params: &[BuiltinParam {
             name: "message",
@@ -40,7 +40,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Emit an error-level log message.",
     },
     BuiltinMethod {
-        namespace: "Log",
+        namespace: "log",
         name: "debug",
         params: &[BuiltinParam {
             name: "message",
@@ -51,7 +51,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Emit a debug-level log message.",
     },
     BuiltinMethod {
-        namespace: "Log",
+        namespace: "log",
         name: "set_level",
         params: &[BuiltinParam {
             name: "level",
@@ -62,7 +62,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Set the minimum log level (\"debug\", \"info\", \"warn\", or \"error\").",
     },
     BuiltinMethod {
-        namespace: "Log",
+        namespace: "log",
         name: "level",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Str),
@@ -78,7 +78,7 @@ fn log_if_enabled(host: &dyn Host, level: &str, msg: &str) {
 }
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Log", {
+    ns!("log", {
         "info" => |host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
             log_if_enabled(host, "info", &msg);
@@ -100,10 +100,10 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::None)
         }),
         "set_level" => |host, args| Box::pin(async move {
-            let level = expect_str(&args, 0, "Log.set_level")?;
+            let level = expect_str(&args, 0, "log.set_level")?;
             if !host.runtime().set_log_threshold(level) {
                 return Err(miette::miette!(
-                    "Log.set_level: `{level}` is not a valid level (expected debug|info|warn|error)"
+                    "log.set_level: `{level}` is not a valid level (expected debug|info|warn|error)"
                 ));
             }
             Ok(Value::None)
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn namespace_has_all_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Log");
+        assert_eq!(ns.name, "log");
         assert!(ns.methods.contains_key("info"));
         assert!(ns.methods.contains_key("warn"));
         assert!(ns.methods.contains_key("error"));

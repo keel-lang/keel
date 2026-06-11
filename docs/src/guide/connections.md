@@ -15,22 +15,22 @@ export EMAIL_USER=you@example.com
 export EMAIL_PASS=app-password
 ```
 
-If those aren't set, `Email.fetch` returns `[]` and `Email.send` is a no-op (with a stderr warning), so programs keep running.
+If those aren't set, `email.fetch` returns `[]` and `email.send` is a no-op (with a stderr warning), so programs keep running.
 
 ### Fetch messages
 
 ```keel
-emails = Email.fetch(unread: true)   # up to 20 most recent unread from INBOX
+emails = email.fetch(unread: true)   # up to 20 most recent unread from INBOX
 ```
 
 Each returned map has `from`, `subject`, `body`, `unread`, and `uid` keys.
-The `uid` is the IMAP UID of the message and is required by `Email.archive`.
+The `uid` is the IMAP UID of the message and is required by `email.archive`.
 
 ### Send messages
 
 ```keel
-Email.send(reply, to: email.from)
-Email.send(reply, to: address, subject: "Re: hello")
+email.send(reply, to: email.from)
+email.send(reply, to: address, subject: "Re: hello")
 ```
 
 Positional body can be a `str` or a `map` with `body` (and optional `subject`). `to:` can be an address string or a map with `from`.
@@ -38,12 +38,12 @@ Positional body can be a `str` or a `map` with `body` (and optional `subject`). 
 ### Archive
 
 ```keel
-for email in Email.fetch(unread: true) {
-  Email.archive(email)
+for email in email.fetch(unread: true) {
+  email.archive(email)
 }
 ```
 
-`Email.archive` performs an IMAP UID MOVE on the message, falling back
+`email.archive` performs an IMAP UID MOVE on the message, falling back
 to COPY + `\Deleted` + EXPUNGE for servers without the MOVE extension.
 The destination folder defaults to `Archive`; override with the
 `IMAP_ARCHIVE_FOLDER` env var:
@@ -53,7 +53,7 @@ export IMAP_ARCHIVE_FOLDER="[Gmail]/All Mail"
 ```
 
 The argument must be a message map with a positive `uid` field — the
-shape returned by `Email.fetch`. If credentials are not configured the
+shape returned by `email.fetch`. If credentials are not configured the
 call is a silent no-op so programs keep running.
 
 ## `Http`
@@ -63,7 +63,7 @@ Default implementation wraps `reqwest`.
 ### GET
 
 ```keel
-response = Http.get("https://api.example.com/data")
+response = http.get("https://api.example.com/data")
 # response: HttpResponse?
 
 if response?.is_ok {
@@ -74,20 +74,20 @@ if response?.is_ok {
 ### POST
 
 ```keel
-response = Http.post("https://api.example.com/v2/events",
+response = http.post("https://api.example.com/v2/events",
   json: {kind: "email_processed", count: 42},
-  headers: {Authorization: "Bearer {Env.require("API_KEY")}"}
+  headers: {Authorization: "Bearer {env.require("API_KEY")}"}
 )
 ```
 
 ### Full request
 
 ```keel
-response = Http.request(
+response = http.request(
   method: POST,
   url: "https://api.example.com/v2/classify",
   headers: {
-    Authorization: "Bearer {Env.require("API_KEY")}",
+    Authorization: "Bearer {env.require("API_KEY")}",
     "Content-Type": "application/json"
   },
   body: {text: email.body},
@@ -97,18 +97,18 @@ response = Http.request(
 
 **Returns:** `HttpResponse?` — see [Types](./types.md) for the shape.
 
-### `Http.serve` — inbound HTTP (webhooks)
+### `http.serve` — inbound HTTP (webhooks)
 
 Start an HTTP listener on a port. Each incoming request invokes the handler closure:
 
 ```keel
-Http.serve(8080, (request) => {
+http.serve(8080, (request) => {
   method = request["method"]   # "GET", "POST", …
   path   = request["path"]     # "/webhook/events"
   body   = request["body"]     # raw body string
 
   if method == "POST" {
-    Io.show("Received: {body}")
+    io.show("Received: {body}")
     { status: 200, body: "OK" }
   } else {
     { status: 405, body: "Method Not Allowed" }
@@ -118,18 +118,18 @@ Http.serve(8080, (request) => {
 
 - `request` — map with `method`, `path`, `body` (all strings)
 - Return a map with `status` (integer, 100–999) and `body` (string)
-- The server runs in a background task; `Http.serve` returns immediately
+- The server runs in a background task; `http.serve` returns immediately
 - The event loop stays alive as long as at least one server is active, even with no running agents
 - **When the event queue is full**, incoming HTTP requests receive a `503 Service Unavailable` response automatically. No user code runs for that request.
 
-> **Handlers run outside any agent context.** An `Http.serve` handler
+> **Handlers run outside any agent context.** An `http.serve` handler
 > is a top-level closure — it fires on the event loop with no
 > `current_agent` set. That has two consequences:
 >
 > - **`self.<field>` raises a runtime error** inside a handler. Agent
 >   state is only reachable from within an agent's tasks / `on`
 >   handlers / attribute blocks.
-> - **`Ai.*` calls are not agent-aware.** No `@role`, no `@rules`, and
+> - **`ai.*` calls are not agent-aware.** No `@role`, no `@rules`, and
 >   no `@model` injection — calls fall back to the default model
 >   (`KEEL_OLLAMA_MODEL`) with a bare system prompt. Results are still
 >   returned, just without the agent's identity layered in.
@@ -138,8 +138,8 @@ Http.serve(8080, (request) => {
 > route the request into a live agent:
 >
 > ```keel
-> Http.serve(8080, (request) => {
->   Agent.send(Triage, request, event: "http_request")
+> http.serve(8080, (request) => {
+>   send(Triage, request, event: "http_request")
 >   { status: 202, body: "accepted" }
 > })
 > ```
@@ -149,11 +149,11 @@ Http.serve(8080, (request) => {
 
 ## `Db`
 
-`Db.connect` opens a SQLite database and returns a `DbConnection` value. All SQL is
-executed through that value. Requires `@tools [Db]`.
+`db.connect` opens a SQLite database and returns a `DbConnection` value. All SQL is
+executed through that value. Requires `@tools [db]`.
 
 ```keel
-db = Db.connect("sqlite://interactions.db")
+db = db.connect("sqlite://interactions.db")
 
 rows = db.query(
   "SELECT * FROM interactions WHERE contact = ? AND created_at > ?",
@@ -174,13 +174,13 @@ The planned interface flow for custom transports is:
 
 ```keel
 # In your startup
-Email.install(MyProprietaryEmailTransport)
-Http.install(MyRateLimitedClient)
+email.install(MyProprietaryEmailTransport)
+http.install(MyRateLimitedClient)
 ```
 
-> **Status:** `Email.install` / `Http.install` are reserved but not registered in v0.1 — the default transports are the only ones wired.
+> **Status:** `email.install` / `http.install` are reserved but not registered in v0.1 — the default transports are the only ones wired.
 
-See [The Prelude & Interfaces](./prelude.md) for how interface dispatch works.
+See [The Prelude & Interfaces](./stdlib.md) for how interface dispatch works.
 
 ## Why a library, not `connect` + `fetch` keywords
 

@@ -8,6 +8,11 @@ tasks. For mailbox-specific coordination between live agents, use
 [Agent Communication](../guide/agent-communication.md).
 
 ```keel
+use std/ai
+use std/email
+use std/io
+use std/schedule
+
 type Urgency  = low | medium | high | critical
 type Category = question | request | info | complaint | spam
 
@@ -17,13 +22,13 @@ type TriageResult {
 }
 
 task triage_email(email: {body: str}) -> TriageResult {
-  urgency  = Ai.classify(email.body, as: Urgency)  ?? Urgency.medium
-  category = Ai.classify(email.body, as: Category) ?? Category.question
+  urgency  = ai.classify(email.body, as: Urgency)  ?? Urgency.medium
+  category = ai.classify(email.body, as: Category) ?? Category.question
   {urgency: urgency, category: category}
 }
 
 task draft_reply(email: {body: str, from: str}, guidance: str? = none) -> str {
-  Ai.draft("response to {email.body}",
+  ai.draft("response to {email.body}",
     tone: "professional",
     guidance: guidance,
     max_length: 200
@@ -32,9 +37,9 @@ task draft_reply(email: {body: str, from: str}, guidance: str? = none) -> str {
 
 task plan_followup(email: {subject: str}, urgency: Urgency) {
   when urgency {
-    critical => Schedule.after(2.hours, () => { Io.notify("Follow up on: {email.subject}") })
-    high     => Schedule.after(24.hours, () => { Io.notify("Check status: {email.subject}") })
-    medium   => Schedule.after(3.days, () => { Io.notify("Pending reply: {email.subject}") })
+    critical => schedule.after(2.hours, () => { io.notify("Follow up on: {email.subject}") })
+    high     => schedule.after(24.hours, () => { io.notify("Check status: {email.subject}") })
+    medium   => schedule.after(3.days, () => { io.notify("Pending reply: {email.subject}") })
     low      => { }
   }
 }
@@ -51,33 +56,33 @@ agent InboxManager {
     when result.urgency {
       low => {
         when result.category {
-          spam, info => Email.archive(email)
+          spam, info => email.archive(email)
           _ => {
             reply = draft_reply(email) ?? "(could not draft)"
-            if Io.confirm(reply) { Email.send(reply, to: email.from) }
+            if io.confirm(reply) { email.send(reply, to: email.from) }
           }
         }
       }
       medium => {
         reply = draft_reply(email) ?? "(could not draft)"
-        if Io.confirm(reply) { Email.send(reply, to: email.from) }
+        if io.confirm(reply) { email.send(reply, to: email.from) }
         plan_followup(email, result.urgency)
       }
       high, critical => {
-        summary = Ai.summarize(email.body, in: 2, unit: sentences) ?? "(no summary)"
-        Io.notify("{result.urgency} {result.category} from {email.from}")
-        Io.show(summary)
-        guidance = Io.ask("How should I respond?")
+        summary = ai.summarize(email.body, in: 2, unit: sentences) ?? "(no summary)"
+        io.notify("{result.urgency} {result.category} from {email.from}")
+        io.show(summary)
+        guidance = io.ask("How should I respond?")
         reply = draft_reply(email, guidance) ?? "(could not draft)"
-        if Io.confirm(reply) { Email.send(reply, to: email.from) }
+        if io.confirm(reply) { email.send(reply, to: email.from) }
         plan_followup(email, result.urgency)
       }
     }
   }
 
   @on_start {
-    Schedule.every(5.minutes, () => {
-      for email in Email.fetch(unread: true) {
+    schedule.every(5.minutes, () => {
+      for email in email.fetch(unread: true) {
         self.handle(email)
       }
     })
@@ -98,20 +103,22 @@ InboxManager (orchestrator agent)
 
 Use top-level tasks when the caller needs a return value immediately. Use
 agents with mailboxes when work should cross a live actor boundary.
-`Agent.delegate(target, task, args)` posts a named task event to the target
+`delegate(target, task, args)` posts a named task event to the target
 agent's mailbox. `@team [...]` tags a running agent with one or more team names
-for `Agent.broadcast(team, data, event:)`.
+for `broadcast(team, data, event:)`.
 
 ```keel
+use std/io
+
 agent Classifier {
   @team ["email"]
-  on refresh(msg: str) { Io.show("Classifier refresh: {msg}") }
+  on refresh(msg: str) { io.show("Classifier refresh: {msg}") }
 }
 
 agent Coordinator {
   @on_start {
-    Agent.run(Classifier)
-    Agent.broadcast("email", "new batch", event: "refresh")
+    run(Classifier)
+    broadcast("email", "new batch", event: "refresh")
   }
 }
 ```

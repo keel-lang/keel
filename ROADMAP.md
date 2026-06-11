@@ -8,7 +8,7 @@
 
 1. **Small core, deep stdlib.** Everything that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime.
 2. **Rust from day one.** Single-binary distribution, async via Tokio, no runtime dependencies on other language ecosystems.
-3. **Prelude-as-stdlib.** Users never write `use keel/ai`. Namespaces like `Ai`, `Io`, `Schedule`, `Http` are auto-imported. Implementations are designed to become swappable via interfaces; v0.1 ships Ollama only.
+3. **Stdlib-as-modules.** The standard library is imported explicitly — `use std/ai`, `use std/file` — with the same syntax as local file imports; nothing is ambient except agent verbs, generic utilities, and built-in types. Implementations are designed to become swappable via interfaces; v0.1 ships Ollama only.
 4. **No silent fallbacks.** Configuration mistakes surface as errors at startup, not as silent mock responses at runtime.
 
 ---
@@ -27,7 +27,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | Parser | [x] | Attributes, interfaces, named args, `as T`, rich enums, triple-quoted strings, duration literals, destructuring |
 | Interpreter | [x] | Namespace dispatch, agent lifecycle, pattern matching, closures, async, `try/catch` |
 | Formatter (`keel fmt`) | [x] | Idempotent round-trip against AST |
-| Type checker | [x] | Scope, arity, enum exhaustiveness, nullable safety (including call-site enforcement), return-type matching, struct subtyping, `?.`/`??` propagation, `Ai.extract`/`Ai.decide` `as:` inference, lambda block bodies, `set[]` literals, implicit return, `if`-expr branch unification (v0.1.19), generic type instantiation — `Foo[T]` declarations parsed and substituted at use sites; generic struct/alias bodies resolve concretely (v0.1.20); generic task declarations with call-site type-parameter inference (v0.1.20); nullable arg checking at all task call sites (v0.1.21); `when` expression arm-type unification (v0.1.22). Type-mismatch error caret now points at the type annotation span, not the whole statement. **AST `Node<T>` migration complete (Stage 5):** all `(T, Span)` tuple call-sites replaced by `Node<T>` structs with named `.kind`/`.span` fields. |
+| Type checker | [x] | Scope, arity, enum exhaustiveness, nullable safety (including call-site enforcement), return-type matching, struct subtyping, `?.`/`??` propagation, `ai.extract`/`ai.decide` `as:` inference, lambda block bodies, `set[]` literals, implicit return, `if`-expr branch unification (v0.1.19), generic type instantiation — `Foo[T]` declarations parsed and substituted at use sites; generic struct/alias bodies resolve concretely (v0.1.20); generic task declarations with call-site type-parameter inference (v0.1.20); nullable arg checking at all task call sites (v0.1.21); `when` expression arm-type unification (v0.1.22). Type-mismatch error caret now points at the type annotation span, not the whole statement. **AST `Node<T>` migration complete (Stage 5):** all `(T, Span)` tuple call-sites replaced by `Node<T>` structs with named `.kind`/`.span` fields. |
 | Augmented assignment (`+=`, `-=`, `*=`, `/=`) | [x] | Mutates the nearest enclosing scope binding; does not shadow; works on locals and `self.field` |
 | `break` / `continue` in loops | [x] | Exit or skip iterations; both are reserved keywords; innermost-loop semantics only |
 | `raise expr` | [x] | Symmetric with `try`/`catch`; string value becomes error message; any other value is converted via display |
@@ -40,7 +40,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `list.sort_by(key_fn)` — sort with custom key | [x] | `.sort(by: x => x.score)` — optional `by:` named arg on existing `.sort()`, consistent with `min(by:)`/`max(by:)`; key fn returns int/float/str; ascending; two-phase (compute all keys async, sort synchronously) |
 | Struct spread-update expression (`{ ...base, field: new }`) | [x] | `{ ...record, price: fill_price }` copies all fields from `record` then overrides `price`. One spread, must be first; zero or more overrides follow. Type tag preserved. Unknown override fields are a compile-time error. |
 | Struct / map / tuple pattern matching in `when` | [ ] | `when` covers enum variants, rich variant destructuring, wildcards, and literal values. Matching against a struct's field layout (`when r { { side: buy, quantity } => … }`) is unimplemented. Promoted from "Deferred post-v0.1". |
-| `use "./file.keel"` — module import runtime support | [ ] | `UseStmt` is parsed (parser [x]) but no ROADMAP entry confirms the interpreter resolves and executes imported files. Multi-agent projects outgrow a single file quickly. Confirm runtime resolution, test symbol imports and relative paths, document circular-import behaviour. |
+| Module system — `use std/<name>` + `use "./file.keel"` | [x] | Full module graph loading: std modules (lowercase, imported explicitly), local file imports namespaced by file stem, `as` aliasing, multi-symbol `use A, B as C from ...`, implicit main (top-level statements run only in the entry file), per-file test discovery, circular-import errors with cycle paths, tombstone diagnostics for the removed PascalCase prelude. One flat global namespace per program in this release (conflicts are compile errors); module-private scoping and stdlib-written-in-Keel (`stdlib/` sources embedded in the binary, merged with intrinsics per module) are follow-ups. Closes #66. |
 
 ### Agent model
 
@@ -53,62 +53,62 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `self.task(...)` agent-local task calls | [x] | Bare `task(...)` stays lexical/global; cross-agent work uses mailbox APIs |
 | `readonly` state field modifier | [x] | Compiler + runtime enforcement; assignment to readonly field is an error |
 | `Agent.send` / `Agent.delegate` | [x] | |
-| `Agent.broadcast(team, data)` | [x] | Fans out to every live agent in the named `@team` |
-| Type-safe `Agent.delegate` — symbol form | [x] | `Agent.delegate(Foo.handle, arg)` — `Foo.handle` is a compile-time–resolved handler reference; the checker validates the handler exists and the data arg matches the handler's parameter type. String form `Agent.delegate(Foo, "handle", arg)` is also validated for plain string literals. Both forms coexist for backward compatibility. |
+| `broadcast(team, data)` | [x] | Fans out to every live agent in the named `@team` |
+| Type-safe `Agent.delegate` — symbol form | [x] | `delegate(Foo.handle, arg)` — `Foo.handle` is a compile-time–resolved handler reference; the checker validates the handler exists and the data arg matches the handler's parameter type. String form `delegate(Foo, "handle", arg)` is also validated for plain string literals. Both forms coexist for backward compatibility. |
 
 ### Attributes
 
 | Attribute | Tier | Status | Notes |
 |---|---|---|---|
-| `@model "ollama:..."` | core | [x] | Read by `Ai.*` to pick the Ollama model |
-| `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt |
+| `@model "ollama:..."` | core | [x] | Read by `ai.*` to pick the Ollama model |
+| `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `ai.*` system prompt |
 | `@on_start { ... }` | stdlib | [x] | Block runs once when the agent starts |
 | `@on_stop { ... }` | stdlib | [x] | Block runs once when the agent stops (v0.1.4) |
 | `@tools [...]` | stdlib | [x] | Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17) |
 | `@memory persistent\|session\|none` | stdlib | [x] | Selects memory scope; enforced at runtime (v0.1.10) |
-| `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `Ai.*` call (v0.1.3) |
-| `@limits { ... }` | stdlib | [~] | `timeout` enforced via `Control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level |
-| `@team [...]` | stdlib | [x] | Team membership used by `Agent.broadcast` routing (v0.1.6) |
+| `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `ai.*` call (v0.1.3) |
+| `@limits { ... }` | stdlib | [~] | `timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level |
+| `@team [...]` | stdlib | [x] | Team membership used by `broadcast` routing (v0.1.6) |
 | `@provider MyProvider` | stdlib | [ ] | Parsed, no per-agent LLM-provider swap |
 
 ### Stdlib namespaces
 
 | Namespace | Status | Implemented | Gaps |
 |---|---|---|---|
-| `Ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json) | `embed` deferred to v0.2 (requires pluggable provider registry); `Ai.install(provider)` not registered |
-| `Io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
-| `Schedule` | [x] | `every`, `after`, `at`, `cron`, `sleep` | — |
-| `Email` | [~] | `fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback) | — |
-| `Http` | [x] | `get`, `post`, `request`, `serve` (webhook listener) | — |
-| `Env` | [x] | `get`, `require` | — |
-| `Log` | [x] | `info`, `warn`, `error`, `debug`, `set_level`, `level` | — |
-| `Agent` | [x] | `run`, `stop`, `send`, `delegate`, `broadcast` | — |
-| `Memory` | [x] | `remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON) | Vector-store backend (semantic search) is v0.2 |
-| `Control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
-| `Async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
-| `Cache` | [~] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | `Cache.get` return type undocumented — at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `Cache.get(key) -> dynamic?` to SPEC §3 so users know the stored type is preserved and a narrow cast (`as T`) recovers it. |
+| `std/ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json) | `embed` deferred to v0.2 (requires pluggable provider registry); `ai.install(provider)` not registered |
+| `std/io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
+| `std/schedule` | [x] | `every`, `after`, `at`, `cron`, `sleep` | — |
+| `std/email` | [~] | `fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback) | — |
+| `std/http` | [x] | `get`, `post`, `request`, `serve` (webhook listener) | — |
+| `std/env` | [x] | `get`, `require` | — |
+| `std/log` | [x] | `info`, `warn`, `error`, `debug`, `set_level`, `level` | — |
+| Agent verbs (built-in) | [x] | `run`, `stop`, `send`, `delegate`, `broadcast` — language-level free functions, always in scope | The `Agent` namespace dissolved into the language with the module system |
+| `std/memory` | [x] | `remember`, `recall`, `forget` — session (default) or persistent (file-backed JSON) | Vector-store backend (semantic search) is v0.2 |
+| `std/control` | [x] | `retry`, `with_timeout`, `with_deadline` (v0.1.6) | — |
+| `std/async` | [x] | `spawn`, `join_all`, `select`, `sleep` (v0.1.7) | — |
+| `std/cache` | [~] | `set` (optional TTL), `get`, `delete`, `clear` — process-scoped | `cache.get` return type undocumented — at runtime returns the stored value at its original type, or `none` if absent or expired; the Keel-visible type is `dynamic?` (dynamic because the checker cannot know what was stored, nullable for absent keys). Add `cache.get(key) -> dynamic?` to SPEC §3 so users know the stored type is preserved and a narrow cast (`as T`) recovers it. |
 | `String value methods` | [x] | `.matches`, `.extract`, `.truncate`, `.pad`, `.find_all`, `.sub` — all string ops on the value; `Str` namespace removed | — |
-| `File` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
+| `std/file` | [x] | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` | — |
 | Numeric value methods | [x] | `.abs()`, `.floor()`, `.ceil()`, `.round()` on `int`/`float`; `floor`/`ceil`/`round` are no-ops on `int` | No `Math` namespace — ops live on the value |
 | `min` / `max` prelude functions | [x] | `min(...items: T, by:?) -> T?`, `max(...items: T, by:?) -> T?`; single list arg auto-spread; `none` on empty | — |
-| `Random` | [x] | `Random.float()`, `Random.int(min:, max:)`, `Random.bool()` | — |
-| `Uuid` | [x] | `Uuid.v4()`, `Uuid.v7()`, `Uuid.v5(ns:, name:)`, `Uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
+| `std/random` | [x] | `random.float()`, `random.int(min:, max:)`, `random.bool()` | — |
+| `std/uuid` | [x] | `uuid.v4()`, `uuid.v7()`, `uuid.v5(ns:, name:)`, `uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
 | `Stringable` interface | [x] | `impl Stringable for T { task to_str(self) -> str { ... } }`; enables `"{expr}"` interpolation for user-defined types | Primitives + `Uuid` built-in; user types opt in via `impl` block; `impl` reserved keyword |
 | User-defined interfaces | [x] | `interface Name { task method(self) -> T }` declares a protocol; `impl Name for Type { ... }` satisfies it; compiler validates all methods present, arity, and return types; impl methods take priority over built-in map methods | No interface-as-type (`task f(x: Iterable)`) — values are structural, not nominally typed through interfaces |
 | `Comparable` interface | [x] | `task compare(self, other) -> int`; wired into `list.sort()`, `list.min()`, `list.max()`, global `min()`/`max()` | Async insertion sort for struct lists |
 | `Equatable` interface | [x] | `task equals(self, other) -> bool`; method-only, `==` stays structural | — |
-| `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `Json.stringify` | — |
+| `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `json.stringify` | — |
 | `Iterable` interface | [x] | `task items(self) -> list[T]`; struct usable in `for` loop | Not a generator; materialises full list; concrete `list[T]` return type accepted |
 | `Hashable` interface | [ ] | `interface Hashable { task hash(self) -> int; task equals(self, other: Self) -> bool }` — allows user-defined structs and enums to be used as `map[K, V]` keys; compiler validates K implements Hashable | Deferred to v0.2; in v0.1 only `str`, `int`, `bool` are valid map key types (float is rejected at compile time, nullable and struct/enum keys raise) |
-| `Json` | [~] | `parse`, `stringify` | `Json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(Json.parse(body) as dynamic).field` is valid Keel. |
-| `Time` | [~] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
-| `Search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
-| `Db` | [x] | `connect(url)` → `DbConnection`, `db.query(sql, params?)` → `list[map[str,dynamic]]`, `db.exec(sql, params?)` → `int` | Multi-backend (Postgres, MySQL) deferred to v0.2 |
-| `Crypto` | [x] | `sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)` | Cryptographic primitives; distinct from `Random` (PRNG) |
-| `Math` | [x] | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()` | All return `float`; accept `int` or `float` input; domain errors raise |
-| `Csv` | [x] | `parse`, `parse_records`, `stringify` | RFC 4180–compliant. `parse` → `list[list[str]]`; `parse_records` → `list[map[str, str]]` keyed by first row; `stringify` accepts `list[list[str]]` (include a header list as the first element if desired). Cells with commas, quotes, or newlines are auto-quoted. |
-| `Yaml` | [ ] | — | `Yaml.parse(str) -> dynamic`, `Yaml.stringify(value) -> str`. YAML is the dominant config and agent-definition format. Promoted from "Deferred post-v0.1". |
-| `Shell` | [x] | `run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }` | — |
+| `std/json` | [~] | `parse`, `stringify` | `json.parse` return-type semantics undocumented — at runtime, JSON objects become `Value::Map` (field access `parsed.key` works), arrays become `Value::List` (index `parsed[i]` works), numbers become `int` or `float`, strings become `str`. None of this is stated in SPEC or ROADMAP. Add to SPEC §3 and to `docs/src/guide/` so users know `(json.parse(body) as dynamic).field` is valid Keel. |
+| `std/time` | [~] | `now(tz:)`, `parse(tz:)`, `dt.parts()`, `dt.format(as:)`, `epoch_ms() -> int`; `dt ± dur`, `dt - dt → duration`; `500.ms` … `1.week` | — |
+| `std/search` | [~] | — | Registered; all methods raise a clear "planned for v0.2" error |
+| `std/db` | [x] | `connect(url)` → `DbConnection`, `db.query(sql, params?)` → `list[map[str,dynamic]]`, `db.exec(sql, params?)` → `int` | Multi-backend (Postgres, MySQL) deferred to v0.2 |
+| `std/crypto` | [x] | `sha224(data)`, `sha256(data)`, `sha384(data)`, `sha512(data)`, `sha512_224(data)`, `sha512_256(data)`, matching `hmac_` methods, `token(bytes:)`, `random_bytes(n)` | Cryptographic primitives; distinct from `Random` (PRNG) |
+| `std/math` | [x] | `sqrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `PI()`, `E()` | All return `float`; accept `int` or `float` input; domain errors raise |
+| `std/csv` | [x] | `parse`, `parse_records`, `stringify` | RFC 4180–compliant. `parse` → `list[list[str]]`; `parse_records` → `list[map[str, str]]` keyed by first row; `stringify` accepts `list[list[str]]` (include a header list as the first element if desired). Cells with commas, quotes, or newlines are auto-quoted. |
+| `std/yaml` | [ ] | — | `yaml.parse(str) -> dynamic`, `yaml.stringify(value) -> str` (module-only — ships without any ambient form). YAML is the dominant config and agent-definition format. Promoted from "Deferred post-v0.1". |
+| `std/shell` | [x] | `run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }` | — |
 
 ### CLI
 
@@ -137,7 +137,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 ### Deferred post-v0.1
 
 - **`keel build` bytecode compiler.** Tree-walking interpreter is fast enough for alpha (~8ms cold start). Revisit with a concrete motivator (LLVM/WASM backend, embeddable runtime).
-- **Pluggable LLM provider registry + `Ai.embed`.** Define a `LlmProvider` trait covering both chat and embedding methods. Ship built-in impls for Ollama, OpenAI, Gemini, DeepSeek, and Anthropic (via Voyage AI). Expose the trait publicly so developers can register custom providers. `Ai.embed` ships alongside this — it needs multi-provider dispatch and a common interface before it's worth implementing.
+- **Pluggable LLM provider registry + `ai.embed`.** Define a `LlmProvider` trait covering both chat and embedding methods. Ship built-in impls for Ollama, OpenAI, Gemini, DeepSeek, and Anthropic (via Voyage AI). Expose the trait publicly so developers can register custom providers. `ai.embed` ships alongside this — it needs multi-provider dispatch and a common interface before it's worth implementing.
 - **Vector-store `Memory` backend.** Current persistent store is a JSON file. Semantic search needs an embeddings pipeline and `VectorStore` interface — belongs in v0.2.
 - **Major dependency bumps** (`chumsky 0.9 → 1.0`, `imap 2 → 3`, `colored 2 → 3`, `lettre 0.11 → 0.12`) — batched for v0.2.
 - ~~**`while` loop.**~~ Shipped in v0.1.27. `Stmt::While`, lexer token, parser, type-checker, formatter, lint pass, and interpreter eval. `break`/`continue` work identically to `for` loops.
@@ -145,7 +145,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 - **Variadic functions** — shipped in v0.1.25 (see core language table).
 - **Lazy sequences / generators.** Everything is eagerly materialized. Extending `Range`'s lazy evaluation to a general iterator protocol would make large-dataset pipelines memory-efficient.
 - ~~**String format specifiers** (`"{ value:.2f }"`)~~. Promoted to v0.1.x planned — see Core language table.
-- ~~**CSV / YAML serialization.**~~ Promoted to v0.1.x planned — see `Csv` / `Yaml` in Stdlib namespaces table.
+- ~~**CSV / YAML serialization.**~~ Promoted to v0.1.x planned — see `std/csv` / `std/yaml` in Stdlib namespaces table.
 - ~~**Subprocess / shell-out.**~~ Shipped in v0.1.x — see `Shell` in Stdlib namespaces table.
 
 ---

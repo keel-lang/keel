@@ -12,7 +12,7 @@ use crate::runtime::db_provider::{DbConnectionHandle, DbFuture};
 use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
-    namespace: "Db",
+    namespace: "db",
     name: "connect",
     params: &[BuiltinParam {
         name: "url",
@@ -58,7 +58,7 @@ impl DbConnectionHandle for SqliteConnection {
             tokio::task::spawn_blocking(move || {
                 let locked = conn.lock();
                 let mut stmt = locked.prepare(&sql).map_err(|e| {
-                    make_typed_report(RuntimeErrorKind::Db, format!("Db.query ({url}): {e}"))
+                    make_typed_report(RuntimeErrorKind::Db, format!("db.query ({url}): {e}"))
                 })?;
                 let col_count = stmt.column_count();
                 // Detect duplicate column names up front so each occurrence
@@ -95,18 +95,18 @@ impl DbConnectionHandle for SqliteConnection {
                         Ok(Value::Map(map))
                     })
                     .map_err(|e| {
-                        make_typed_report(RuntimeErrorKind::Db, format!("Db.query ({url}): {e}"))
+                        make_typed_report(RuntimeErrorKind::Db, format!("db.query ({url}): {e}"))
                     })?;
                 let rows: rusqlite::Result<Vec<Value>> = mapped.collect();
                 rows.map_err(|e| {
                     make_typed_report(
                         RuntimeErrorKind::Db,
-                        format!("Db.query ({url}): row error: {e}"),
+                        format!("db.query ({url}): row error: {e}"),
                     )
                 })
             })
             .await
-            .map_err(|e| miette::miette!("Db.query: task join error: {e}"))?
+            .map_err(|e| miette::miette!("db.query: task join error: {e}"))?
         })
     }
 
@@ -124,11 +124,11 @@ impl DbConnectionHandle for SqliteConnection {
                     .execute(&sql, rusqlite::params_from_iter(rusqlite_params.iter()))
                     .map(|n| n as i64)
                     .map_err(|e| {
-                        make_typed_report(RuntimeErrorKind::Db, format!("Db.exec ({url}): {e}"))
+                        make_typed_report(RuntimeErrorKind::Db, format!("db.exec ({url}): {e}"))
                     })
             })
             .await
-            .map_err(|e| miette::miette!("Db.exec: task join error: {e}"))?
+            .map_err(|e| miette::miette!("db.exec: task join error: {e}"))?
         })
     }
 }
@@ -136,19 +136,19 @@ impl DbConnectionHandle for SqliteConnection {
 // ── Db namespace ──────────────────────────────────────────────────────────────
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Db", {
+    ns!("db", {
         "connect" => |_i, args| Box::pin(async move {
-            let url = expect_str(&args, 0, "Db.connect")?.to_owned();
+            let url = expect_str(&args, 0, "db.connect")?.to_owned();
 
             let path = parse_sqlite_url(&url)?;
             let path_for_open = path.clone();
 
             let conn = tokio::task::spawn_blocking(move || {
                 rusqlite::Connection::open(&path_for_open)
-                    .map_err(|e| make_typed_report(RuntimeErrorKind::Db, format!("Db.connect: cannot open `{path_for_open}`: {e}")))
+                    .map_err(|e| make_typed_report(RuntimeErrorKind::Db, format!("db.connect: cannot open `{path_for_open}`: {e}")))
             })
             .await
-            .map_err(|e| miette::miette!("Db.connect: task error: {e}"))??;
+            .map_err(|e| miette::miette!("db.connect: task error: {e}"))??;
 
             let handle: Arc<dyn DbConnectionHandle> =
                 Arc::new(SqliteConnection::new(conn, url.clone()));
@@ -169,7 +169,7 @@ fn parse_sqlite_url(url: &str) -> miette::Result<String> {
             return Err(make_typed_report(
                 RuntimeErrorKind::Db,
                 format!(
-                    "Db.connect: missing path in URL `{url}`; \
+                    "db.connect: missing path in URL `{url}`; \
                      use sqlite://path.db, sqlite:///abs/path.db, or sqlite://:memory:"
                 ),
             ));
@@ -178,13 +178,13 @@ fn parse_sqlite_url(url: &str) -> miette::Result<String> {
     } else if url.starts_with("postgres://") || url.starts_with("mysql://") {
         Err(make_typed_report(
             RuntimeErrorKind::Db,
-            format!("Db.connect: `{url}` — only sqlite:// is supported in v0.1"),
+            format!("db.connect: `{url}` — only sqlite:// is supported in v0.1"),
         ))
     } else {
         Err(make_typed_report(
             RuntimeErrorKind::Db,
             format!(
-                "Db.connect: unrecognized URL `{url}`; expected sqlite://path or sqlite://:memory:"
+                "db.connect: unrecognized URL `{url}`; expected sqlite://path or sqlite://:memory:"
             ),
         ))
     }
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn namespace_exposes_connect() {
         let ns = namespace();
-        assert_eq!(ns.name, "Db");
+        assert_eq!(ns.name, "db");
         assert!(ns.methods.contains_key("connect"));
     }
 

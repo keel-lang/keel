@@ -1,3 +1,5 @@
+use std/io
+
 agent Counter {
   @role "counter"
 
@@ -10,20 +12,38 @@ agent Counter {
     x += 5
     x -= 2
     x *= 3
-    Io.show("x = {x}")
+    io.show("x = {x}")
     self.count = self.count + 1
     self.count = self.count + 1
     self.total = self.total + 9.5
-    Io.show("count = {self.count}, total = {self.total}")
+    io.show("count = {self.count}, total = {self.total}")
     try {
       n = -1
       if n < 0 {
         raise "n must be non-negative"
       }
     } catch err: Error {
-      Io.show("caught: {err.message}")
+      io.show("caught: {err.message}")
     }
   }
 }
 
 run(Counter)
+
+# Tests — run with: keel test examples/augmented_assign.keel
+test "augmented assignment operators" {
+  x = 10
+  x += 5
+  x -= 2
+  x *= 3
+  assert x == 39
+}
+
+test "raise inside try is caught" {
+  try {
+    raise "n must be non-negative"
+    assert false, "unreachable"
+  } catch err: Error {
+    assert err.message == "n must be non-negative"
+  }
+}

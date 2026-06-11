@@ -8,56 +8,56 @@ use crate::runtime::namespace::{find_arg, ns, positional, throw_typed_error};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "classify",
         params: &[],
         result: BuiltinResult::AiClassify,
         doc: "Classify text into an enum variant.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "summarize",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::NullableStr),
         doc: "Summarize text.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "draft",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::NullableStr),
         doc: "Draft text from a prompt.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "extract",
         params: &[],
         result: BuiltinResult::AiExtract,
         doc: "Extract a typed value from text.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "translate",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::NullableStr),
         doc: "Translate text to another language.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "decide",
         params: &[],
         result: BuiltinResult::AiExtract,
         doc: "Decide by extracting a typed value from context.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "prompt",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::NullableStr),
         doc: "Send a raw prompt to the LLM and return its response.",
     },
     BuiltinMethod {
-        namespace: "Ai",
+        namespace: "ai",
         name: "embed",
         params: &[],
         result: BuiltinResult::Unknown,
@@ -66,10 +66,10 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Ai", {
+    ns!("ai", {
         "classify" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
-                .ok_or_else(|| miette::miette!("Ai.classify: missing input"))?
+                .ok_or_else(|| miette::miette!("ai.classify: missing input"))?
                 .to_display_string();
             let variants = classify_variants(host, &args)?;
             let criteria = extract_criteria(&args);
@@ -100,7 +100,7 @@ pub(crate) fn namespace() -> Namespace {
 
         "summarize" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
-                .ok_or_else(|| miette::miette!("Ai.summarize: missing input"))?
+                .ok_or_else(|| miette::miette!("ai.summarize: missing input"))?
                 .to_display_string();
             let unit_val = find_arg(&args, "unit").map(|v| v.to_display_string());
             let length = match (find_arg(&args, "in"), &unit_val) {
@@ -123,7 +123,7 @@ pub(crate) fn namespace() -> Namespace {
 
         "draft" => |host, args| Box::pin(async move {
             let description = positional(&args, 0)
-                .ok_or_else(|| miette::miette!("Ai.draft: missing description"))?
+                .ok_or_else(|| miette::miette!("ai.draft: missing description"))?
                 .to_display_string();
             let tone = find_arg(&args, "tone").map(|v| v.to_display_string());
             let guidance = find_arg(&args, "guidance").map(|v| v.to_display_string());
@@ -147,7 +147,7 @@ pub(crate) fn namespace() -> Namespace {
             let input = match find_arg(&args, "from") {
                 Some(v) => v.to_display_string(),
                 None => positional(&args, 0)
-                    .ok_or_else(|| miette::miette!("Ai.extract: missing input"))?
+                    .ok_or_else(|| miette::miette!("ai.extract: missing input"))?
                     .to_display_string(),
             };
             // Schema from `schema: { field: "type" }` map, or derived from `as: T` struct type.
@@ -166,7 +166,7 @@ pub(crate) fn namespace() -> Namespace {
                             let schema =
                                 host.struct_types().get(&type_name).cloned().ok_or_else(|| {
                                     miette::miette!(
-                                        "Ai.extract: `as: {type_name}` is not a known struct type. \
+                                        "ai.extract: `as: {type_name}` is not a known struct type. \
                                          Declare it with `type {type_name} {{ field: type }}`"
                                     )
                                 })?;
@@ -204,12 +204,12 @@ pub(crate) fn namespace() -> Namespace {
 
         "translate" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
-                .ok_or_else(|| miette::miette!("Ai.translate: missing input"))?
+                .ok_or_else(|| miette::miette!("ai.translate: missing input"))?
                 .to_display_string();
             let target_langs: Vec<String> = match find_arg(&args, "to") {
                 Some(Value::List(items)) => items.iter().map(|v| v.to_display_string()).collect(),
                 Some(other) => vec![other.to_display_string()],
-                None => return Err(miette::miette!("Ai.translate: missing `to:` argument")),
+                None => return Err(miette::miette!("ai.translate: missing `to:` argument")),
             };
             let model = resolve_model(host, &args);
             let role = host.current_role();
@@ -234,7 +234,7 @@ pub(crate) fn namespace() -> Namespace {
 
         "decide" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
-                .ok_or_else(|| miette::miette!("Ai.decide: missing input"))?
+                .ok_or_else(|| miette::miette!("ai.decide: missing input"))?
                 .to_display_string();
             let options: Vec<String> = match find_arg(&args, "options") {
                 Some(Value::List(items)) => items.iter().map(|v| v.to_display_string()).collect(),
@@ -298,14 +298,14 @@ fn classify_variants(host: &dyn Host, args: &[CallArgValue]) -> miette::Result<V
     match find_arg(args, "as") {
         Some(Value::Namespace(name)) => {
             host.enum_types().get(name).cloned().ok_or_else(|| {
-                miette::miette!("Ai.classify: `as: {name}` is not a simple enum type")
+                miette::miette!("ai.classify: `as: {name}` is not a simple enum type")
             })
         }
         Some(Value::List(items)) => {
             // Inline form: `as: [low, medium, high]`
             Ok(items.iter().map(|v| v.to_display_string()).collect())
         }
-        _ => Err(miette::miette!("Ai.classify: missing `as:` argument")),
+        _ => Err(miette::miette!("ai.classify: missing `as:` argument")),
     }
 }
 

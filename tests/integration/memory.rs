@@ -8,12 +8,14 @@ use std::process::Command;
 #[test]
 fn memory_session_remember_recall() {
     let src = r#"
+use std/io
+use std/memory
 agent A {
   @memory session
   @on_start {
-    Memory.remember("name", "Alice")
-    val = Memory.recall("name")
-    Io.show("got: {val}")
+    memory.remember("name", "Alice")
+    val = memory.recall("name")
+    io.show("got: {val}")
     stop(self)
   }
 }
@@ -33,12 +35,14 @@ run(A)
 #[test]
 fn memory_session_recall_missing_returns_none() {
     let src = r#"
+use std/io
+use std/memory
 agent A {
   @memory session
   @on_start {
-    val = Memory.recall("nonexistent")
+    val = memory.recall("nonexistent")
     if val == none {
-      Io.show("was none")
+      io.show("was none")
     }
     stop(self)
   }
@@ -59,14 +63,16 @@ run(A)
 #[test]
 fn memory_session_forget() {
     let src = r#"
+use std/io
+use std/memory
 agent A {
   @memory session
   @on_start {
-    Memory.remember("x", "hello")
-    Memory.forget("x")
-    val = Memory.recall("x")
+    memory.remember("x", "hello")
+    memory.forget("x")
+    val = memory.recall("x")
     if val == none {
-      Io.show("forgotten")
+      io.show("forgotten")
     }
     stop(self)
   }
@@ -87,10 +93,11 @@ run(A)
 #[test]
 fn memory_none_raises_capability_error() {
     let src = r#"
+use std/memory
 agent A {
   @memory none
   @on_start {
-    Memory.remember("x", "y")
+    memory.remember("x", "y")
     stop(self)
   }
 }
@@ -107,11 +114,13 @@ run(A)
 #[test]
 fn memory_default_mode_is_session() {
     let src = r#"
+use std/io
+use std/memory
 agent A {
   @on_start {
-    Memory.remember("k", "v")
-    val = Memory.recall("k")
-    Io.show("val: {val}")
+    memory.remember("k", "v")
+    val = memory.recall("k")
+    io.show("val: {val}")
     stop(self)
   }
 }
@@ -136,10 +145,11 @@ fn memory_persistent_survives_process_boundary() {
     let prog = home.path().join("memory_test.keel");
 
     let write_src = r#"
+use std/memory
 agent A {
   @memory persistent
   @on_start {
-    Memory.remember("greeting", "hello-persistent")
+    memory.remember("greeting", "hello-persistent")
     stop(self)
   }
 }
@@ -166,11 +176,13 @@ run(A)
     );
 
     let read_src = r#"
+use std/io
+use std/memory
 agent A {
   @memory persistent
   @on_start {
-    val = Memory.recall("greeting")
-    Io.show("recalled: {val}")
+    val = memory.recall("greeting")
+    io.show("recalled: {val}")
     stop(self)
   }
 }
@@ -201,10 +213,11 @@ run(A)
 #[test]
 fn memory_unknown_mode_raises_error() {
     let src = r#"
+use std/memory
 agent A {
   @memory unknown_mode
   @on_start {
-    Memory.remember("x", "y")
+    memory.remember("x", "y")
     stop(self)
   }
 }
@@ -231,20 +244,22 @@ fn memory_isolation_same_basename_different_paths() {
     let prog_a = dir_a.path().join("counter.keel");
     let prog_b = dir_b.path().join("counter.keel");
     let src_a = r#"
+use std/memory
 agent Ctr {
   @memory persistent
   @on_start {
-    Memory.remember("v", "from_a")
+    memory.remember("v", "from_a")
     stop(self)
   }
 }
 run(Ctr)
 "#;
     let src_b = r#"
+use std/memory
 agent Ctr {
   @memory persistent
   @on_start {
-    Memory.remember("v", "from_b")
+    memory.remember("v", "from_b")
     stop(self)
   }
 }
@@ -276,11 +291,13 @@ run(Ctr)
 
     // Now recall from each — they must return their own values.
     let recall_src = r#"
+use std/io
+use std/memory
 agent Ctr {
   @memory persistent
   @on_start {
-    val = Memory.recall("v")
-    Io.show("val: {val}")
+    val = memory.recall("v")
+    io.show("val: {val}")
     stop(self)
   }
 }
@@ -311,10 +328,11 @@ fn memory_repl_namespace_distinct_from_files() {
     std::fs::write(
         &prog,
         r#"
+use std/memory
 agent Tester {
   @memory persistent
   @on_start {
-    Memory.remember("ns", "file")
+    memory.remember("ns", "file")
     stop(self)
   }
 }
@@ -361,10 +379,11 @@ fn memory_symlink_resolves_to_same_storage() {
     std::fs::write(
         &orig,
         r#"
+use std/memory
 agent Sym {
   @memory persistent
   @on_start {
-    Memory.remember("key", "stored_via_symlink")
+    memory.remember("key", "stored_via_symlink")
     stop(self)
   }
 }
@@ -393,11 +412,13 @@ run(Sym)
     std::fs::write(
         &orig,
         r#"
+use std/io
+use std/memory
 agent Sym {
   @memory persistent
   @on_start {
-    val = Memory.recall("key")
-    Io.show("got: {val}")
+    val = memory.recall("key")
+    io.show("got: {val}")
     stop(self)
   }
 }
@@ -439,11 +460,12 @@ fn memory_cross_process_write_race() {
     std::fs::write(
         &prog,
         r#"
+use std/memory
 agent Counter {
   @memory persistent
   @on_start {
     for item in [1, 2, 3, 4, 5] {
-      Memory.remember("last", item)
+      memory.remember("last", item)
     }
     stop(self)
   }
@@ -512,10 +534,11 @@ fn memory_concurrent_reads_dont_block() {
     std::fs::write(
         &prog,
         r#"
+use std/memory
 agent Reader {
   @memory persistent
   @on_start {
-    Memory.remember("msg", "shared")
+    memory.remember("msg", "shared")
     stop(self)
   }
 }
@@ -537,11 +560,13 @@ run(Reader)
     std::fs::write(
         &prog,
         r#"
+use std/io
+use std/memory
 agent Reader {
   @memory persistent
   @on_start {
-    val = Memory.recall("msg")
-    Io.show("val: {val}")
+    val = memory.recall("msg")
+    io.show("val: {val}")
     stop(self)
   }
 }
@@ -582,10 +607,11 @@ fn memory_lockfile_exists_alongside_data() {
     std::fs::write(
         &prog,
         r#"
+use std/memory
 agent LockTester {
   @memory persistent
   @on_start {
-    Memory.remember("k", "v")
+    memory.remember("k", "v")
     stop(self)
   }
 }
@@ -639,10 +665,11 @@ fn memory_corrupt_file_renamed_to_bak() {
     std::fs::write(
         &prog,
         r#"
+use std/memory
 agent CT {
   @memory persistent
   @on_start {
-    Memory.remember("k", "v")
+    memory.remember("k", "v")
     stop(self)
   }
 }

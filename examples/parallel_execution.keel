@@ -1,33 +1,37 @@
+use std/async
+use std/io
+use std/schedule
+
 agent ParallelProcessor {
   @on_start {
-    task1 = Async.spawn(() => {
-      Io.show("Task 1 starting")
-      Schedule.sleep(1.seconds)
-      Io.show("Task 1 completed")
+    task1 = async.spawn(() => {
+      io.show("Task 1 starting")
+      schedule.sleep(1.seconds)
+      io.show("Task 1 completed")
     })
-    task2 = Async.spawn(() => {
-      Io.show("Task 2 starting")
-      Schedule.sleep(1.seconds)
-      Io.show("Task 2 completed")
+    task2 = async.spawn(() => {
+      io.show("Task 2 starting")
+      schedule.sleep(1.seconds)
+      io.show("Task 2 completed")
     })
-    task3 = Async.spawn(() => {
-      Io.show("Task 3 starting")
-      Schedule.sleep(1.seconds)
-      Io.show("Task 3 completed")
+    task3 = async.spawn(() => {
+      io.show("Task 3 starting")
+      schedule.sleep(1.seconds)
+      io.show("Task 3 completed")
     })
     handles = [task1, task2, task3]
-    results = Async.join_all(handles)
-    Io.show("All tasks completed")
-    fast_task = Async.spawn(() => {
-      Io.show("Fast task finished")
+    results = async.join_all(handles)
+    io.show("All tasks completed")
+    fast_task = async.spawn(() => {
+      io.show("Fast task finished")
     })
-    slow_task = Async.spawn(() => {
-      Schedule.sleep(1.seconds)
-      Io.show("Slow task finished")
+    slow_task = async.spawn(() => {
+      schedule.sleep(1.seconds)
+      io.show("Slow task finished")
     })
     race_handles = [fast_task, slow_task]
-    winner = Async.select(race_handles)
-    Io.show("First task completed")
+    winner = async.select(race_handles)
+    io.show("First task completed")
   }
 }
 

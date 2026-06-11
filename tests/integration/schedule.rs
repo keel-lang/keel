@@ -9,12 +9,14 @@ use std::process::Command;
 #[test]
 fn scheduling_ticks_at_least_once() {
     let src = r#"
+use std/io
+use std/schedule
 agent Ticker {
   state { tick: int = 0 }
   @on_start {
-    Schedule.every(3.seconds, () => {
+    schedule.every(3.seconds, () => {
       self.tick = self.tick + 1
-      Io.show("Tick #{self.tick}")
+      io.show("Tick #{self.tick}")
     })
   }
 }
@@ -27,15 +29,17 @@ run(Ticker)
 
 #[test]
 fn scheduling_recurs_without_oneshot() {
-    // Without KEEL_ONESHOT, Schedule.every must fire repeatedly.
+    // Without KEEL_ONESHOT, schedule.every must fire repeatedly.
     // Ticking every 3 seconds over a 7-second window should yield >= 2 ticks.
     let src = r#"
+use std/io
+use std/schedule
 agent Ticker {
   state { tick: int = 0 }
   @on_start {
-    Schedule.every(3.seconds, () => {
+    schedule.every(3.seconds, () => {
       self.tick = self.tick + 1
-      Io.show("Tick #{self.tick}")
+      io.show("Tick #{self.tick}")
     })
   }
 }
@@ -78,12 +82,14 @@ run(Ticker)
 #[test]
 fn schedule_cron_accepts_expression() {
     let src = r#"
+use std/io
+use std/schedule
 agent CronTest {
     @on_start {
-        Schedule.cron("0 9 * * 1-5", () => {
-            Io.show("morning")
+        schedule.cron("0 9 * * 1-5", () => {
+            io.show("morning")
         })
-        Io.show("cron-parsed")
+        io.show("cron-parsed")
     }
 }
 run(CronTest)
@@ -95,6 +101,6 @@ run(CronTest)
     );
     assert!(
         stdout.contains("cron-parsed"),
-        "Schedule.cron should accept cron expressions:\n{stdout}"
+        "schedule.cron should accept cron expressions:\n{stdout}"
     );
 }

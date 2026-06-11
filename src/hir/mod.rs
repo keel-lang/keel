@@ -85,8 +85,10 @@ pub enum NameKind {
     Enum,
     /// Struct or alias type declaration.
     TypeName,
-    /// Auto-imported namespace or built-in free identifier.
+    /// Built-in free identifier (`run`, `min`, hint symbols, built-in types).
     PreludeNamespace,
+    /// Module namespace bound by `use` — std or local file.
+    Module,
     /// Lexically scoped local binding.
     Local,
     /// Name could not be resolved.
@@ -131,6 +133,29 @@ pub enum LiteralKind {
     InvalidMixedKeys,
 }
 
+/// A declaration imported into a module's scope by `use ... from ...`.
+///
+/// Borrows the source module's AST; the lowerer copies what it needs.
+#[derive(Clone, Copy)]
+pub enum ImportedDecl<'g> {
+    Task(&'g TaskDecl),
+    Type(&'g TypeDecl),
+    Agent,
+    Interface,
+    Extern,
+    /// A std member pulled unqualified: `use parse from std/json`.
+    StdMethod(&'static crate::builtins::BuiltinMethod),
+}
+
+/// Imports of the module being lowered, resolved by the module loader.
+#[derive(Default)]
+pub struct ModuleScope<'g> {
+    /// Namespace bindings: `use std/file` / `use "./x.keel" as y`.
+    pub bindings: Vec<(String, crate::modules::ModuleTarget, Span)>,
+    /// Symbol imports: local name → source declaration.
+    pub symbols: Vec<(String, ImportedDecl<'g>, Span)>,
+}
+
 /// Borrowed HIR index produced after parsing.
 pub struct Hir<'ast> {
     program: &'ast Program,
@@ -139,6 +164,8 @@ pub struct Hir<'ast> {
     references: HashMap<(usize, usize), Resolution>,
     literal_kinds: HashMap<(usize, usize), LiteralKind>,
     diagnostics: Vec<TypeDiagnostic>,
+    /// std members imported unqualified — local name → catalog entry.
+    std_fn_imports: HashMap<String, &'static crate::builtins::BuiltinMethod>,
 }
 
 impl<'ast> Hir<'ast> {
@@ -206,16 +233,38 @@ impl<'ast> Hir<'ast> {
             .iter()
             .map(|(&(start, end), &res)| (start..end, res))
     }
+
+    /// Resolve a std member imported unqualified (`use parse from std/json`).
+    #[must_use]
+    pub fn std_fn_import(&self, name: &str) -> Option<&'static crate::builtins::BuiltinMethod> {
+        self.std_fn_imports.get(name).copied()
+    }
 }
 
-/// Lower a parsed AST into a read-only HIR index.
+/// Lower a parsed AST into a read-only HIR index, with no imports in scope.
 #[must_use]
 pub fn lower_ast(program: &Program) -> Hir<'_> {
-    Lowerer::new(program).lower()
+    Lowerer::new(program, &ModuleScope::default()).lower()
+}
+
+/// Lower a parsed AST with the module's resolved imports in scope.
+#[must_use]
+pub fn lower_ast_with_imports<'ast>(
+    program: &'ast Program,
+    imports: &ModuleScope<'_>,
+) -> Hir<'ast> {
+    Lowerer::new(program, imports).lower()
 }
 
 fn span_key(span: &Span) -> (usize, usize) {
     (span.start, span.end)
+}
+
+/// An owned global entry copied out of the module's resolved imports.
+struct ImportSeed {
+    name: String,
+    kind: NameKind,
+    span: Span,
 }
 
 struct Lowerer<'ast> {
@@ -232,11 +281,13 @@ struct Lowerer<'ast> {
     agent_tasks: HashMap<String, HashMap<String, SymbolId>>,
     agent_fields: HashMap<String, HashMap<String, SymbolId>>,
     current_agent: Option<String>,
+    import_seeds: Vec<ImportSeed>,
+    std_fn_imports: HashMap<String, &'static crate::builtins::BuiltinMethod>,
 }
 
 impl<'ast> Lowerer<'ast> {
-    fn new(program: &'ast Program) -> Self {
-        Self {
+    fn new(program: &'ast Program, imports: &ModuleScope<'_>) -> Self {
+        let mut lowerer = Self {
             program,
             symbols: Vec::new(),
             globals: HashMap::new(),
@@ -250,6 +301,52 @@ impl<'ast> Lowerer<'ast> {
             agent_tasks: HashMap::new(),
             agent_fields: HashMap::new(),
             current_agent: None,
+            import_seeds: Vec::new(),
+            std_fn_imports: HashMap::new(),
+        };
+        lowerer.seed_imports(imports);
+        lowerer
+    }
+
+    /// Copy the resolved imports into owned lookup tables and global seeds.
+    fn seed_imports(&mut self, imports: &ModuleScope<'_>) {
+        for (name, _target, span) in &imports.bindings {
+            self.import_seeds.push(ImportSeed {
+                name: name.clone(),
+                kind: NameKind::Module,
+                span: span.clone(),
+            });
+        }
+        for (local, decl, span) in &imports.symbols {
+            let kind = match decl {
+                ImportedDecl::Task(task) => {
+                    self.top_tasks.insert(local.clone(), task.params.clone());
+                    NameKind::TopTask
+                }
+                ImportedDecl::Type(decl) => match &decl.def {
+                    TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => NameKind::Enum,
+                    TypeDef::Alias(node) => {
+                        self.aliases.insert(local.clone(), node.kind.clone());
+                        NameKind::TypeName
+                    }
+                    TypeDef::Struct(fields) => {
+                        self.structs.insert(local.clone(), fields.clone());
+                        NameKind::TypeName
+                    }
+                },
+                ImportedDecl::Agent => NameKind::Agent,
+                ImportedDecl::Interface => NameKind::TypeName,
+                ImportedDecl::Extern => NameKind::TopTask,
+                ImportedDecl::StdMethod(method) => {
+                    self.std_fn_imports.insert(local.clone(), method);
+                    NameKind::PreludeNamespace
+                }
+            };
+            self.import_seeds.push(ImportSeed {
+                name: local.clone(),
+                kind,
+                span: span.clone(),
+            });
         }
     }
 
@@ -265,6 +362,7 @@ impl<'ast> Lowerer<'ast> {
             references: self.references,
             literal_kinds: self.literal_kinds,
             diagnostics: self.diagnostics,
+            std_fn_imports: self.std_fn_imports,
         }
     }
 
@@ -279,21 +377,30 @@ impl<'ast> Lowerer<'ast> {
             );
         }
 
-        for node in &self.program.declarations {
-            if let crate::ast::Decl::Use(UseDecl {
-                kind: UseKind::Package(segments),
-            }) = &node.kind
-                && segments == &["std".to_string(), "testing".to_string()]
-            {
-                self.globals.insert(
-                    "testing".to_string(),
-                    Resolution {
-                        symbol: None,
-                        kind: NameKind::PreludeNamespace,
-                    },
-                );
+        // Imported bindings shadow the prelude but may not collide with
+        // each other — two imports binding the same name is an error.
+        let seeds = std::mem::take(&mut self.import_seeds);
+        for seed in &seeds {
+            let id = self.add_symbol(&seed.name, SymbolKind::Binding, seed.span.clone());
+            let previous = self.globals.insert(
+                seed.name.clone(),
+                Resolution {
+                    symbol: Some(id),
+                    kind: seed.kind,
+                },
+            );
+            if previous.is_some_and(|p| !matches!(p.kind, NameKind::PreludeNamespace)) {
+                self.diagnostics.push(TypeDiagnostic::other(
+                    format!(
+                        "`{}` is bound by more than one import — alias one of them: \
+                         use ... as <other_name>",
+                        seed.name
+                    ),
+                    seed.span.clone(),
+                ));
             }
         }
+        self.import_seeds = seeds;
 
         for node in &self.program.declarations {
             if let crate::ast::Decl::Type(decl) = &node.kind {
@@ -378,6 +485,25 @@ impl<'ast> Lowerer<'ast> {
                 );
                 self.top_tasks
                     .insert(decl.name.clone(), decl.params.clone());
+            }
+        }
+
+        // A top-level declaration may not reuse a name introduced by an
+        // import — the collision would silently shadow the import.
+        for seed in &self.import_seeds {
+            let conflicts =
+                self.program.declarations.iter().any(|node| {
+                    top_level_decl_name(&node.kind).is_some_and(|name| name == seed.name)
+                });
+            if conflicts {
+                self.diagnostics.push(TypeDiagnostic::other(
+                    format!(
+                        "`{}` is declared in this file and also bound by an import — \
+                         rename the declaration or alias the import with `as`",
+                        seed.name
+                    ),
+                    seed.span.clone(),
+                ));
             }
         }
     }
@@ -899,10 +1025,15 @@ impl<'ast> Lowerer<'ast> {
                     .unwrap_or(Resolution::UNRESOLVED)
             });
         if emit_diagnostic && matches!(resolution.kind, NameKind::Unresolved) {
-            self.diagnostics.push(TypeDiagnostic::UndefinedName {
-                name: name.to_string(),
-                span: span.clone(),
-            });
+            match legacy_ambient_hint(name) {
+                Some(hint) => self
+                    .diagnostics
+                    .push(TypeDiagnostic::other(hint, span.clone())),
+                None => self.diagnostics.push(TypeDiagnostic::UndefinedName {
+                    name: name.to_string(),
+                    span: span.clone(),
+                }),
+            }
         }
         self.references.insert(span_key(&span), resolution);
         resolution
@@ -1028,6 +1159,68 @@ fn binding_ident(binding: &Binding) -> Option<&str> {
     }
 }
 
+fn top_level_decl_name(decl: &crate::ast::Decl) -> Option<&str> {
+    match decl {
+        crate::ast::Decl::Type(d) => Some(&d.name),
+        crate::ast::Decl::Task(d) => Some(&d.name),
+        crate::ast::Decl::Agent(d) => Some(&d.name),
+        crate::ast::Decl::Interface(d) => Some(&d.name),
+        crate::ast::Decl::Extern(d) => Some(&d.name),
+        crate::ast::Decl::Impl(_)
+        | crate::ast::Decl::Test(_)
+        | crate::ast::Decl::Use(_)
+        | crate::ast::Decl::Stmt(_) => None,
+    }
+}
+
+/// The PascalCase prelude namespaces that were ambient before the module
+/// system. Kept as a tombstone table so the old spelling produces a
+/// migration hint instead of a bare "undefined identifier".
+const LEGACY_AMBIENT_NAMESPACES: &[(&str, &str)] = &[
+    ("Ai", "ai"),
+    ("Io", "io"),
+    ("Http", "http"),
+    ("Email", "email"),
+    ("File", "file"),
+    ("Shell", "shell"),
+    ("Json", "json"),
+    ("Csv", "csv"),
+    ("Cache", "cache"),
+    ("Search", "search"),
+    ("Db", "db"),
+    ("Memory", "memory"),
+    ("Schedule", "schedule"),
+    ("Async", "async"),
+    ("Control", "control"),
+    ("Env", "env"),
+    ("Time", "time"),
+    ("Log", "log"),
+    ("Random", "random"),
+    ("Crypto", "crypto"),
+    ("Math", "math"),
+];
+
+/// A migration hint for a removed ambient name, or `None` if the name was
+/// never an ambient namespace.
+fn legacy_ambient_hint(name: &str) -> Option<String> {
+    if name == "Agent" {
+        return Some(
+            "`Agent` was removed — agent verbs are built into the language: \
+             run(...), stop(...), send(...), delegate(...), broadcast(...)"
+                .to_string(),
+        );
+    }
+    LEGACY_AMBIENT_NAMESPACES
+        .iter()
+        .find(|(old, _)| *old == name)
+        .map(|(old, module)| {
+            format!(
+                "`{old}` is not ambient — add `use std/{module}` and write \
+                 `{module}.<method>(...)`"
+            )
+        })
+}
+
 fn exprless_span() -> Span {
     0..0
 }
@@ -1097,7 +1290,7 @@ task main() { collect(labels: {one: 1}, record: {tag: 2}) }\n";
         let tokens = crate::lexer::lex(named.inner(), &named).expect("lex source");
         let program =
             crate::parser::parse(tokens, named.inner().len(), &named).expect("parse source");
-        let mut lowerer = Lowerer::new(&program);
+        let mut lowerer = Lowerer::new(&program, &ModuleScope::default());
         lowerer.collect_globals();
 
         assert!(

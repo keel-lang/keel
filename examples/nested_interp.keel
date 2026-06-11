@@ -9,6 +9,8 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/nested_interp.keel
 
+use std/io
+
 agent Greeter {
   @on_start {
     name = "world"
@@ -17,12 +19,18 @@ agent Greeter {
     # Outer string contains a `{...}` slot whose body is itself a string
     # literal with another nested slot.
     msg = "hi {"there {name}"}"
-    Io.show(msg)
+    io.show(msg)
 
     # Mix conditional and method-call expressions inside the slot.
     detail = "tone: {"speaking in a {mood.to_str()} voice"}"
-    Io.show(detail)
+    io.show(detail)
   }
 }
 
 run(Greeter)
+
+# Tests — run with: keel test examples/nested_interp.keel
+test "interpolation slots nest" {
+  name = "world"
+  assert "hi {"there {name}"}" == "hi there world"
+}

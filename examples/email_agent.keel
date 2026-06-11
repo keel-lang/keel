@@ -1,39 +1,46 @@
+use std/ai
+use std/email
+use std/io
+use std/memory
+use std/schedule
+use std/time
+
 use std/testing
 
 type Urgency = low | medium | high | critical
 
 task triage(email: { body: str, from: str, subject: str }) -> Urgency {
-  Ai.classify(email.body, as: Urgency, considering: { "from a known VIP or executive": Urgency.critical, "mentions a deadline within 24h": Urgency.high, "asks a direct question": Urgency.medium, "newsletter or automated message": Urgency.low }) ?? Urgency.medium
+  ai.classify(email.body, as: Urgency, considering: { "from a known VIP or executive": Urgency.critical, "mentions a deadline within 24h": Urgency.high, "asks a direct question": Urgency.medium, "newsletter or automated message": Urgency.low }) ?? Urgency.medium
 }
 
 task brief(email: { body: str }) -> str {
-  Ai.summarize(email.body, in: 1, unit: sentence) ?? "(no summary)"
+  ai.summarize(email.body, in: 1, unit: sentence) ?? "(no summary)"
 }
 
 task compose(email: { body: str, from: str }, guidance: str? = none) -> str {
-  if guidance != none { Ai.draft("response to {email.body}", tone: "professional", guidance: guidance) } else { Ai.draft("response to {email.body}", tone: "friendly", max_length: 150) } ?? "(draft failed)"
+  if guidance != none { ai.draft("response to {email.body}", tone: "professional", guidance: guidance) } else { ai.draft("response to {email.body}", tone: "friendly", max_length: 150) } ?? "(draft failed)"
 }
 
 test "triage uses mocked urgency" {
-  testing.mock(Ai.classify).returns(Urgency.high)
+  testing.mock(ai.classify).returns(Urgency.high)
   email = { body: "deadline tomorrow", from: "ada@example.com", subject: "urgent" }
   assert triage(email) == Urgency.high
 }
 
 test "brief uses mocked summary" {
-  testing.mock(Ai.summarize).returns("Needs a reply.")
+  testing.mock(ai.summarize).returns("Needs a reply.")
   assert brief({ body: "Can you review this today?" }) == "Needs a reply."
 }
 
 test "compose uses mocked draft" {
-  testing.mock(Ai.draft).returns("Thanks, I will handle it.")
+  testing.mock(ai.draft).returns("Thanks, I will handle it.")
   email = { body: "Can you review this?", from: "ada@example.com" }
   assert compose(email) == "Thanks, I will handle it."
 }
 
 agent EmailAssistant {
   @role "\n    You are a professional email assistant.\n    You triage incoming mail, reply to routine messages,\n    and escalate anything important.\n  "
-  @tools [Email]
+  @tools [email]
   @memory persistent
 
   state {
@@ -45,32 +52,32 @@ agent EmailAssistant {
     summary = brief(email)
     when urgency {
       low => {
-        Io.notify("Archived: {email.subject} [{urgency}]")
-        Email.archive(email)
+        io.notify("Archived: {email.subject} [{urgency}]")
+        email.archive(email)
       }
       medium => {
         reply = compose(email)
-        if Io.confirm("Auto-reply to '{email.subject}':\n\n{reply}") {
-          Email.send(reply, to: email.from)
+        if io.confirm("Auto-reply to '{email.subject}':\n\n{reply}") {
+          email.send(reply, to: email.from)
         }
       }
       high, critical => {
-        Io.notify("{urgency} email from {email.from}")
-        Io.show({ from: email.from, subject: email.subject, summary: summary, urgency: urgency })
-        guidance = Io.ask("How should I respond?")
+        io.notify("{urgency} email from {email.from}")
+        io.show({ from: email.from, subject: email.subject, summary: summary, urgency: urgency })
+        guidance = io.ask("How should I respond?")
         reply = compose(email, guidance)
-        if Io.confirm(reply) {
-          Email.send(reply, to: email.from)
+        if io.confirm(reply) {
+          email.send(reply, to: email.from)
         }
       }
     }
-    Memory.remember({ contact: email.from, subject: email.subject, urgency: urgency, handled_at: Time.now() })
+    memory.remember({ contact: email.from, subject: email.subject, urgency: urgency, handled_at: time.now() })
     self.handled_count = self.handled_count + 1
   }
   @on_start {
-    Schedule.every(5.minutes, () => {
-      emails = Email.fetch(unread: true)
-      Io.notify("{emails.count} new emails")
+    schedule.every(5.minutes, () => {
+      emails = email.fetch(unread: true)
+      io.notify("{emails.count} new emails")
       for email in emails {
         self.handle(email)
       }

@@ -226,14 +226,7 @@ pub(super) fn extern_decl() -> P<Decl> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn use_decl() -> P<Decl> {
-    let file = plain_string().map(UseKind::File);
-
-    let symbol = ident()
-        .then_ignore(just(Token::From))
-        .then(plain_string())
-        .map(|(name, source)| UseKind::Symbol { name, source });
-
-    let package = ident()
+    let module_path = ident()
         .then(
             just(Token::Slash)
                 .ignore_then(ident())
@@ -243,11 +236,36 @@ pub(super) fn use_decl() -> P<Decl> {
         .map(|(first, rest)| {
             let mut segments = vec![first];
             segments.extend(rest);
-            UseKind::Package(segments)
+            UseSource::Module(segments)
         });
 
+    let source = choice((plain_string().map(UseSource::File), module_path));
+
+    let alias = just(Token::As).ignore_then(ident());
+
+    // `use A, B as C from "./path.keel"` / `from std/json`
+    let import_item =
+        spanned_ident()
+            .then(alias.clone().or_not())
+            .map(|((name, name_span), alias)| ImportItem {
+                name,
+                name_span,
+                alias,
+            });
+    let symbols = import_item
+        .separated_by(just(Token::Comma))
+        .at_least(1)
+        .then_ignore(just(Token::From))
+        .then(source.clone())
+        .map(|(items, source)| UseKind::Symbols { items, source });
+
+    // `use "./path.keel" [as alias]` / `use std/file [as alias]`
+    let module = source
+        .then(alias.or_not())
+        .map(|(source, alias)| UseKind::Module { source, alias });
+
     just(Token::Use)
-        .ignore_then(choice((symbol, package, file)))
+        .ignore_then(choice((symbols, module)))
         .map(|kind| Decl::Use(UseDecl { kind }))
         .boxed()
 }
@@ -352,7 +370,7 @@ pub(super) fn test_decl() -> P<Decl> {
     #[derive(Clone)]
     enum TestItem {
         Setup(Block),
-        Stmt(crate::ast::Node<crate::ast::Stmt>),
+        Stmt(Box<crate::ast::Node<crate::ast::Stmt>>),
     }
 
     let setup = just(Token::Ident("setup".to_string()))
@@ -361,7 +379,7 @@ pub(super) fn test_decl() -> P<Decl> {
         .boxed();
 
     let body_item = setup
-        .or(super::stmt::stmt_parser().map(TestItem::Stmt))
+        .or(super::stmt::stmt_parser().map(|stmt| TestItem::Stmt(Box::new(stmt))))
         .boxed();
 
     let param = just(Token::For)
@@ -403,7 +421,7 @@ pub(super) fn test_decl() -> P<Decl> {
                     }
                     TestItem::Stmt(stmt) => {
                         seen_stmt = true;
-                        body.push(stmt);
+                        body.push(*stmt);
                     }
                 }
             }

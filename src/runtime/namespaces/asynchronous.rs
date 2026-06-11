@@ -11,14 +11,14 @@ use crate::runtime::namespace::{ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Async",
+        namespace: "async",
         name: "spawn",
         params: &[],
         result: BuiltinResult::Unknown,
         doc: "Spawn a concurrent task and return a handle.",
     },
     BuiltinMethod {
-        namespace: "Async",
+        namespace: "async",
         name: "join_all",
         params: &[BuiltinParam {
             name: "handles",
@@ -29,7 +29,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Wait for all async task handles to complete.",
     },
     BuiltinMethod {
-        namespace: "Async",
+        namespace: "async",
         name: "select",
         params: &[BuiltinParam {
             name: "handles",
@@ -40,7 +40,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the result of the first completed task handle.",
     },
     BuiltinMethod {
-        namespace: "Async",
+        namespace: "async",
         name: "sleep",
         params: &[BuiltinParam {
             name: "duration",
@@ -53,14 +53,14 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Async", {
+    ns!("async", {
         // Async.spawn(fn) — spawn fn as an independent Tokio task.
         // Returns a handle map with `_id` and `_status` fields.
         "spawn" => |host, args| Box::pin(async move {
             let (params, body) = args.iter().find_map(|a| match &a.value {
                 Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
                 _ => None,
-            }).ok_or_else(|| miette::miette!("Async.spawn: missing closure argument"))?;
+            }).ok_or_else(|| miette::miette!("async.spawn: missing closure argument"))?;
 
             let handle_id = host.spawn_closure(params, body).await?;
 
@@ -78,20 +78,20 @@ pub(crate) fn namespace() -> Namespace {
                     let mut results = Vec::with_capacity(items.len());
                     for item in items {
                         let id = async_handle_id(&item)
-                            .ok_or_else(|| miette::miette!("Async.join_all: invalid task handle"))?;
+                            .ok_or_else(|| miette::miette!("async.join_all: invalid task handle"))?;
                         let handle = host
                             .runtime()
                             .take_async_task(id)
-                            .ok_or_else(|| miette::miette!("Async.join_all: unknown task handle `{id}`"))?;
+                            .ok_or_else(|| miette::miette!("async.join_all: unknown task handle `{id}`"))?;
                         let value = handle
                             .await
-                            .map_err(|err| miette::miette!("Async.join_all: task join error: {err}"))?
-                            .map_err(|err| miette::miette!("Async.join_all: task failed: {err}"))?;
+                            .map_err(|err| miette::miette!("async.join_all: task join error: {err}"))?
+                            .map_err(|err| miette::miette!("async.join_all: task failed: {err}"))?;
                         results.push(value);
                     }
                     Ok(Value::List(results))
                 }
-                _ => Err(miette::miette!("Async.join_all: expected a list of handles")),
+                _ => Err(miette::miette!("async.join_all: expected a list of handles")),
             }
         }),
         "select" => |host, args| Box::pin(async move {
@@ -102,11 +102,11 @@ pub(crate) fn namespace() -> Namespace {
                     let mut handles = Vec::with_capacity(items.len());
                     for item in items {
                         let id = async_handle_id(&item)
-                            .ok_or_else(|| miette::miette!("Async.select: invalid task handle"))?;
+                            .ok_or_else(|| miette::miette!("async.select: invalid task handle"))?;
                         let handle = host
                             .runtime()
                             .take_async_task(id)
-                            .ok_or_else(|| miette::miette!("Async.select: unknown task handle `{id}`"))?;
+                            .ok_or_else(|| miette::miette!("async.select: unknown task handle `{id}`"))?;
                         handles.push(handle);
                     }
 
@@ -126,15 +126,15 @@ pub(crate) fn namespace() -> Namespace {
                         }
                     }
                     first
-                        .map_err(|err| miette::miette!("Async.select: task join error: {err}"))?
-                        .map_err(|err| miette::miette!("Async.select: task failed: {err}"))
+                        .map_err(|err| miette::miette!("async.select: task join error: {err}"))?
+                        .map_err(|err| miette::miette!("async.select: task failed: {err}"))
                 }
-                Value::List(_) => Err(miette::miette!("Async.select: expected a non-empty list of handles")),
-                _ => Err(miette::miette!("Async.select: expected a list of handles")),
+                Value::List(_) => Err(miette::miette!("async.select: expected a non-empty list of handles")),
+                _ => Err(miette::miette!("async.select: expected a list of handles")),
             }
         }),
         "sleep" => |_i, args| Box::pin(async move {
-            sleep_for_duration(args, "Async.sleep").await
+            sleep_for_duration(args, "async.sleep").await
         }),
     })
 }
@@ -391,7 +391,7 @@ mod tests {
             .expect_err("missing delay must fail");
         assert_eq!(
             err.to_string(),
-            "Async.sleep: missing argument at position 0"
+            "async.sleep: missing argument at position 0"
         );
     }
 
@@ -405,7 +405,7 @@ mod tests {
             .expect_err("integer delay must fail");
         assert_eq!(
             err.to_string(),
-            "Async.sleep: argument at position 0 must be duration, got int"
+            "async.sleep: argument at position 0 must be duration, got int"
         );
     }
 
@@ -440,6 +440,6 @@ mod tests {
     #[test]
     fn namespace_has_expected_name() {
         let ns = namespace();
-        assert_eq!(ns.name, "Async");
+        assert_eq!(ns.name, "async");
     }
 }

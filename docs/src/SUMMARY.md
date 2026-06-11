@@ -21,20 +21,21 @@
 - [Testing](./guide/testing.md)
 - [Error Handling](./guide/error-handling.md)
 - [Interfaces](./guide/interfaces.md)
-- [The Prelude & Interfaces](./guide/prelude.md)
+- [Modules & Imports](./guide/modules.md)
+- [The Standard Library](./guide/stdlib.md)
 
 # Standard Library
 
-- [Ai (LLM operations)](./guide/ai-primitives.md)
-- [Io (human interaction)](./guide/human-interaction.md)
-- [Schedule (time & cron)](./guide/scheduling.md)
-- [Email & Http (connections)](./guide/connections.md)
-- [Filesystem](./guide/filesystem.md)
-- [Shell (subprocess)](./guide/shell.md)
-- [Json (serialization)](./guide/json.md)
-- [Csv (serialization)](./guide/csv.md)
-- [Database (SQLite)](./guide/database.md)
-- [Strings & Cache (text & memory)](./guide/strings.md)
+- [std/ai (LLM operations)](./guide/ai-primitives.md)
+- [std/io (human interaction)](./guide/human-interaction.md)
+- [std/schedule (time & cron)](./guide/scheduling.md)
+- [std/email & std/http (connections)](./guide/connections.md)
+- [std/file (filesystem)](./guide/filesystem.md)
+- [std/shell (subprocess)](./guide/shell.md)
+- [std/json (serialization)](./guide/json.md)
+- [std/csv (serialization)](./guide/csv.md)
+- [std/db (SQLite)](./guide/database.md)
+- [Strings & std/cache (text & memory)](./guide/strings.md)
 
 # CLI Reference
 

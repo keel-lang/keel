@@ -53,8 +53,23 @@ struct AgentInfo {
     tasks: HashMap<String, TaskSig>,
     /// Event handlers declared with `on event(param: T)`.
     /// Value is `None` for parameterless handlers, `Some(ty)` when a typed
-    /// parameter was declared. Used to validate `Agent.delegate` call sites.
+    /// parameter was declared. Used to validate `delegate(...)` call sites.
     handlers: HashMap<String, Option<Ty>>,
+}
+
+/// What a module-namespace binding exposes, for member checks at
+/// `binding.member` sites.
+#[derive(Debug, Clone)]
+pub(crate) enum ModuleMembers {
+    /// std module — canonical catalog namespace name.
+    Std(String),
+    /// Local module — its top-level declaration names by kind.
+    Local {
+        module_name: String,
+        tasks: HashSet<String>,
+        agents: HashSet<String>,
+        types: HashSet<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -93,30 +108,484 @@ pub(crate) struct Checker<'hir, 'ast> {
     /// When true, emit an error for any binding whose type the checker
     /// cannot resolve (falls back to `Ty::Unknown`).
     strict: bool,
+    /// Module-namespace bindings of the module being checked:
+    /// binding name → exposed members. Populated by `check_graph`.
+    module_members: HashMap<String, ModuleMembers>,
+    /// Type names that may appear in annotations in this module: its own
+    /// declarations plus symbol-imported types. `None` (single-file mode)
+    /// means every collected type is visible.
+    visible_types: Option<HashSet<String>>,
 }
 
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
+/// Type-check a single in-memory program (REPL, LSP buffers, embeddings).
+///
+/// `use std/<name>` imports resolve against the catalog; relative file
+/// imports are errors here because there is no file to resolve them
+/// against — multi-file programs go through [`check_graph`].
 #[must_use]
-pub fn check(hir: &Hir<'_>) -> Vec<TypeDiagnostic> {
+pub fn check_program(program: &Program, strict: bool) -> Vec<TypeDiagnostic> {
+    let (hir, mut diagnostics, members) = lower_single(program);
+    diagnostics.extend(check_lowered(&hir, members, strict));
+    diagnostics
+}
+
+/// Lower a single in-memory program with its std imports resolved.
+///
+/// Returns the HIR (for IDE consumers that need references and symbols),
+/// any import-resolution diagnostics, and the module-member table for
+/// [`check_lowered`].
+pub(crate) fn lower_single(
+    program: &Program,
+) -> (Hir<'_>, Vec<TypeDiagnostic>, HashMap<String, ModuleMembers>) {
+    let mut diagnostics = Vec::new();
+    let (scope, members) = std_import_scope(program, &mut diagnostics);
+    let hir = crate::hir::lower_ast_with_imports(program, &scope);
+    (hir, diagnostics, members)
+}
+
+/// Check a program already lowered by [`lower_single`].
+#[must_use]
+pub(crate) fn check_lowered(
+    hir: &Hir<'_>,
+    members: HashMap<String, ModuleMembers>,
+    strict: bool,
+) -> Vec<TypeDiagnostic> {
     let mut c = Checker::new(hir);
+    c.strict = strict;
+    c.module_members = members;
     c.collect(hir.program());
     c.check_body(hir.program());
     c.errors
 }
 
-/// Like `check`, but also emits errors for any binding whose type the
-/// checker cannot resolve.  Use `keel check --strict` to surface gaps
-/// in type coverage that the normal checker accepts silently.
+/// Lower a graph's entry module with its imports in scope, for IDE
+/// consumers (hover, go-to-definition) that need the entry file's HIR.
 #[must_use]
-pub fn check_strict(hir: &Hir<'_>) -> Vec<TypeDiagnostic> {
-    let mut c = Checker::new(hir);
-    c.strict = true;
-    c.collect(hir.program());
-    c.check_body(hir.program());
-    c.errors
+pub fn lower_entry_for_ide(graph: &crate::modules::ModuleGraph) -> Hir<'_> {
+    let mut diagnostics = Vec::new();
+    let scope = build_module_scope(graph, graph.entry_index(), &mut diagnostics);
+    crate::hir::lower_ast_with_imports(&graph.entry().program, &scope)
+}
+
+/// Resolve the std imports of a single program without a module graph.
+fn std_import_scope(
+    program: &Program,
+    diagnostics: &mut Vec<TypeDiagnostic>,
+) -> (
+    crate::hir::ModuleScope<'static>,
+    HashMap<String, ModuleMembers>,
+) {
+    use crate::ast::{UseDecl, UseKind, UseSource};
+    use crate::hir::ImportedDecl;
+    use crate::modules::ModuleTarget;
+
+    let mut scope = crate::hir::ModuleScope::default();
+    let mut members = HashMap::new();
+    for node in &program.declarations {
+        let Decl::Use(UseDecl { kind }) = &node.kind else {
+            continue;
+        };
+        let std_name = |source: &UseSource| -> Option<String> {
+            let UseSource::Module(segments) = source else {
+                return None;
+            };
+            (segments.len() == 2
+                && segments[0] == "std"
+                && crate::modules::std_module_names().contains(&segments[1]))
+            .then(|| segments[1].clone())
+        };
+        match kind {
+            UseKind::Module { source, alias } => match std_name(source) {
+                Some(ns) => {
+                    let binding = alias.clone().unwrap_or_else(|| ns.clone());
+                    scope.bindings.push((
+                        binding.clone(),
+                        ModuleTarget::Std(ns.clone()),
+                        node.span.clone(),
+                    ));
+                    members.insert(binding, ModuleMembers::Std(ns));
+                }
+                None => diagnostics.push(TypeDiagnostic::other(
+                    unresolvable_import_message(source),
+                    node.span.clone(),
+                )),
+            },
+            UseKind::Symbols { items, source } => match std_name(source) {
+                Some(ns) => {
+                    for item in items {
+                        match crate::types::prelude::catalog_method(&ns, &item.name) {
+                            Some(entry) => scope.symbols.push((
+                                item.alias.clone().unwrap_or_else(|| item.name.clone()),
+                                ImportedDecl::StdMethod(entry),
+                                item.name_span.clone(),
+                            )),
+                            None => diagnostics.push(TypeDiagnostic::other(
+                                format!("`std/{ns}` has no member `{}`", item.name),
+                                item.name_span.clone(),
+                            )),
+                        }
+                    }
+                }
+                None => diagnostics.push(TypeDiagnostic::other(
+                    unresolvable_import_message(source),
+                    node.span.clone(),
+                )),
+            },
+        }
+    }
+    (scope, members)
+}
+
+fn unresolvable_import_message(source: &crate::ast::UseSource) -> String {
+    match source {
+        crate::ast::UseSource::File(path) => {
+            format!("cannot resolve `{path}` without a source file path")
+        }
+        crate::ast::UseSource::Module(segments) => {
+            let path = segments.join("/");
+            if segments.len() == 2 && segments[0] == "std" {
+                format!("unknown std module `{path}`")
+            } else {
+                format!("unsupported package path `{path}`")
+            }
+        }
+    }
+}
+
+/// Type-check every module of a loaded graph.
+///
+/// Each module is checked against the whole graph's declarations (the
+/// runtime registers them in one flat namespace), but name *visibility*
+/// is per module: unqualified access requires a declaration or import in
+/// that module. Returns one diagnostics list per module, index-aligned
+/// with `graph.modules`.
+#[must_use]
+pub fn check_graph(graph: &crate::modules::ModuleGraph) -> Vec<Vec<TypeDiagnostic>> {
+    check_graph_impl(graph, false)
+}
+
+/// Like [`check_graph`], but also emits errors for any binding whose type
+/// the checker cannot resolve (`keel check --strict`).
+#[must_use]
+pub fn check_graph_strict(graph: &crate::modules::ModuleGraph) -> Vec<Vec<TypeDiagnostic>> {
+    check_graph_impl(graph, true)
+}
+
+fn check_graph_impl(graph: &crate::modules::ModuleGraph, strict: bool) -> Vec<Vec<TypeDiagnostic>> {
+    let mut all: Vec<Vec<TypeDiagnostic>> = vec![Vec::new(); graph.modules.len()];
+
+    check_graph_name_conflicts(graph, &mut all);
+
+    for (index, unit) in graph.modules.iter().enumerate() {
+        let mut diagnostics = Vec::new();
+        let scope = build_module_scope(graph, index, &mut diagnostics);
+        let hir = crate::hir::lower_ast_with_imports(&unit.program, &scope);
+        let mut c = Checker::new(&hir);
+        c.strict = strict;
+        if graph.modules.len() > 1 {
+            for (other_index, other) in graph.modules.iter().enumerate() {
+                if other_index != index {
+                    c.collect_quiet(&other.program);
+                }
+            }
+        }
+        c.visible_types = Some(visible_type_names(graph, index));
+        c.collect(&unit.program);
+        c.seed_symbol_import_aliases(graph, index);
+        c.module_members = build_module_members(graph, index);
+        c.check_body(&unit.program);
+        diagnostics.extend(c.errors);
+        all[index].extend(diagnostics);
+    }
+    all
+}
+
+/// Resolve one module's imports to the source declarations the HIR needs.
+fn build_module_scope<'g>(
+    graph: &'g crate::modules::ModuleGraph,
+    index: usize,
+    diagnostics: &mut Vec<TypeDiagnostic>,
+) -> crate::hir::ModuleScope<'g> {
+    use crate::hir::ImportedDecl;
+    use crate::modules::ModuleTarget;
+
+    let unit = &graph.modules[index];
+    let mut scope = crate::hir::ModuleScope::default();
+    for binding in &unit.imports.bindings {
+        scope.bindings.push((
+            binding.name.clone(),
+            binding.target.clone(),
+            binding.span.clone(),
+        ));
+    }
+    for symbol in &unit.imports.symbols {
+        match &symbol.target {
+            ModuleTarget::Std(ns) => {
+                match crate::types::prelude::catalog_method(ns, &symbol.original) {
+                    Some(entry) => scope.symbols.push((
+                        symbol.local.clone(),
+                        ImportedDecl::StdMethod(entry),
+                        symbol.span.clone(),
+                    )),
+                    None => diagnostics.push(TypeDiagnostic::other(
+                        format!("`std/{ns}` has no member `{}`", symbol.original),
+                        symbol.span.clone(),
+                    )),
+                }
+            }
+            ModuleTarget::Local(target_index) => {
+                let target = &graph.modules[*target_index];
+                let decl = target.program.declarations.iter().find_map(|node| {
+                    let imported = match &node.kind {
+                        Decl::Task(d) if d.name == symbol.original => ImportedDecl::Task(d),
+                        Decl::Type(d) if d.name == symbol.original => ImportedDecl::Type(d),
+                        Decl::Agent(d) if d.name == symbol.original => ImportedDecl::Agent,
+                        Decl::Interface(d) if d.name == symbol.original => ImportedDecl::Interface,
+                        Decl::Extern(d) if d.name == symbol.original => ImportedDecl::Extern,
+                        _ => return None,
+                    };
+                    Some(imported)
+                });
+                match decl {
+                    Some(imported) => {
+                        // Aliased type imports would fracture nominal identity
+                        // (values carry the declared type name) — reject them.
+                        if matches!(imported, ImportedDecl::Type(_))
+                            && symbol.local != symbol.original
+                        {
+                            diagnostics.push(TypeDiagnostic::other(
+                                format!(
+                                    "type `{}` cannot be imported under another name — \
+                                     types keep their declared identity",
+                                    symbol.original
+                                ),
+                                symbol.span.clone(),
+                            ));
+                            continue;
+                        }
+                        scope
+                            .symbols
+                            .push((symbol.local.clone(), imported, symbol.span.clone()));
+                    }
+                    None => diagnostics.push(TypeDiagnostic::other(
+                        format!(
+                            "module `{}` has no top-level declaration `{}`",
+                            target.name, symbol.original
+                        ),
+                        symbol.span.clone(),
+                    )),
+                }
+            }
+        }
+    }
+    scope
+}
+
+/// Build the binding → members table consulted at `binding.member` sites.
+fn build_module_members(
+    graph: &crate::modules::ModuleGraph,
+    index: usize,
+) -> HashMap<String, ModuleMembers> {
+    use crate::modules::ModuleTarget;
+
+    let mut members = HashMap::new();
+    for binding in &graph.modules[index].imports.bindings {
+        let info = match &binding.target {
+            ModuleTarget::Std(ns) => ModuleMembers::Std(ns.clone()),
+            ModuleTarget::Local(target_index) => {
+                let target = &graph.modules[*target_index];
+                let mut tasks = HashSet::new();
+                let mut agents = HashSet::new();
+                let mut types = HashSet::new();
+                for node in &target.program.declarations {
+                    match &node.kind {
+                        Decl::Task(d) => {
+                            tasks.insert(d.name.clone());
+                        }
+                        Decl::Extern(d) => {
+                            tasks.insert(d.name.clone());
+                        }
+                        Decl::Agent(d) => {
+                            agents.insert(d.name.clone());
+                        }
+                        Decl::Type(d) => {
+                            types.insert(d.name.clone());
+                        }
+                        Decl::Interface(d) => {
+                            types.insert(d.name.clone());
+                        }
+                        Decl::Impl(_) | Decl::Test(_) | Decl::Use(_) | Decl::Stmt(_) => {}
+                    }
+                }
+                ModuleMembers::Local {
+                    module_name: target.name.clone(),
+                    tasks,
+                    agents,
+                    types,
+                }
+            }
+        };
+        members.insert(binding.name.clone(), info);
+    }
+    members
+}
+
+/// Type names usable in annotations within module `index`: its own type
+/// and interface declarations plus symbol-imported types.
+fn visible_type_names(graph: &crate::modules::ModuleGraph, index: usize) -> HashSet<String> {
+    use crate::modules::ModuleTarget;
+
+    let unit = &graph.modules[index];
+    let mut visible = HashSet::new();
+    for node in &unit.program.declarations {
+        match &node.kind {
+            Decl::Type(d) => {
+                visible.insert(d.name.clone());
+            }
+            Decl::Interface(d) => {
+                visible.insert(d.name.clone());
+            }
+            _ => {}
+        }
+    }
+    for symbol in &unit.imports.symbols {
+        if let ModuleTarget::Local(target_index) = &symbol.target {
+            let target = &graph.modules[*target_index];
+            let is_type = target.program.declarations.iter().any(|node| {
+                matches!(&node.kind, Decl::Type(d) if d.name == symbol.original)
+                    || matches!(&node.kind, Decl::Interface(d) if d.name == symbol.original)
+            });
+            if is_type {
+                visible.insert(symbol.local.clone());
+            }
+        }
+    }
+    visible
+}
+
+/// The runtime registers every module's declarations in one flat global
+/// namespace, so a name must mean the same thing across the whole graph.
+/// Reports any name bound to two different meanings.
+fn check_graph_name_conflicts(
+    graph: &crate::modules::ModuleGraph,
+    all: &mut [Vec<TypeDiagnostic>],
+) {
+    use crate::modules::ModuleTarget;
+
+    #[derive(PartialEq, Eq, Hash, Clone)]
+    enum Meaning {
+        /// A top-level declaration (module index, declared name).
+        Decl(usize, String),
+        /// A module-namespace binding.
+        ModuleNs(String),
+        /// A std member imported unqualified.
+        StdMember(String, String),
+    }
+
+    fn target_key(graph: &crate::modules::ModuleGraph, target: &ModuleTarget) -> String {
+        match target {
+            ModuleTarget::Std(ns) => format!("std/{ns}"),
+            ModuleTarget::Local(index) => graph.modules[*index]
+                .path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| graph.modules[*index].name.clone()),
+        }
+    }
+
+    let mut seen: HashMap<String, (Meaning, usize, String)> = HashMap::new();
+    let mut record = |name: &str,
+                      meaning: Meaning,
+                      module_index: usize,
+                      span: Span,
+                      desc: String,
+                      all: &mut [Vec<TypeDiagnostic>],
+                      module_label: &dyn Fn(usize) -> String| {
+        match seen.get(name) {
+            Some((existing, prev_index, prev_desc)) if *existing != meaning => {
+                all[module_index].push(TypeDiagnostic::other(
+                    format!(
+                        "`{name}` means two different things across this program: \
+                         {prev_desc} in {} and {desc} in {} — modules share one \
+                         global namespace in this release; rename or alias one of them",
+                        module_label(*prev_index),
+                        module_label(module_index),
+                    ),
+                    span,
+                ));
+            }
+            Some(_) => {}
+            None => {
+                seen.insert(name.to_string(), (meaning, module_index, desc));
+            }
+        }
+    };
+
+    let module_label = |index: usize| -> String {
+        graph.modules[index]
+            .path
+            .as_ref()
+            .map(|p| {
+                p.file_name()
+                    .map(|f| f.to_string_lossy().to_string())
+                    .unwrap_or_else(|| p.display().to_string())
+            })
+            .unwrap_or_else(|| format!("{}.keel", graph.modules[index].name))
+    };
+
+    for (index, unit) in graph.modules.iter().enumerate() {
+        for node in &unit.program.declarations {
+            let (name, span, what) = match &node.kind {
+                Decl::Task(d) => (&d.name, d.name_span.clone(), "a task"),
+                Decl::Type(d) => (&d.name, d.name_span.clone(), "a type"),
+                Decl::Agent(d) => (&d.name, d.name_span.clone(), "an agent"),
+                Decl::Interface(d) => (&d.name, d.name_span.clone(), "an interface"),
+                Decl::Extern(d) => (&d.name, d.name_span.clone(), "an extern task"),
+                Decl::Impl(_) | Decl::Test(_) | Decl::Use(_) | Decl::Stmt(_) => continue,
+            };
+            record(
+                name,
+                Meaning::Decl(index, name.clone()),
+                index,
+                span,
+                format!("{what} declaration"),
+                all,
+                &module_label,
+            );
+        }
+        for binding in &unit.imports.bindings {
+            record(
+                &binding.name,
+                Meaning::ModuleNs(target_key(graph, &binding.target)),
+                index,
+                binding.span.clone(),
+                format!("an import of {}", target_key(graph, &binding.target)),
+                all,
+                &module_label,
+            );
+        }
+        for symbol in &unit.imports.symbols {
+            let meaning = match &symbol.target {
+                ModuleTarget::Std(ns) => Meaning::StdMember(ns.clone(), symbol.original.clone()),
+                ModuleTarget::Local(target_index) => {
+                    Meaning::Decl(*target_index, symbol.original.clone())
+                }
+            };
+            record(
+                &symbol.local,
+                meaning,
+                index,
+                symbol.span.clone(),
+                format!("an imported symbol `{}`", symbol.original),
+                all,
+                &module_label,
+            );
+        }
+    }
 }
 
 impl<'hir, 'ast> Checker<'hir, 'ast> {
@@ -138,6 +607,36 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             current_test_mocks: None,
             current_span: None,
             strict: false,
+            module_members: HashMap::new(),
+            visible_types: None,
+        }
+    }
+
+    /// Collect a foreign module's declarations into the lookup tables
+    /// without reporting its errors — those surface when that module is
+    /// checked itself.
+    fn collect_quiet(&mut self, program: &Program) {
+        let saved = std::mem::take(&mut self.errors);
+        self.collect(program);
+        self.errors = saved;
+    }
+
+    /// Make aliased symbol imports (`use email as ve from ...`) resolvable
+    /// under their local names. Tables are keyed by declared name after
+    /// collection; aliases share the original's signature.
+    fn seed_symbol_import_aliases(&mut self, graph: &crate::modules::ModuleGraph, index: usize) {
+        for symbol in &graph.modules[index].imports.symbols {
+            if symbol.local == symbol.original
+                || !matches!(symbol.target, crate::modules::ModuleTarget::Local(_))
+            {
+                continue;
+            }
+            if let Some(sig) = self.top_tasks.get(&symbol.original).cloned() {
+                self.top_tasks.insert(symbol.local.clone(), sig);
+            }
+            if let Some(info) = self.agents.get(&symbol.original).cloned() {
+                self.agents.insert(symbol.local.clone(), info);
+            }
         }
     }
 
@@ -550,18 +1049,15 @@ fn type_display_str(te: &TypeExpr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Ty, TypeDiagnostic, check, definition_of, ident_at_offset, ident_span_at_offset, type_at,
+        Ty, TypeDiagnostic, check_program, definition_of, ident_at_offset, ident_span_at_offset,
+        type_at,
     };
-    use crate::hir::lower_ast;
     use crate::lexer::lex;
     use crate::parser::parse;
     use miette::NamedSource;
 
     fn type_errors(source: &str) -> Vec<String> {
-        let named = NamedSource::new("t.keel", source.to_string());
-        let tokens = lex(source, &named).expect("lex failed");
-        let program = parse(tokens, source.len(), &named).expect("parse failed");
-        check(&lower_ast(&program))
+        type_errors_full(source)
             .into_iter()
             .map(|e| e.message())
             .collect()
@@ -571,7 +1067,7 @@ mod tests {
         let named = NamedSource::new("t.keel", source.to_string());
         let tokens = lex(source, &named).expect("lex failed");
         let program = parse(tokens, source.len(), &named).expect("parse failed");
-        check(&lower_ast(&program))
+        check_program(&program, false)
     }
 
     fn type_ok(source: &str) {
@@ -649,6 +1145,7 @@ agent Counter {
     fn valid_agent_task_calls_sibling_via_self() {
         type_ok(
             r#"
+use std/io
 agent Bot {
   @role "x"
 
@@ -657,7 +1154,7 @@ agent Bot {
   }
 
   task other() {
-    Io.notify("hi")
+    io.notify("hi")
   }
 }
 "#,
@@ -668,6 +1165,7 @@ agent Bot {
     fn error_bare_agent_task_call_is_not_in_scope() {
         expect_error(
             r#"
+use std/io
 agent Bot {
   @role "x"
 
@@ -676,7 +1174,7 @@ agent Bot {
   }
 
   task other() {
-    Io.notify("hi")
+    io.notify("hi")
   }
 }
 "#,
@@ -688,11 +1186,12 @@ agent Bot {
     fn error_direct_agent_task_call_is_rejected() {
         expect_error(
             r#"
+use std/io
 agent Worker {
   @role "x"
 
   task run() {
-    Io.notify("work")
+    io.notify("work")
   }
 }
 
@@ -754,11 +1253,12 @@ agent Counter {
         // A name bound inside an `if` body must not be visible after the block.
         expect_error(
             r#"
+use std/io
 task main() {
   if true {
     x = 1
   }
-  Io.show(x)
+  io.show(x)
 }
 "#,
             "undefined: `x`",
@@ -770,11 +1270,12 @@ task main() {
         // A name bound inside a `while` body must not be visible after the block.
         expect_error(
             r#"
+use std/io
 task main() {
   while false {
     y = 1
   }
-  Io.show(y)
+  io.show(y)
 }
 "#,
             "undefined: `y`",
@@ -786,11 +1287,12 @@ task main() {
         // A name bound inside the `try` body must not be visible after the block.
         expect_error(
             r#"
+use std/io
 task main() {
   try {
     z = 1
   } catch e: Error { }
-  Io.show(z)
+  io.show(z)
 }
 "#,
             "undefined: `z`",
@@ -802,8 +1304,9 @@ task main() {
         // Undefined names in parameter default expressions must be caught.
         expect_error(
             r#"
+use std/io
 task main(x: int = missing) {
-  Io.show(x)
+  io.show(x)
 }
 "#,
             "undefined: `missing`",
@@ -948,18 +1451,19 @@ task call_it() {
         );
     }
 
-    // ─── Enum inference via Ai.classify ─────────────────────────────────────────
+    // ─── Enum inference via ai.classify ─────────────────────────────────────────
 
     #[test]
     fn valid_classify_inferred_enum() {
-        // `Ai.classify(..., as: Mood) ?? Mood.neutral` unwraps the nullable so
+        // `ai.classify(..., as: Mood) ?? Mood.neutral` unwraps the nullable so
         // the result is Mood and `when` on it is exhaustive.
         type_ok(
             r#"
+use std/ai
 type Mood = happy | neutral | sad
 
 task t(text: str) {
-  mood = Ai.classify(text, as: Mood) ?? Mood.neutral
+  mood = ai.classify(text, as: Mood) ?? Mood.neutral
   when mood {
     happy => { return }
     neutral => { return }
@@ -1007,10 +1511,11 @@ task make() -> Action {
     fn error_classify_result_missing_variant() {
         expect_error(
             r#"
+use std/ai
 type Mood = happy | neutral | sad
 
 task t(text: str) {
-  mood = Ai.classify(text, as: Mood) ?? Mood.neutral
+  mood = ai.classify(text, as: Mood) ?? Mood.neutral
   when mood {
     happy => { return }
     sad => { return }
@@ -1027,8 +1532,9 @@ task t(text: str) {
     fn error_nullable_passed_as_non_nullable() {
         expect_error(
             r#"
+use std/env
 task t() {
-  x: str = Env.get("KEY")
+  x: str = env.get("KEY")
 }
 "#,
             "use `!` to assert non-null",
@@ -1039,8 +1545,9 @@ task t() {
     fn valid_nullable_unwrapped_with_assert() {
         type_ok(
             r#"
+use std/env
 task t() {
-  x: str = Env.get("KEY")!
+  x: str = env.get("KEY")!
 }
 "#,
         );
@@ -1050,8 +1557,9 @@ task t() {
     fn valid_nullable_coalesced() {
         type_ok(
             r#"
+use std/env
 task t() {
-  x: str = Env.get("KEY") ?? "default"
+  x: str = env.get("KEY") ?? "default"
 }
 "#,
         );
@@ -1074,9 +1582,10 @@ task t() {
     fn error_nullable_arg_at_top_level_task_call() {
         expect_error(
             r#"
+use std/env
 task process(x: str) {}
 task t() {
-  val: str? = Env.get("KEY")
+  val: str? = env.get("KEY")
   process(val)
 }
 "#,
@@ -1088,9 +1597,10 @@ task t() {
     fn valid_nullable_arg_unwrapped_at_call_site() {
         type_ok(
             r#"
+use std/env
 task process(x: str) {}
 task t() {
-  val: str? = Env.get("KEY")
+  val: str? = env.get("KEY")
   process(val!)
 }
 "#,
@@ -1101,9 +1611,10 @@ task t() {
     fn valid_nullable_arg_coalesced_at_call_site() {
         type_ok(
             r#"
+use std/env
 task process(x: str) {}
 task t() {
-  val: str? = Env.get("KEY")
+  val: str? = env.get("KEY")
   process(val ?? "default")
 }
 "#,
@@ -1114,9 +1625,10 @@ task t() {
     fn error_nullable_named_arg_at_task_call() {
         expect_error(
             r#"
+use std/env
 task process(x: str) {}
 task t() {
-  val: str? = Env.get("KEY")
+  val: str? = env.get("KEY")
   process(x: val)
 }
 "#,
@@ -1233,12 +1745,13 @@ task t() {
     fn valid_list_concatenation_inferred() {
         type_ok(
             r#"
+use std/io
 task t() {
   a = ["x", "y"]
   b = ["z"]
   all = a + b
   for item in all {
-    Io.notify(item)
+    io.notify(item)
   }
 }
 "#,
@@ -1263,13 +1776,14 @@ task t() {
     fn valid_readonly_field_readable() {
         type_ok(
             r#"
+use std/io
 agent Bot {
   state {
     turns: int = 0
     session_id: readonly str = "default"
   }
   task check() {
-    Io.notify(self.session_id)
+    io.notify(self.session_id)
   }
 }
 "#,
@@ -1297,11 +1811,12 @@ agent Bot {
     fn valid_list_filter_preserves_type() {
         type_ok(
             r#"
+use std/io
 task t() {
   items = ["a", "bb", "ccc"]
   short = items.filter(x => true)
   for s in short {
-    Io.notify(s)
+    io.notify(s)
   }
 }
 "#,
@@ -1327,9 +1842,10 @@ task t(pair: Pair, bag: Bag) {
     fn error_struct_destructure_from_non_struct() {
         expect_error(
             r#"
+use std/io
 task t() {
   {name} = 42
-  Io.notify(name)
+  io.notify(name)
 }
 "#,
             "cannot destructure int as a struct",
@@ -1340,9 +1856,10 @@ task t() {
     fn error_tuple_destructure_from_non_tuple() {
         expect_error(
             r#"
+use std/io
 task t() {
   (name, count) = {name: "a", count: 1}
-  Io.notify(name)
+  io.notify(name)
 }
 "#,
             "cannot destructure struct as a tuple",
@@ -1461,10 +1978,11 @@ task go() {
     fn valid_ai_extract_as_resolves_struct_type() {
         type_ok(
             r#"
+use std/ai
 type Contact = { name: str, email: str }
 
 task go(text: str) {
-  result = Ai.extract(text, as: Contact)
+  result = ai.extract(text, as: Contact)
   name = result?.name
 }
 "#,
@@ -1475,10 +1993,11 @@ task go(text: str) {
     fn valid_ai_decide_as_resolves_enum_type() {
         type_ok(
             r#"
+use std/ai
 type Priority = low | medium | high
 
 task go(text: str) {
-  p = Ai.decide(text, as: Priority)
+  p = ai.decide(text, as: Priority)
 }
 "#,
         );
@@ -1627,6 +2146,7 @@ task t(items: Bag[str]) {
         // Generic enums register variant names; exhaustiveness check still works.
         type_ok(
             r#"
+use std/io
 type Pair[A, B] =
   | both { first: A, second: B }
   | only_first { value: A }
@@ -1634,9 +2154,9 @@ type Pair[A, B] =
 
 task t(p: Pair[str, int]) {
   when p {
-    both => { Io.notify("both") }
-    only_first => { Io.notify("first") }
-    only_second => { Io.notify("second") }
+    both => { io.notify("both") }
+    only_first => { io.notify("first") }
+    only_second => { io.notify("second") }
   }
 }
 "#,
@@ -1737,6 +2257,7 @@ task t(p: Pair[str, int]) {
         // Field type itself is a generic instantiation.
         type_ok(
             r#"
+use std/io
 type Box[T] {
   value: T
 }
@@ -1750,7 +2271,7 @@ task t(w: Wrapped[str]) {
     some { inner } => {
       b: Box[str] = inner
     }
-    none_val => { Io.notify("empty") }
+    none_val => { io.notify("empty") }
   }
 }
 "#,
@@ -2396,8 +2917,9 @@ task t() {
     fn db_connect_is_valid() {
         type_ok(
             r#"
+use std/db
 task use_db() {
-    db = Db.connect("sqlite://:memory:")
+    db = db.connect("sqlite://:memory:")
 }
 "#,
         );
@@ -2407,8 +2929,9 @@ task use_db() {
     fn db_query_result_supports_list_methods() {
         type_ok(
             r#"
+use std/db
 task use_db() {
-    db = Db.connect("sqlite://:memory:")
+    db = db.connect("sqlite://:memory:")
     rows = db.query("SELECT 1", [])
     n = rows.len()
 }
@@ -2420,8 +2943,9 @@ task use_db() {
     fn db_exec_result_used_as_int() {
         type_ok(
             r#"
+use std/db
 task use_db() {
-    db = Db.connect("sqlite://:memory:")
+    db = db.connect("sqlite://:memory:")
     affected = db.exec("DELETE FROM t", [])
     ok = affected > 0
 }
@@ -2435,15 +2959,16 @@ task use_db() {
     fn valid_agent_delegate_symbol_form() {
         type_ok(
             r#"
+use std/io
 agent Worker {
     on process(data: str) {
-        Io.show(data)
+        io.show(data)
     }
 }
 agent Boss {
     @on_start {
-        Agent.run(Worker)
-        Agent.delegate(Worker.process, "hello")
+        run(Worker)
+        delegate(Worker.process, "hello")
     }
 }
 run(Boss)
@@ -2455,14 +2980,15 @@ run(Boss)
     fn valid_agent_delegate_string_form_checks_handler() {
         type_ok(
             r#"
+use std/io
 agent Worker {
     on process(data: str) {
-        Io.show(data)
+        io.show(data)
     }
 }
 agent Boss {
     @on_start {
-        Agent.delegate(Worker, "process", "payload")
+        delegate(Worker, "process", "payload")
     }
 }
 run(Boss)
@@ -2474,14 +3000,15 @@ run(Boss)
     fn error_agent_delegate_symbol_form_unknown_handler() {
         expect_error(
             r#"
+use std/io
 agent Worker {
     on process(data: str) {
-        Io.show(data)
+        io.show(data)
     }
 }
 agent Boss {
     @on_start {
-        Agent.delegate(Worker.typo, "payload")
+        delegate(Worker.typo, "payload")
     }
 }
 run(Boss)
@@ -2494,14 +3021,15 @@ run(Boss)
     fn error_agent_delegate_string_form_unknown_handler() {
         expect_error(
             r#"
+use std/io
 agent Worker {
     on process(data: str) {
-        Io.show(data)
+        io.show(data)
     }
 }
 agent Boss {
     @on_start {
-        Agent.delegate(Worker, "typo", "payload")
+        delegate(Worker, "typo", "payload")
     }
 }
 run(Boss)
@@ -2595,17 +3123,17 @@ task go() -> str {
     //
     // Previously, `is_opaque()` was used as the "not yet set" sentinel for the
     // inferred value type, causing any legitimately opaque first value
-    // (e.g. Json.parse → Unknown(ExternalDynamic)) to be overwritten by later
+    // (e.g. json.parse → Unknown(ExternalDynamic)) to be overwritten by later
     // concrete entries.  The fix replaces the sentinel with Option<Ty>.
     //
-    // Observable consequence: assigning `{1: Json.parse("{}"), 2: "x"}` to an
+    // Observable consequence: assigning `{1: json.parse("{}"), 2: "x"}` to an
     // explicit `map[int, str]` binding used to pass (the buggy inference gave
     // map[int, str]).  After the fix the inferred type is map[int, Unknown] which
     // does not equal map[int, str], so the assignment is rejected.
 
     #[test]
     fn map_opaque_first_value_is_not_overwritten_by_concrete_second() {
-        // The map literal {1: Json.parse("{}"), 2: "x"} must be inferred as
+        // The map literal {1: json.parse("{}"), 2: "x"} must be inferred as
         // map[int, Unknown(ExternalDynamic)] — the first element's opaque type
         // wins; the second concrete "x" must not silently overwrite it.
         //
@@ -2615,8 +3143,9 @@ task go() -> str {
         // invariant being protected here is the INFERENCE, not the assignment check.
         type_ok(
             r#"
+use std/json
 task go() -> int {
-  m: map[int, str] = {1: Json.parse("{}"), 2: "x"}
+  m: map[int, str] = {1: json.parse("{}"), 2: "x"}
   return 0
 }
 "#,
@@ -2790,13 +3319,14 @@ task go(s: Status) {
     #[test]
     fn map_concrete_first_opaque_second_accepts_the_opaque_entry() {
         // When the first value is concrete (Str) the inferred value type is Str.
-        // The second opaque value (Json.parse → Unknown) is passed to `expect`
+        // The second opaque value (json.parse → Unknown) is passed to `expect`
         // against Str; because `actual.is_opaque()` is true, `expect` short-
         // circuits with no error.  The assignment to map[int, str] should succeed.
         type_ok(
             r#"
+use std/json
 task go() -> int {
-  m: map[int, str] = {1: "x", 2: Json.parse("{}")}
+  m: map[int, str] = {1: "x", 2: json.parse("{}")}
   return 0
 }
 "#,
@@ -2906,12 +3436,12 @@ mod lsp_ide_tests {
 
     #[test]
     fn lsp_hover_reports_namespace() {
-        let src = "agent A { @on_start { Io.show(\"x\") } }\n";
-        let offset = src.find("Io").unwrap() + 1;
-        let label = type_at(src, offset).expect("hover on Io");
+        let src = "use std/io\nagent A { @on_start { io.show(\"x\") } }\n";
+        let offset = src.find("io.show").unwrap() + 1;
+        let label = type_at(src, offset).expect("hover on io");
         assert!(
-            label.contains("namespace"),
-            "expected namespace label, got: {label}"
+            label.contains("namespace") || label.contains("module"),
+            "expected namespace/module label, got: {label}"
         );
     }
 

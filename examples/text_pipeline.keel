@@ -1,25 +1,46 @@
+use std/io
+
 agent TextPipeline {
   @on_start {
     text = "Invoice #1042 — Total: $3,750.00 due 2026-05-15"
     if text.matches("\\d{4}-\\d{2}-\\d{2}") {
-      Io.show("Found a date")
+      io.show("Found a date")
     }
     amount = text.extract("\\$(\\S+)")
-    Io.show("Amount: {amount}")
+    io.show("Amount: {amount}")
     invoice = text.extract("#(\\d+)")
-    Io.show("Invoice: {invoice}")
+    io.show("Invoice: {invoice}")
     short = text.truncate(20)
-    Io.show("Short: {short}")
+    io.show("Short: {short}")
     label1 = "ID".pad(10)
     label2 = "Amount".pad(10)
-    Io.show("{label1}{label2}")
+    io.show("{label1}{label2}")
     padded_id = invoice.pad(6, char: "0")
-    Io.show("Padded ID: {padded_id}")
+    io.show("Padded ID: {padded_id}")
     dates = text.find_all("\\d{4}-\\d{2}-\\d{2}")
-    Io.show("Dates found: {dates.count}")
+    io.show("Dates found: {dates.count}")
     redacted = text.sub("\\$[\\d,]+\\.\\d{2}", "[REDACTED]")
-    Io.show("Redacted: {redacted}")
+    io.show("Redacted: {redacted}")
   }
 }
 
 run(TextPipeline)
+
+# Tests — run with: keel test examples/text_pipeline.keel
+test "regex matching, extraction, and substitution" {
+  # NOTE: inside a Keel string, {4} is an interpolation slot — write
+  # repetition without braces (or escape them as \{4\}).
+  text = "Invoice #1042 — Total: $3,750.00 due 2026-05-15"
+  assert text.matches("\\d\\d\\d\\d-\\d\\d-\\d\\d")
+  invoice = text.extract("#(\\d+)") ?? ""
+  assert invoice == "1042"
+  assert text.find_all("\\d\\d\\d\\d-\\d\\d-\\d\\d").count() == 1
+  assert text.sub("\\$[\\d,]+\\.\\d\\d", "[REDACTED]").contains("[REDACTED]")
+}
+
+test "padding produces fixed-width strings" {
+  assert "ID".pad(4).len() == 4
+  padded = "1042".pad(6, char: "0")
+  assert padded.len() == 6
+  assert padded.contains("1042")
+}

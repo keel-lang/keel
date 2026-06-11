@@ -1,20 +1,41 @@
+use std/email
+use std/io
+
 type Email = { from: str, subject: str, unread: bool }
 
 agent Inbox {
   @on_start {
     emails = [{ from: "alice@example.com", subject: "hello", unread: true }, { from: "bob@example.com", subject: "urgent", unread: true }, { from: "carol@example.com", subject: "fyi", unread: false }]
     for email in emails if email.unread {
-      Io.show("Processing: {email.subject} from {email.from}")
+      io.show("Processing: {email.subject} from {email.from}")
     }
     for { from, subject } in emails if subject != "fyi" {
-      Io.show("{from}: {subject}")
+      io.show("{from}: {subject}")
     }
-    Io.show("Even numbers 1-10:")
+    io.show("Even numbers 1-10:")
     for n in 1..10 if n % 2 == 0 {
-      Io.show(n)
+      io.show(n)
     }
     stop(self)
   }
 }
 
 run(Inbox)
+
+# Tests — run with: keel test examples/if_guard.keel
+test "loop guard filters items" {
+  emails = [{ from: "a", subject: "hello", unread: true }, { from: "b", subject: "urgent", unread: true }, { from: "c", subject: "fyi", unread: false }]
+  seen = 0
+  for email in emails if email.unread {
+    seen += 1
+  }
+  assert seen == 2
+}
+
+test "range guard keeps even numbers" {
+  evens: list[int] = []
+  for n in 1..10 if n % 2 == 0 {
+    evens += [n]
+  }
+  assert evens == [2, 4, 6, 8, 10]
+}

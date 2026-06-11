@@ -15,7 +15,7 @@ use crate::diagnostics::LintWarning;
 use crate::interpreter::TestOutcome;
 use crate::runtime::context::RuntimeContext;
 use crate::types::diagnostics::TypeDiagnostic;
-use crate::{formatter, hir, interpreter, lexer, lint, parser, types};
+use crate::{formatter, interpreter, lexer, lint, parser, types};
 
 /// A program that has been parsed and type-checked.
 ///
@@ -36,6 +36,111 @@ impl CheckedProgram {
     pub fn has_errors(&self) -> bool {
         !self.diagnostics.is_empty()
     }
+}
+
+/// A fully loaded and type-checked module graph.
+///
+/// `diagnostics` is index-aligned with `graph.modules`; each module's
+/// diagnostics render against that module's own `source`.
+pub struct CheckedGraph {
+    /// The loaded module graph (dependencies first, entry last).
+    pub graph: crate::modules::ModuleGraph,
+    /// Per-module type errors. All lists empty means the program is valid.
+    pub diagnostics: Vec<Vec<TypeDiagnostic>>,
+}
+
+impl CheckedGraph {
+    /// Returns `true` if any module has type errors.
+    #[must_use]
+    pub fn has_errors(&self) -> bool {
+        self.diagnostics.iter().any(|d| !d.is_empty())
+    }
+
+    /// Total number of type errors across all modules.
+    #[must_use]
+    pub fn error_count(&self) -> usize {
+        self.diagnostics.iter().map(Vec::len).sum()
+    }
+}
+
+/// Load the full module graph for an entry source and type-check every
+/// module.
+///
+/// `entry_path` anchors relative imports; pass `None` for in-memory
+/// programs (std imports still resolve).
+///
+/// # Errors
+///
+/// Returns an error if any file cannot be read or parsed, an import
+/// cannot be resolved, or the imports form a cycle. Type errors are
+/// recorded in `CheckedGraph::diagnostics`, not returned as `Err`.
+pub fn load_and_check_graph(
+    src: &str,
+    name: &str,
+    entry_path: Option<&Path>,
+) -> Result<CheckedGraph> {
+    let graph = crate::modules::load_graph(src, name, entry_path)?;
+    let diagnostics = types::checker::check_graph(&graph);
+    Ok(CheckedGraph { graph, diagnostics })
+}
+
+/// Like [`load_and_check_graph`] in strict mode (`keel check --strict`).
+///
+/// # Errors
+///
+/// Same as [`load_and_check_graph`].
+pub fn load_and_check_graph_strict(
+    src: &str,
+    name: &str,
+    entry_path: Option<&Path>,
+) -> Result<CheckedGraph> {
+    let graph = crate::modules::load_graph(src, name, entry_path)?;
+    let diagnostics = types::checker::check_graph_strict(&graph);
+    Ok(CheckedGraph { graph, diagnostics })
+}
+
+/// Execute a type-checked module graph.
+///
+/// # Errors
+///
+/// Returns an error if the graph has type errors or the interpreter
+/// encounters a runtime error.
+pub async fn run_graph(checked: &CheckedGraph, runtime: Arc<RuntimeContext>) -> Result<()> {
+    if checked.has_errors() {
+        return Err(miette::miette!(
+            "{} type error(s) — cannot execute a program with type errors",
+            checked.error_count()
+        ));
+    }
+    interpreter::run_graph_with_runtime(&checked.graph, runtime).await
+}
+
+/// Execute the test blocks of a module graph's entry file.
+///
+/// Imported modules contribute declarations only — never their tests.
+///
+/// # Errors
+///
+/// Returns an error if the graph has type errors.
+pub async fn test_graph(
+    checked: &CheckedGraph,
+    runtime: Arc<RuntimeContext>,
+    filter: Option<&str>,
+    fail_fast: bool,
+) -> Result<Vec<TestOutcome>> {
+    if checked.has_errors() {
+        return Err(miette::miette!(
+            "{} type error(s) — cannot execute tests with type errors",
+            checked.error_count()
+        ));
+    }
+    interpreter::run_graph_tests_with_runtime(&checked.graph, runtime, filter, fail_fast).await
+}
+
+/// Test names declared in the entry file of a checked graph.
+#[must_use]
+pub fn graph_test_names(checked: &CheckedGraph, filter: Option<&str>) -> Vec<String> {
+    interpreter::test_names(&checked.graph.entry().program, filter)
 }
 
 /// Lex and parse source text into an AST.
@@ -73,12 +178,7 @@ pub fn check_source_strict(program: Program, source: NamedSource<String>) -> Che
 }
 
 fn check_impl(program: Program, source: NamedSource<String>, strict: bool) -> CheckedProgram {
-    let hir = hir::lower_ast(&program);
-    let diagnostics = if strict {
-        types::checker::check_strict(&hir)
-    } else {
-        types::checker::check(&hir)
-    };
+    let diagnostics = types::checker::check_program(&program, strict);
     CheckedProgram {
         source,
         ast: program,

@@ -65,10 +65,11 @@ fn repl_evaluates_let_and_expression() {
 #[test]
 fn io_ask_reads_from_stdin_and_returns_trimmed_answer() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    answer = Io.ask("Name?")
-    Io.show("answer={answer}")
+    answer = io.ask("Name?")
+    io.show("answer={answer}")
     stop(self)
   }
 }
@@ -81,18 +82,19 @@ run(A)
     );
     assert!(
         stdout.contains("answer=Keel"),
-        "Io.ask should return trimmed stdin answer:\n{stdout}"
+        "io.ask should return trimmed stdin answer:\n{stdout}"
     );
 }
 
 #[test]
 fn io_confirm_accepts_yes_and_rejects_no() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    first = Io.confirm("Ship?")
-    second = Io.confirm("Rollback?")
-    Io.show("first={first}, second={second}")
+    first = io.confirm("Ship?")
+    second = io.confirm("Rollback?")
+    io.show("first={first}, second={second}")
     stop(self)
   }
 }
@@ -105,19 +107,20 @@ run(A)
     );
     assert!(
         stdout.contains("first=true, second=false"),
-        "Io.confirm should parse yes/no answers:\n{stdout}"
+        "io.confirm should parse yes/no answers:\n{stdout}"
     );
 }
 
 #[test]
 fn on_stop_block_fires_before_agent_removed() {
     let src = r#"
+use std/io
 agent A {
     @on_stop {
-        Io.show("A stopped")
+        io.show("A stopped")
     }
     @on_start {
-        Agent.stop(A)
+        stop(A)
     }
 }
 run(A)
@@ -136,16 +139,17 @@ run(A)
 #[test]
 fn agent_delegate_dispatches_to_handler() {
     let src = r#"
+use std/io
 agent Worker {
     on process(data: str) {
-        Io.show("processed")
+        io.show("processed")
     }
 }
 
 agent Boss {
     @on_start {
-        Agent.run(Worker)
-        Agent.delegate(Worker, "process", "payload")
+        run(Worker)
+        delegate(Worker, "process", "payload")
     }
 }
 
@@ -165,16 +169,17 @@ run(Boss)
 #[test]
 fn agent_delegate_symbol_form_dispatches_to_handler() {
     let src = r#"
+use std/io
 agent Worker {
     on process(data: str) {
-        Io.show("symbol-form: {data}")
+        io.show("symbol-form: {data}")
     }
 }
 
 agent Boss {
     @on_start {
-        Agent.run(Worker)
-        Agent.delegate(Worker.process, "hello")
+        run(Worker)
+        delegate(Worker.process, "hello")
     }
 }
 
@@ -195,16 +200,17 @@ run(Boss)
 fn agent_delegate_symbol_form_forwards_correct_payload() {
     // Verify the payload is the second arg (not shifted by a handler-name arg).
     let src = r#"
+use std/io
 agent Printer {
     on print(msg: str) {
-        Io.show(msg)
+        io.show(msg)
     }
 }
 
 agent Sender {
     @on_start {
-        Agent.run(Printer)
-        Agent.delegate(Printer.print, "hello-world")
+        run(Printer)
+        delegate(Printer.print, "hello-world")
     }
 }
 
@@ -221,33 +227,34 @@ run(Sender)
 #[test]
 fn agent_broadcast_dispatches_to_team_members() {
     let src = r#"
+use std/io
 agent Alpha {
     @team ["frontline"]
     on alert(msg: str) {
-        Io.show("Alpha got {msg}")
+        io.show("Alpha got {msg}")
     }
 }
 
 agent Beta {
     @team ["frontline"]
     on alert(msg: str) {
-        Io.show("Beta got {msg}")
+        io.show("Beta got {msg}")
     }
 }
 
 agent Gamma {
     @team ["backoffice"]
     on alert(msg: str) {
-        Io.show("Gamma got {msg}")
+        io.show("Gamma got {msg}")
     }
 }
 
 agent Coordinator {
     @on_start {
-        Agent.run(Alpha)
-        Agent.run(Beta)
-        Agent.run(Gamma)
-        Agent.broadcast("frontline", "incident", event: "alert")
+        run(Alpha)
+        run(Beta)
+        run(Gamma)
+        broadcast("frontline", "incident", event: "alert")
     }
 }
 
@@ -277,6 +284,7 @@ fn agent_send_returns_runtime_busy_when_queue_full() {
     // Use a capacity-2 queue so the 3rd Agent.send in @on_start triggers RuntimeBusy.
     // The Keel code catches it and records the count — verifies the error is catchable.
     let src = r#"
+use std/io
 agent BurstBot {
     state {
         sent: int = 0
@@ -286,13 +294,13 @@ agent BurstBot {
     @on_start {
         for i in 1..3 {
             try {
-                Agent.send(BurstBot, i)
+                send(BurstBot, i)
                 self.sent = self.sent + 1
             } catch e: RuntimeBusy {
                 self.caught = self.caught + 1
             }
         }
-        Io.show("sent={self.sent} caught={self.caught}")
+        io.show("sent={self.sent} caught={self.caught}")
     }
 
     on message(n: int) { }
@@ -317,9 +325,10 @@ run(BurstBot)
 #[test]
 fn stop_self_exits_cleanly() {
     let src = r#"
+use std/io
 agent Greeter {
   @on_start {
-    Io.show("hi")
+    io.show("hi")
     stop(self)
   }
 }
@@ -336,15 +345,16 @@ run(Greeter)
 #[test]
 fn stop_self_resolves_to_current_agent() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Agent.run(B)
+    run(B)
     stop(self)
   }
 }
 agent B {
   @on_start {
-    Io.show("B ran")
+    io.show("B ran")
     stop(self)
   }
 }

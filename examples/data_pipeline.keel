@@ -6,12 +6,17 @@
 #   - Named struct type (Record) used as task parameters and local variables
 #   - Struct field checks: the checker verifies literals match the declared type
 #   - Return-type matching: validate() -> Status, enrich() -> str
-#   - Nullable unwrapping: Ai.draft returns str?, coalesced with ??
+#   - Nullable unwrapping: ai.draft returns str?, coalesced with ??
 #   - List method type inference: .filter() preserves list[Record],
 #     .len() returns int, .map() produces list[str]
 #
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/data_pipeline.keel
+
+use std/ai
+use std/email
+use std/io
+use std/schedule
 
 use std/testing
 
@@ -37,8 +42,8 @@ task validate(r: Record) -> Status {
 }
 
 task enrich(r: Record) -> str {
-  # Ai.draft returns str? — use ?? to guarantee a str return type.
-  Ai.draft(
+  # ai.draft returns str? — use ?? to guarantee a str return type.
+  ai.draft(
     "one-line profile summary for {r.name} (score: {r.score})",
     format: prose
   ) ?? "{r.name}: score {r.score}"
@@ -59,15 +64,15 @@ test "enrich uses setup and mocked draft sequence" {
     diana: Record = { name: "Diana", email: "diana@co.com", score: 88 }
   }
 
-  testing.mock(Ai.draft).returns("Alice: top account")
-  testing.mock(Ai.draft).returns("Diana: renewal candidate")
+  testing.mock(ai.draft).returns("Alice: top account")
+  testing.mock(ai.draft).returns("Diana: renewal candidate")
 
   assert enrich(alice) == "Alice: top account"
   assert enrich(diana) == "Diana: renewal candidate"
   assert enrich(alice) == "Diana: renewal candidate"
-  assert Ai.draft.called
-  assert Ai.draft.call_count == 3
-  assert Ai.draft.called_with("one-line profile summary for Alice (score: 95)")
+  assert ai.draft.called
+  assert ai.draft.call_count == 3
+  assert ai.draft.called_with("one-line profile summary for Alice (score: 95)")
 }
 
 agent DataPipeline {
@@ -80,7 +85,7 @@ agent DataPipeline {
   }
 
   @on_start {
-    Schedule.every(1.hour, () => {
+    schedule.every(1.hour, () => {
       records: list[Record] = [
         { name: "Alice",   email: "alice@co.com",   score: 95 },
         { name: "Bob",     email: "",               score: 72 },
@@ -89,7 +94,7 @@ agent DataPipeline {
         { name: "Eve",     email: "eve@co.com",     score: -5 }
       ]
 
-      Io.notify("Processing {records.len()} records...")
+      io.notify("Processing {records.len()} records...")
 
       for r in records {
         status = validate(r)
@@ -99,14 +104,14 @@ agent DataPipeline {
           valid => {
             self.valid_count = self.valid_count + 1
             summary = enrich(r)
-            Io.notify("  OK:     {summary}")
+            io.notify("  OK:     {summary}")
           }
           invalid => {
             self.invalid_count = self.invalid_count + 1
-            Io.notify("  SKIP:   {r.name} (invalid)")
+            io.notify("  SKIP:   {r.name} (invalid)")
           }
           needs_review => {
-            Io.notify("  REVIEW: {r.name} (score: {r.score})")
+            io.notify("  REVIEW: {r.name} (score: {r.score})")
           }
         }
       }
@@ -119,8 +124,8 @@ agent DataPipeline {
       n_invalid: int = self.invalid_count
       n_total:   int = self.total
 
-      Io.notify("Valid names: {valid_names}")
-      Io.notify("Stats: {n_valid}/{n_total} valid, {n_invalid} invalid")
+      io.notify("Valid names: {valid_names}")
+      io.notify("Stats: {n_valid}/{n_total} valid, {n_invalid} invalid")
     })
   }
 }

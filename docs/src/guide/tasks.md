@@ -21,6 +21,9 @@ msg = greet("World")   # "Hello, World!"
 ## Parameters
 
 ```keel
+use std/ai
+use std/email
+
 # Typed parameters
 task add(a: int, b: int) -> int {
   a + b
@@ -33,7 +36,7 @@ task compose(email: str, tone: str = "friendly") -> str {
 
 # Struct parameters (inline type)
 task triage(email: {body: str, from: str}) -> Urgency {
-  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 ```
 
@@ -50,6 +53,8 @@ task double(x: int) -> int {
 Use `return` for early exits:
 
 ```keel
+use std/email
+
 task handle(email: {body: str, from: str}) -> str {
   if email.from.contains("noreply") {
     return "Skipped automated email"
@@ -83,9 +88,12 @@ result = double(5)   # 10
 Tasks defined **outside** agents are reusable and testable. Tasks defined **inside** agents can access `self`:
 
 ```keel
+use std/ai
+use std/email
+
 # Top-level: shared, testable
 task triage(email: {body: str}) -> Urgency {
-  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
 # Agent-scoped: can access self.state

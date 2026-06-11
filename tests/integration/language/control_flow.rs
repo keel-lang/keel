@@ -7,11 +7,12 @@ use crate::common::*;
 #[test]
 fn if_expr_on_rhs_of_binding() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         score = 0.9
         label = if score > 0.8 { "high" } else { "low" }
-        Io.show(label)
+        io.show(label)
     }
 }
 run(A)
@@ -27,11 +28,12 @@ run(A)
 #[test]
 fn if_expr_else_branch_selected() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         score = 0.3
         label = if score > 0.8 { "high" } else { "low" }
-        Io.show(label)
+        io.show(label)
     }
 }
 run(A)
@@ -51,10 +53,11 @@ run(A)
 #[test]
 fn range_basic_for_loop() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     for i in 1..3 {
-      Io.show("{i}")
+      io.show("{i}")
     }
   }
 }
@@ -70,10 +73,11 @@ run(A)
 #[test]
 fn range_assigned_to_variable() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     xs = 1..4
-    Io.show("{xs.count()}")
+    io.show("{xs.count()}")
   }
 }
 run(A)
@@ -104,10 +108,11 @@ run(A)
 #[test]
 fn range_empty() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     xs = 5..3
-    Io.show("{xs.count()}")
+    io.show("{xs.count()}")
   }
 }
 run(A)
@@ -123,10 +128,11 @@ run(A)
 #[test]
 fn range_single() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     xs = 4..4
-    Io.show("{xs.count()}")
+    io.show("{xs.count()}")
   }
 }
 run(A)
@@ -146,11 +152,12 @@ run(A)
 #[test]
 fn if_guard_for_filters_elements() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [1, 2, 3, 4, 5]
     for n in nums if n % 2 == 0 {
-      Io.show("even:{n}")
+      io.show("even:{n}")
     }
     stop(self)
   }
@@ -174,10 +181,11 @@ run(A)
 #[test]
 fn if_guard_for_range() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     for x in 1..5 if x != 3 {
-      Io.show("x:{x}")
+      io.show("x:{x}")
     }
     stop(self)
   }
@@ -198,15 +206,16 @@ fn when_arm_where_guard() {
     // Guard must be a non-trivial expression (not a bare ident) to avoid
     // the lambda ambiguity: `ident => body` parses as a lambda.
     let src = r#"
+use std/io
 type Status = active | inactive
 agent A {
   @on_start {
     s = Status.active
     level = 5
     when s {
-      active where level > 3 => Io.show("admin-active")
-      active                 => Io.show("user-active")
-      _                      => Io.show("inactive")
+      active where level > 3 => io.show("admin-active")
+      active                 => io.show("user-active")
+      _                      => io.show("inactive")
     }
     stop(self)
   }
@@ -224,15 +233,16 @@ run(A)
 #[test]
 fn when_arm_where_guard_falls_through() {
     let src = r#"
+use std/io
 type Status = active | inactive
 agent A {
   @on_start {
     s = Status.active
     level = 1
     when s {
-      active where level > 3 => Io.show("admin-active")
-      active                 => Io.show("user-active")
-      _                      => Io.show("inactive")
+      active where level > 3 => io.show("admin-active")
+      active                 => io.show("user-active")
+      _                      => io.show("inactive")
     }
     stop(self)
   }
@@ -256,6 +266,7 @@ run(A)
 #[test]
 fn when_expr_evaluates_to_matched_arm_value() {
     let src = r#"
+use std/io
 task grade(score: str) -> str {
   when score {
     "A" => "excellent"
@@ -264,9 +275,9 @@ task grade(score: str) -> str {
   }
 }
 
-Io.show(grade("A"))
-Io.show(grade("B"))
-Io.show(grade("C"))
+io.show(grade("A"))
+io.show(grade("B"))
+io.show(grade("C"))
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
@@ -278,6 +289,7 @@ Io.show(grade("C"))
 #[test]
 fn when_expr_result_assigned_to_variable() {
     let src = r#"
+use std/io
 task label(n: int) -> str {
   result = when n {
     0 => "zero"
@@ -287,9 +299,9 @@ task label(n: int) -> str {
   result
 }
 
-Io.show(label(0))
-Io.show(label(1))
-Io.show(label(5))
+io.show(label(0))
+io.show(label(1))
+io.show(label(5))
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
@@ -305,12 +317,13 @@ Io.show(label(5))
 #[test]
 fn named_args_bind_by_label_for_user_tasks() {
     let src = r#"
+use std/io
 task greet(greeting: str, name: str) -> str {
     "{greeting}, {name}!"
 }
 agent A {
     @on_start {
-        Io.show(greet(name: "Alice", greeting: "Hello"))
+        io.show(greet(name: "Alice", greeting: "Hello"))
         stop(self)
     }
 }
@@ -327,12 +340,13 @@ run(A)
 #[test]
 fn mixed_named_and_positional_args() {
     let src = r#"
+use std/io
 task add(a: int, b: int, c: int) -> int {
     a + b + c
 }
 agent A {
     @on_start {
-        Io.show("{add(1, c: 30, b: 20)}")
+        io.show("{add(1, c: 30, b: 20)}")
         stop(self)
     }
 }
@@ -353,15 +367,16 @@ run(A)
 #[test]
 fn if_else_if_chain_statement_form_executes() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 2
         if x == 1 {
-            Io.show("one")
+            io.show("one")
         } else if x == 2 {
-            Io.show("two")
+            io.show("two")
         } else {
-            Io.show("other")
+            io.show("other")
         }
     }
 }
@@ -378,17 +393,18 @@ run(A)
 #[test]
 fn if_else_if_chain_three_branches_statement_form() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 3
         if x == 1 {
-            Io.show("one")
+            io.show("one")
         } else if x == 2 {
-            Io.show("two")
+            io.show("two")
         } else if x == 3 {
-            Io.show("three")
+            io.show("three")
         } else {
-            Io.show("other")
+            io.show("other")
         }
     }
 }

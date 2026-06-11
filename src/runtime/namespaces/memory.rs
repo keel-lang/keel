@@ -9,7 +9,7 @@ use crate::runtime::namespace::{make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Memory",
+        namespace: "memory",
         name: "remember",
         params: &[
             BuiltinParam {
@@ -27,7 +27,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Store a value in agent memory.",
     },
     BuiltinMethod {
-        namespace: "Memory",
+        namespace: "memory",
         name: "recall",
         params: &[BuiltinParam {
             name: "key",
@@ -38,7 +38,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Retrieve a value from agent memory, returning none if absent.",
     },
     BuiltinMethod {
-        namespace: "Memory",
+        namespace: "memory",
         name: "forget",
         params: &[BuiltinParam {
             name: "key",
@@ -164,20 +164,20 @@ fn assert_memory_serializable(value: &Value) -> miette::Result<()> {
 }
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Memory", {
+    ns!("memory", {
         "remember" => |host, args| Box::pin(async move {
-            let (program_name, agent_name) = host.require_agent_context("Memory.remember")?;
+            let (program_name, agent_name) = host.require_agent_context("memory.remember")?;
             let mode = memory_mode(host)?;
 
-            let key = expect_str(&args, 0, "Memory.remember")?.to_owned();
+            let key = expect_str(&args, 0, "memory.remember")?.to_owned();
             let value = positional(&args, 1)
                 .cloned()
-                .ok_or_else(|| miette::miette!("Memory.remember: missing value argument"))?;
+                .ok_or_else(|| miette::miette!("memory.remember: missing value argument"))?;
 
             match mode {
                 "none" => Err(make_typed_report(
                     RuntimeErrorKind::Memory,
-                    "Memory.remember is not allowed — agent has @memory none",
+                    "memory.remember is not allowed — agent has @memory none",
                 )),
                 "persistent" => {
                     assert_memory_serializable(&value)?;
@@ -186,7 +186,7 @@ pub(crate) fn namespace() -> Namespace {
                         pm.remember(&program_name, &agent_name, key, value)
                     })
                     .await
-                    .map_err(|e| miette::miette!("Memory.remember: {e}"))?
+                    .map_err(|e| miette::miette!("memory.remember: {e}"))?
                     .map(|_| Value::None)
                 }
                 _ => {
@@ -198,15 +198,15 @@ pub(crate) fn namespace() -> Namespace {
         }),
 
         "recall" => |host, args| Box::pin(async move {
-            let (program_name, agent_name) = host.require_agent_context("Memory.recall")?;
+            let (program_name, agent_name) = host.require_agent_context("memory.recall")?;
             let mode = memory_mode(host)?;
 
-            let key = expect_str(&args, 0, "Memory.recall")?.to_owned();
+            let key = expect_str(&args, 0, "memory.recall")?.to_owned();
 
             match mode {
                 "none" => Err(make_typed_report(
                     RuntimeErrorKind::Memory,
-                    "Memory.recall is not allowed — agent has @memory none",
+                    "memory.recall is not allowed — agent has @memory none",
                 )),
                 "persistent" => {
                     let pm = host.runtime().persistent_memory.clone();
@@ -214,7 +214,7 @@ pub(crate) fn namespace() -> Namespace {
                         pm.recall(&program_name, &agent_name, &key)
                     })
                     .await
-                    .map_err(|e| miette::miette!("Memory.recall: {e}"))?
+                    .map_err(|e| miette::miette!("memory.recall: {e}"))?
                 }
                 _ => {
                     let result = host.runtime().session_memory.recall(&agent_name, &key);
@@ -224,15 +224,15 @@ pub(crate) fn namespace() -> Namespace {
         }),
 
         "forget" => |host, args| Box::pin(async move {
-            let (program_name, agent_name) = host.require_agent_context("Memory.forget")?;
+            let (program_name, agent_name) = host.require_agent_context("memory.forget")?;
             let mode = memory_mode(host)?;
 
-            let key = expect_str(&args, 0, "Memory.forget")?.to_owned();
+            let key = expect_str(&args, 0, "memory.forget")?.to_owned();
 
             match mode {
                 "none" => Err(make_typed_report(
                     RuntimeErrorKind::Memory,
-                    "Memory.forget is not allowed — agent has @memory none",
+                    "memory.forget is not allowed — agent has @memory none",
                 )),
                 "persistent" => {
                     let pm = host.runtime().persistent_memory.clone();
@@ -240,7 +240,7 @@ pub(crate) fn namespace() -> Namespace {
                         pm.forget(&program_name, &agent_name, &key)
                     })
                     .await
-                    .map_err(|e| miette::miette!("Memory.forget: {e}"))?
+                    .map_err(|e| miette::miette!("memory.forget: {e}"))?
                     .map(|_| Value::None)
                 }
                 _ => {

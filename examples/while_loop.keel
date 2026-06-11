@@ -1,9 +1,11 @@
+use std/io
+
 agent Counter {
   @role "counter"
   @on_start {
     n = 5
     while n > 0 {
-      Io.show("tick: {n}")
+      io.show("tick: {n}")
       n -= 1
     }
     total = 0
@@ -15,16 +17,38 @@ agent Counter {
         break
       }
     }
-    Io.show("total: {total}")
+    io.show("total: {total}")
     x = 0
     while x < 10 {
       x += 1
       if x % 2 == 0 {
         continue
       }
-      Io.show("odd: {x}")
+      io.show("odd: {x}")
     }
   }
 }
 
 run(Counter)
+
+# Tests — run with: keel test examples/while_loop.keel
+test "while accumulates until break" {
+  total = 0
+  i = 1
+  while true {
+    total += i
+    i += 1
+    if total > 10 {
+      break
+    }
+  }
+  assert total == 15
+}
+
+test "countdown reaches zero" {
+  n = 5
+  while n > 0 {
+    n -= 1
+  }
+  assert n == 0
+}

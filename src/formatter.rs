@@ -220,15 +220,29 @@ impl Fmt {
     }
 
     fn use_decl(&mut self, u: &UseDecl) {
+        fn source_str(source: &UseSource) -> String {
+            match source {
+                UseSource::File(path) => format!("\"{path}\""),
+                UseSource::Module(segments) => segments.join("/"),
+            }
+        }
         match &u.kind {
-            UseKind::File(path) => {
-                self.push(&format!("use \"{path}\""));
+            UseKind::Module { source, alias } => {
+                self.push(&format!("use {}", source_str(source)));
+                if let Some(alias) = alias {
+                    self.push(&format!(" as {alias}"));
+                }
             }
-            UseKind::Symbol { name, source } => {
-                self.push(&format!("use {name} from \"{source}\""));
-            }
-            UseKind::Package(parts) => {
-                self.push(&format!("use {}", parts.join("/")));
+            UseKind::Symbols { items, source } => {
+                let items = items
+                    .iter()
+                    .map(|item| match &item.alias {
+                        Some(alias) => format!("{} as {alias}", item.name),
+                        None => item.name.clone(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.push(&format!("use {items} from {}", source_str(source)));
             }
         }
         self.newline();

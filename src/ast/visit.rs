@@ -80,7 +80,7 @@ pub fn walk_decl<V: Visitor + ?Sized>(v: &mut V, decl: &Decl, _span: &Span) {
         Decl::Extern(extern_decl) => walk_extern_decl(v, extern_decl),
         Decl::Agent(agent_decl) => walk_agent_decl(v, agent_decl),
         Decl::Use(UseDecl { kind }) => match kind {
-            UseKind::File(_) | UseKind::Symbol { .. } | UseKind::Package(_) => {}
+            UseKind::Module { .. } | UseKind::Symbols { .. } => {}
         },
         Decl::Stmt(node) => v.visit_stmt(&node.kind, &node.span),
     }

@@ -7,11 +7,12 @@ use crate::common::*;
 #[test]
 fn aug_assign_plus_eq_local() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 10
         x += 5
-        Io.show("{x}")
+        io.show("{x}")
     }
 }
 run(A)
@@ -24,11 +25,12 @@ run(A)
 #[test]
 fn aug_assign_minus_eq_local() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 10
         x -= 3
-        Io.show("{x}")
+        io.show("{x}")
     }
 }
 run(A)
@@ -41,11 +43,12 @@ run(A)
 #[test]
 fn aug_assign_star_eq_local() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 3
         x *= 4
-        Io.show("{x}")
+        io.show("{x}")
     }
 }
 run(A)
@@ -58,11 +61,12 @@ run(A)
 #[test]
 fn aug_assign_slash_eq_local() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 20
         x /= 4
-        Io.show("{x}")
+        io.show("{x}")
     }
 }
 run(A)
@@ -75,13 +79,14 @@ run(A)
 #[test]
 fn aug_assign_self_field() {
     let src = r#"
+use std/io
 agent A {
     @role "aug"
     state { count: int = 0 }
     @on_start {
         self.count += 3
         self.count += 2
-        Io.show("{self.count}")
+        io.show("{self.count}")
     }
 }
 run(A)
@@ -94,11 +99,12 @@ run(A)
 #[test]
 fn aug_assign_percent_eq_local() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 17
         x %= 5
-        Io.show("{x}")
+        io.show("{x}")
     }
 }
 run(A)
@@ -111,13 +117,14 @@ run(A)
 #[test]
 fn aug_assign_chained_in_loop() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         total = 0
         for i in 1..5 {
             total += i
         }
-        Io.show("{total}")
+        io.show("{total}")
     }
 }
 run(A)
@@ -133,6 +140,7 @@ run(A)
 fn variadic_basic_collect() {
     // The variadic param collects all positional args into a list.
     let src = r#"
+use std/io
 task join_words(...words: str) -> str {
     result = ""
     for w in words { result += w }
@@ -142,7 +150,7 @@ task join_words(...words: str) -> str {
 agent A {
     @on_start {
         out = join_words("hello", " ", "world")
-        Io.show(out)
+        io.show(out)
     }
 }
 run(A)
@@ -158,6 +166,7 @@ run(A)
 #[test]
 fn variadic_zero_args_yields_empty_list() {
     let src = r#"
+use std/io
 task count_args(...items: str) -> int {
     total = 0
     for _ in items { total += 1 }
@@ -167,7 +176,7 @@ task count_args(...items: str) -> int {
 agent A {
     @on_start {
         n = count_args()
-        Io.show("{n}")
+        io.show("{n}")
     }
 }
 run(A)
@@ -180,6 +189,7 @@ run(A)
 #[test]
 fn variadic_spread_expands_list() {
     let src = r#"
+use std/io
 task sum_ints(...nums: int) -> int {
     total = 0
     for n in nums { total += n }
@@ -190,7 +200,7 @@ agent A {
     @on_start {
         xs = [1, 2, 3]
         result = sum_ints(...xs, 4)
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -203,6 +213,7 @@ run(A)
 #[test]
 fn variadic_with_fixed_prefix() {
     let src = r#"
+use std/io
 task labeled(prefix: str, ...items: str) -> str {
     result = prefix + ":"
     for item in items { result += " " + item }
@@ -212,7 +223,7 @@ task labeled(prefix: str, ...items: str) -> str {
 agent A {
     @on_start {
         out = labeled("tags", "rust", "keel", "lang")
-        Io.show(out)
+        io.show(out)
     }
 }
 run(A)
@@ -230,10 +241,11 @@ run(A)
 #[test]
 fn min_variadic_integers() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         result = min(3, 1, 4, 1, 5, 9)
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -246,10 +258,11 @@ run(A)
 #[test]
 fn max_variadic_integers() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         result = max(3, 1, 4, 1, 5, 9)
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -262,13 +275,14 @@ run(A)
 #[test]
 fn min_with_list_spread() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         scores = [7, 2, 9, 4]
         lo = min(scores)
         hi = max(scores)
-        Io.show("{lo}")
-        Io.show("{hi}")
+        io.show("{lo}")
+        io.show("{hi}")
     }
 }
 run(A)
@@ -282,10 +296,11 @@ run(A)
 #[test]
 fn min_empty_returns_none() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         result = min()
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -298,6 +313,7 @@ run(A)
 #[test]
 fn min_with_by_key_selector() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         people = [
@@ -306,7 +322,7 @@ agent A {
             {name: "Carol", age: 35},
         ]
         youngest = min(people, by: p => p.age)
-        Io.show(youngest.name)
+        io.show(youngest.name)
     }
 }
 run(A)
@@ -319,6 +335,7 @@ run(A)
 #[test]
 fn max_with_by_key_selector() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         people = [
@@ -327,7 +344,7 @@ agent A {
             {name: "Carol", age: 35},
         ]
         oldest = max(people, by: p => p.age)
-        Io.show(oldest.name)
+        io.show(oldest.name)
     }
 }
 run(A)
@@ -340,10 +357,11 @@ run(A)
 #[test]
 fn min_single_item_returns_it() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         result = min(42)
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -356,12 +374,13 @@ run(A)
 #[test]
 fn min_max_strings() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         lo = min("banana", "apple", "cherry")
         hi = max("banana", "apple", "cherry")
-        Io.show(lo)
-        Io.show(hi)
+        io.show(lo)
+        io.show(hi)
     }
 }
 run(A)
@@ -378,11 +397,12 @@ run(A)
 #[test]
 fn max_spread_plus_extra_scalar() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         scores = [4, 9, 2, 7]
         result = max(...scores, 99)
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -395,12 +415,13 @@ run(A)
 #[test]
 fn min_multi_spread() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         a = [4, 9]
         b = [2, 7]
         result = min(...a, ...b)
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)

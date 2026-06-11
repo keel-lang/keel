@@ -1,9 +1,20 @@
+use std/io
+
 agent Counter {
   @on_start {
     for i in 1..5 {
-      Io.notify("{i}")
+      io.notify("{i}")
     }
   }
 }
 
 run(Counter)
+
+# Tests — run with: keel test examples/range.keel
+test "ranges are inclusive on both ends" {
+  collected: list[int] = []
+  for i in 1..5 {
+    collected += [i]
+  }
+  assert collected == [1, 2, 3, 4, 5]
+}

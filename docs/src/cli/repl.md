@@ -2,6 +2,8 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
+The REPL pre-imports the entire standard library for convenience — `file.read(...)`, `ai.classify(...)`, etc. work without `use std/<name>` lines. Programs in files must import modules explicitly.
+
 Interactive REPL for testing types, tasks, and expressions.
 
 ```bash

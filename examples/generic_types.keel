@@ -1,3 +1,5 @@
+use std/io
+
 type Paginated[T] {
   items: list[T]
   page: int
@@ -25,12 +27,24 @@ agent Demo {
   @on_start {
     page: Paginated[str] = { items: ["alpha", "beta", "gamma"], page: 1, has_more: false }
     summary = summarise_page(page)
-    Io.show(summary)
+    io.show(summary)
     coords: Pair[str, int] = { first: "x", second: 42 }
-    Io.show("first={coords.first}, second={coords.second}")
+    io.show("first={coords.first}, second={coords.second}")
     tags: Bag[str] = ["rust", "keel", "generic"]
-    Io.show("{tags.len()} tag(s)")
+    io.show("{tags.len()} tag(s)")
   }
 }
 
 run(Demo)
+
+# Tests — run with: keel test examples/generic_types.keel
+test "generic struct fields keep their element type" {
+  page: Paginated[str] = { items: ["alpha", "beta", "gamma"], page: 1, has_more: false }
+  assert summarise_page(page) == "3 item(s) on page 1"
+}
+
+test "pairs carry two independent type params" {
+  coords: Pair[str, int] = { first: "x", second: 42 }
+  assert coords.first == "x"
+  assert coords.second == 42
+}

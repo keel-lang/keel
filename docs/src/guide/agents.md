@@ -17,10 +17,16 @@ run(Greeter)
 ## Full anatomy
 
 ```keel
+use std/ai
+use std/db
+use std/email
+use std/io
+use std/schedule
+
 agent EmailBot {
   # --- Attributes ---
   @role "Professional email triage"
-  @tools [Email, Calendar]
+  @tools [email, Calendar]
   @memory persistent
   @rules [
     "Never reveal internal pricing",
@@ -30,7 +36,7 @@ agent EmailBot {
     max_cost_per_request: 0.50
     max_tokens_per_request: 4096
     timeout: 30.seconds
-    require_confirmation: [Email.send, Db.exec]
+    require_confirmation: [email.send, db.exec]
   }
 
   # --- Mutable state (only via self.) ---
@@ -41,20 +47,20 @@ agent EmailBot {
 
   # --- Agent tasks (can access self) ---
   task greet(name: str) -> str {
-    Ai.draft("greeting for {name}", tone: "warm") ?? "Hello!"
+    ai.draft("greeting for {name}", tone: "warm") ?? "Hello!"
   }
 
   # --- Event handlers ---
   on message(msg: Message) {
     response = self.greet(msg.from)
-    Email.send(response, to: msg)
+    email.send(response, to: msg)
     self.processed = self.processed + 1
   }
 
   # --- Lifecycle hooks ---
   @on_start {
-    Schedule.every(1.day, at: @9am, () => {
-      Io.notify("Processed {self.processed} messages yesterday")
+    schedule.every(1.day, at: @9am, () => {
+      io.notify("Processed {self.processed} messages yesterday")
     })
   }
 }
@@ -68,17 +74,17 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 | Attribute | Core? | Status | Purpose |
 |---|---|---|---|
-| `@role` | Yes | ✅ | The agent's identity string. In v0.1 it's prepended as `"You are {role}.\n\n..."` to every `Ai.*` system prompt, so the LLM sees the agent's directive on every call |
+| `@role` | Yes | ✅ | The agent's identity string. In v0.1 it's prepended as `"You are {role}.\n\n..."` to every `ai.*` system prompt, so the LLM sees the agent's directive on every call |
 | `@model` | Yes | ✅ | The model name string; overrides the global default for this agent |
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> As of v0.1.10, `@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@limits` (timeout) are fully wired. `@team` is used by `Agent.broadcast` routing. `@provider` is parsed but has no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+> As of v0.1.10, `@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@limits` (timeout) are fully wired. `@team` is used by `broadcast` routing. `@provider` is parsed but has no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
 
 ### `@tools` — capability list
 
 ```keel
-@tools [Email, Calendar, Http]
+@tools [email, Calendar, http]
 ```
 
 Binds stdlib modules as the agent's declared capabilities. The runtime uses this list to:
@@ -92,6 +98,9 @@ Binds stdlib modules as the agent's declared capabilities. The runtime uses this
 Entries can include an `if` guard — a boolean expression evaluated at the start of each handler turn. Guards can access `self.*` state and call tasks that return `bool`:
 
 ```keel
+use std/db
+use std/email
+
 agent SupportBot {
   state {
     confirmed: bool = false
@@ -99,11 +108,11 @@ agent SupportBot {
   }
 
   @tools [
-    Email.fetch,                           # always allowed
-    Email.send if self.confirmed,           # only after confirmation
-    Db.query,                              # always allowed
-    Db.exec   if self.admin,                # admin only
-    Http,                                  # whole namespace, always
+    email.fetch,                           # always allowed
+    email.send if self.confirmed,           # only after confirmation
+    db.query,                              # always allowed
+    db.exec   if self.admin,                # admin only
+    http,                                  # whole namespace, always
   ]
 }
 ```
@@ -118,17 +127,20 @@ Calling a blocked method raises a `CapabilityError` at runtime. The guard is re-
 
 - `persistent` — survives restarts; stored in `~/.keel/memory/<stem>_<hash12>/<agent>.json` (JSON key-value store). The `<hash12>` is a SHA-256 fingerprint of the canonical source file path, so two programs with the same filename in different directories never share data.
 - `session` — lives for the life of the process; cleared on restart. This is the **default** when `@memory` is omitted.
-- `none` — disables `Memory.*` for this agent; any call raises `CapabilityError`.
+- `none` — disables `memory.*` for this agent; any call raises `CapabilityError`.
 
 ```keel
+use std/io
+use std/memory
+
 agent Counter {
   @memory session
 
   @on_start {
-    prev = Memory.recall("count")
+    prev = memory.recall("count")
     count = if prev == none { 1 } else { prev + 1 }
-    Memory.remember("count", count)
-    Io.show("Visit {count}")
+    memory.remember("count", count)
+    io.show("Visit {count}")
     stop(self)
   }
 }
@@ -138,11 +150,11 @@ The `Memory` namespace provides three operations:
 
 | Call | Description |
 |---|---|
-| `Memory.remember(key, value)` | Store any Keel value under `key` |
-| `Memory.recall(key)` | Return the stored value, or `none` if absent |
-| `Memory.forget(key)` | Delete the key |
+| `memory.remember(key, value)` | Store any Keel value under `key` |
+| `memory.recall(key)` | Return the stored value, or `none` if absent |
+| `memory.forget(key)` | Delete the key |
 
-> **Note:** The persistent backend is a simple JSON file, not a vector store. Semantic search (`Ai.embed` + nearest-neighbour recall) is planned for v0.2 via the `VectorStore` interface.
+> **Note:** The persistent backend is a simple JSON file, not a vector store. Semantic search (`ai.embed` + nearest-neighbour recall) is planned for v0.2 via the `VectorStore` interface.
 
 ### `@rules` — natural-language guardrails
 
@@ -155,7 +167,7 @@ The `Memory` namespace provides three operations:
 
 Rules are injected into every LLM prompt this agent makes as a bullet list under a `Rules:` heading, placed between the role preamble and the operation-specific instructions. They are **LLM-interpreted** — compliance is best-effort. For deterministic constraints, use `@limits`.
 
-> **Status:** fully wired as of v0.1.3. Every `Ai.*` call inside an agent with `@rules` forwards the rules to the system prompt.
+> **Status:** fully wired as of v0.1.3. Every `ai.*` call inside an agent with `@rules` forwards the rules to the system prompt.
 
 ### `@limits` — deterministic constraints <span class="badge badge-soon">Coming soon</span>
 
@@ -164,18 +176,18 @@ Rules are injected into every LLM prompt this agent makes as a bullet list under
   max_cost_per_request: 0.50
   max_tokens_per_request: 4096
   timeout: 30.seconds
-  require_confirmation: [Email.send, Db.exec]
+  require_confirmation: [email.send, db.exec]
 }
 ```
 
 Enforced by the runtime with deterministic logic. Violations raise errors; they don't just ask the LLM nicely.
 
-> **Status:** `timeout` is enforced via `Control.with_timeout`. Cost, token, and confirmation gates are parsed but not enforced at the Ollama level yet.
+> **Status:** `timeout` is enforced via `control.with_timeout`. Cost, token, and confirmation gates are parsed but not enforced at the Ollama level yet.
 
 ### `@on_start` / `@on_stop` — lifecycle hooks
 
 ```keel
-@on_start { Schedule.every(5.minutes, () => { heartbeat() }) }
+@on_start { schedule.every(5.minutes, () => { heartbeat() }) }
 @on_stop  { flush_queue() }
 ```
 
@@ -210,13 +222,15 @@ agent Counter {
 
 - Handlers for one agent run **sequentially** — no data races on `state`.
 - Different agents run concurrently but share no state.
-- Cross-agent messaging: `Agent.send(Target, data)` (v0.1), `Agent.delegate(Target, task, args)` (v0.1.4), `Agent.broadcast(team, data, event:)` (v0.1.6). See [Agent Communication](./agent-communication.md).
+- Cross-agent messaging: `send(Target, data)` (v0.1), `delegate(Target, task, args)` (v0.1.4), `broadcast(team, data, event:)` (v0.1.6). See [Agent Communication](./agent-communication.md).
 
 ### Readonly fields
 
 Add `readonly` between the colon and the type to make a field **compiler-enforced read-only**. Any `self.field = ...` assignment is a compile-time error; reading is always allowed.
 
 ```keel
+use std/io
+
 agent SessionBot {
   state {
     turns:      int          = 0
@@ -226,7 +240,7 @@ agent SessionBot {
   on message(msg: str) {
     self.turns = self.turns + 1          # ok — writable
     # self.session_id = "x"             # compile error
-    Io.show(self.session_id)             # reading is fine
+    io.show(self.session_id)             # reading is fine
   }
 }
 ```
@@ -248,11 +262,11 @@ The `Agent` namespace exposes the same operations with an explicit prefix:
 
 | Function | Equivalent | Notes |
 |---|---|---|
-| `Agent.run(name)` | `run(name)` | Start a named agent |
-| `Agent.stop(name)` | `stop(name)` | Gracefully stop a running agent |
-| `Agent.send(name, data)` | — | Post a message to an agent's mailbox |
-| `Agent.delegate(symbol, data)` | — | Invoke a typed handler and await the result |
-| `Agent.broadcast(team, data)` | — | Fan out an event to all agents on a team |
+| `run(name)` | `run(name)` | Start a named agent |
+| `stop(name)` | `stop(name)` | Gracefully stop a running agent |
+| `send(name, data)` | — | Post a message to an agent's mailbox |
+| `delegate(symbol, data)` | — | Invoke a typed handler and await the result |
+| `broadcast(team, data)` | — | Fan out an event to all agents on a team |
 
 Use the `Agent.*` form when you need to start or stop agents whose names are only known at runtime (e.g., dynamically spawned workers).
 
@@ -263,9 +277,13 @@ Use the `Agent.*` form when you need to start or stop agents whose names are onl
 Top-level tasks are reusable and testable. Prefer small agents that call shared top-level tasks over large agents with inline logic:
 
 ```keel
+use std/ai
+use std/email
+use std/io
+
 # Top-level, testable
 task triage(email: EmailInfo) -> Urgency {
-  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
 # Agent stays focused
@@ -274,7 +292,7 @@ agent EmailAssistant {
 
   on message(msg: Message) {
     urgency = triage(msg)
-    Io.show({urgency: urgency, subject: msg.subject})
+    io.show({urgency: urgency, subject: msg.subject})
   }
 }
 ```

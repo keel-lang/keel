@@ -1,3 +1,6 @@
+use std/ai
+use std/io
+
 use std/testing
 
 type Severity = low | medium | high | critical
@@ -24,17 +27,17 @@ agent Responder {
   on escalate(incident: Incident) {
     self.handled = self.handled + 1
     tone = if self.handled > 5 { "concise" } else { "thorough" }
-    runbook = Ai.draft("Incident response runbook for: {incident.title} in the {incident.service} service", tone: tone, guidance: "cover immediate mitigation and rollback steps") ?? "(runbook generation failed — check LLM connectivity)"
-    Io.show("[Responder #{self.handled}] {incident.id}: {incident.title}")
-    Io.show(runbook)
+    runbook = ai.draft("Incident response runbook for: {incident.title} in the {incident.service} service", tone: tone, guidance: "cover immediate mitigation and rollback steps") ?? "(runbook generation failed — check LLM connectivity)"
+    io.show("[Responder #{self.handled}] {incident.id}: {incident.title}")
+    io.show(runbook)
   }
   @on_stop {
-    Io.show("Responder offline — handled {self.handled} escalations this shift")
+    io.show("Responder offline — handled {self.handled} escalations this shift")
   }
 }
 
 task classify_severity(incident: Incident) -> Severity {
-  Ai.classify("{incident.title} in {incident.service}", as: Severity, considering: { "payment, checkout, auth, data loss, outage": Severity.critical, "latency, degraded, elevated error rate": Severity.high }) ?? Severity.low
+  ai.classify("{incident.title} in {incident.service}", as: Severity, considering: { "payment, checkout, auth, data loss, outage": Severity.critical, "latency, degraded, elevated error rate": Severity.high }) ?? Severity.low
 }
 
 task choose_action(severity: Severity) -> Action {
@@ -46,7 +49,7 @@ task choose_action(severity: Severity) -> Action {
 }
 
 test "severity classification can be mocked" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   incident: Incident = { id: "INC-999", title: "Checkout outage", service: "payments" }
   assert classify_severity(incident) == Severity.critical
 }
@@ -67,42 +70,42 @@ agent OnCall {
     seen: list[str] = []
   }
   @on_start {
-    Agent.run(Responder)
+    run(Responder)
     batch_a = [{ id: "INC-101", title: "Checkout 500 errors spiking", service: "payments" }, { id: "INC-102", title: "High latency on search API", service: "search" }]
     batch_b = [{ id: "INC-103", title: "Expired SSL cert on staging", service: "infra" }]
     incidents = batch_a + batch_b
     incidents = incidents.push({ id: "INC-104", title: "Auth token validation failing", service: "auth" })
     total: int = incidents.count()
-    Io.show("OnCall shift starting — {total} incidents in queue")
+    io.show("OnCall shift starting — {total} incidents in queue")
     for incident in incidents {
       severity = classify_severity(incident)
       action = choose_action(severity)
       badge = if severity == Severity.critical { "[CRIT]" } else if severity == Severity.high { "[HIGH]" } else { "[    ]" }
-      Io.show("{badge} {incident.id} — {incident.title} ({self.escalated + self.logged + 1} of {total})")
+      io.show("{badge} {incident.id} — {incident.title} ({self.escalated + self.logged + 1} of {total})")
       when action {
         page { who } => {
-          Agent.delegate(Responder, "escalate", incident)
+          delegate(Responder, "escalate", incident)
           self.escalated = self.escalated + 1
           self.seen = self.seen.push(incident.id)
-          Io.show("  paged {who}")
+          io.show("  paged {who}")
         }
         notify { channel } => {
           self.logged = self.logged + 1
           self.seen = self.seen.push(incident.id)
-          Io.show("  notified {channel}")
+          io.show("  notified {channel}")
         }
         log => {
           self.logged = self.logged + 1
-          Io.show("  logged")
+          io.show("  logged")
         }
       }
     }
-    summary = Ai.summarize("{self.escalated} escalated, {self.logged} logged out of {total} incidents", format: prose, max: 1, unit: sentences) ?? "shift complete"
-    Io.show("Shift summary: {summary}")
-    Agent.stop(OnCall)
+    summary = ai.summarize("{self.escalated} escalated, {self.logged} logged out of {total} incidents", format: prose, max: 1, unit: sentences) ?? "shift complete"
+    io.show("Shift summary: {summary}")
+    stop(OnCall)
   }
   @on_stop {
-    Io.show("OnCall shift complete. Escalated: {self.escalated}. Logged: {self.logged}.")
+    io.show("OnCall shift complete. Escalated: {self.escalated}. Logged: {self.logged}.")
   }
 }
 

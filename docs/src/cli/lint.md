@@ -15,7 +15,7 @@ keel lint --fix <file.keel>
 |------|-------------|
 | **Unused variable** | A local binding is assigned but never read. Prefix the name with `_` to suppress. |
 | **Uncalled task** | A `task` is declared but never called anywhere in the program. |
-| **Ai.* outside agent** | `Ai.classify`, `Ai.summarize`, etc. called from a plain task or top-level statement — these calls lack an `@role` / `@model` context and may produce unexpected results. |
+| **ai.* outside agent** | `ai.classify`, `ai.summarize`, etc. called from a plain task or top-level statement — these calls lack an `@role` / `@model` context and may produce unexpected results. |
 | **State written, never read** | An agent `state` field is assigned (`self.x = …`) but `self.x` is never read. |
 
 ## Exit codes
@@ -42,11 +42,13 @@ keel lint --fix agent.keel
 Prefix a variable name with `_` to tell the linter the value is intentionally unused:
 
 ```keel
+use std/io
+
 agent Processor {
   @on_start {
     _unused = compute_something()   # no warning
     result = compute_other()
-    Io.show(result)
+    io.show(result)
   }
 }
 ```
@@ -60,7 +62,7 @@ agent Processor {
  4 │     temp = "debug value"
    ·     ──┬─
    ·       ╰── assigned here but never read — prefix with _ to suppress
- 5 │     Io.show("hello")
+ 5 │     io.show("hello")
    ╰────
   help: remove this line or rename to _temp
 ```

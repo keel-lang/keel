@@ -1,0 +1,27 @@
+# Shared validation helpers — imported by main.keel.
+# Top-level statements here run only when this file is executed directly
+# (`keel run validation.keel`), never on import.
+
+use std/io
+
+task email(s: str) -> bool {
+  s.contains("@") and s.contains(".")
+}
+
+task subject_priority(subject: str) -> int {
+  if subject.contains("urgent") { 2 } else { 1 }
+}
+
+# Implicit main: a quick demo when run directly.
+sample = "ada@example.com"
+io.show("email({sample}) = {email(sample)}")
+
+# Tests live next to the code they cover. They run only when this file
+# is the target: `keel test validation.keel` — never via an importer.
+test "accepts well-formed addresses" {
+  assert email("ada@example.com")
+}
+
+test "rejects malformed addresses" {
+  assert not email("plain-string"), "no @ or domain"
+}

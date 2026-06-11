@@ -12,7 +12,7 @@ sequenceDiagram
     participant B as Agent B
 
     note over A: @on_start { ... }
-    A->>B: Agent.send(B, data, event: "greeting")
+    A->>B: send(B, data, event: "greeting")
     note over A: returns immediately — continues execution
 
     note over B: on greeting(msg: str) { ... }
@@ -25,9 +25,9 @@ The `event:` parameter in `Agent.send` determines which `on` handler runs on the
 
 ```mermaid
 flowchart LR
-    s1["Agent.send(B, data, event: &quot;greeting&quot;)"]
-    s2["Agent.send(B, data, event: &quot;payment&quot;)"]
-    s3["Agent.send(B, data)"]
+    s1["send(B, data, event: &quot;greeting&quot;)"]
+    s2["send(B, data, event: &quot;payment&quot;)"]
+    s3["send(B, data)"]
 
     h1["on greeting(msg) { ... }"]
     h2["on payment(msg) { ... }"]
@@ -66,7 +66,7 @@ sequenceDiagram
 ### Symbol form (preferred)
 
 ```keel
-Agent.delegate(Processor.handle, payload)
+delegate(Processor.handle, payload)
 # Processor's `on handle` fires with payload
 ```
 
@@ -78,7 +78,7 @@ types are caught at compile time, not at runtime.
 ### String form (legacy)
 
 ```keel
-Agent.delegate(Processor, "handle", payload)
+delegate(Processor, "handle", payload)
 # Processor's `on handle` fires with payload
 ```
 
@@ -88,10 +88,10 @@ form for new code — handler renames update the symbol reference automatically.
 
 ### Agent.send
 
-`Agent.send(target, data, event: "...")` posts a **data event** with explicit routing:
+`send(target, data, event: "...")` posts a **data event** with explicit routing:
 
 ```keel
-Agent.send(Processor, payload, event: "process")
+send(Processor, payload, event: "process")
 # Processor's `on process` fires with payload
 ```
 
@@ -103,32 +103,35 @@ Direct cross-agent calls such as `Worker.process(...)` are not part of the
 agent model. Inside an agent, call agent-owned helpers as `self.task(...)`.
 Across agents, use mailbox APIs so delivery remains explicit and asynchronous.
 
-## Agent.send vs Ai.*
+## Agent.send vs ai.*
 
 These are two completely separate communication paths.
 
 ```mermaid
 flowchart LR
     code["Agent code"]
-    code -->|"Agent.send(B, data)"| b["Agent B\n→ on &lt;event&gt; handler"]
-    code -->|"Ai.classify / Ai.prompt / ..."| llm["LLM\n→ returns a value"]
+    code -->|"send(B, data)"| b["Agent B\n→ on &lt;event&gt; handler"]
+    code -->|"ai.classify / ai.prompt / ..."| llm["LLM\n→ returns a value"]
 ```
 
 `Agent.send` is agent-to-agent messaging — no LLM involved.
-`Ai.*` calls send a prompt to the LLM and return its response.
+`ai.*` calls send a prompt to the LLM and return its response.
 
 ## Example: Bi-directional Communication
 
 ```keel
+use std/ai
+use std/io
+
 agent Manager {
     state { done: int = 0 }
 
     @on_start {
-        Agent.send(Worker, {id: 1}, event: "process")
+        send(Worker, {id: 1}, event: "process")
     }
 
     on result(summary: str) {
-        Io.show("Result received: {summary}")
+        io.show("Result received: {summary}")
         self.done = self.done + 1
         stop(Manager)
     }
@@ -136,8 +139,8 @@ agent Manager {
 
 agent Worker {
     on process(task: dynamic) {
-        output = Ai.summarize(task.id, in: 1, unit: sentences)
-        Agent.send(Manager, output, event: "result")
+        output = ai.summarize(task.id, in: 1, unit: sentences)
+        send(Manager, output, event: "result")
     }
 }
 
@@ -152,7 +155,7 @@ sequenceDiagram
     participant LLM as LLM (Ollama)
 
     M->>W: send(event: "process", data: {id: 1})
-    W->>LLM: Ai.summarize(...)
+    W->>LLM: ai.summarize(...)
     LLM-->>W: summary text
     W->>M: send(event: "result", data: summary)
     note over M: on result — prints summary, stops
@@ -160,30 +163,32 @@ sequenceDiagram
 
 ## Broadcasting to a team
 
-`Agent.broadcast(team, data, event: "...")` fans out a single event to
+`broadcast(team, data, event: "...")` fans out a single event to
 every live agent whose `@team [...]` attribute contains the target team
 name. Agents on other teams stay silent.
 
 ```keel
+use std/io
+
 agent Alpha {
     @team ["frontline"]
-    on alert(msg: str) { Io.show("Alpha got {msg}") }
+    on alert(msg: str) { io.show("Alpha got {msg}") }
 }
 
 agent Beta {
     @team ["frontline"]
-    on alert(msg: str) { Io.show("Beta got {msg}") }
+    on alert(msg: str) { io.show("Beta got {msg}") }
 }
 
 agent Gamma {
     @team ["backoffice"]
-    on alert(msg: str) { Io.show("Gamma got {msg}") }
+    on alert(msg: str) { io.show("Gamma got {msg}") }
 }
 
 agent Coordinator {
     @on_start {
-        Agent.run(Alpha); Agent.run(Beta); Agent.run(Gamma)
-        Agent.broadcast("frontline", "production-down", event: "alert")
+        run(Alpha); run(Beta); run(Gamma)
+        broadcast("frontline", "production-down", event: "alert")
         # Alpha and Beta fire; Gamma does not.
     }
 }
@@ -203,16 +208,16 @@ Catch it to apply your own backpressure strategy:
 
 ```keel
 try {
-    Agent.send(Worker, payload)
+    send(Worker, payload)
 } catch e: RuntimeBusy {
-    Io.show("queue full — payload dropped")
+    io.show("queue full — payload dropped")
 }
 ```
 
 A full queue typically means the event loop is processing a slow handler (e.g. an LLM call)
 while producers are sending faster than the loop can drain. Strategies:
 - Catch and drop (log the miss)
-- Catch and retry after a delay (`Schedule.after(100.ms, ...)`)
+- Catch and retry after a delay (`schedule.after(100.ms, ...)`)
 - Reduce the send rate on the producer side
 
 > `KEEL_EVENT_QUEUE_CAPACITY=<n>` overrides the 1024 default. Use a small value (e.g. 2)

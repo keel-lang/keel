@@ -7,10 +7,11 @@ use crate::common::*;
 #[test]
 fn numeric_abs_float() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = -3.75
-        Io.show("abs={v.abs()}")
+        io.show("abs={v.abs()}")
         stop(self)
     }
 }
@@ -24,10 +25,11 @@ run(NumTest)
 #[test]
 fn numeric_abs_int() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = -5
-        Io.show("abs={v.abs()}")
+        io.show("abs={v.abs()}")
         stop(self)
     }
 }
@@ -41,10 +43,11 @@ run(NumTest)
 #[test]
 fn numeric_floor() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = 3.7
-        Io.show("floor={v.floor()}")
+        io.show("floor={v.floor()}")
         stop(self)
     }
 }
@@ -58,10 +61,11 @@ run(NumTest)
 #[test]
 fn numeric_ceil() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = 3.2
-        Io.show("ceil={v.ceil()}")
+        io.show("ceil={v.ceil()}")
         stop(self)
     }
 }
@@ -75,10 +79,11 @@ run(NumTest)
 #[test]
 fn numeric_round() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = 3.5
-        Io.show("round={v.round()}")
+        io.show("round={v.round()}")
         stop(self)
     }
 }
@@ -92,10 +97,11 @@ run(NumTest)
 #[test]
 fn numeric_chain() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = -3.75
-        Io.show("chained={v.abs().ceil()}")
+        io.show("chained={v.abs().ceil()}")
         stop(self)
     }
 }
@@ -112,10 +118,11 @@ run(NumTest)
 #[test]
 fn numeric_int_floor_noop() {
     let src = r#"
+use std/io
 agent NumTest {
     @on_start {
         v = 7
-        Io.show("floor={v.floor()}")
+        io.show("floor={v.floor()}")
         stop(self)
     }
 }

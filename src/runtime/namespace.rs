@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn make_typed_report_carries_file_error_code() {
-        let report = make_typed_report(RuntimeErrorKind::File, "File.read `x.txt`: not found");
+        let report = make_typed_report(RuntimeErrorKind::File, "file.read `x.txt`: not found");
         let typed = report
             .downcast_ref::<RuntimeError>()
             .expect("typed payload should be preserved");

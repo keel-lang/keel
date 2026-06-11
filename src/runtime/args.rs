@@ -133,10 +133,10 @@ mod tests {
     #[test]
     fn expect_str_rejects_non_string_values() {
         let args = [positional_arg(Value::Integer(42))];
-        let err = expect_str(&args, 0, "File.read").expect_err("integer path must fail");
+        let err = expect_str(&args, 0, "file.read").expect_err("integer path must fail");
         assert_eq!(
             err.to_string(),
-            "File.read: argument at position 0 must be str, got int"
+            "file.read: argument at position 0 must be str, got int"
         );
     }
 
@@ -158,10 +158,10 @@ mod tests {
     #[test]
     fn expect_duration_rejects_non_duration_values() {
         let args = [positional_arg(Value::Integer(42))];
-        let err = expect_duration(&args, 0, "Schedule.sleep").expect_err("integer delay must fail");
+        let err = expect_duration(&args, 0, "schedule.sleep").expect_err("integer delay must fail");
         assert_eq!(
             err.to_string(),
-            "Schedule.sleep: argument at position 0 must be duration, got int"
+            "schedule.sleep: argument at position 0 must be duration, got int"
         );
     }
 
@@ -169,7 +169,7 @@ mod tests {
     fn expect_bool_named_rejects_non_boolean_values() {
         let args = [named_arg("dir", Value::String("yes".into()))];
         let err =
-            expect_bool_named(&args, "dir", "File.mktemp").expect_err("string flag must fail");
-        assert_eq!(err.to_string(), "File.mktemp: `dir:` must be bool, got str");
+            expect_bool_named(&args, "dir", "file.mktemp").expect_err("string flag must fail");
+        assert_eq!(err.to_string(), "file.mktemp: `dir:` must be bool, got str");
     }
 }

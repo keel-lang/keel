@@ -7,13 +7,14 @@ use crate::common::*;
 #[test]
 fn struct_spread_update_single_field() {
     let src = r#"
+use std/io
 type Order { id: str, status: str, amount: float }
 task run_test() {
   o: Order = { id: "ord-1", status: "pending", amount: 9.99 }
   filled = { ...o, status: "filled" }
-  Io.show(filled.id)
-  Io.show(filled.status)
-  Io.show("{filled.amount}")
+  io.show(filled.id)
+  io.show(filled.status)
+  io.show("{filled.amount}")
 }
 run_test()
 "#;
@@ -27,13 +28,14 @@ run_test()
 #[test]
 fn struct_spread_update_multiple_overrides() {
     let src = r#"
+use std/io
 type Point { x: int, y: int, z: int }
 task run_test() {
   p: Point = { x: 1, y: 2, z: 3 }
   q = { ...p, x: 10, z: 30 }
-  Io.show("{q.x}")
-  Io.show("{q.y}")
-  Io.show("{q.z}")
+  io.show("{q.x}")
+  io.show("{q.y}")
+  io.show("{q.z}")
 }
 run_test()
 "#;
@@ -47,12 +49,13 @@ run_test()
 #[test]
 fn struct_spread_update_no_overrides_is_copy() {
     let src = r#"
+use std/io
 type Rec { a: int, b: str }
 task run_test() {
   r: Rec = { a: 7, b: "hello" }
   r2 = { ...r }
-  Io.show("{r2.a}")
-  Io.show(r2.b)
+  io.show("{r2.a}")
+  io.show(r2.b)
 }
 run_test()
 "#;
@@ -65,12 +68,13 @@ run_test()
 #[test]
 fn struct_spread_update_preserves_type_tag() {
     let src = r#"
+use std/io
 type Item { name: str, price: float }
 task run_test() {
   item: Item = { name: "Widget", price: 9.99 }
   updated = { ...item, price: 4.99 }
-  Io.show(typeof(updated))
-  Io.show(updated.name)
+  io.show(typeof(updated))
+  io.show(updated.name)
 }
 run_test()
 "#;
@@ -83,14 +87,15 @@ run_test()
 #[test]
 fn struct_spread_update_chained() {
     let src = r#"
+use std/io
 type Config { host: str, port: int, debug: bool }
 task run_test() {
   base: Config = { host: "localhost", port: 8080, debug: false }
   dev = { ...base, debug: true }
   prod = { ...dev, host: "prod.example.com", debug: false }
-  Io.show(prod.host)
-  Io.show("{prod.port}")
-  Io.show("{prod.debug}")
+  io.show(prod.host)
+  io.show("{prod.port}")
+  io.show("{prod.debug}")
 }
 run_test()
 "#;
@@ -104,11 +109,12 @@ run_test()
 #[test]
 fn struct_spread_update_unknown_field_is_type_error() {
     let src = r#"
+use std/io
 type Rec { a: int }
 task run_test() {
   r: Rec = { a: 1 }
   bad = { ...r, nonexistent: 99 }
-  Io.show("{bad.a}")
+  io.show("{bad.a}")
 }
 run_test()
 "#;
@@ -124,11 +130,12 @@ run_test()
 fn struct_spread_update_formatter_roundtrip() {
     // Format a program containing spread-update twice; formatter must be idempotent.
     let src = r#"
+use std/io
 type Point { x: int, y: int }
 task run_test() {
   p: Point = { x: 1, y: 2 }
   q = { ...p, x: 10 }
-  Io.show("{q.x}")
+  io.show("{q.x}")
 }
 run_test()
 "#;
@@ -149,11 +156,12 @@ fn struct_spread_update_untyped_map_base() {
     // Untyped struct literals are Value::Map at runtime (not Value::Struct).
     // Spread-update must work through the Value::Map branch, not just Value::Struct.
     let src = r#"
+use std/io
 task run_test() {
   r = { a: 1, b: "hello" }
   q = { ...r, a: 99 }
-  Io.show("{q.a}")
-  Io.show(q.b)
+  io.show("{q.a}")
+  io.show(q.b)
 }
 run_test()
 "#;
@@ -166,11 +174,12 @@ run_test()
 #[test]
 fn struct_spread_update_duplicate_override_is_type_error() {
     let src = r#"
+use std/io
 type Rec { x: int, y: int }
 task run_test() {
   r: Rec = { x: 1, y: 2 }
   bad = { ...r, x: 10, x: 20 }
-  Io.show("{bad.x}")
+  io.show("{bad.x}")
 }
 run_test()
 "#;
@@ -212,12 +221,13 @@ run_test()
 fn struct_spread_update_map_base_works() {
     // Spread-update on an explicit map[str, int] variable — keys are unrestricted.
     let src = r#"
+use std/io
 task run_test() {
   m: map[str, int] = { "a": 1, "b": 2 }
   m2 = { ...m, "c": 3 }
-  Io.show("{m2.a}")
-  Io.show("{m2.b}")
-  Io.show("{m2.c}")
+  io.show("{m2.a}")
+  io.show("{m2.b}")
+  io.show("{m2.c}")
 }
 run_test()
 "#;
@@ -232,10 +242,11 @@ run_test()
 fn struct_spread_update_map_base_wrong_value_type_is_error() {
     // Override value type must match the map's declared value type.
     let src = r#"
+use std/io
 task run_test() {
   m: map[str, int] = { "a": 1 }
   bad = { ...m, "b": "not-an-int" }
-  Io.show("{bad.b}")
+  io.show("{bad.b}")
 }
 run_test()
 "#;

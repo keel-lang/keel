@@ -62,7 +62,7 @@ Commands:
 
 ## LLM setup
 
-Keel's `Ai.*` functions call a local Ollama instance. In v0.1 it is the only supported backend.
+Keel's `ai.*` functions call a local Ollama instance. In v0.1 it is the only supported backend.
 
 ```bash
 # Install Ollama from https://ollama.com

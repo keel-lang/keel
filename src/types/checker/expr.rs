@@ -75,11 +75,12 @@ impl Checker<'_, '_> {
                         // is unreachable in practice.
                         Ty::Error
                     }
-                    // Agent, type-level, or prelude identifier used as an
-                    // expression — no value-level type is tracked statically.
+                    // Agent, type-level, module, or prelude identifier used as
+                    // an expression — no value-level type is tracked statically.
                     NameKind::Agent
                     | NameKind::Enum
                     | NameKind::TypeName
+                    | NameKind::Module
                     | NameKind::PreludeNamespace => Ty::Unknown(UnknownReason::InferenceLimitation),
                     // Undefined-name errors are emitted by HIR lowering before
                     // inference runs. Return Ty::Error
@@ -128,7 +129,11 @@ impl Checker<'_, '_> {
                 }
                 // Resolve ident-qualified field access through the name index
                 // before falling through to value-level struct field access.
-                if let Expr::Ident(name) = &obj.as_ref().kind {
+                // Lexical locals shadow globals (e.g. `db = db.connect(...)`
+                // rebinds `db` to a connection value).
+                if let Expr::Ident(name) = &obj.as_ref().kind
+                    && scope.get(name).is_none()
+                {
                     match self.hir.resolve_global(name).kind {
                         // Enum variant shortcut: `Urgency.medium`.
                         NameKind::Enum => {
@@ -139,15 +144,23 @@ impl Checker<'_, '_> {
                             }
                             return Ty::Enum(name.clone(), vec![]);
                         }
-                        // Prelude namespace field access: `Uuid.DNS`, etc.
+                        // Module namespace member access: `file.read`, `uuid.DNS`,
+                        // `validation.email`, `validation.Watcher`.
+                        NameKind::Module => {
+                            return self.module_field_access(name, field);
+                        }
+                        // Prelude identifier field access.
                         NameKind::PreludeNamespace => {
-                            // `Uuid` exposes namespace-constant UUIDs as fields.
-                            if name == "Uuid"
-                                && matches!(field.as_str(), "DNS" | "URL" | "OID" | "X500")
-                            {
-                                return Ty::Uuid;
+                            // Tombstone: `Uuid` is still the built-in type, but its
+                            // constructors and constants moved to `std/uuid`.
+                            if name == "Uuid" {
+                                self.err(format!(
+                                    "`Uuid.{field}` moved to the `std/uuid` module — \
+                                     add `use std/uuid` and write `uuid.{field}`"
+                                ));
+                                return Ty::Error;
                             }
-                            // All other prelude namespace field accesses are not
+                            // Other prelude identifier field accesses are not
                             // value-level types tracked statically.
                             return Ty::Unknown(UnknownReason::InferenceLimitation);
                         }
@@ -597,10 +610,25 @@ impl Checker<'_, '_> {
                                 return sig.return_type.clone();
                             }
                         }
+                        NameKind::Module => {
+                            self.err(format!(
+                                "`{name}` is a module, not a function — call a member \
+                                 like `{name}.<method>(...)`"
+                            ));
+                            return Ty::Error;
+                        }
                         NameKind::PreludeNamespace => {
+                            // std member imported unqualified:
+                            // `use parse from std/json` then `parse(...)`.
+                            if let Some(entry) = self.hir.std_fn_import(name) {
+                                return self.catalog_result_ty(entry, args);
+                            }
+                            // Validate delegate(...) targets at compile time.
+                            if name == "delegate" {
+                                return self.check_delegate_call(args, &arg_tys);
+                            }
                             // Typed inference for prelude free functions.
                             match name.as_str() {
-                                "uuid" => return Ty::Uuid,
                                 "typeof" => return Ty::Str,
                                 "min" | "max" => {
                                     // Validate by: is a function if present.
@@ -766,16 +794,10 @@ impl Checker<'_, '_> {
                     return sig.return_type;
                 }
                 // Resolve ident-qualified method calls through the name index.
-                //
-                // Agent.delegate validation forms:
-                //   Symbol: Agent.delegate(Foo.handle, data)
-                //     — arg[0] is FieldAccess(Ident("Foo"), "handle")
-                //     — arg[1] is the data; type-checked against the handler param
-                //   String: Agent.delegate(Foo, "handle", data)
-                //     — arg[0] is Ident("Foo")
-                //     — arg[1] is a plain string literal naming the handler
-                //     — arg[2] is the data; type-checked against the handler param
-                if let Expr::Ident(name) = &object.as_ref().kind {
+                // Lexical locals shadow globals (e.g. `db = db.connect(...)`).
+                if let Expr::Ident(name) = &object.as_ref().kind
+                    && scope.get(name).is_none()
+                {
                     match self.hir.resolve_global(name).kind {
                         NameKind::Agent => {
                             // Direct agent-task calls are not supported; callers
@@ -783,159 +805,39 @@ impl Checker<'_, '_> {
                             self.err(format!(
                                 "direct agent task calls like `{name}.{method}(...)` \
                                  are unsupported; use `self.{method}(...)` inside that \
-                                 agent or mailbox APIs such as `Agent.send(...)` / \
-                                 `Agent.delegate(...)`"
+                                 agent or mailbox APIs such as `send(...)` / \
+                                 `delegate(...)`"
                             ));
                             return Ty::Error;
                         }
+                        // Module member call: `file.read(...)`, `validation.email(...)`.
+                        NameKind::Module => {
+                            return self.module_method_call(
+                                name,
+                                method,
+                                args,
+                                &arg_tys,
+                                spanned.span.clone(),
+                            );
+                        }
                         NameKind::PreludeNamespace => {
-                            // Validate Agent.delegate call sites at compile time.
-                            if name == "Agent" && method == "delegate" {
-                                if let Some(first_arg) = args.first() {
-                                    match first_arg.value.kind.clone() {
-                                        // Symbol form: Foo.handle
-                                        Expr::FieldAccess(obj_expr, handler_name) => {
-                                            if let Expr::Ident(agent_name) = &obj_expr.as_ref().kind
-                                                && let Some(agent) = self.agents.get(agent_name)
-                                            {
-                                                // Handler existence already checked in
-                                                // the FieldAccess arm above.
-                                                if let Some(data_arg) = args.get(1) {
-                                                    if let Some(Some(param_ty)) =
-                                                        agent.handlers.get(&handler_name).cloned()
-                                                    {
-                                                        self.expect(
-                                                            &arg_tys[1],
-                                                            &param_ty,
-                                                            &format!(
-                                                                "argument to \
-                                                                 `{agent_name}.{handler_name}`"
-                                                            ),
-                                                        );
-                                                    }
-                                                    let _ = data_arg;
-                                                }
-                                            }
-                                        }
-                                        // String form: Foo, "handle"
-                                        Expr::Ident(agent_name)
-                                            if matches!(
-                                                self.hir.resolve_global(&agent_name).kind,
-                                                NameKind::Agent
-                                            ) =>
-                                        {
-                                            if let Some(second_arg) = args.get(1)
-                                                && let Expr::StringLit(parts) =
-                                                    &second_arg.value.kind
-                                            {
-                                                // Only check plain string literals
-                                                // (no interpolation) for static resolution.
-                                                let maybe_handler: Option<String> = parts
-                                                    .iter()
-                                                    .try_fold(String::new(), |acc, p| match p {
-                                                        crate::ast::StringPart::Literal(s) => {
-                                                            Some(acc + s)
-                                                        }
-                                                        _ => None,
-                                                    });
-                                                if let Some(handler_name) = maybe_handler
-                                                    && let Some(agent) =
-                                                        self.agents.get(&agent_name)
-                                                {
-                                                    if !agent.handlers.contains_key(&handler_name) {
-                                                        self.err(format!(
-                                                            "agent `{agent_name}` has \
-                                                             no handler \
-                                                             `{handler_name}`; declared \
-                                                             handlers: {}",
-                                                            if agent.handlers.is_empty() {
-                                                                "none".to_string()
-                                                            } else {
-                                                                agent
-                                                                    .handlers
-                                                                    .keys()
-                                                                    .map(|s| s.as_str())
-                                                                    .collect::<Vec<_>>()
-                                                                    .join(", ")
-                                                            }
-                                                        ));
-                                                    } else if let Some(data_arg) = args.get(2) {
-                                                        if let Some(Some(param_ty)) = agent
-                                                            .handlers
-                                                            .get(&handler_name)
-                                                            .cloned()
-                                                        {
-                                                            self.expect(
-                                                                &arg_tys[2],
-                                                                &param_ty,
-                                                                &format!(
-                                                                    "argument to \
-                                                                     `{agent_name}.\
-                                                                     {handler_name}`"
-                                                                ),
-                                                            );
-                                                        }
-                                                        let _ = data_arg;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                return Ty::None_;
+                            // Tombstone: `Uuid` is still the built-in type, but its
+                            // constructors moved to `std/uuid`.
+                            if name == "Uuid" {
+                                self.err(format!(
+                                    "`Uuid.{method}(...)` moved to the `std/uuid` module — \
+                                     add `use std/uuid` and write `uuid.{method}(...)`"
+                                ));
+                                return Ty::Error;
                             }
-
-                            // Resolve namespace method return types from the catalog.
-                            // Adding a new prelude namespace requires only a catalog
-                            // entry; this arm needs no modification.
-                            if let Some(entry) = prelude::catalog_method(name, method.as_str()) {
-                                return match entry.result {
-                                    BuiltinResult::Fixed(spec) => prelude::ty_from_spec(spec),
-                                    BuiltinResult::AiClassify => {
-                                        // Return `Nullable(Enum(as:))` when the `as:` argument
-                                        // names a known enum type; otherwise the target is unknown.
-                                        if let Some(as_arg) =
-                                            args.iter().find(|a| a.name.as_deref() == Some("as"))
-                                            && let Expr::Ident(enum_name) = &as_arg.value.kind
-                                            && matches!(
-                                                self.hir.resolve_global(enum_name).kind,
-                                                NameKind::Enum
-                                            )
-                                        {
-                                            Ty::Nullable(Box::new(Ty::Enum(
-                                                enum_name.clone(),
-                                                vec![],
-                                            )))
-                                        } else {
-                                            Ty::Unknown(UnknownReason::InferenceLimitation)
-                                        }
-                                    }
-                                    BuiltinResult::AiExtract => {
-                                        // Return `Nullable(resolve_type(as:))` when the `as:`
-                                        // argument names a resolvable type.
-                                        let inner = args
-                                            .iter()
-                                            .find(|a| a.name.as_deref() == Some("as"))
-                                            .map(|a| {
-                                                if let Expr::Ident(type_name) = &a.value.kind {
-                                                    self.resolve_type(&TypeExpr::Named(
-                                                        type_name.clone(),
-                                                    ))
-                                                } else {
-                                                    Ty::Unknown(UnknownReason::InferenceLimitation)
-                                                }
-                                            })
-                                            .unwrap_or(Ty::Unknown(
-                                                UnknownReason::InferenceLimitation,
-                                            ));
-                                        Ty::Nullable(Box::new(inner))
-                                    }
-                                    // Runtime-dynamic: return type depends on external context.
-                                    BuiltinResult::Unknown => {
-                                        Ty::Unknown(UnknownReason::ExternalDynamic)
-                                    }
-                                };
+                            // A hint identifier (`json`, `text`, …) shadowing a std
+                            // module name: the call only makes sense on the module.
+                            if prelude::catalog_method(name, method.as_str()).is_some() {
+                                self.err(format!(
+                                    "`{name}` is not imported — add `use std/{name}` to \
+                                     call `{name}.{method}(...)`"
+                                ));
+                                return Ty::Error;
                             }
                         }
                         // TopTask, TypeName, Enum, Unresolved, or a local that was
@@ -1159,5 +1061,238 @@ impl Checker<'_, '_> {
                 Ty::Enum(name.clone(), vec![])
             }
         }
+    }
+
+    /// Type a non-call member access on a module binding:
+    /// `uuid.DNS`, `validation.email` (task as value), `validation.Watcher`.
+    fn module_field_access(&mut self, binding: &str, field: &str) -> Ty {
+        let Some(members) = self.module_members.get(binding).cloned() else {
+            // Single-file mode (REPL, in-memory check) has no member table;
+            // member existence is validated at runtime.
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
+        };
+        match members {
+            super::ModuleMembers::Std(ns) => {
+                // `std/uuid` exposes namespace-constant UUIDs as fields.
+                if ns == "uuid" && matches!(field, "DNS" | "URL" | "OID" | "X500") {
+                    return Ty::Uuid;
+                }
+                // Other std member accesses (mock targets, method references)
+                // are not value-level types tracked statically.
+                Ty::Unknown(UnknownReason::InferenceLimitation)
+            }
+            super::ModuleMembers::Local {
+                module_name,
+                tasks,
+                agents,
+                types,
+            } => {
+                if tasks.contains(field) {
+                    if let Some(sig) = self.top_tasks.get(field) {
+                        return Ty::Func(
+                            sig.params.iter().map(|(_, ty)| ty.clone()).collect(),
+                            Box::new(sig.return_type.clone()),
+                        );
+                    }
+                    return Ty::Unknown(UnknownReason::InferenceLimitation);
+                }
+                if agents.contains(field) {
+                    // Agent reference — usable with run()/stop()/send().
+                    return Ty::Unknown(UnknownReason::InferenceLimitation);
+                }
+                if types.contains(field) {
+                    self.err(format!(
+                        "types are not accessed through the module namespace — \
+                         import it directly: use {field} from \"./{module_name}.keel\""
+                    ));
+                    return Ty::Error;
+                }
+                self.err(format!("module `{module_name}` has no member `{field}`"));
+                Ty::Error
+            }
+        }
+    }
+
+    /// Type a member call on a module binding:
+    /// `file.read(...)`, `validation.email(...)`.
+    fn module_method_call(
+        &mut self,
+        binding: &str,
+        method: &str,
+        args: &[CallArg],
+        arg_tys: &[Ty],
+        span: crate::lexer::Span,
+    ) -> Ty {
+        let Some(members) = self.module_members.get(binding).cloned() else {
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
+        };
+        match members {
+            super::ModuleMembers::Std(ns) => match prelude::catalog_method(&ns, method) {
+                Some(entry) => self.catalog_result_ty(entry, args),
+                None => {
+                    self.err_at(format!("`std/{ns}` has no method `{method}`"), span);
+                    Ty::Error
+                }
+            },
+            super::ModuleMembers::Local {
+                module_name,
+                tasks,
+                agents,
+                ..
+            } => {
+                if tasks.contains(method) {
+                    if let Some(sig) = self.top_tasks.get(method).cloned() {
+                        self.check_call_args(
+                            &sig.params,
+                            sig.variadic,
+                            args,
+                            arg_tys,
+                            &format!("task `{module_name}.{method}`"),
+                        );
+                        return sig.return_type;
+                    }
+                    return Ty::Unknown(UnknownReason::InferenceLimitation);
+                }
+                if agents.contains(method) {
+                    self.err_at(
+                        format!(
+                            "`{binding}.{method}` is an agent, not a task — start it \
+                             with run({binding}.{method}) or message it with send(...)"
+                        ),
+                        span,
+                    );
+                    return Ty::Error;
+                }
+                self.err_at(
+                    format!("module `{module_name}` has no member `{method}`"),
+                    span,
+                );
+                Ty::Error
+            }
+        }
+    }
+
+    /// Resolve a catalog entry's declared result into a checker type,
+    /// applying the special `as:`-driven inference rules for `ai.classify`
+    /// and `ai.extract`.
+    fn catalog_result_ty(
+        &mut self,
+        entry: &'static crate::builtins::BuiltinMethod,
+        args: &[CallArg],
+    ) -> Ty {
+        match entry.result {
+            BuiltinResult::Fixed(spec) => prelude::ty_from_spec(spec),
+            BuiltinResult::AiClassify => {
+                // Return `Nullable(Enum(as:))` when the `as:` argument
+                // names a known enum type; otherwise the target is unknown.
+                if let Some(as_arg) = args.iter().find(|a| a.name.as_deref() == Some("as"))
+                    && let Expr::Ident(enum_name) = &as_arg.value.kind
+                    && matches!(self.hir.resolve_global(enum_name).kind, NameKind::Enum)
+                {
+                    Ty::Nullable(Box::new(Ty::Enum(enum_name.clone(), vec![])))
+                } else {
+                    Ty::Unknown(UnknownReason::InferenceLimitation)
+                }
+            }
+            BuiltinResult::AiExtract => {
+                // Return `Nullable(resolve_type(as:))` when the `as:`
+                // argument names a resolvable type.
+                let inner = args
+                    .iter()
+                    .find(|a| a.name.as_deref() == Some("as"))
+                    .map(|a| {
+                        if let Expr::Ident(type_name) = &a.value.kind {
+                            self.resolve_type(&TypeExpr::Named(type_name.clone()))
+                        } else {
+                            Ty::Unknown(UnknownReason::InferenceLimitation)
+                        }
+                    })
+                    .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation));
+                Ty::Nullable(Box::new(inner))
+            }
+            // Runtime-dynamic: return type depends on external context.
+            BuiltinResult::Unknown => Ty::Unknown(UnknownReason::ExternalDynamic),
+        }
+    }
+
+    /// Validate `delegate(...)` call sites at compile time.
+    ///
+    /// Symbol form: `delegate(Foo.handle, data)`
+    ///   — arg[0] is FieldAccess(Ident("Foo"), "handle")
+    ///   — arg[1] is the data; type-checked against the handler param
+    /// String form: `delegate(Foo, "handle", data)`
+    ///   — arg[0] is Ident("Foo")
+    ///   — arg[1] is a plain string literal naming the handler
+    ///   — arg[2] is the data; type-checked against the handler param
+    fn check_delegate_call(&mut self, args: &[CallArg], arg_tys: &[Ty]) -> Ty {
+        if let Some(first_arg) = args.first() {
+            match first_arg.value.kind.clone() {
+                // Symbol form: Foo.handle
+                Expr::FieldAccess(obj_expr, handler_name) => {
+                    if let Expr::Ident(agent_name) = &obj_expr.as_ref().kind
+                        && let Some(agent) = self.agents.get(agent_name)
+                    {
+                        // Handler existence already checked in the
+                        // FieldAccess arm of infer_expr.
+                        if args.get(1).is_some()
+                            && let Some(Some(param_ty)) = agent.handlers.get(&handler_name).cloned()
+                        {
+                            self.expect(
+                                &arg_tys[1],
+                                &param_ty,
+                                &format!("argument to `{agent_name}.{handler_name}`"),
+                            );
+                        }
+                    }
+                }
+                // String form: Foo, "handle"
+                Expr::Ident(agent_name)
+                    if matches!(self.hir.resolve_global(&agent_name).kind, NameKind::Agent) =>
+                {
+                    if let Some(second_arg) = args.get(1)
+                        && let Expr::StringLit(parts) = &second_arg.value.kind
+                    {
+                        // Only check plain string literals (no interpolation)
+                        // for static resolution.
+                        let maybe_handler: Option<String> =
+                            parts.iter().try_fold(String::new(), |acc, p| match p {
+                                crate::ast::StringPart::Literal(s) => Some(acc + s),
+                                _ => None,
+                            });
+                        if let Some(handler_name) = maybe_handler
+                            && let Some(agent) = self.agents.get(&agent_name).cloned()
+                        {
+                            if !agent.handlers.contains_key(&handler_name) {
+                                self.err(format!(
+                                    "agent `{agent_name}` has no handler `{handler_name}`; \
+                                     declared handlers: {}",
+                                    if agent.handlers.is_empty() {
+                                        "none".to_string()
+                                    } else {
+                                        agent
+                                            .handlers
+                                            .keys()
+                                            .map(|s| s.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    }
+                                ));
+                            } else if args.get(2).is_some()
+                                && let Some(Some(param_ty)) =
+                                    agent.handlers.get(&handler_name).cloned()
+                            {
+                                self.expect(
+                                    &arg_tys[2],
+                                    &param_ty,
+                                    &format!("argument to `{agent_name}.{handler_name}`"),
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ty::None_
     }
 }

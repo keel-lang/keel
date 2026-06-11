@@ -8,25 +8,44 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% add built-in Keel test blocks with std/testing mocks
+%%TAGLINE%% one module system for everything: `use std/file` for the stdlib, `use "./file.keel"` for your own code — plus built-in test blocks
 
 ---
 
 ### Added
 
-- Built-in Keel test blocks. `keel test <path>` now runs top-level `test "name" { ... }` blocks without executing top-level program statements, and directory paths recursively discover `.keel` files with test blocks. `--filter <text>` runs only tests whose names contain the filter text, `--list` prints matching tests without running them, `--fail-fast` stops after the first failing test, `--quiet` prints only failures and the final summary, and paths with no tests report `0 tests found`. Test results color `PASS` green and `FAIL` red when color output is enabled, with muted per-test elapsed time after the test name, source locations for failed statements when available, and total suite time in the final summary. Tests support `setup { ... }` blocks, parameterized `test "name" for case in cases { ... }` blocks, `use std/testing` plus repeated `testing.mock(Namespace.method).returns(value)` sequences scoped to a single test, mock metadata via `Namespace.method.called`, `Namespace.method.call_count`, and `Namespace.method.called_with(...)`, and `assert expr` statements checked as booleans by the type checker; `assert expr, "message"` provides a custom failure message. `test`, `setup`, and `assert` are contextual syntax words, not new reserved keywords. Closes [#53](https://github.com/keel-lang/keel/issues/53).
+- **Module system.** Keel programs can now span multiple files, and the standard library is imported with the same syntax. `use std/file` binds `file`; `use "./validation.keel"` binds `validation` (the file stem); `as` renames either; `use A, B as C from "./m.keel"` (or `from std/json`) pulls symbols unqualified. Every top-level declaration is exported under the module namespace — tasks (`validation.email(...)`), agents (`run(watchers.Watcher)`), and via symbol import, types and interfaces. Imported files are parsed once, resolve relative to the importing file, and may not form cycles (the error spells out the path). Top-level statements are the **implicit main**: they run in order, sharing one scope, only when their file is the entry file — never on import. `keel test file.keel` runs only that file's tests; imported modules contribute declarations (test helpers are plain tasks), never their tests. The REPL pre-imports the whole stdlib. Closes [#66](https://github.com/keel-lang/keel/issues/66).
 
   ```keel
+  use std/io
+  use std/file
+  use "./validation.keel"
+  use Urgency from "./models.keel"
+
+  task load_config() -> str {
+    file.read("config.json")
+  }
+
+  # Implicit main — runs only when this file is executed directly.
+  io.show("valid: {validation.email("ada@example.com")}")
+  ```
+
+- **Breaking: the ambient PascalCase prelude is removed.** `File.read(...)`, `Ai.classify(...)`, etc. now fail with a tombstone diagnostic — `` `File` is not ambient — add `use std/file` and write `file.read(...)` `` — never a bare "undefined identifier". The `Agent` namespace dissolved into built-in verbs (`run`, `stop`, `send`, `delegate`, `broadcast` — always in scope). `Uuid` split: the type stays built in, constructors moved to `std/uuid` (`uuid.v4()`), and the bare `uuid()` free function is gone. `@tools` lists use module names (`@tools [shell, http]`). One flat global namespace per program in this release: duplicate top-level names across modules and inconsistent import bindings are compile errors with rename/alias hints.
+
+- Built-in Keel test blocks. `keel test <path>` now runs top-level `test "name" { ... }` blocks without executing top-level program statements, and directory paths recursively discover `.keel` files with test blocks. `--filter <text>` runs only tests whose names contain the filter text, `--list` prints matching tests without running them, `--fail-fast` stops after the first failing test, `--quiet` prints only failures and the final summary, and paths with no tests report `0 tests found`. Test results color `PASS` green and `FAIL` red when color output is enabled, with muted per-test elapsed time after the test name, source locations for failed statements when available, and total suite time in the final summary. Tests support `setup { ... }` blocks, parameterized `test "name" for case in cases { ... }` blocks, `use std/testing` plus repeated `testing.mock(module.method).returns(value)` sequences scoped to a single test, mock metadata via `module.method.called`, `module.method.call_count`, and `module.method.called_with(...)`, and `assert expr` statements checked as booleans by the type checker; `assert expr, "message"` provides a custom failure message. `test`, `setup`, and `assert` are contextual syntax words, not new reserved keywords. Closes [#53](https://github.com/keel-lang/keel/issues/53).
+
+  ```keel
+  use std/ai
   use std/testing
 
   type Severity = low | medium | critical
 
   task classify(text: str) -> Severity {
-      Ai.classify(text, as: Severity) ?? Severity.low
+      ai.classify(text, as: Severity) ?? Severity.low
   }
 
   test "mocked classify returns critical" {
-      testing.mock(Ai.classify).returns(Severity.critical)
+      testing.mock(ai.classify).returns(Severity.critical)
       assert classify("payment outage") == Severity.critical, "expected critical"
   }
   ```

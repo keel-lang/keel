@@ -48,6 +48,8 @@ The type checker substitutes the concrete arguments at each use site.
 **Generic structs:**
 
 ```keel
+use std/io
+
 type Paginated[T] {
   items: list[T]
   page: int
@@ -55,7 +57,7 @@ type Paginated[T] {
 }
 
 task show_page(p: Paginated[str]) {
-  Io.show("{p.items.len()} item(s) on page {p.page}")
+  io.show("{p.items.len()} item(s) on page {p.page}")
 }
 ```
 
@@ -96,14 +98,16 @@ Variant names are registered for exhaustiveness checking. When you destructure a
 variant binding, the field type is resolved using the substituted type arguments:
 
 ```keel
+use std/io
+
 task t(p: Pair[str, int]) {
   when p {
     both { first, second } => {
       f: str = first    # type-checked as str
       s: int = second   # type-checked as int
     }
-    only_first { value } => { Io.show(value) }
-    only_second { value } => { Io.show("{value}") }
+    only_first { value } => { io.show(value) }
+    only_second { value } => { io.show("{value}") }
   }
 }
 ```
@@ -129,6 +133,8 @@ structurally compatible with any named struct type that has the required fields.
 Assign to a typed variable or pass to a typed parameter to tag it:
 
 ```keel
+use std/email
+
 type EmailInfo {
   sender: str
   subject: str
@@ -232,10 +238,12 @@ compile-time error — use `!` to assert non-null (raises a plain `Error`
 at runtime if the value is `none`) or `??` to coalesce to a default.
 
 ```keel
+use std/env
+
 task t() {
-  x: str = Env.get("KEY")          # error: expected str, got str?
-  y: str = Env.get("KEY")!         # ok — raises Error if missing
-  z: str = Env.get("KEY") ?? ""    # ok — falls back to ""
+  x: str = env.get("KEY")          # error: expected str, got str?
+  y: str = env.get("KEY")!         # ok — raises Error if missing
+  z: str = env.get("KEY") ?? ""    # ok — falls back to ""
 }
 ```
 
@@ -243,10 +251,12 @@ Call sites are also checked — a nullable argument where a non-nullable
 parameter is declared is a type error:
 
 ```keel
+use std/env
+
 task process(text: str) { ... }
 
 task t() {
-  val: str? = Env.get("PROMPT")
+  val: str? = env.get("PROMPT")
   process(val)          # error: task `process` arg `text`: expected str, got str?
   process(val!)         # ok
   process(val ?? "")    # ok
@@ -256,11 +266,11 @@ task t() {
 AI operations return nullable types when they can fail:
 
 ```keel
-result = Ai.classify(text, as: Urgency)   # Urgency? — might be none
+result = ai.classify(text, as: Urgency)   # Urgency? — might be none
 safe = result ?? Urgency.medium            # Urgency — guaranteed
 
 # Or supply the default inline:
-safe = Ai.classify(text, as: Urgency) ?? Urgency.medium   # Urgency
+safe = ai.classify(text, as: Urgency) ?? Urgency.medium   # Urgency
 ```
 
 ## Collections
@@ -375,7 +385,7 @@ count.abs()           # 5    — int stays int
 | `str` | `bool` | `"true"` → `true`, `"false"` → `false`; raises otherwise |
 | `Uuid` | `str` | Hyphenated string: `"f47ac10b-..."` |
 | `str` | `Uuid` | Validates UUID format; raises if invalid |
-| `dynamic` | any | Pass-through — used with `Ai.prompt(...) as T` and `Json.parse` |
+| `dynamic` | any | Pass-through — used with `ai.prompt(...) as T` and `json.parse` |
 | `none` | any | Raises |
 
 ```keel

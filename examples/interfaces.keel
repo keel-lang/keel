@@ -1,3 +1,6 @@
+use std/io
+use std/json
+
 interface Printable {
   task print(self) -> str
 }
@@ -73,22 +76,55 @@ impl Iterable for NumRange {
 task run_demo() {
   p: Point = { x: 1.5, y: 2.0 }
   c: Color = { r: 255, g: 128, b: 0 }
-  Io.show(p.print())
-  Io.show(c.print())
+  io.show(p.print())
+  io.show(c.print())
   scores: list[Score] = [{ label: "B", val: 70 }, { label: "A", val: 95 }, { label: "C", val: 60 }]
   sorted = scores.sort()
   for s in sorted {
-    Io.show("{s.label}: {s.val}")
+    io.show("{s.label}: {s.val}")
   }
   a: Point = { x: 1.0, y: 2.0 }
   b: Point = { x: 1.0, y: 2.0 }
-  Io.show("equal: {a.equals(b)}")
+  io.show("equal: {a.equals(b)}")
   ev: Event = { name: "click", count: 42 }
-  Io.show(Json.stringify(ev))
+  io.show(json.stringify(ev))
   r: NumRange = { lo: 1, hi: 4 }
   for n in r {
-    Io.show("{n}")
+    io.show("{n}")
   }
 }
 
 run_demo()
+
+# Tests — run with: keel test examples/interfaces.keel
+test "impl methods dispatch by type" {
+  p: Point = { x: 1.5, y: 2.5 }
+  c: Color = { r: 255, g: 128, b: 0 }
+  assert p.print() == "Point(1.5, 2.5)"
+  assert c.print() == "rgb(255, 128, 0)"
+}
+
+test "comparable drives sort" {
+  scores: list[Score] = [{ label: "B", val: 70 }, { label: "A", val: 95 }, { label: "C", val: 60 }]
+  assert scores.sort().map(s => s.label).join("") == "CBA"
+}
+
+test "equatable compares by value" {
+  a: Point = { x: 1.0, y: 2.0 }
+  b: Point = { x: 1.0, y: 2.0 }
+  assert a.equals(b)
+}
+
+test "serializable overrides json.stringify" {
+  ev: Event = { name: "click", count: 42 }
+  assert json.stringify(ev) == "name=click;count=42"
+}
+
+test "iterable yields items in a for loop" {
+  r: NumRange = { lo: 1, hi: 4 }
+  total = 0
+  for n in r {
+    total += n
+  }
+  assert total == 10
+}

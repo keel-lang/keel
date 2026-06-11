@@ -1,13 +1,16 @@
 # Retry & Timeout
 #
-# Wrap unreliable work in resilience primitives. Control.retry re-invokes
+# Wrap unreliable work in resilience primitives. control.retry re-invokes
 # the closure on every error until it succeeds or the budget is exhausted;
-# Control.with_timeout aborts the closure once the duration elapses.
+# control.with_timeout aborts the closure once the duration elapses.
 #
-# Demonstrates: Control.retry, Control.with_timeout, agent state, durations.
+# Demonstrates: control.retry, control.with_timeout, agent state, durations.
 #
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/retry_on_failure.keel
+
+use std/control
+use std/io
 
 agent Worker {
   @role "Resilient worker — retries flaky calls and bounds long ones"
@@ -19,22 +22,22 @@ agent Worker {
   @on_start {
     # Retry: the closure trips a NullError on the first 2 attempts
     # and returns "ok" on the 3rd. retry surfaces the third value.
-    result = Control.retry(5, () => {
+    result = control.retry(5, () => {
       self.attempts = self.attempts + 1
-      Io.show("attempt #{self.attempts}")
+      io.show("attempt #{self.attempts}")
       if self.attempts < 3 {
         x = none
         return "{x!}"
       }
       return "ok"
     })
-    Io.show("retry result: {result} after {self.attempts} attempts")
+    io.show("retry result: {result} after {self.attempts} attempts")
 
     # Timeout: the closure returns within the deadline so we get its value.
-    quick = Control.with_timeout(5.seconds, () => {
+    quick = control.with_timeout(5.seconds, () => {
       return "fast-path"
     })
-    Io.show("timeout result: {quick}")
+    io.show("timeout result: {quick}")
   }
 }
 

@@ -7,11 +7,12 @@ use crate::common::*;
 #[test]
 fn string_interp_method_call() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         items = [1, 2, 3]
         msg = "size={items.count()}"
-        Io.show(msg)
+        io.show(msg)
     }
 }
 run(A)
@@ -27,11 +28,12 @@ run(A)
 #[test]
 fn string_interp_binary_expr() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 5
         msg = "doubled={x * 2}"
-        Io.show(msg)
+        io.show(msg)
     }
 }
 run(A)
@@ -47,11 +49,12 @@ run(A)
 #[test]
 fn nested_string_in_interpolation_slot() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         score = 0.9
         msg = "label={if score > 0.8 { "high" } else { "low" }}"
-        Io.show(msg)
+        io.show(msg)
     }
 }
 run(A)
@@ -67,11 +70,12 @@ run(A)
 #[test]
 fn nested_string_double_layer() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = "world"
         msg = "hi {"there {x}"}"
-        Io.show(msg)
+        io.show(msg)
     }
 }
 run(A)
@@ -93,10 +97,11 @@ fn interp_underscore_ident_is_not_mangled() {
     // An identifier like x1_2 must resolve as the variable x1_2 at runtime,
     // not as x12 (which would be undefined).
     let src = r#"
+use std/io
 agent A {
   @on_start {
     x1_2 = "hello"
-    Io.show("{x1_2}")
+    io.show("{x1_2}")
     stop(self)
   }
 }
@@ -114,10 +119,11 @@ run(A)
 fn interp_digit_separator_in_numeric_literal() {
     // 1_000 in an interpolation slot must be treated as the integer 1000.
     let src = r#"
+use std/io
 agent A {
   @on_start {
     n = 2000
-    Io.show("{n > 1_000}")
+    io.show("{n > 1_000}")
     stop(self)
   }
 }
@@ -139,9 +145,10 @@ run(A)
 #[test]
 fn string_repeat_produces_n_copies() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{"ha".repeat(3)}")
+    io.show("{"ha".repeat(3)}")
     stop(self)
   }
 }
@@ -160,9 +167,10 @@ stderr: {stderr}"
 #[test]
 fn string_slice_extracts_chars() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{"hello world".slice(6, 11)}")
+    io.show("{"hello world".slice(6, 11)}")
     stop(self)
   }
 }
@@ -181,10 +189,11 @@ stderr: {stderr}"
 #[test]
 fn string_index_of_returns_position_or_none() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{"hello world".index_of("world")}")
-    Io.show("{"hello world".index_of("xyz")}")
+    io.show("{"hello world".index_of("world")}")
+    io.show("{"hello world".index_of("xyz")}")
     stop(self)
   }
 }
@@ -204,11 +213,12 @@ stderr: {stderr}"
 #[test]
 fn string_trim_start_and_trim_end() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     s = "  hi  "
-    Io.show("{s.trim_start()}")
-    Io.show("{s.trim_end()}")
+    io.show("{s.trim_start()}")
+    io.show("{s.trim_end()}")
     stop(self)
   }
 }
@@ -228,10 +238,11 @@ stderr: {stderr}"
 #[test]
 fn string_to_int_parses_or_returns_none() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{"42".to_int()}")
-    Io.show("{"bad".to_int()}")
+    io.show("{"42".to_int()}")
+    io.show("{"bad".to_int()}")
     stop(self)
   }
 }
@@ -251,10 +262,11 @@ stderr: {stderr}"
 #[test]
 fn string_to_float_parses_or_returns_none() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{"3.14".to_float()}")
-    Io.show("{"nope".to_float()}")
+    io.show("{"3.14".to_float()}")
+    io.show("{"nope".to_float()}")
     stop(self)
   }
 }
@@ -278,10 +290,11 @@ stderr: {stderr}"
 #[test]
 fn format_spec_float_precision() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         pi = 3.14159
-        Io.show("{pi:.2f}")
+        io.show("{pi:.2f}")
     }
 }
 run(A)
@@ -301,10 +314,11 @@ run(A)
 #[test]
 fn format_spec_int_as_float() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         n = 42
-        Io.show("{n:.2f}")
+        io.show("{n:.2f}")
     }
 }
 run(A)
@@ -320,10 +334,11 @@ run(A)
 #[test]
 fn format_spec_right_align() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         n = 7
-        Io.show("{n:>5}")
+        io.show("{n:>5}")
     }
 }
 run(A)
@@ -339,10 +354,11 @@ run(A)
 #[test]
 fn format_spec_left_align() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         s = "hi"
-        Io.show("{s:<6}!")
+        io.show("{s:<6}!")
     }
 }
 run(A)
@@ -358,10 +374,11 @@ run(A)
 #[test]
 fn format_spec_center_align() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         s = "hi"
-        Io.show("{s:^6}!")
+        io.show("{s:^6}!")
     }
 }
 run(A)
@@ -377,10 +394,11 @@ run(A)
 #[test]
 fn format_spec_combined_align_and_precision() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 3.14159
-        Io.show("{x:>10.2f}")
+        io.show("{x:>10.2f}")
     }
 }
 run(A)
@@ -396,12 +414,13 @@ run(A)
 #[test]
 fn format_spec_named_arg_colon_not_confused_with_spec() {
     let src = r#"
+use std/io
 task greet(name: str) -> str {
     "hello {name}"
 }
 agent A {
     @on_start {
-        Io.show(greet(name: "world"))
+        io.show(greet(name: "world"))
     }
 }
 run(A)
@@ -417,10 +436,11 @@ run(A)
 #[test]
 fn format_spec_bare_width_right_aligns() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         n = 5
-        Io.show("{n:4}")
+        io.show("{n:4}")
     }
 }
 run(A)
@@ -438,6 +458,7 @@ fn format_spec_alignment_respects_custom_to_str() {
     // Alignment specs must call to_str() via impl dispatch, not fall back to
     // to_display_string(), so {x:>10} and {x} produce the same base string.
     let src = r#"
+use std/io
 type Tag { value: str }
 impl Stringable for Tag {
     task to_str(self) -> str {
@@ -447,8 +468,8 @@ impl Stringable for Tag {
 agent A {
     @on_start {
         t: Tag = { value: "ok" }
-        Io.show("{t}")
-        Io.show("{t:>8}")
+        io.show("{t}")
+        io.show("{t:>8}")
     }
 }
 run(A)
@@ -468,10 +489,11 @@ run(A)
 #[test]
 fn format_spec_unknown_type_flag_is_runtime_error() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         pi = 3.14
-        Io.show("{pi:.2x}")
+        io.show("{pi:.2x}")
     }
 }
 run(A)

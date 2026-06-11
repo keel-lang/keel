@@ -1,30 +1,53 @@
+use std/io
+
 agent StringMethodsDemo {
   @on_start {
     s = "  Hello, World!  "
-    Io.show("{s.trim()}")
-    Io.show("{s.trim_start()}")
-    Io.show("{s.trim_end()}")
-    Io.show("{"hello".upper()}")
-    Io.show("{"HELLO".lower()}")
-    Io.show("{"ha".repeat(3)}")
-    Io.show("{"hello world".slice(6, 11)}")
+    io.show("{s.trim()}")
+    io.show("{s.trim_start()}")
+    io.show("{s.trim_end()}")
+    io.show("{"hello".upper()}")
+    io.show("{"HELLO".lower()}")
+    io.show("{"ha".repeat(3)}")
+    io.show("{"hello world".slice(6, 11)}")
     pos = "hello world".index_of("world")
-    Io.show("{pos}")
+    io.show("{pos}")
     missing = "hello world".index_of("xyz")
-    Io.show("{missing}")
+    io.show("{missing}")
     n = "42".to_int()
-    Io.show("{n}")
+    io.show("{n}")
     f = "3.14".to_float()
-    Io.show("{f}")
+    io.show("{f}")
     bad = "abc".to_int()
-    Io.show("{bad}")
-    Io.show("{"hello".contains("ell")}")
-    Io.show("{"hello".starts_with("hel")}")
-    Io.show("{"hello".ends_with("lo")}")
+    io.show("{bad}")
+    io.show("{"hello".contains("ell")}")
+    io.show("{"hello".starts_with("hel")}")
+    io.show("{"hello".ends_with("lo")}")
     parts = "a,b,c".split(",")
-    Io.show("{parts.join(" | ")}")
-    Io.show("{"hello world".replace("world", "keel")}")
+    io.show("{parts.join(" | ")}")
+    io.show("{"hello world".replace("world", "keel")}")
   }
 }
 
 run(StringMethodsDemo)
+
+# Tests — run with: keel test examples/string_methods.keel
+test "trim, case, repeat, and slice" {
+  assert "  hi  ".trim() == "hi"
+  assert "hello".upper() == "HELLO"
+  assert "HELLO".lower() == "hello"
+  assert "ha".repeat(3) == "hahaha"
+  assert "hello world".slice(6, 11) == "world"
+}
+
+test "search, split, and conversion" {
+  pos = "hello world".index_of("world") ?? -1
+  assert pos == 6
+  missing = "hello world".index_of("xyz") ?? -1
+  assert missing == -1
+  n = "42".to_int() ?? 0
+  assert n == 42
+  assert "hello".contains("ell")
+  assert "a,b,c".split(",") == ["a", "b", "c"]
+  assert "hello world".replace("world", "keel") == "hello keel"
+}

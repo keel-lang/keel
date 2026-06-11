@@ -3,16 +3,17 @@ use crate::common::*;
 #[test]
 fn test_blocks_mock_ai_classify() {
     let src = r#"
+use std/ai
 use std/testing
 
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-  Ai.classify(text, as: Severity) ?? Severity.low
+  ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "mocked classify returns critical" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   assert classify("payment outage") == Severity.critical
 }
 "#;
@@ -32,21 +33,22 @@ stderr: {stderr}"
 #[test]
 fn test_mocks_do_not_leak_between_tests() {
     let src = r#"
+use std/ai
 use std/testing
 
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-  Ai.classify(text, as: Severity) ?? Severity.low
+  ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "critical" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   assert classify("payment outage") == Severity.critical
 }
 
 test "medium" {
-  testing.mock(Ai.classify).returns(Severity.medium)
+  testing.mock(ai.classify).returns(Severity.medium)
   assert classify("question") == Severity.medium
 }
 "#;
@@ -77,15 +79,16 @@ test "setup shares values with body" {
 #[test]
 fn test_repeated_mocks_return_sequence_then_repeat_last_value() {
     let src = r#"
+use std/ai
 use std/testing
 
 task summarize(text: str) -> str {
-  Ai.summarize(text) ?? "fallback"
+  ai.summarize(text) ?? "fallback"
 }
 
 test "mock sequence" {
-  testing.mock(Ai.summarize).returns("first")
-  testing.mock(Ai.summarize).returns("second")
+  testing.mock(ai.summarize).returns("first")
+  testing.mock(ai.summarize).returns("second")
 
   assert summarize("a") == "first"
   assert summarize("b") == "second"
@@ -100,27 +103,28 @@ test "mock sequence" {
 #[test]
 fn test_mock_metadata_tracks_calls_and_arguments() {
     let src = r#"
+use std/ai
 use std/testing
 
 task draft_reply(body: str) -> str {
-  Ai.draft("response to {body}", tone: "friendly", max_length: 150) ?? "fallback"
+  ai.draft("response to {body}", tone: "friendly", max_length: 150) ?? "fallback"
 }
 
 test "mock metadata" {
-  testing.mock(Ai.draft).returns("Thanks")
+  testing.mock(ai.draft).returns("Thanks")
 
-  assert Ai.draft.called == false
-  assert Ai.draft.call_count == 0
-  assert Ai.draft.called_with("response to Can you review this?") == false
+  assert ai.draft.called == false
+  assert ai.draft.call_count == 0
+  assert ai.draft.called_with("response to Can you review this?") == false
 
   assert draft_reply("Can you review this?") == "Thanks"
 
-  assert Ai.draft.called
-  assert Ai.draft.call_count == 1
-  assert Ai.draft.called_with("response to Can you review this?")
-  assert Ai.draft.called_with("response to Can you review this?", tone: "friendly")
-  assert Ai.draft.called_with("response to Can you review this?", max_length: 150)
-  assert Ai.draft.called_with("different prompt") == false
+  assert ai.draft.called
+  assert ai.draft.call_count == 1
+  assert ai.draft.called_with("response to Can you review this?")
+  assert ai.draft.called_with("response to Can you review this?", tone: "friendly")
+  assert ai.draft.called_with("response to Can you review this?", max_length: 150)
+  assert ai.draft.called_with("different prompt") == false
 }
 "#;
     let (ok, _stdout, stderr) = test_inline(src);
@@ -131,24 +135,26 @@ test "mock metadata" {
 #[test]
 fn test_mock_metadata_counts_async_spawned_calls() {
     let src = r#"
+use std/ai
+use std/async
 use std/testing
 
 task summarize(text: str) -> str {
-  Ai.summarize(text) ?? "fallback"
+  ai.summarize(text) ?? "fallback"
 }
 
 test "mock metadata crosses spawn" {
-  testing.mock(Ai.summarize).returns("inside")
-  testing.mock(Ai.summarize).returns("outside")
+  testing.mock(ai.summarize).returns("inside")
+  testing.mock(ai.summarize).returns("outside")
 
-  h = Async.spawn(() => {
+  h = async.spawn(() => {
     return summarize("inside")
   })
-  assert Async.join_all([h])[0] == "inside"
+  assert async.join_all([h])[0] == "inside"
   assert summarize("outside") == "outside"
-  assert Ai.summarize.call_count == 2
-  assert Ai.summarize.called_with("inside")
-  assert Ai.summarize.called_with("outside")
+  assert ai.summarize.call_count == 2
+  assert ai.summarize.called_with("inside")
+  assert ai.summarize.called_with("outside")
 }
 "#;
     let (ok, _stdout, stderr) = test_inline(src);
@@ -316,20 +322,22 @@ test "bad message" {
 #[test]
 fn test_mocks_apply_inside_async_spawn() {
     let src = r#"
+use std/ai
+use std/async
 use std/testing
 
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-  Ai.classify(text, as: Severity) ?? Severity.low
+  ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "spawned classify sees mock" {
-  testing.mock(Ai.classify).returns(Severity.critical)
-  h = Async.spawn(() => {
+  testing.mock(ai.classify).returns(Severity.critical)
+  h = async.spawn(() => {
     return classify("payment outage")
   })
-  results = Async.join_all([h])
+  results = async.join_all([h])
   result = results[0]
   assert result == Severity.critical
 }
@@ -342,20 +350,22 @@ test "spawned classify sees mock" {
 #[test]
 fn test_mock_sequences_are_shared_with_async_spawn() {
     let src = r#"
+use std/ai
+use std/async
 use std/testing
 
 task summarize(text: str) -> str {
-  Ai.summarize(text) ?? "fallback"
+  ai.summarize(text) ?? "fallback"
 }
 
 test "spawned calls share mock sequence" {
-  testing.mock(Ai.summarize).returns("first")
-  testing.mock(Ai.summarize).returns("second")
+  testing.mock(ai.summarize).returns("first")
+  testing.mock(ai.summarize).returns("second")
 
-  h = Async.spawn(() => {
+  h = async.spawn(() => {
     return summarize("inside")
   })
-  inside = Async.join_all([h])[0]
+  inside = async.join_all([h])[0]
   outside = summarize("outside")
   assert inside == "first"
   assert outside == "second"
@@ -369,11 +379,12 @@ test "spawned calls share mock sequence" {
 #[test]
 fn bare_assert_call_remains_callable_identifier() {
     let src = r#"
+use std/io
 task assert(message: str) -> str {
   message
 }
 
-Io.show(assert("hello"))
+io.show(assert("hello"))
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(
@@ -585,17 +596,18 @@ fn examples_with_test_blocks_pass() {
 #[test]
 fn bad_mock_target_is_check_error() {
     let src = r#"
+use std/ai
 use std/testing
 
 test "bad mock" {
-  testing.mock(Ai.nope).returns("x")
+  testing.mock(ai.nope).returns("x")
   assert true
 }
 "#;
     let (ok, _stdout, stderr) = test_inline(src);
     assert!(!ok, "test command should fail");
     assert!(
-        stderr.contains("unknown mock target `Ai.nope`"),
+        stderr.contains("unknown mock target `ai.nope`"),
         "stderr: {stderr}"
     );
 }
@@ -603,14 +615,15 @@ test "bad mock" {
 #[test]
 fn mock_metadata_requires_matching_mock() {
     let src = r#"
+use std/ai
 test "missing mock" {
-  assert Ai.draft.call_count == 0
+  assert ai.draft.call_count == 0
 }
 "#;
     let (ok, _stdout, stderr) = test_inline(src);
     assert!(!ok, "test command should fail");
     assert!(
-        stderr.contains("requires `testing.mock(Ai.draft).returns(...)`"),
+        stderr.contains("requires `testing.mock(ai.draft).returns(...)`"),
         "stderr: {stderr}"
     );
 }

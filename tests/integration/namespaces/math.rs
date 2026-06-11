@@ -7,18 +7,20 @@ use crate::common::*;
 #[test]
 fn math_namespace_core_functions() {
     let src = r#"
+use std/io
+use std/math
 agent MathTest {
     @on_start {
-        sq   = Math.sqrt(4)
-        pw   = Math.pow(2, 10)
-        lg   = Math.log(Math.E())
-        lg2  = Math.log2(8)
-        lg10 = Math.log10(100)
-        ex   = Math.exp(0)
-        sn   = Math.sin(0)
-        cs   = Math.cos(0)
-        pi   = Math.PI()
-        Io.show("sqrt={sq} pow={pw} log={lg} log2={lg2} log10={lg10} exp={ex} sin={sn} cos={cs} pi_ok={pi > 3.14}")
+        sq   = math.sqrt(4)
+        pw   = math.pow(2, 10)
+        lg   = math.log(math.E())
+        lg2  = math.log2(8)
+        lg10 = math.log10(100)
+        ex   = math.exp(0)
+        sn   = math.sin(0)
+        cs   = math.cos(0)
+        pi   = math.PI()
+        io.show("sqrt={sq} pow={pw} log={lg} log2={lg2} log10={lg10} exp={ex} sin={sn} cos={cs} pi_ok={pi > 3.14}")
         stop(self)
     }
 }
@@ -40,12 +42,14 @@ run(MathTest)
 #[test]
 fn math_sqrt_rejects_negative() {
     let src = r#"
+use std/io
+use std/math
 agent MathErr {
     @on_start {
         try {
-            Math.sqrt(-1)
+            math.sqrt(-1)
         } catch e: Error {
-            Io.show("caught={e.message}")
+            io.show("caught={e.message}")
         }
         stop(self)
     }
@@ -63,13 +67,15 @@ run(MathErr)
 #[test]
 fn math_error_is_catchable_by_specific_type() {
     let src = r#"
+use std/io
+use std/math
 agent MathTyped {
     @on_start {
         try {
-            Math.sqrt(-4.0)
+            math.sqrt(-4.0)
         } catch e: MathError {
-            Io.show("kind=MathError")
-            Io.show("msg={e.message.len() > 0}")
+            io.show("kind=MathError")
+            io.show("msg={e.message.len() > 0}")
         }
         stop(self)
     }

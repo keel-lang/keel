@@ -6,6 +6,8 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/stringable.keel
 
+use std/io
+
 type Point {
   x: int
   y: int
@@ -43,14 +45,23 @@ agent Demo {
     target: Point = { x: 3, y: 4 }
     bg: Color    = { r: 255, g: 128, b: 0 }
 
-    Io.show("origin = {origin}")
-    Io.show("target = {target}")
-    Io.show("color  = {bg}")
-    Io.show(distance(origin, target))
+    io.show("origin = {origin}")
+    io.show("target = {target}")
+    io.show("color  = {bg}")
+    io.show(distance(origin, target))
 
     # Explicit call also works
-    Io.show(origin.to_str())
+    io.show(origin.to_str())
   }
 }
 
 run(Demo)
+
+# Tests — run with: keel test examples/stringable.keel
+test "stringable drives interpolation" {
+  origin: Point = { x: 0, y: 0 }
+  target: Point = { x: 3, y: 4 }
+  assert "{origin}" == "(0, 0)"
+  assert distance(origin, target) == "distance from (0, 0) to (3, 4) = 3dx + 4dy"
+  assert origin.to_str() == "(0, 0)"
+}

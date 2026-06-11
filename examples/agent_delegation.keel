@@ -1,3 +1,6 @@
+use std/ai
+use std/io
+
 type Domain = billing | technical | account | general
 
 type Ticket {
@@ -16,12 +19,12 @@ agent BillingSpecialist {
 
   on handle(ticket: Ticket) {
     self.resolved = self.resolved + 1
-    reply = Ai.draft("Billing support reply to: {ticket.body}", tone: "empathetic and clear") ?? "(draft unavailable)"
-    Io.show("[Billing] {ticket.id} → {ticket.from}")
-    Io.show(reply)
+    reply = ai.draft("Billing support reply to: {ticket.body}", tone: "empathetic and clear") ?? "(draft unavailable)"
+    io.show("[Billing] {ticket.id} → {ticket.from}")
+    io.show(reply)
   }
   @on_stop {
-    Io.show("Billing specialist closed — {self.resolved} tickets resolved")
+    io.show("Billing specialist closed — {self.resolved} tickets resolved")
   }
 }
 
@@ -35,12 +38,12 @@ agent TechSpecialist {
 
   on handle(ticket: Ticket) {
     self.resolved = self.resolved + 1
-    reply = Ai.draft("Technical support reply to: {ticket.body}", tone: "precise", guidance: "include a code snippet if the issue involves an API or SDK") ?? "(draft unavailable)"
-    Io.show("[Tech] {ticket.id} → {ticket.from}")
-    Io.show(reply)
+    reply = ai.draft("Technical support reply to: {ticket.body}", tone: "precise", guidance: "include a code snippet if the issue involves an API or SDK") ?? "(draft unavailable)"
+    io.show("[Tech] {ticket.id} → {ticket.from}")
+    io.show(reply)
   }
   @on_stop {
-    Io.show("Tech specialist closed — {self.resolved} tickets resolved")
+    io.show("Tech specialist closed — {self.resolved} tickets resolved")
   }
 }
 
@@ -52,32 +55,32 @@ agent Router {
   }
 
   task classify(ticket: Ticket) -> Domain {
-    Ai.classify(ticket.body, as: Domain, considering: { "invoice, charge, refund, payment, subscription": Domain.billing, "api, sdk, 4xx, integration, authentication": Domain.technical, "change email, delete account, password": Domain.account }) ?? Domain.general
+    ai.classify(ticket.body, as: Domain, considering: { "invoice, charge, refund, payment, subscription": Domain.billing, "api, sdk, 4xx, integration, authentication": Domain.technical, "change email, delete account, password": Domain.account }) ?? Domain.general
   }
   @on_start {
-    Agent.run(BillingSpecialist)
-    Agent.run(TechSpecialist)
+    run(BillingSpecialist)
+    run(TechSpecialist)
     tickets = [{ id: "T-001", body: "I was charged twice for my Pro subscription", from: "alice@example.com" }, { id: "T-002", body: "Getting 401 Unauthorized on every API call", from: "bob@example.com" }, { id: "T-003", body: "How do I change my account email address?", from: "carol@example.com" }, { id: "T-004", body: "Invoice shows the wrong company name", from: "dave@example.com" }]
-    Io.show("Router: {tickets.count()} tickets to process\n")
+    io.show("Router: {tickets.count()} tickets to process\n")
     for ticket in tickets {
       domain = self.classify(ticket)
       self.dispatched = self.dispatched + 1
       when domain {
         billing => {
-          Agent.delegate(BillingSpecialist, "handle", ticket)
-          Io.show("{ticket.id} → billing specialist")
+          delegate(BillingSpecialist, "handle", ticket)
+          io.show("{ticket.id} → billing specialist")
         }
         technical => {
-          Agent.delegate(TechSpecialist, "handle", ticket)
-          Io.show("{ticket.id} → tech specialist")
+          delegate(TechSpecialist, "handle", ticket)
+          io.show("{ticket.id} → tech specialist")
         }
-        _ => Io.show("{ticket.id} → general queue (no specialist assigned)")
+        _ => io.show("{ticket.id} → general queue (no specialist assigned)")
       }
     }
-    Agent.stop(Router)
+    stop(Router)
   }
   @on_stop {
-    Io.show("\nRouter closed — {self.dispatched} tickets dispatched this session")
+    io.show("\nRouter closed — {self.dispatched} tickets dispatched this session")
   }
 }
 

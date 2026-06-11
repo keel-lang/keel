@@ -7,11 +7,13 @@ use crate::common::*;
 #[test]
 fn cache_set_get() {
     let src = r#"
+use std/cache
+use std/io
 agent CacheTest {
     @on_start {
-        Cache.set("key", "value")
-        v = Cache.get("key")
-        Io.show("got={v}")
+        cache.set("key", "value")
+        v = cache.get("key")
+        io.show("got={v}")
     }
 }
 run(CacheTest)
@@ -20,20 +22,22 @@ run(CacheTest)
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
     assert!(
         stdout.contains("got=value"),
-        "Cache.set/get failed:\n{stdout}"
+        "cache.set/get failed:\n{stdout}"
     );
 }
 
 #[test]
 fn cache_delete() {
     let src = r#"
+use std/cache
+use std/io
 agent CacheTest {
     @on_start {
-        Cache.set("temp", "x")
-        Cache.delete("temp")
-        v = Cache.get("temp")
+        cache.set("temp", "x")
+        cache.delete("temp")
+        v = cache.get("temp")
         if v == none {
-            Io.show("deleted")
+            io.show("deleted")
         }
     }
 }
@@ -41,20 +45,22 @@ run(CacheTest)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("deleted"), "Cache.delete failed:\n{stdout}");
+    assert!(stdout.contains("deleted"), "cache.delete failed:\n{stdout}");
 }
 
 #[test]
 fn cache_clear() {
     let src = r#"
+use std/cache
+use std/io
 agent CacheTest {
     @on_start {
-        Cache.set("a", "1")
-        Cache.set("b", "2")
-        Cache.clear()
-        v = Cache.get("a")
+        cache.set("a", "1")
+        cache.set("b", "2")
+        cache.clear()
+        v = cache.get("a")
         if v == none {
-            Io.show("cleared")
+            io.show("cleared")
         }
     }
 }
@@ -62,5 +68,5 @@ run(CacheTest)
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
-    assert!(stdout.contains("cleared"), "Cache.clear failed:\n{stdout}");
+    assert!(stdout.contains("cleared"), "cache.clear failed:\n{stdout}");
 }

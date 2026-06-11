@@ -7,11 +7,12 @@ use crate::common::*;
 #[test]
 fn str_matches_true() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         result = "hello world".matches("\\w+")
         if result {
-            Io.show("matched")
+            io.show("matched")
         }
     }
 }
@@ -28,13 +29,14 @@ run(StrTest)
 #[test]
 fn str_matches_false() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         result = "hello world".matches("^\\d+$")
         if result {
-            Io.show("matched")
+            io.show("matched")
         } else {
-            Io.show("no-match")
+            io.show("no-match")
         }
     }
 }
@@ -51,10 +53,11 @@ run(StrTest)
 #[test]
 fn str_extract() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         v = "Total: $99.99".extract("\\$(\\S+)")
-        Io.show("amount={v}")
+        io.show("amount={v}")
     }
 }
 run(StrTest)
@@ -67,10 +70,11 @@ run(StrTest)
 #[test]
 fn str_truncate() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         v = "hello world".truncate(5)
-        Io.show("short={v}")
+        io.show("short={v}")
     }
 }
 run(StrTest)
@@ -86,10 +90,11 @@ run(StrTest)
 #[test]
 fn str_pad() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         v = "42".pad(5)
-        Io.show("padded={v}")
+        io.show("padded={v}")
     }
 }
 run(StrTest)
@@ -102,11 +107,12 @@ run(StrTest)
 #[test]
 fn str_find_all() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         matches = "one 1 two 2 three 3".find_all("\\d+")
-        Io.show("count={matches.count}")
-        Io.show("first={matches.first}")
+        io.show("count={matches.count}")
+        io.show("first={matches.first}")
     }
 }
 run(StrTest)
@@ -126,10 +132,11 @@ run(StrTest)
 #[test]
 fn str_sub() {
     let src = r#"
+use std/io
 agent StrTest {
     @on_start {
         v = "hello world hello".sub("hello", "hi")
-        Io.show("result={v}")
+        io.show("result={v}")
     }
 }
 run(StrTest)
@@ -145,22 +152,23 @@ run(StrTest)
 #[test]
 fn string_regex_methods_reject_non_string_patterns() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         try {
             "hello".matches(42)
         } catch e: Error {
-            Io.show("matches={e.message}")
+            io.show("matches={e.message}")
         }
         try {
             "hello".find_all(42)
         } catch e: Error {
-            Io.show("find_all={e.message}")
+            io.show("find_all={e.message}")
         }
         try {
             "hello".sub(42, "x")
         } catch e: Error {
-            Io.show("sub={e.message}")
+            io.show("sub={e.message}")
         }
         stop(self)
     }
@@ -186,12 +194,13 @@ run(A)
 #[test]
 fn string_contains_rejects_missing_argument() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         try {
             "hello".contains()
         } catch e: Error {
-            Io.show("caught={e.message}")
+            io.show("caught={e.message}")
         }
         stop(self)
     }

@@ -7,10 +7,11 @@ use crate::common::*;
 #[test]
 fn cast_int_to_float() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     x: int = 5
-    Io.show("{x as float}")
+    io.show("{x as float}")
     stop(self)
   }
 }
@@ -29,10 +30,11 @@ stderr: {stderr}"
 #[test]
 fn cast_float_to_int_truncates() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{1.9 as int}")
-    Io.show("{-1.9 as int}")
+    io.show("{1.9 as int}")
+    io.show("{-1.9 as int}")
     stop(self)
   }
 }
@@ -52,9 +54,10 @@ stderr: {stderr}"
 #[test]
 fn cast_int_to_str() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{42 as str}")
+    io.show("{42 as str}")
     stop(self)
   }
 }
@@ -73,10 +76,11 @@ stderr: {stderr}"
 #[test]
 fn cast_str_to_int() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     n = "99" as int
-    Io.show("{n}")
+    io.show("{n}")
     stop(self)
   }
 }
@@ -95,10 +99,11 @@ stderr: {stderr}"
 #[test]
 fn cast_str_to_float() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     f = "3.14" as float
-    Io.show("{f}")
+    io.show("{f}")
     stop(self)
   }
 }
@@ -117,10 +122,11 @@ stderr: {stderr}"
 #[test]
 fn cast_invalid_str_to_int_raises() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     x = "abc" as int
-    Io.show("{x}")
+    io.show("{x}")
     stop(self)
   }
 }
@@ -134,10 +140,11 @@ run(A)
 #[test]
 fn cast_none_raises() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     x = none as int
-    Io.show("{x}")
+    io.show("{x}")
     stop(self)
   }
 }
@@ -151,13 +158,14 @@ run(A)
 #[test]
 fn typeof_primitives() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show(typeof(42))
-    Io.show(typeof(3.14))
-    Io.show(typeof("hi"))
-    Io.show(typeof(true))
-    Io.show(typeof(none))
+    io.show(typeof(42))
+    io.show(typeof(3.14))
+    io.show(typeof("hi"))
+    io.show(typeof(true))
+    io.show(typeof(none))
     stop(self)
   }
 }
@@ -180,12 +188,13 @@ stderr: {stderr}"
 #[test]
 fn typeof_struct_returns_declared_name() {
     let src = r#"
+use std/io
 type Point { x: int, y: int }
 
 agent A {
   @on_start {
     p: Point = { x: 1, y: 2 }
-    Io.show(typeof(p))
+    io.show(typeof(p))
     stop(self)
   }
 }
@@ -204,12 +213,13 @@ stderr: {stderr}"
 #[test]
 fn typeof_enum_returns_declared_name() {
     let src = r#"
+use std/io
 type Color = red | green | blue
 
 agent A {
   @on_start {
     c: Color = Color.red
-    Io.show(typeof(c))
+    io.show(typeof(c))
     stop(self)
   }
 }
@@ -228,10 +238,11 @@ stderr: {stderr}"
 #[test]
 fn cast_bool_to_str() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{true as str}")
-    Io.show("{false as str}")
+    io.show("{true as str}")
+    io.show("{false as str}")
     stop(self)
   }
 }
@@ -251,10 +262,11 @@ stderr: {stderr}"
 #[test]
 fn cast_str_to_bool() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{"true" as bool}")
-    Io.show("{"false" as bool}")
+    io.show("{"true" as bool}")
+    io.show("{"false" as bool}")
     stop(self)
   }
 }
@@ -290,12 +302,13 @@ run(A)
 #[test]
 fn cast_same_type_identity() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
-    Io.show("{42 as int}")
-    Io.show("{"hi" as str}")
-    Io.show("{3.14 as float}")
-    Io.show("{true as bool}")
+    io.show("{42 as int}")
+    io.show("{"hi" as str}")
+    io.show("{3.14 as float}")
+    io.show("{true as bool}")
     stop(self)
   }
 }
@@ -317,11 +330,13 @@ stderr: {stderr}"
 #[test]
 fn cast_uuid_to_str() {
     let src = r#"
+use std/io
+use std/uuid
 agent A {
   @on_start {
-    id = uuid()
+    id = uuid.v4()
     s = id as str
-    Io.show(typeof(s))
+    io.show(typeof(s))
     stop(self)
   }
 }
@@ -340,10 +355,11 @@ stderr: {stderr}"
 #[test]
 fn cast_str_to_uuid_valid() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     id = "f47ac10b-58cc-4372-a567-0e02b2c3d479" as Uuid
-    Io.show(typeof(id))
+    io.show(typeof(id))
     stop(self)
   }
 }
@@ -378,11 +394,13 @@ run(A)
 #[test]
 fn typeof_list_map_duration_uuid() {
     let src = r#"
+use std/io
+use std/uuid
 agent A {
   @on_start {
-    Io.show(typeof([1, 2, 3]))
-    Io.show(typeof(1.s))
-    Io.show(typeof(uuid()))
+    io.show(typeof([1, 2, 3]))
+    io.show(typeof(1.s))
+    io.show(typeof(uuid.v4()))
     stop(self)
   }
 }
@@ -407,10 +425,11 @@ stderr: {stderr}"
 #[test]
 fn let_annotation_valid_runs() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         greeting: str = "hello annotated"
-        Io.show(greeting)
+        io.show(greeting)
     }
 }
 run(A)
@@ -427,11 +446,12 @@ run(A)
 #[test]
 fn null_assert_unwraps_non_none_value() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = "present"
         val = x!
-        Io.show(val)
+        io.show(val)
     }
 }
 run(A)

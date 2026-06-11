@@ -7,6 +7,10 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/struct_types.keel
 
+use std/ai
+use std/io
+use std/testing
+
 type Product {
   name:     str
   price:    float
@@ -20,8 +24,8 @@ type OrderLine {
 
 task line_summary(line: OrderLine) -> str {
   subtotal = line.product.price * line.quantity
-  # Ai.draft returns str? — use ?? to guarantee a str return type.
-  Ai.draft(
+  # ai.draft returns str? — use ?? to guarantee a str return type.
+  ai.draft(
     "One line: {line.product.name} x{line.quantity} at ${line.product.price} each",
     format: prose
   ) ?? "{line.product.name} x{line.quantity} = ${subtotal}"
@@ -49,17 +53,34 @@ agent Checkout {
     available = all_lines.filter(l => l.product.in_stock)
     skipped   = all_lines.filter(l => not l.product.in_stock)
 
-    Io.show("Fulfilling {available.len()} of {all_lines.len()} line(s)")
-    Io.show("Skipping {skipped.len()} out-of-stock item(s)\n")
+    io.show("Fulfilling {available.len()} of {all_lines.len()} line(s)")
+    io.show("Skipping {skipped.len()} out-of-stock item(s)\n")
 
     for line in available {
       summary = line_summary(line)
-      Io.show("  {summary}")
+      io.show("  {summary}")
       self.lines_processed = self.lines_processed + 1
     }
 
-    Io.show("\n{self.lines_processed} line(s) fulfilled.")
+    io.show("\n{self.lines_processed} line(s) fulfilled.")
   }
 }
 
 run(Checkout)
+
+# Tests — run with: keel test examples/struct_types.keel
+test "mocked ai.draft is used when present" {
+  setup {
+    testing.mock(ai.draft).returns("Widget x3 — three fine widgets")
+  }
+  line: OrderLine = { product: { name: "Widget", price: 9.99, in_stock: true }, quantity: 3 }
+  assert line_summary(line) == "Widget x3 — three fine widgets"
+}
+
+test "summary falls back when ai.draft returns none" {
+  setup {
+    testing.mock(ai.draft).returns(none)
+  }
+  line: OrderLine = { product: { name: "Widget", price: 10.0, in_stock: true }, quantity: 3 }
+  assert line_summary(line) == "Widget x3 = $30"
+}

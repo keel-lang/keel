@@ -1,13 +1,29 @@
+use std/crypto
+use std/io
+
 agent CryptoDemo {
   @on_start {
-    digest = Crypto.sha256("hello")
-    wide = Crypto.sha384("hello")
-    sig = Crypto.hmac_sha256("message", key: "secret")
-    token = Crypto.token(bytes: 16)
-    bytes = Crypto.random_bytes(8)
-    Io.show("digest={digest} wide={wide} sig={sig} token={token} bytes={bytes}")
+    digest = crypto.sha256("hello")
+    wide = crypto.sha384("hello")
+    sig = crypto.hmac_sha256("message", key: "secret")
+    token = crypto.token(bytes: 16)
+    bytes = crypto.random_bytes(8)
+    io.show("digest={digest} wide={wide} sig={sig} token={token} bytes={bytes}")
     stop(self)
   }
 }
 
 run(CryptoDemo)
+
+# Tests — run with: keel test examples/crypto_demo.keel
+test "sha256 of a known input" {
+  assert crypto.sha256("hello") == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+}
+
+test "hmac-sha256 with a known key" {
+  assert crypto.hmac_sha256("message", key: "secret") == "8b5f48702995c1598c573db1e21866a9b825d4a794d169d7060a03605796360b"
+}
+
+test "token length follows the byte count" {
+  assert crypto.token(bytes: 16).len() == 32
+}

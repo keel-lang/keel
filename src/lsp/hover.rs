@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn hover_primitive_type_name_resolves_via_tier2() {
         let src = "task t(x: int) { }\n";
-        let (_, index) = analyze_document(src);
+        let (_, index) = analyze_document(src, None);
         let offset = src.find("int").unwrap() + 1;
         let label = resolve_hover_type(src, offset, index.as_ref());
         assert_eq!(label.as_deref(), Some("type `int`"));
@@ -65,7 +65,7 @@ mod tests {
     fn user_binding_shadows_prelude_primitive() {
         // `str` here is used as a variable name (valid — not a reserved keyword).
         let src = "task t() {\n  str = \"hello\"\n}\n";
-        let (_, index) = analyze_document(src);
+        let (_, index) = analyze_document(src, None);
         // Hover on the `str` declaration site.
         let offset = src.find("str").unwrap() + 1;
         let label = resolve_hover_type(src, offset, index.as_ref());

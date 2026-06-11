@@ -1,5 +1,7 @@
 # Rich enum variant construction and destructuring.
 
+use std/io
+
 type Action =
   | reply { to: str, tone: str }
   | forward { to: str }
@@ -27,9 +29,9 @@ agent Demo {
     b = Action.forward { to: "ops@example.com" }
     c = Action.archive
 
-    Io.notify(describe(a))
-    Io.notify(describe(b))
-    Io.notify(describe(c))
+    io.notify(describe(a))
+    io.notify(describe(b))
+    io.notify(describe(c))
   }
 }
 

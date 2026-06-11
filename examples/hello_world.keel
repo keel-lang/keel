@@ -8,22 +8,25 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/hello_world.keel
 
+use std/ai
+use std/io
+
 agent Hello {
   @role "You are a friendly assistant who greets people warmly"
 
   @on_start {
-    Io.show("Hello from Keel!")
-    Io.show("I'm a friendly assistant, ready to chat.")
-    greeting = Ai.draft("a warm two-sentence welcome message for a new user",
+    io.show("Hello from Keel!")
+    io.show("I'm a friendly assistant, ready to chat.")
+    greeting = ai.draft("a warm two-sentence welcome message for a new user",
       tone: "friendly"
     ) ?? "Welcome! I'm here to help — just send me a message."
-    Io.show(greeting)
+    io.show(greeting)
   }
 
   on message(msg: {body: str, from: str}) {
-    reply = Ai.draft("response to: {msg.body}", tone: "warm and helpful")
+    reply = ai.draft("response to: {msg.body}", tone: "warm and helpful")
       ?? "Thanks for your message! I'll get back to you shortly."
-    Io.show("[to {msg.from}] {reply}")
+    io.show("[to {msg.from}] {reply}")
   }
 }
 

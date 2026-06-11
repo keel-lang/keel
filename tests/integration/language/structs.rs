@@ -29,6 +29,7 @@ run_test()
 fn nullable_struct_annotation_promotes_map_to_struct() {
     // A nullable type annotation `Score?` must still promote a map literal to Value::Struct.
     let src = r#"
+use std/io
 type Score { val: int }
 interface Gettable { task get_val(self) -> int }
 impl Gettable for Score {
@@ -36,7 +37,7 @@ impl Gettable for Score {
 }
 task run_test() {
   s: Score? = { val: 55 }
-  Io.show("{s.get_val()}")
+  io.show("{s.get_val()}")
 }
 run_test()
 "#;
@@ -73,10 +74,11 @@ run_test()
 fn anonymous_struct_literal_is_assignable_to_named_struct() {
     // An untyped struct literal {x:1, y:2} is assignable to a named struct type.
     let src = r#"
+use std/io
 type Point { x: int, y: int }
 task use_point(p: Point) -> int { p.x }
 task run_test() {
-  Io.show("{use_point({ x: 3, y: 4 })}")
+  io.show("{use_point({ x: 3, y: 4 })}")
 }
 run_test()
 "#;
@@ -90,6 +92,7 @@ fn named_struct_dispatch_requires_typed_variable() {
     // Untyped map literals do not dispatch to named-struct impl methods.
     // Assigning to a typed list[TypeName] variable promotes elements so dispatch works.
     let src = r#"
+use std/io
 type Item { val: int }
 interface Gettable { task get_val(self) -> int }
 impl Gettable for Item {
@@ -97,7 +100,7 @@ impl Gettable for Item {
 }
 task run_test() {
   typed: list[Item] = [{ val: 42 }]
-  Io.show("{typed.first().get_val()}")
+  io.show("{typed.first().get_val()}")
 }
 run_test()
 "#;
@@ -111,6 +114,7 @@ fn aliased_named_struct_annotation_promotes_to_canonical_type() {
     // Alias annotations must tag the runtime value with the target struct name
     // so nominal impl dispatch can find methods declared for the canonical type.
     let src = r#"
+use std/io
 type Item { val: int }
 type Alias = Item
 interface Gettable { task get_val(self) -> int }
@@ -119,7 +123,7 @@ impl Gettable for Item {
 }
 task run_test() {
   x: Alias = { val: 42 }
-  Io.show("{x.get_val()}")
+  io.show("{x.get_val()}")
 }
 run_test()
 "#;
@@ -155,10 +159,11 @@ fn int_keyed_map_is_not_promoted_to_struct() {
     // Struct field names are always valid identifiers; "1" is not.
     // The map should pass through as Value::Map and produce normal JSON output.
     let src = r#"
+use std/io
 type Scores { a: int, b: int }
 task run_test() {
   m: map[int, int] = {1: 10, 2: 20}
-  Io.show("{m.len()}")
+  io.show("{m.len()}")
 }
 run_test()
 "#;
@@ -173,6 +178,7 @@ fn map_of_struct_values_promotes_elements_at_typed_param() {
     // is declared map[str, TypeName], each value in the map must be promoted to
     // Value::Struct so impl dispatch works on the values.
     let src = r#"
+use std/io
 type Score { val: int }
 interface Gettable { task get_val(self) -> int }
 impl Gettable for Score {
@@ -182,7 +188,7 @@ task use_scores(scores: map[str, Score]) -> int {
   scores.get("alice").get_val()
 }
 task run_test() {
-  Io.show("{use_scores({ "alice": { val: 42 } })}")
+  io.show("{use_scores({ "alice": { val: 42 } })}")
 }
 run_test()
 "#;
@@ -198,11 +204,12 @@ run_test()
 #[test]
 fn destruct_struct_shorthand() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     val = {name: "alice", age: 30}
     {name, age} = val
-    Io.show("{name}:{age}")
+    io.show("{name}:{age}")
     stop(self)
   }
 }
@@ -219,11 +226,12 @@ run(A)
 #[test]
 fn destruct_struct_rename() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     val = {urgency: "high", category: "bug"}
     {urgency: u, category: c} = val
-    Io.show("{u}:{c}")
+    io.show("{u}:{c}")
     stop(self)
   }
 }
@@ -240,11 +248,12 @@ run(A)
 #[test]
 fn destruct_tuple() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     pair = ("alpha", 42)
     (label, count) = pair
-    Io.show("{label}:{count}")
+    io.show("{label}:{count}")
     stop(self)
   }
 }
@@ -261,6 +270,7 @@ run(A)
 #[test]
 fn destruct_in_for_loop() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     items = [
@@ -268,7 +278,7 @@ agent A {
       {name: "bob", score: 20},
     ]
     for {name, score} in items {
-      Io.show("{name}={score}")
+      io.show("{name}={score}")
     }
     stop(self)
   }
@@ -290,10 +300,11 @@ run(A)
 #[test]
 fn destruct_in_task_param() {
     let src = r#"
+use std/io
 type Point = {x: int, y: int}
 
 task show_point({x, y}: Point) {
-  Io.show("{x},{y}")
+  io.show("{x},{y}")
 }
 
 agent A {
@@ -315,11 +326,12 @@ run(A)
 #[test]
 fn destruct_missing_field_type_error() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     val = {name: "alice"}
     {name, nonexistent} = val
-    Io.show("{name}")
+    io.show("{name}")
     stop(self)
   }
 }
@@ -336,11 +348,12 @@ run(A)
 #[test]
 fn destruct_tuple_arity_mismatch_type_error() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     triple = (1, 2, 3)
     (a, b) = triple
-    Io.show("{a}:{b}")
+    io.show("{a}:{b}")
     stop(self)
   }
 }
@@ -357,11 +370,12 @@ run(A)
 #[test]
 fn destruct_keyword_field_from() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     email = {from: "alice@example.com", subject: "hello"}
     {from, subject} = email
-    Io.show("{from}:{subject}")
+    io.show("{from}:{subject}")
     stop(self)
   }
 }

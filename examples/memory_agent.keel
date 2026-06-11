@@ -1,10 +1,13 @@
+use std/io
+use std/memory
+
 agent Counter {
   @memory session
   @on_start {
-    prev = Memory.recall("count")
+    prev = memory.recall("count")
     count = if prev == none { 1 } else { prev.to_int() + 1 }
-    Memory.remember("count", "{count}")
-    Io.show("Visit {count}")
+    memory.remember("count", "{count}")
+    io.show("Visit {count}")
     stop(self)
   }
 }

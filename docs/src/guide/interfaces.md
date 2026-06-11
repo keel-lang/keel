@@ -24,6 +24,8 @@ Each entry is a `task` signature. The `self` parameter is written without a type
 Use `impl InterfaceName for TypeName { ... }` to provide an implementation:
 
 ```keel
+use std/io
+
 type Point {
   x: float
   y: float
@@ -36,7 +38,7 @@ impl Printable for Point {
 }
 
 p: Point = { x: 1.5, y: 2.0 }
-Io.show(p.print())    # → "(1.5, 2.0)"
+io.show(p.print())    # → "(1.5, 2.0)"
 ```
 
 - `impl` and `for` are reserved keywords.
@@ -90,6 +92,8 @@ Each of these is a separate compile-time error. The runtime will not run a progr
 Impl methods take priority over built-in map methods. If a struct type has an interface method named `size`, it shadows the built-in `map.size()` length accessor for that type:
 
 ```keel
+use std/io
+
 interface Sizable {
   task size(self) -> int
 }
@@ -101,7 +105,7 @@ impl Sizable for Grid {
 }
 
 g: Grid = { rows: 3, cols: 4 }
-Io.show("{g.size()}")    # → "12"  (not the map key count)
+io.show("{g.size()}")    # → "12"  (not the map key count)
 ```
 
 ## Built-in interfaces
@@ -113,19 +117,24 @@ Five interfaces are built into the language. You cannot redeclare them with `int
 Enables `"{expr}"` string interpolation for user-defined types. See the [String Interpolation guide](strings.md#stringable-interface--custom-interpolation) for full details.
 
 ```keel
+use std/io
+
 impl Stringable for Point {
   task to_str(self) -> str { "({self.x}, {self.y})" }
 }
 
 p: Point = { x: 3.0, y: 4.0 }
-Io.show("Point: {p}")    # → "Point: (3.0, 4.0)"
+io.show("Point: {p}")    # → "Point: (3.0, 4.0)"
 ```
 
 ### `Serializable`
 
-Overrides `Json.stringify` for user-defined types. Implement `to_json` to produce a custom JSON representation.
+Overrides `json.stringify` for user-defined types. Implement `to_json` to produce a custom JSON representation.
 
 ```keel
+use std/io
+use std/json
+
 type Event { name: str, score: int }
 
 impl Serializable for Event {
@@ -135,7 +144,7 @@ impl Serializable for Event {
 }
 
 e: Event = { name: "goal", score: 3 }
-Io.show(Json.stringify(e))   # → calls to_json instead of default serializer
+io.show(json.stringify(e))   # → calls to_json instead of default serializer
 ```
 
 ### `Comparable`
@@ -148,6 +157,8 @@ Enables sorting and comparison for user-defined types. `compare(self, other)` mu
 Wired into `list.sort()`, `list.min()`, `list.max()`, and the global `min()` / `max()`.
 
 ```keel
+use std/io
+
 type Score { val: int }
 
 impl Comparable for Score {
@@ -160,7 +171,7 @@ impl Comparable for Score {
 # Without the annotation, elements stay as anonymous maps and
 # Comparable.compare is never found.
 items: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
-Io.show("{items.sort()}")   # sorted ascending by val
+io.show("{items.sort()}")   # sorted ascending by val
 lo = items.min()
 hi = items.max()
 ```
@@ -170,6 +181,8 @@ hi = items.max()
 Adds a typed equality method. Note: `==` remains structural (field-by-field) comparison — `equals` is a separate, potentially richer check.
 
 ```keel
+use std/io
+
 type Point { x: int, y: int }
 
 impl Equatable for Point {
@@ -180,7 +193,7 @@ impl Equatable for Point {
 
 a: Point = { x: 1, y: 2 }
 b: Point = { x: 1, y: 2 }
-Io.show("{a.equals(b)}")   # → true
+io.show("{a.equals(b)}")   # → true
 ```
 
 ### `Iterable`
@@ -188,6 +201,8 @@ Io.show("{a.equals(b)}")   # → true
 Lets a struct be used in a `for` loop. `items(self)` must return a list of the elements to iterate. The return type may be `list[T]` for any concrete `T` — `list[dynamic]` is accepted but so is `list[int]`, `list[str]`, etc.
 
 ```keel
+use std/io
+
 type Range { lo: int, hi: int }
 
 impl Iterable for Range {
@@ -204,7 +219,7 @@ impl Iterable for Range {
 
 r: Range = { lo: 1, hi: 4 }
 for n in r {
-  Io.show("{n}")   # → 1, 2, 3, 4
+  io.show("{n}")   # → 1, 2, 3, 4
 }
 ```
 

@@ -1,0 +1,23 @@
+# A dedicated test file is just a module that imports what it tests.
+#
+#   keel test examples/inbox_modules/validation_test.keel
+#
+# Imported modules contribute declarations only — validation.keel's own
+# test blocks do NOT run here. Point `keel test` at each file (or at the
+# directory) to run a whole suite.
+
+use "./validation.keel"
+use subject_priority from "./validation.keel"
+
+test "qualified module call" {
+  assert validation.email("ada@example.com")
+}
+
+test "rejects malformed addresses" for addr in ["plain", "missing-at.com", "@no-domain"] {
+  assert not validation.email(addr)
+}
+
+test "urgent subjects rank higher" {
+  assert subject_priority("urgent: prod is down") == 2
+  assert subject_priority("weekly digest") == 1
+}

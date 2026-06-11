@@ -1,13 +1,16 @@
+use std/ai
+use std/io
+
 use std/testing
 
 type Urgency = low | medium | high | critical
 
 task safe_classify(text: str) -> Urgency {
-  Ai.classify(text, as: Urgency) ?? Urgency.medium
+  ai.classify(text, as: Urgency) ?? Urgency.medium
 }
 
 test "safe classify uses mocked urgency" {
-  testing.mock(Ai.classify).returns(Urgency.critical)
+  testing.mock(ai.classify).returns(Urgency.critical)
   assert safe_classify("server is down!") == Urgency.critical
 }
 
@@ -15,15 +18,15 @@ agent ErrorDemo {
   @role "You triage support tickets by urgency"
   @on_start {
     urgency = safe_classify("server is down!")
-    Io.show("Classified as: {urgency}")
+    io.show("Classified as: {urgency}")
     try {
-      result = Ai.classify("some ambiguous text", as: Urgency) ?? Urgency.medium
-      Io.show("Result: {result}")
+      result = ai.classify("some ambiguous text", as: Urgency) ?? Urgency.medium
+      io.show("Result: {result}")
     } catch err: AiSchemaError {
-      Io.show("LLM gave unexpected output: {err.got}")
+      io.show("LLM gave unexpected output: {err.got}")
       result = Urgency.medium
     } catch err: Error {
-      Io.show("Unexpected error: {err.message}")
+      io.show("Unexpected error: {err.message}")
     }
     stop(self)
   }

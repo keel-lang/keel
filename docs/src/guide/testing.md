@@ -5,16 +5,17 @@
 Keel test blocks make agent-facing code deterministic without replacing your production program.
 
 ```keel
+use std/ai
 use std/testing
 
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-  Ai.classify(text, as: Severity) ?? Severity.low
+  ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "mocked classify returns critical" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   assert classify("payment outage") == Severity.critical
 }
 ```
@@ -101,10 +102,12 @@ The runner prints each case with an index, such as `validate status [0]`. The ca
 Use `setup` to prepare values that the test body can assert against:
 
 ```keel
+use std/ai
+
 test "summary" {
   setup {
     expected: str = "short"
-    actual: str = Ai.summarize("long article") ?? ""
+    actual: str = ai.summarize("long article") ?? ""
   }
 
   assert actual == expected
@@ -116,19 +119,23 @@ test "summary" {
 Mocks replace prelude namespace methods inside one test:
 
 ```keel
+use std/ai
 use std/testing
 
 test "summary fallback" {
-  testing.mock(Ai.summarize).returns("short")
-  assert Ai.summarize("long article") == "short"
+  testing.mock(ai.summarize).returns("short")
+  assert ai.summarize("long article") == "short"
 }
 ```
 
 For enum classification, return the enum variant directly:
 
 ```keel
+use std/ai
+use std/testing
+
 test "classification" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   assert classify("payment outage") == Severity.critical
 }
 ```
@@ -138,31 +145,37 @@ Mocks are scoped to a single test. If two tests mock the same method differently
 Repeat a mock target to return a sequence of values. Once the sequence is exhausted, the last value repeats:
 
 ```keel
-test "summaries" {
-  testing.mock(Ai.summarize).returns("first")
-  testing.mock(Ai.summarize).returns("second")
+use std/ai
+use std/testing
 
-  assert Ai.summarize("a") == "first"
-  assert Ai.summarize("b") == "second"
-  assert Ai.summarize("c") == "second"
-  assert Ai.summarize.called
-  assert Ai.summarize.call_count == 3
-  assert Ai.summarize.called_with("a")
+test "summaries" {
+  testing.mock(ai.summarize).returns("first")
+  testing.mock(ai.summarize).returns("second")
+
+  assert ai.summarize("a") == "first"
+  assert ai.summarize("b") == "second"
+  assert ai.summarize("c") == "second"
+  assert ai.summarize.called
+  assert ai.summarize.call_count == 3
+  assert ai.summarize.called_with("a")
 }
 ```
 
 Mocked methods expose test-local metadata:
 
 ```keel
-test "draft" {
-  testing.mock(Ai.draft).returns("Thanks")
+use std/ai
+use std/testing
 
-  reply = Ai.draft("response to Ada", tone: "friendly") ?? ""
+test "draft" {
+  testing.mock(ai.draft).returns("Thanks")
+
+  reply = ai.draft("response to Ada", tone: "friendly") ?? ""
 
   assert reply == "Thanks"
-  assert Ai.draft.called
-  assert Ai.draft.call_count == 1
-  assert Ai.draft.called_with("response to Ada", tone: "friendly")
+  assert ai.draft.called
+  assert ai.draft.call_count == 1
+  assert ai.draft.called_with("response to Ada", tone: "friendly")
 }
 ```
 

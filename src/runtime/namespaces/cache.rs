@@ -6,7 +6,7 @@ use crate::runtime::namespace::{ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Cache",
+        namespace: "cache",
         name: "set",
         params: &[
             BuiltinParam {
@@ -29,7 +29,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Store a value in the in-process cache, with an optional TTL duration.",
     },
     BuiltinMethod {
-        namespace: "Cache",
+        namespace: "cache",
         name: "get",
         params: &[BuiltinParam {
             name: "key",
@@ -40,7 +40,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Retrieve a cached value, returning none if absent.",
     },
     BuiltinMethod {
-        namespace: "Cache",
+        namespace: "cache",
         name: "delete",
         params: &[BuiltinParam {
             name: "key",
@@ -51,7 +51,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Remove a key from the cache.",
     },
     BuiltinMethod {
-        namespace: "Cache",
+        namespace: "cache",
         name: "clear",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::None_),
@@ -60,14 +60,14 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Cache", {
+    ns!("cache", {
         "set" => |host, args| Box::pin(async move {
-            let key = expect_str(&args, 0, "Cache.set")?.to_owned();
+            let key = expect_str(&args, 0, "cache.set")?.to_owned();
             let value = positional(&args, 1)
                 .cloned()
-                .ok_or_else(|| miette::miette!("Cache.set: missing value argument"))?;
+                .ok_or_else(|| miette::miette!("cache.set: missing value argument"))?;
 
-            let expires_at = expect_duration_named(&args, "ttl", "Cache.set")?
+            let expires_at = expect_duration_named(&args, "ttl", "cache.set")?
                 .map(|secs| host.runtime().clock.now_instant() + std::time::Duration::from_secs_f64(secs));
 
             let cache = &host.runtime().cache;
@@ -75,7 +75,7 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::None)
         }),
         "get" => |host, args| Box::pin(async move {
-            let key = expect_str(&args, 0, "Cache.get")?;
+            let key = expect_str(&args, 0, "cache.get")?;
 
             let cache = &host.runtime().cache;
             let mut cache_lock = cache.lock();
@@ -90,7 +90,7 @@ pub(crate) fn namespace() -> Namespace {
             }
         }),
         "delete" => |host, args| Box::pin(async move {
-            let key = expect_str(&args, 0, "Cache.delete")?;
+            let key = expect_str(&args, 0, "cache.delete")?;
 
             let cache = &host.runtime().cache;
             cache.lock().remove(key);
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn namespace_has_all_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Cache");
+        assert_eq!(ns.name, "cache");
         assert!(ns.methods.contains_key("set"));
         assert!(ns.methods.contains_key("get"));
         assert!(ns.methods.contains_key("delete"));
@@ -178,7 +178,7 @@ mod tests {
         .expect_err("integer key must fail");
         assert_eq!(
             err.to_string(),
-            "Cache.set: argument at position 0 must be str, got int"
+            "cache.set: argument at position 0 must be str, got int"
         );
     }
 

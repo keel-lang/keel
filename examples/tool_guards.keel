@@ -1,3 +1,7 @@
+use std/db
+use std/email
+use std/log
+
 agent SupportBot {
   @role "Customer support — handles order inquiries and refunds"
 
@@ -5,25 +9,25 @@ agent SupportBot {
     confirmed: bool = false
     admin: bool = false
   }
-  @tools [Email.fetch, Email.send if self.confirmed, Db.query, Db.exec if self.admin, Log]
+  @tools [email.fetch, email.send if self.confirmed, db.query, db.exec if self.admin, log]
 
   on message(msg: str) {
     when msg {
       "confirm" => {
         self.confirmed = true
-        Log.info("user confirmed — Email.send now available")
+        log.info("user confirmed — email.send now available")
       }
       "admin" => {
         self.admin = true
-        Log.info("admin mode — Db.exec now available")
+        log.info("admin mode — db.exec now available")
       }
-      _ => Log.info("received: {msg}")
+      _ => log.info("received: {msg}")
     }
   }
 }
 
 run(SupportBot)
 
-Agent.send(SupportBot, "confirm")
+send(SupportBot, "confirm")
 
-Agent.send(SupportBot, "admin")
+send(SupportBot, "admin")

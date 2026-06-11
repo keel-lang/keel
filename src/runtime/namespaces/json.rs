@@ -10,7 +10,7 @@ use crate::runtime::namespace::{make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Json",
+        namespace: "json",
         name: "parse",
         params: &[BuiltinParam {
             name: "s",
@@ -24,7 +24,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Parse a JSON string into a dynamic value.",
     },
     BuiltinMethod {
-        namespace: "Json",
+        namespace: "json",
         name: "stringify",
         params: &[BuiltinParam {
             name: "value",
@@ -37,15 +37,15 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Json", {
+    ns!("json", {
         // Json.parse(str) — deserialize a JSON string into a Keel value.
         // Raises JsonError on invalid input.
         "parse" => |_i, args| Box::pin(async move {
-            let json_str = expect_str(&args, 0, "Json.parse")?;
+            let json_str = expect_str(&args, 0, "json.parse")?;
 
             match serde_json::from_str::<serde_json::Value>(json_str) {
                 Ok(json_val) => Ok(json_to_value(&json_val)),
-                Err(e) => Err(make_typed_report(RuntimeErrorKind::Json, format!("Json.parse: invalid JSON: {e}"))),
+                Err(e) => Err(make_typed_report(RuntimeErrorKind::Json, format!("json.parse: invalid JSON: {e}"))),
             }
         }),
         // Json.stringify(value) — serialize a Keel value to a JSON string.
@@ -53,7 +53,7 @@ pub(crate) fn namespace() -> Namespace {
         "stringify" => |host, args| Box::pin(async move {
             let value = positional(&args, 0)
                 .cloned()
-                .ok_or_else(|| miette::miette!("Json.stringify: missing argument"))?;
+                .ok_or_else(|| miette::miette!("json.stringify: missing argument"))?;
 
             // For untagged Value::Map values, attempt exact field-set promotion to a
             // named struct so that user-defined Serializable impls are reachable even
@@ -137,7 +137,7 @@ pub(crate) fn namespace() -> Namespace {
             let json_val = value_to_json(&value);
             match serde_json::to_string(&json_val) {
                 Ok(json_str) => Ok(Value::String(json_str)),
-                Err(e) => Err(make_typed_report(RuntimeErrorKind::Json, format!("Json.stringify: serialization failed: {e}"))),
+                Err(e) => Err(make_typed_report(RuntimeErrorKind::Json, format!("json.stringify: serialization failed: {e}"))),
             }
         }),
     })

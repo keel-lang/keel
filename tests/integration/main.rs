@@ -9,6 +9,7 @@ mod common;
 mod language;
 mod lint;
 mod memory;
+mod modules;
 mod namespaces;
 mod net;
 mod schedule;

@@ -7,10 +7,11 @@ use crate::common::*;
 #[test]
 fn lint_unused_variable_warns() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     unused = "hello"
-    Io.show("done")
+    io.show("done")
   }
 }
 run(A)
@@ -26,10 +27,11 @@ run(A)
 #[test]
 fn lint_underscore_prefix_suppresses_unused_warning() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     _ignored = "hello"
-    Io.show("done")
+    io.show("done")
   }
 }
 run(A)
@@ -44,12 +46,13 @@ run(A)
 #[test]
 fn lint_uncalled_task_warns() {
     let src = r#"
+use std/io
 task unused_helper() {
-  Io.show("never")
+  io.show("never")
 }
 agent A {
   @on_start {
-    Io.show("start")
+    io.show("start")
   }
 }
 run(A)
@@ -65,8 +68,9 @@ run(A)
 #[test]
 fn lint_called_task_no_warning() {
     let src = r#"
+use std/io
 task greet() {
-  Io.show("hi")
+  io.show("hi")
 }
 agent A {
   @on_start {
@@ -82,19 +86,21 @@ run(A)
 #[test]
 fn lint_ai_call_outside_agent_warns() {
     let src = r#"
+use std/ai
+use std/io
 task process(text: str) -> str {
-  result = Ai.summarize(text)
+  result = ai.summarize(text)
   result ?? "none"
 }
 agent A {
   @on_start {
-    Io.show(process("hi"))
+    io.show(process("hi"))
   }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = lint_inline(src);
-    assert!(!ok, "Ai.* outside agent should produce a warning");
+    assert!(!ok, "ai.* outside agent should produce a warning");
     assert!(
         stderr.contains("outside an agent"),
         "expected outside-agent warning:\n{stderr}"
@@ -104,31 +110,34 @@ run(A)
 #[test]
 fn lint_ai_call_inside_agent_no_warning() {
     let src = r#"
+use std/ai
+use std/io
 agent Assistant {
   @role "helper"
   @model "ollama:llama3.2"
 
   @on_start {
-    result = Ai.summarize("some text")
-    Io.show(result ?? "none")
+    result = ai.summarize("some text")
+    io.show(result ?? "none")
   }
 }
 run(Assistant)
 "#;
     let (ok, _stdout, stderr) = lint_inline(src);
-    assert!(ok, "Ai.* inside agent should not warn:\n{stderr}");
+    assert!(ok, "ai.* inside agent should not warn:\n{stderr}");
 }
 
 #[test]
 fn lint_state_written_not_read_warns() {
     let src = r#"
+use std/io
 agent Sink {
   state {
     events: int = 0
   }
   on tick(n: int) {
     self.events = 42
-    Io.show("ticked")
+    io.show("ticked")
   }
 }
 run(Sink)
@@ -144,13 +153,14 @@ run(Sink)
 #[test]
 fn lint_state_written_and_read_no_warning() {
     let src = r#"
+use std/io
 agent Counter {
   state {
     count: int = 0
   }
   @on_start {
     self.count = self.count + 1
-    Io.show("count ok")
+    io.show("count ok")
   }
 }
 run(Counter)
@@ -166,6 +176,7 @@ run(Counter)
 fn lint_clean_program_exits_zero() {
     let (ok, _stdout, stderr) = lint_inline(
         r#"
+use std/io
 task greet(name: str) -> str {
   msg = "Hello, " + name + "!"
   msg
@@ -178,10 +189,10 @@ agent Greeter {
 
   @on_start {
     result = greet("World")
-    Io.show(result)
+    io.show(result)
     self.call_count = self.call_count + 1
     total = self.call_count
-    Io.show(total)
+    io.show(total)
   }
 }
 

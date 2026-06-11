@@ -1,3 +1,5 @@
+use std/io
+
 type Priority =
   | low
   | medium
@@ -32,10 +34,10 @@ test "grade falls back for unknown scores" {
   assert grade("D") == "needs work"
 }
 
-Io.show(label(Priority.low))
+io.show(label(Priority.low))
 
-Io.show(label(Priority.high))
+io.show(label(Priority.high))
 
-Io.show(grade("A"))
+io.show(grade("A"))
 
-Io.show(grade("D"))
+io.show(grade("D"))

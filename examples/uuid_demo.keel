@@ -1,13 +1,25 @@
+use std/io
+use std/uuid
+
 agent UuidDemo {
   @on_start {
-    id: Uuid = uuid()
-    trace = Uuid.v7()
-    site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
-    parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+    id: Uuid = uuid.v4()
+    trace = uuid.v7()
+    site = uuid.v5(ns: uuid.DNS, name: "keel-lang.dev")
+    parsed = uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
     site_simple = site.format(as: "simple")
-    Io.show("id={id} trace_v={trace.version()} site={site_simple} parsed={parsed}")
+    io.show("id={id} trace_v={trace.version()} site={site_simple} parsed={parsed}")
     stop(self)
   }
 }
 
 run(UuidDemo)
+
+# Tests — run with: keel test examples/uuid_demo.keel
+test "v5 is deterministic, v4 is version 4" {
+  site = uuid.v5(ns: uuid.DNS, name: "keel-lang.dev")
+  assert site == uuid.v5(ns: uuid.DNS, name: "keel-lang.dev")
+  assert site.format(as: "simple").len() == 32
+  assert uuid.v4().version() == 4
+  assert uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479") != none
+}

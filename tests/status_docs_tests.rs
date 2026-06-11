@@ -113,9 +113,9 @@ fn roadmap_namespace_status_table_matches_feature_status_source() {
 }
 
 #[test]
-fn prelude_namespace_status_table_matches_feature_status_source() {
+fn stdlib_module_status_table_matches_feature_status_source() {
     let source = feature_status();
-    let prelude = read("docs/src/guide/prelude.md");
+    let prelude = read("docs/src/guide/stdlib.md");
 
     for ns in &source.namespaces {
         let expected = format!(
@@ -126,7 +126,7 @@ fn prelude_namespace_status_table_matches_feature_status_source() {
         );
         assert!(
             prelude.contains(&expected),
-            "docs/src/guide/prelude.md namespace status row drifted from docs/status/features.json:\nexpected row:\n{expected}"
+            "docs/src/guide/stdlib.md module status row drifted from docs/status/features.json:\nexpected row:\n{expected}"
         );
     }
 }
@@ -149,7 +149,7 @@ fn agents_status_claims_match_feature_status_source() {
 
     assert_eq!(status_by_name["@team [...]"], "shipped");
     assert!(
-        agents.contains("`@team` is used by `Agent.broadcast` routing"),
+        agents.contains("`@team` is used by `broadcast` routing"),
         "`@team` is shipped in docs/status/features.json, but docs/src/guide/agents.md no longer says broadcast routing uses it"
     );
 

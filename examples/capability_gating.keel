@@ -1,10 +1,13 @@
+use std/file
+use std/io
+
 agent RestrictedAgent {
-    @tools [Io, File]
+    @tools [io, file]
 
     @on_start {
-        Io.show("This is allowed - using Io namespace")
-        File.write("allowed.txt", "File operations are allowed")
-        Io.show("Capability gating test completed")
+        io.show("This is allowed - using Io namespace")
+        file.write("allowed.txt", "File operations are allowed")
+        io.show("Capability gating test completed")
     }
 }
 

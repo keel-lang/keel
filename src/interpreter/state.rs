@@ -507,11 +507,28 @@ impl Interpreter {
     }
 
     /// Register a namespace (called by runtime::install_prelude).
+    ///
+    /// Registration makes the module dispatchable; it does NOT bind the
+    /// module name in scope. Bindings are created per program from
+    /// `use std/<name>` declarations (or [`bind_all_namespaces`] in the
+    /// REPL, where the full stdlib is pre-imported for convenience).
+    ///
+    /// [`bind_all_namespaces`]: Self::bind_all_namespaces
     pub fn register_namespace(&mut self, ns: Namespace) {
-        let name = ns.name.clone();
-        self.globals
-            .insert(name.clone(), Value::Namespace(name.clone()));
-        self.namespaces.insert(name, ns);
+        self.namespaces.insert(ns.name.clone(), ns);
+    }
+
+    /// Bind every registered std module in the root scope under its
+    /// canonical name. REPL-only convenience — programs must import
+    /// modules explicitly with `use std/<name>`.
+    pub fn bind_all_namespaces(&mut self) {
+        let names: Vec<String> = self.namespaces.keys().cloned().collect();
+        for name in names {
+            if name == "__global" {
+                continue;
+            }
+            self.globals.insert(name.clone(), Value::Namespace(name));
+        }
     }
 
     /// Register a top-level function (e.g. `run`, `stop`). Top-level

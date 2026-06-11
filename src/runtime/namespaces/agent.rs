@@ -1,173 +1,122 @@
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
+//! Agent lifecycle and messaging verbs.
+//!
+//! These are language-level free functions (`send`, `delegate`, `broadcast`),
+//! not a stdlib module — agents are Keel's core abstraction, so their verbs
+//! are always in scope alongside `run` and `stop` (installed in
+//! `runtime::install_top_level_agent_fns`).
+
+use std::sync::Arc;
+
 use crate::interpreter::value::Value;
-use crate::interpreter::{Host, Namespace};
+use crate::interpreter::{CallArgValue, Host};
 use crate::runtime::args::{expect_str, expect_str_named, expect_str_value};
-use crate::runtime::namespace::{ns, positional};
 
-pub(crate) const SPEC: &[BuiltinMethod] = &[
-    BuiltinMethod {
-        namespace: "Agent",
-        name: "run",
-        params: &[BuiltinParam {
-            name: "name",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Start a named agent.",
-    },
-    BuiltinMethod {
-        namespace: "Agent",
-        name: "stop",
-        params: &[BuiltinParam {
-            name: "name",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Stop a running agent.",
-    },
-    BuiltinMethod {
-        namespace: "Agent",
-        name: "send",
-        params: &[
-            BuiltinParam {
-                name: "name",
-                ty: TySpec::Str,
-                optional: false,
-            },
-            BuiltinParam {
-                name: "message",
-                ty: TySpec::Dynamic,
-                optional: false,
-            },
-        ],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Send a message to an agent's mailbox.",
-    },
-    BuiltinMethod {
-        namespace: "Agent",
-        name: "delegate",
-        params: &[],
-        result: BuiltinResult::Unknown,
-        doc: "Delegate a task to another agent and return its result.",
-    },
-    BuiltinMethod {
-        namespace: "Agent",
-        name: "broadcast",
-        params: &[BuiltinParam {
-            name: "message",
-            ty: TySpec::Dynamic,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Broadcast a message to all running agents.",
-    },
-];
-
-pub(crate) fn namespace() -> Namespace {
-    ns!("Agent", {
-        "run" => |host, args| Box::pin(async move {
-            let agent_name = match args.first().map(|a| &a.value) {
-                Some(Value::AgentRef(name)) => name.clone(),
-                _ => return Err(miette::miette!("Agent.run expects an agent argument")),
-            };
-            host.start_agent(&agent_name).await?;
-            Ok(Value::None)
-        }),
-        "stop" => |host, args| Box::pin(async move {
-            let agent_name = match args.first().map(|a| &a.value) {
-                Some(Value::AgentRef(name)) => name.clone(),
-                _ => return Err(miette::miette!("Agent.stop expects an agent argument")),
-            };
-            host.stop_agent(&agent_name).await?;
-            Ok(Value::None)
-        }),
-        // Agent.send(target, message) — posts `message` to the target
-        // agent's `on message` handler via the event loop. Returns
-        // immediately; the handler runs later in the target's context.
-        "send" => |host, args| Box::pin(async move {
-            let target = match args.first().map(|a| &a.value) {
-                Some(Value::AgentRef(name)) => name.clone(),
-                _ => return Err(miette::miette!("Agent.send: first arg must be an agent")),
-            };
-            let data = args.iter().skip(1)
-                .find(|a| a.name.is_none())
-                .map(|a| a.value.clone())
-                .unwrap_or(Value::None);
-            let event_name = expect_str_named(&args, "event", "Agent.send")?
-                .unwrap_or("message")
-                .to_owned();
-            host.enqueue_event(crate::interpreter::Event::Dispatch {
-                agent_name: target,
-                event: event_name,
-                data,
-            })?;
-            Ok(Value::None)
-        }),
-        // Agent.delegate — posts a named handler event to a target agent's mailbox.
-        //
-        // Symbol form (preferred): Agent.delegate(Foo.handle, data)
-        //   arg[0] = AgentHandlerRef(agent_name, handler_name)
-        //   arg[1] = data payload
-        //
-        // String form (legacy): Agent.delegate(Foo, "handle", data)
-        //   arg[0] = AgentRef(agent_name)
-        //   arg[1] = handler name as string
-        //   arg[2] = data payload
-        "delegate" => |host, args| Box::pin(async move {
-            let (target, event, data) = match args.first().map(|a| &a.value) {
-                Some(Value::AgentHandlerRef(agent_name, handler_name)) => {
-                    let data = args.get(1)
-                        .map(|a| a.value.clone())
-                        .unwrap_or(Value::None);
-                    (agent_name.clone(), handler_name.clone(), data)
-                }
-                Some(Value::AgentRef(name)) => {
-                    let handler = args.get(1)
-                        .map(|a| expect_str_value(&a.value, "handler name", "Agent.delegate"))
-                        .transpose()?
-                        .unwrap_or("message")
-                        .to_owned();
-                    let data = args.get(2)
-                        .map(|a| a.value.clone())
-                        .unwrap_or(Value::None);
-                    (name.clone(), handler, data)
-                }
-                _ => return Err(miette::miette!(
-                    "Agent.delegate: first argument must be an agent handler \
-                     (use `Agent.delegate(Foo.handle, data)`) or an agent \
-                     (use `Agent.delegate(Foo, \"handle\", data)`)"
-                )),
-            };
-            host.enqueue_event(crate::interpreter::Event::Dispatch {
-                agent_name: target,
-                event,
-                data,
-            })?;
-            Ok(Value::None)
-        }),
-        // Agent.broadcast(team, data) — fan-out a `message` event to every
-        // running agent whose `@team [...]` declaration includes the given
-        // team name. Useful for system-wide signals to a labeled group.
-        "broadcast" => |host, args| Box::pin(async move {
-            let team = expect_str(&args, 0, "Agent.broadcast")?;
-            let data = positional(&args, 1).cloned().unwrap_or(Value::None);
-            let event_name = expect_str_named(&args, "event", "Agent.broadcast")?
-                .unwrap_or("message")
-                .to_owned();
-
-            let recipients = agents_in_team(host, team);
-            for agent_name in recipients {
+/// Install `send`, `delegate`, and `broadcast` as top-level functions.
+pub(crate) fn install_messaging_fns(host: &mut dyn Host) {
+    // send(target, message) — posts `message` to the target agent's
+    // `on message` handler via the event loop. Returns immediately; the
+    // handler runs later in the target's context.
+    host.register_top_fn(
+        "send",
+        Arc::new(|host: &mut dyn Host, args: Vec<CallArgValue>| {
+            Box::pin(async move {
+                let target = match args.first().map(|a| &a.value) {
+                    Some(Value::AgentRef(name)) => name.clone(),
+                    _ => return Err(miette::miette!("send: first arg must be an agent")),
+                };
+                let data = args
+                    .iter()
+                    .skip(1)
+                    .find(|a| a.name.is_none())
+                    .map(|a| a.value.clone())
+                    .unwrap_or(Value::None);
+                let event_name = expect_str_named(&args, "event", "send")?
+                    .unwrap_or("message")
+                    .to_owned();
                 host.enqueue_event(crate::interpreter::Event::Dispatch {
-                    agent_name,
-                    event: event_name.clone(),
-                    data: data.clone(),
+                    agent_name: target,
+                    event: event_name,
+                    data,
                 })?;
-            }
-            Ok(Value::None)
+                Ok(Value::None)
+            })
         }),
-    })
+    );
+
+    // delegate — posts a named handler event to a target agent's mailbox.
+    //
+    // Symbol form (preferred): delegate(Foo.handle, data)
+    //   arg[0] = AgentHandlerRef(agent_name, handler_name)
+    //   arg[1] = data payload
+    //
+    // String form (legacy): delegate(Foo, "handle", data)
+    //   arg[0] = AgentRef(agent_name)
+    //   arg[1] = handler name as string
+    //   arg[2] = data payload
+    host.register_top_fn(
+        "delegate",
+        Arc::new(|host: &mut dyn Host, args: Vec<CallArgValue>| {
+            Box::pin(async move {
+                let (target, event, data) = match args.first().map(|a| &a.value) {
+                    Some(Value::AgentHandlerRef(agent_name, handler_name)) => {
+                        let data = args.get(1).map(|a| a.value.clone()).unwrap_or(Value::None);
+                        (agent_name.clone(), handler_name.clone(), data)
+                    }
+                    Some(Value::AgentRef(name)) => {
+                        let handler = args
+                            .get(1)
+                            .map(|a| expect_str_value(&a.value, "handler name", "delegate"))
+                            .transpose()?
+                            .unwrap_or("message")
+                            .to_owned();
+                        let data = args.get(2).map(|a| a.value.clone()).unwrap_or(Value::None);
+                        (name.clone(), handler, data)
+                    }
+                    _ => {
+                        return Err(miette::miette!(
+                            "delegate: first argument must be an agent handler \
+                             (use `delegate(Foo.handle, data)`) or an agent \
+                             (use `delegate(Foo, \"handle\", data)`)"
+                        ));
+                    }
+                };
+                host.enqueue_event(crate::interpreter::Event::Dispatch {
+                    agent_name: target,
+                    event,
+                    data,
+                })?;
+                Ok(Value::None)
+            })
+        }),
+    );
+
+    // broadcast(team, data) — fan-out a `message` event to every running
+    // agent whose `@team [...]` declaration includes the given team name.
+    // Useful for system-wide signals to a labeled group.
+    host.register_top_fn(
+        "broadcast",
+        Arc::new(|host: &mut dyn Host, args: Vec<CallArgValue>| {
+            Box::pin(async move {
+                let team = expect_str(&args, 0, "broadcast")?;
+                let data = crate::runtime::namespace::positional(&args, 1)
+                    .cloned()
+                    .unwrap_or(Value::None);
+                let event_name = expect_str_named(&args, "event", "broadcast")?
+                    .unwrap_or("message")
+                    .to_owned();
+
+                let recipients = agents_in_team(host, team);
+                for agent_name in recipients {
+                    host.enqueue_event(crate::interpreter::Event::Dispatch {
+                        agent_name,
+                        event: event_name.clone(),
+                        data: data.clone(),
+                    })?;
+                }
+                Ok(Value::None)
+            })
+        }),
+    );
 }
 
 /// Return the names of every running agent whose `@team [...]` declaration

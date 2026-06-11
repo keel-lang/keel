@@ -6,10 +6,12 @@ use crate::common::*;
 
 #[test]
 fn serializable_to_json_on_untagged_map_uses_custom_impl() {
-    // Regression: Json.stringify on a struct literal not bound to a typed variable
+    // Regression: json.stringify on a struct literal not bound to a typed variable
     // must still invoke the Serializable impl when there is exactly one struct type
     // whose field set exactly matches the map's keys.
     let src = r#"
+use std/io
+use std/json
 type Event { name: str, score: int }
 impl Serializable for Event {
   task to_json(self) -> str {
@@ -17,7 +19,7 @@ impl Serializable for Event {
   }
 }
 task run_test() {
-  Io.show(Json.stringify({ name: "click", score: 7 }))
+  io.show(json.stringify({ name: "click", score: 7 }))
 }
 run_test()
 "#;
@@ -31,16 +33,18 @@ run_test()
 
 #[test]
 fn serializable_ambiguous_field_set_falls_back_to_builtin() {
-    // When two struct types share the exact same field set, Json.stringify must
+    // When two struct types share the exact same field set, json.stringify must
     // not guess and must fall back to the built-in JSON serializer.
     let src = r#"
+use std/io
+use std/json
 type A { x: int }
 type B { x: int }
 impl Serializable for A { task to_json(self) -> str { "A" } }
 impl Serializable for B { task to_json(self) -> str { "B" } }
 task run_test() {
-  out = Json.stringify({ x: 1 })
-  Io.show(out)
+  out = json.stringify({ x: 1 })
+  io.show(out)
 }
 run_test()
 "#;
@@ -65,6 +69,8 @@ run_test()
 #[test]
 fn serializable_to_json_used_by_json_stringify() {
     let src = r#"
+use std/io
+use std/json
 type Event { name: str, score: int }
 impl Serializable for Event {
   task to_json(self) -> str {
@@ -73,7 +79,7 @@ impl Serializable for Event {
 }
 task run_test() {
   e: Event = { name: "goal", score: 3 }
-  Io.show(Json.stringify(e))
+  io.show(json.stringify(e))
 }
 run_test()
 "#;
@@ -86,6 +92,7 @@ run_test()
 #[test]
 fn equatable_equals_method_is_callable() {
     let src = r#"
+use std/io
 type Point { x: int, y: int }
 impl Equatable for Point {
   task equals(self, other: Point) -> bool {
@@ -96,8 +103,8 @@ task run_test() {
   a: Point = { x: 1, y: 2 }
   b: Point = { x: 1, y: 2 }
   c: Point = { x: 9, y: 0 }
-  Io.show("{a.equals(b)}")
-  Io.show("{a.equals(c)}")
+  io.show("{a.equals(b)}")
+  io.show("{a.equals(c)}")
 }
 run_test()
 "#;
@@ -110,6 +117,7 @@ run_test()
 #[test]
 fn comparable_sort_orders_structs_ascending() {
     let src = r#"
+use std/io
 type Score { val: int }
 impl Comparable for Score {
   task compare(self, other: Score) -> int {
@@ -120,7 +128,7 @@ task run_test() {
   items: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
   sorted = items.sort()
   for s in sorted {
-    Io.show("{s.val}")
+    io.show("{s.val}")
   }
 }
 run_test()
@@ -139,6 +147,7 @@ run_test()
 #[test]
 fn comparable_min_max_on_structs() {
     let src = r#"
+use std/io
 type Score { val: int }
 impl Comparable for Score {
   task compare(self, other: Score) -> int {
@@ -149,8 +158,8 @@ task run_test() {
   items: list[Score] = [{ val: 30 }, { val: 10 }, { val: 20 }]
   lo = items.min()
   hi = items.max()
-  Io.show("{lo.val}")
-  Io.show("{hi.val}")
+  io.show("{lo.val}")
+  io.show("{hi.val}")
 }
 run_test()
 "#;
@@ -166,6 +175,7 @@ fn iterable_struct_via_typed_binding_dispatches_items() {
     // with a declared return type is promoted to Value::Struct at the call boundary,
     // so find_impl_task("items") fires correctly in the for loop.
     let src = r#"
+use std/io
 type Range { lo: int, hi: int }
 impl Iterable for Range {
   task items(self) -> list[int] {
@@ -181,7 +191,7 @@ impl Iterable for Range {
 task make_range() -> Range { { lo: 2, hi: 4 } }
 task run_test() {
   for n in make_range() {
-    Io.show("{n}")
+    io.show("{n}")
   }
 }
 run_test()
@@ -196,6 +206,7 @@ run_test()
 #[test]
 fn iterable_items_used_in_for_loop() {
     let src = r#"
+use std/io
 type Range { lo: int, hi: int }
 impl Iterable for Range {
   task items(self) -> list[int] {
@@ -211,7 +222,7 @@ impl Iterable for Range {
 task run_test() {
   r: Range = { lo: 1, hi: 4 }
   for n in r {
-    Io.show("{n}")
+    io.show("{n}")
   }
 }
 run_test()
@@ -234,7 +245,7 @@ fn builtin_interfaces_cannot_be_redeclared() {
         "Iterable",
     ] {
         let src = format!(
-            "interface {iface} {{ task dummy(self) -> str }}\ntask run_test() {{ Io.show(\"ok\") }}\nrun_test()"
+            "interface {iface} {{ task dummy(self) -> str }}\ntask run_test() {{ io.show(\"ok\") }}\nrun_test()"
         );
         let (ok, _stdout, stderr) = run_inline(&src, false);
         assert!(!ok, "{iface} should be rejected");
@@ -248,6 +259,7 @@ fn builtin_interfaces_cannot_be_redeclared() {
 #[test]
 fn iterable_return_type_can_be_concrete_list() {
     let src = r#"
+use std/io
 type Pair { a: int, b: int }
 impl Iterable for Pair {
   task items(self) -> list[int] {
@@ -257,7 +269,7 @@ impl Iterable for Pair {
 task run_test() {
   p: Pair = { a: 7, b: 8 }
   for n in p {
-    Io.show("{n}")
+    io.show("{n}")
   }
 }
 run_test()

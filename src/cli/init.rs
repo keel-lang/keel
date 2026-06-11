@@ -38,11 +38,13 @@ pub fn project(name: Option<String>) -> Result<()> {
     let main_keel = format!(
         r#"# {project_name} — built with Keel
 
+use std/io
+
 agent {agent_name} {{
   @role "Describe what this agent does"
 
   @on_start {{
-    Io.show("Hello from {project_name}!")
+    io.show("Hello from {project_name}!")
     stop(self)
   }}
 }}

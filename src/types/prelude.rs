@@ -90,9 +90,6 @@ static NAMESPACE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
     let mut seen = HashSet::new();
     let mut out = HashSet::new();
     for entry in catalog() {
-        if entry.namespace == "testing" {
-            continue;
-        }
         if seen.insert(entry.namespace) {
             out.insert(entry.namespace.to_string());
         }
@@ -101,10 +98,20 @@ static NAMESPACE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
 });
 
 static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
-    let mut prelude = NAMESPACE_NAMES.clone();
+    // std modules are NOT ambient — they enter scope via `use std/<name>`.
+    let mut prelude = HashSet::new();
 
-    // Top-level builtins
-    for n in ["run", "stop", "min", "max", "uuid", "typeof"] {
+    // Top-level builtins — agent lifecycle/messaging verbs and generic utilities.
+    for n in [
+        "run",
+        "stop",
+        "send",
+        "delegate",
+        "broadcast",
+        "min",
+        "max",
+        "typeof",
+    ] {
         prelude.insert(n.to_string());
     }
 
@@ -193,25 +200,26 @@ static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
     prelude
 });
 
-/// Return only the catalog namespace names (`Ai`, `Io`, `Http`, …).
+/// Return the catalog module names (`ai`, `io`, `http`, …) — the set of
+/// valid `use std/<name>` targets.
 ///
-/// Narrower than [`prelude_names`]: excludes primitive type names, top-level
-/// builtins, symbol-hint keywords, and built-in interface names.  Use this
-/// when the distinction matters — hover labels, rename gating — so that user
-/// identifiers like `json`, `text`, or `session` are not misclassified as
-/// namespaces.
+/// Use this for std-module resolution and for hover labels, so user
+/// identifiers like `text` or `session` are not misclassified as modules.
 ///
 /// Result is computed once and cached for the lifetime of the process.
 pub(crate) fn namespace_names() -> &'static HashSet<String> {
     &NAMESPACE_NAMES
 }
 
-/// Return the set of identifiers that are always in scope — prelude
-/// namespaces, built-in type names, top-level builtins, symbol hint
+/// Return the set of identifiers that are always in scope — top-level
+/// builtins (`run`, `send`, `min`, …), built-in type names, symbol hint
 /// keywords, and built-in interface names.
 ///
+/// std modules are deliberately absent: they enter scope only through
+/// `use std/<name>`.
+///
 /// The checker pre-seeds its identifier table with this set so that
-/// references to `Ai`, `str`, `run`, `json`, `Stringable`, etc. do not
+/// references to `str`, `run`, `json`, `Stringable`, etc. do not
 /// produce spurious "undefined identifier" errors.
 ///
 /// Result is computed once and cached for the lifetime of the process.
@@ -305,15 +313,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_catalog_namespaces_are_in_prelude_names() {
+    fn catalog_namespaces_are_not_ambient() {
+        // std modules must be imported via `use std/<name>` — none of them
+        // may appear in the always-in-scope prelude set. `json` is the one
+        // overlap: the ambient name is the symbol-hint string (`format: json`),
+        // not the module, which still requires `use std/json`.
         let names = prelude_names();
         for entry in super::catalog() {
-            if entry.namespace == "testing" {
+            if entry.namespace == "json" {
                 continue;
             }
             assert!(
-                names.contains(entry.namespace),
-                "catalog namespace `{}` missing from prelude_names()",
+                !names.contains(entry.namespace),
+                "catalog namespace `{}` must not be ambient in prelude_names()",
                 entry.namespace
             );
         }
@@ -391,9 +403,9 @@ mod tests {
         // The bidirectional check (SPEC vs installed methods) lives in
         // runtime::namespaces tests.
         let runtime_namespaces = [
-            "Io", "Schedule", "Ai", "Email", "Env", "Memory", "Log", "Agent", "Control", "Async",
-            "Http", "Search", "Db", "Time", "File", "Json", "Cache", "Random", "Uuid", "Crypto",
-            "Math", "Shell", "Csv",
+            "io", "schedule", "ai", "email", "env", "memory", "log", "control", "async", "http",
+            "search", "db", "time", "file", "json", "cache", "random", "uuid", "crypto", "math",
+            "shell", "csv",
         ];
         let catalog_namespaces: std::collections::HashSet<&str> =
             super::catalog().map(|m| m.namespace).collect();

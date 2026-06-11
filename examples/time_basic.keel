@@ -1,31 +1,50 @@
+use std/io
+use std/time
+
 agent Timer {
   @on_start {
-    t = Time.now()
-    Io.show("Now: {t}")
-    ny = Time.now(tz: "America/New_York")
-    Io.show("New York: {ny}")
-    deadline = Time.now() + 3.days
-    Io.show("Deadline: {deadline}")
-    past = Time.now() - 1.hours
-    Io.show("An hour ago: {past}")
-    parsed = Time.parse("2026-05-01T09:00:00Z")
-    Io.show("Parsed: {parsed}")
-    naive = Time.parse("2026-05-01", tz: "UTC")
-    Io.show("Naive+tz: {naive}")
-    bad = Time.parse("2026-05-01")
-    Io.show("Naive without tz: {bad}")
-    today = Time.now().format(as: "%Y-%m-%d")
-    Io.show("Today: {today}")
+    t = time.now()
+    io.show("Now: {t}")
+    ny = time.now(tz: "America/New_York")
+    io.show("New York: {ny}")
+    deadline = time.now() + 3.days
+    io.show("Deadline: {deadline}")
+    past = time.now() - 1.hours
+    io.show("An hour ago: {past}")
+    parsed = time.parse("2026-05-01T09:00:00Z")
+    io.show("Parsed: {parsed}")
+    naive = time.parse("2026-05-01", tz: "UTC")
+    io.show("Naive+tz: {naive}")
+    bad = time.parse("2026-05-01")
+    io.show("Naive without tz: {bad}")
+    today = time.now().format(as: "%Y-%m-%d")
+    io.show("Today: {today}")
     p = parsed.parts()
-    Io.show("Year: {p.year}, Month: {p.month}, TZ: {p.tz}")
-    start = Time.parse("2026-05-01T00:00:00Z")
-    finish = Time.parse("2026-05-02T00:00:00Z")
+    io.show("Year: {p.year}, Month: {p.month}, TZ: {p.tz}")
+    start = time.parse("2026-05-01T00:00:00Z")
+    finish = time.parse("2026-05-02T00:00:00Z")
     diff = finish - start
-    Io.show("Diff: {diff}")
+    io.show("Diff: {diff}")
     short = 500.ms
-    Io.show("Half second: {short}")
+    io.show("Half second: {short}")
     stop(self)
   }
 }
 
 run(Timer)
+
+# Tests — run with: keel test examples/time_basic.keel
+test "parse, format, and parts" {
+  parsed = time.parse("2026-05-01T09:00:00Z")
+  formatted = parsed.format(as: "%Y-%m-%d") ?? ""
+  assert formatted == "2026-05-01"
+  p = parsed.parts()
+  assert p.year == 2026
+  assert p.month == 5
+}
+
+test "datetime arithmetic yields durations" {
+  start = time.parse("2026-05-01T00:00:00Z")
+  finish = time.parse("2026-05-02T00:00:00Z")
+  assert finish - start == 1.days
+}

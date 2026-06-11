@@ -1,19 +1,22 @@
+use std/file
+use std/io
+
 agent FileProcessor {
     @on_start {
-        File.write("test.txt", "Hello from Keel!")
-        Io.show("wrote file")
+        file.write("test.txt", "Hello from Keel!")
+        io.show("wrote file")
 
-        if File.exists("test.txt") {
-            Io.show("File created successfully")
+        if file.exists("test.txt") {
+            io.show("File created successfully")
         }
 
-        x = File.read("test.txt")
-        Io.show(x)
+        x = file.read("test.txt")
+        io.show(x)
 
-        File.write("data/output.txt", "Processed data")
+        file.write("data/output.txt", "Processed data")
 
-        y = File.list("data")
-        Io.show(y)
+        y = file.list("data")
+        io.show(y)
     }
 }
 

@@ -7,6 +7,8 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/if_expression.keel
 
+use std/io
+
 type Severity = low | medium | high | critical
 
 task sla_minutes(severity: Severity) -> int {
@@ -67,10 +69,10 @@ agent SLAPlanner {
 
       # let type annotation makes the intent of this string explicit
       line: str = "{badge}  {incident.id}: respond within {minutes} min → {owner}"
-      Io.show(line)
+      io.show(line)
     }
 
-    Io.show("\nAll incidents assigned.")
+    io.show("\nAll incidents assigned.")
   }
 }
 

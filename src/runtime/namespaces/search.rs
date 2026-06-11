@@ -4,7 +4,7 @@ use crate::runtime::namespace::ns;
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Search",
+        namespace: "search",
         name: "web",
         params: &[BuiltinParam {
             name: "query",
@@ -15,7 +15,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Search the web and return a list of SearchResult values.",
     },
     BuiltinMethod {
-        namespace: "Search",
+        namespace: "search",
         name: "news",
         params: &[BuiltinParam {
             name: "query",
@@ -28,7 +28,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Search", {
+    ns!("search", {
         "web" => |_i, _args| Box::pin(async move {
             Err(miette::miette!("Search is planned for v0.2 and is not available in v0.1."))
         }),
@@ -46,7 +46,7 @@ mod tests {
     #[test]
     fn namespace_has_web_and_news_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Search");
+        assert_eq!(ns.name, "search");
         assert!(ns.methods.contains_key("web"));
         assert!(ns.methods.contains_key("news"));
     }

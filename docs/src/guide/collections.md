@@ -18,7 +18,7 @@ Ranges work directly with `for`:
 
 ```keel
 for i in 0..2 {
-  Io.notify("{i}")   # 0, 1, 2
+  io.notify("{i}")   # 0, 1, 2
 }
 ```
 
@@ -160,7 +160,7 @@ pairs = names.zip(scores)
 # → [["alice", 90], ["bob", 85], ["carol", 95]]
 
 for (name, score) in names.zip(scores) {
-    Log.info("{name} scored {score}")
+    log.info("{name} scored {score}")
 }
 ```
 

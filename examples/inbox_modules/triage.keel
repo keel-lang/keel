@@ -1,0 +1,16 @@
+# Triage agent — imported and started by main.keel via run(triage.Triage).
+
+use std/io
+use "./validation.keel"
+
+agent Triage {
+  @role "Sorts incoming addresses"
+
+  on message(address: str) {
+    if validation.email(address) {
+      io.show("valid: {address}")
+    } else {
+      io.show("invalid: {address}")
+    }
+  }
+}

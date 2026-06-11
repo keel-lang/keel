@@ -10,7 +10,7 @@ use crate::runtime::namespace::{find_arg, make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Http",
+        namespace: "http",
         name: "get",
         params: &[BuiltinParam {
             name: "url",
@@ -21,7 +21,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Make an HTTP GET request and return an HttpResponse.",
     },
     BuiltinMethod {
-        namespace: "Http",
+        namespace: "http",
         name: "post",
         params: &[
             BuiltinParam {
@@ -39,7 +39,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Make an HTTP POST request and return an HttpResponse.",
     },
     BuiltinMethod {
-        namespace: "Http",
+        namespace: "http",
         name: "request",
         params: &[
             BuiltinParam {
@@ -57,7 +57,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Make an HTTP request with full control and return an HttpResponse.",
     },
     BuiltinMethod {
-        namespace: "Http",
+        namespace: "http",
         name: "serve",
         params: &[BuiltinParam {
             name: "port",
@@ -72,20 +72,20 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Http", {
+    ns!("http", {
         "get" => |_i, args| Box::pin(async move {
-            let url = expect_str(&args, 0, "Http.get")?;
-            let headers = map_from_arg(find_arg(&args, "headers"), "Http.get")?;
+            let url = expect_str(&args, 0, "http.get")?;
+            let headers = map_from_arg(find_arg(&args, "headers"), "http.get")?;
             let response = http_send("GET", url, headers, None).await?;
             Ok(response)
         }),
         "post" => |_i, args| Box::pin(async move {
-            let url = expect_str(&args, 0, "Http.post")?;
-            let headers = map_from_arg(find_arg(&args, "headers"), "Http.post")?;
+            let url = expect_str(&args, 0, "http.post")?;
+            let headers = map_from_arg(find_arg(&args, "headers"), "http.post")?;
             let body = request_body(
                 find_arg(&args, "json"),
                 find_arg(&args, "body"),
-                "Http.post",
+                "http.post",
             )?;
             let response = http_send("POST", url, headers, body).await?;
             Ok(response)
@@ -108,23 +108,23 @@ pub(crate) fn namespace() -> Namespace {
             };
             let method = cfg
                 .get(&MapKey::Str("method".into()))
-                .map(|v| expect_str_value(v, "`method`", "Http.request"))
+                .map(|v| expect_str_value(v, "`method`", "http.request"))
                 .transpose()?
                 .unwrap_or("GET");
             let url = cfg
                 .get(&MapKey::Str("url".into()))
-                .map(|v| expect_str_value(v, "`url`", "Http.request"))
+                .map(|v| expect_str_value(v, "`url`", "http.request"))
                 .transpose()?
-                .ok_or_else(|| miette::miette!("Http.request: missing `url`"))?;
+                .ok_or_else(|| miette::miette!("http.request: missing `url`"))?;
             let headers = cfg
                 .get(&MapKey::Str("headers".into()))
-                .map(|v| map_from_arg(Some(v), "Http.request"))
+                .map(|v| map_from_arg(Some(v), "http.request"))
                 .transpose()?
                 .unwrap_or_default();
             let body = request_body(
                 cfg.get(&MapKey::Str("json".into())),
                 cfg.get(&MapKey::Str("body".into())),
-                "Http.request",
+                "http.request",
             )?;
             http_send(method, url, headers, body).await
         }),
@@ -147,12 +147,12 @@ pub(crate) fn namespace() -> Namespace {
             let port = match positional(&args, 0) {
                 None => 8080u16,
                 Some(_) => {
-                    let port = expect_int(&args, 0, "Http.serve")?;
+                    let port = expect_int(&args, 0, "http.serve")?;
                     u16::try_from(port)
                         .ok()
                         .filter(|port| *port > 0)
                         .ok_or_else(|| miette::miette!(
-                            "Http.serve: port must be an integer in the range 1..=65535"
+                            "http.serve: port must be an integer in the range 1..=65535"
                         ))?
                 }
             };
@@ -161,7 +161,7 @@ pub(crate) fn namespace() -> Namespace {
             let (params, body) = args.iter().find_map(|a| match &a.value {
                 Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
                 _ => None,
-            }).ok_or_else(|| miette::miette!("Http.serve: missing closure argument"))?;
+            }).ok_or_else(|| miette::miette!("http.serve: missing closure argument"))?;
 
             let closure_id = host.register_closure("__http_serve__".to_string(), params, body);
             let event_tx = host.background_event_tx();
@@ -218,14 +218,14 @@ pub(crate) fn namespace() -> Namespace {
                 let listener = match tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await {
                     Ok(l) => l,
                     Err(e) => {
-                        eprintln!("Http.serve: failed to bind 0.0.0.0:{port}: {e}");
+                        eprintln!("http.serve: failed to bind 0.0.0.0:{port}: {e}");
                         server_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                         return;
                     }
                 };
 
                 if let Err(e) = axum::serve(listener, app).await {
-                    eprintln!("Http.serve: server error: {e}");
+                    eprintln!("http.serve: server error: {e}");
                 }
                 server_counter.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
             });
@@ -350,27 +350,27 @@ mod tests {
     fn map_from_arg_returns_map_when_given_map() {
         let mut m = HashMap::new();
         m.insert(MapKey::Str("k".into()), Value::Integer(1));
-        let result = map_from_arg(Some(&Value::Map(m.clone())), "Http.get").unwrap();
+        let result = map_from_arg(Some(&Value::Map(m.clone())), "http.get").unwrap();
         assert_eq!(result, m);
     }
 
     #[test]
     fn map_from_arg_rejects_non_map() {
-        let err = map_from_arg(Some(&Value::String("x".into())), "Http.get")
+        let err = map_from_arg(Some(&Value::String("x".into())), "http.get")
             .expect_err("string headers must fail");
         assert!(err.to_string().contains("must be map[str, str]"));
     }
 
     #[test]
     fn map_from_arg_returns_empty_when_none() {
-        assert!(map_from_arg(None, "Http.get").unwrap().is_empty());
+        assert!(map_from_arg(None, "http.get").unwrap().is_empty());
     }
 
     #[test]
     fn request_body_rejects_non_string_text_body() {
-        let err = request_body(None, Some(&Value::Integer(42)), "Http.post")
+        let err = request_body(None, Some(&Value::Integer(42)), "http.post")
             .expect_err("integer text body must fail");
-        assert_eq!(err.to_string(), "Http.post: `body:` must be str, got int");
+        assert_eq!(err.to_string(), "http.post: `body:` must be str, got int");
     }
 
     #[tokio::test]
@@ -389,7 +389,7 @@ mod tests {
         .expect_err("string port must fail");
         assert_eq!(
             err.to_string(),
-            "Http.serve: argument at position 0 must be int, got str"
+            "http.serve: argument at position 0 must be int, got str"
         );
     }
 

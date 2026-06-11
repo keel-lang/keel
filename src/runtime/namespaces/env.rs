@@ -6,7 +6,7 @@ use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Env",
+        namespace: "env",
         name: "get",
         params: &[BuiltinParam {
             name: "key",
@@ -17,7 +17,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Get an environment variable, returning none if it is unset.",
     },
     BuiltinMethod {
-        namespace: "Env",
+        namespace: "env",
         name: "require",
         params: &[BuiltinParam {
             name: "key",
@@ -30,19 +30,19 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Env", {
+    ns!("env", {
         "get" => |host, args| Box::pin(async move {
-            let name = expect_str(&args, 0, "Env.get")?;
+            let name = expect_str(&args, 0, "env.get")?;
             match host.runtime().env.var(name) {
                 Some(v) => Ok(Value::String(v)),
                 None => Ok(Value::None),
             }
         }),
         "require" => |host, args| Box::pin(async move {
-            let name = expect_str(&args, 0, "Env.require")?;
+            let name = expect_str(&args, 0, "env.require")?;
             match host.runtime().env.var(name) {
                 Some(v) => Ok(Value::String(v)),
-                None => Err(make_typed_report(RuntimeErrorKind::Env, format!("Env.require: `{name}` is not set"))),
+                None => Err(make_typed_report(RuntimeErrorKind::Env, format!("env.require: `{name}` is not set"))),
             }
         }),
     })
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn namespace_has_get_and_require() {
         let ns = namespace();
-        assert_eq!(ns.name, "Env");
+        assert_eq!(ns.name, "env");
         assert!(ns.methods.contains_key("get"));
         assert!(ns.methods.contains_key("require"));
     }

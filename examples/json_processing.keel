@@ -1,14 +1,31 @@
+use std/io
+use std/json
+
 agent JsonProcessor {
   @on_start {
     user = { name: "Alice", age: 30, active: true }
-    json_output = Json.stringify(user)
-    Io.show(json_output)
+    json_output = json.stringify(user)
+    io.show(json_output)
     arr_str = "[1, 2, 3]"
-    arr = Json.parse(arr_str)
-    Io.show(arr)
+    arr = json.parse(arr_str)
+    io.show(arr)
     config = { timeout: 30, retries: 3 }
-    Io.show(Json.stringify(config))
+    io.show(json.stringify(config))
   }
 }
 
 run(JsonProcessor)
+
+# Tests — run with: keel test examples/json_processing.keel
+test "stringify then parse round-trips fields" {
+  user = { name: "Alice", age: 30, active: true }
+  parsed = json.parse(json.stringify(user))
+  assert parsed.name == "Alice"
+  assert parsed.age == 30
+}
+
+test "arrays parse into indexable lists" {
+  arr = json.parse("[1, 2, 3]")
+  assert arr[0] == 1
+  assert arr.len() == 3
+}

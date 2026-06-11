@@ -7,14 +7,14 @@ use crate::runtime::{context, email};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Email",
+        namespace: "email",
         name: "fetch",
         params: &[],
         result: BuiltinResult::Unknown,
         doc: "Fetch messages from the configured email inbox.",
     },
     BuiltinMethod {
-        namespace: "Email",
+        namespace: "email",
         name: "send",
         params: &[
             BuiltinParam {
@@ -37,7 +37,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Send an email.",
     },
     BuiltinMethod {
-        namespace: "Email",
+        namespace: "email",
         name: "archive",
         params: &[BuiltinParam {
             name: "id",
@@ -50,17 +50,17 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Email", {
+    ns!("email", {
         "fetch" => |host, args| Box::pin(async move {
             // `unread: true` is the v0.1 default (and only) filter.
-            let _unread_only = expect_bool_named(&args, "unread", "Email.fetch")?.unwrap_or(true);
+            let _unread_only = expect_bool_named(&args, "unread", "email.fetch")?.unwrap_or(true);
             let Some(conn) = email_conn_from_env(host.runtime().env.as_ref()) else {
                 eprintln!("  ⚠ Email.fetch: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — returning empty list");
                 return Ok(Value::List(vec![]));
             };
             match tokio::task::spawn_blocking(move || email::fetch_emails(&conn)).await {
                 Ok(Ok(emails)) => Ok(Value::List(emails)),
-                Ok(Err(msg)) => Err(email_err("Email.fetch", msg)),
+                Ok(Err(msg)) => Err(email_err("email.fetch", msg)),
                 Err(e) => Err(miette::miette!("email fetch task join error: {e}")),
             }
         }),
@@ -72,32 +72,32 @@ pub(crate) fn namespace() -> Namespace {
             // Positional 0 is the message body (str or Map with .body).
             let (body, inferred_subject) = match positional(&args, 0) {
                 Some(Value::Map(m)) => (
-                    email_text_field(m, "body", "Email.send")?
+                    email_text_field(m, "body", "email.send")?
                         .unwrap_or_default()
                         .to_owned(),
-                    email_text_field(m, "subject", "Email.send")?.map(str::to_owned),
+                    email_text_field(m, "subject", "email.send")?.map(str::to_owned),
                 ),
                 Some(v) => (
-                    expect_str_value(v, "message body", "Email.send")?.to_owned(),
+                    expect_str_value(v, "message body", "email.send")?.to_owned(),
                     None,
                 ),
-                None => return Err(miette::miette!("Email.send: missing message body")),
+                None => return Err(miette::miette!("email.send: missing message body")),
             };
             let to = match find_arg(&args, "to") {
-                Some(Value::Map(m)) => email_text_field(m, "from", "Email.send")?
+                Some(Value::Map(m)) => email_text_field(m, "from", "email.send")?
                     .unwrap_or_default()
                     .to_owned(),
-                Some(v) => expect_str_value(v, "`to:`", "Email.send")?.to_owned(),
-                None => return Err(miette::miette!("Email.send: missing `to:` argument")),
+                Some(v) => expect_str_value(v, "`to:`", "email.send")?.to_owned(),
+                None => return Err(miette::miette!("email.send: missing `to:` argument")),
             };
             let subject = find_arg(&args, "subject")
-                .map(|v| expect_str_value(v, "`subject:`", "Email.send").map(str::to_owned))
+                .map(|v| expect_str_value(v, "`subject:`", "email.send").map(str::to_owned))
                 .transpose()?
                 .or(inferred_subject)
                 .unwrap_or_else(|| "(no subject)".to_string());
             match tokio::task::spawn_blocking(move || email::send_email(&conn, &to, &subject, &body)).await {
                 Ok(Ok(())) => Ok(Value::None),
-                Ok(Err(msg)) => Err(email_err("Email.send", msg)),
+                Ok(Err(msg)) => Err(email_err("email.send", msg)),
                 Err(e) => Err(miette::miette!("email send task join error: {e}")),
             }
         }),
@@ -113,17 +113,17 @@ pub(crate) fn namespace() -> Namespace {
                 Some(Value::Map(m)) => match m.get(&MapKey::Str("uid".into())) {
                     Some(Value::Integer(u)) if *u > 0 => *u as u32,
                     _ => return Err(miette::miette!(
-                        "Email.archive: message has no UID — was it returned by Email.fetch?"
+                        "email.archive: message has no UID — was it returned by Email.fetch?"
                     )),
                 },
-                _ => return Err(miette::miette!("Email.archive: expected an email map argument")),
+                _ => return Err(miette::miette!("email.archive: expected an email map argument")),
             };
             let folder = host.runtime().env.var("IMAP_ARCHIVE_FOLDER")
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Archive".to_string());
             match tokio::task::spawn_blocking(move || email::archive_email(&conn, uid, &folder)).await {
                 Ok(Ok(())) => Ok(Value::None),
-                Ok(Err(msg)) => Err(email_err("Email.archive", msg)),
+                Ok(Err(msg)) => Err(email_err("email.archive", msg)),
                 Err(e) => Err(miette::miette!("email archive task join error: {e}")),
             }
         }),

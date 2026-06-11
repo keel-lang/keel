@@ -6,7 +6,7 @@
 //! Rules implemented:
 //!   1. Unused `let` bindings — variable bound but never read.
 //!   2. Declared tasks never called — top-level or agent tasks with no invocation site.
-//!   3. `Ai.*` calls outside an agent — no `@role`/`@model` context available.
+//!   3. `ai.*` calls outside an agent — no `@role`/`@model` context available.
 //!   4. Agent state fields written but never read across any handler or task.
 //!
 //! Known limitations:
@@ -108,10 +108,10 @@ impl Linter {
                     }
                 }
                 Decl::Stmt(stmt_node) => {
-                    // Rule 3: top-level Ai.* calls
+                    // Rule 3: top-level ai.* calls
                     for method in ai_methods_in_stmt(&stmt_node.kind) {
                         self.warn(
-                            format!("`Ai.{method}` called outside an agent — no `@role` or `@model` context"),
+                            format!("`ai.{method}` called outside an agent — no `@role` or `@model` context"),
                             Some(stmt_node.span.clone()),
                             Some("wrap in an agent body with `@role` and `@model` attributes".into()),
                             false,
@@ -204,7 +204,7 @@ impl Linter {
     }
 
     // -----------------------------------------------------------------------
-    // Rule 3: Ai.* calls outside an agent
+    // Rule 3: ai.* calls outside an agent
     // -----------------------------------------------------------------------
 
     fn check_block_ai_outside_agent(&mut self, block: &Block) {
@@ -212,7 +212,7 @@ impl Linter {
             for method in ai_methods_in_stmt(&s_node.kind) {
                 self.warn(
                     format!(
-                        "`Ai.{method}` called outside an agent — no `@role` or `@model` context"
+                        "`ai.{method}` called outside an agent — no `@role` or `@model` context"
                     ),
                     Some(s_node.span.clone()),
                     Some("wrap in an agent body with `@role` and `@model` attributes".into()),
@@ -390,7 +390,7 @@ impl Visitor for IdentReads<'_> {
 }
 
 // ---------------------------------------------------------------------------
-// Ai.* method call detector (for Rule 3)
+// ai.* method call detector (for Rule 3)
 // ---------------------------------------------------------------------------
 
 fn ai_methods_in_stmt(stmt: &Stmt) -> Vec<String> {
@@ -410,7 +410,7 @@ impl Visitor for AiCalls {
         let expr = &spanned.kind;
         if let Expr::MethodCall { object, method, .. } = expr
             && let Expr::Ident(name) = &object.as_ref().kind
-            && name == "Ai"
+            && name == "ai"
         {
             self.methods.push(method.clone());
         }
@@ -588,13 +588,13 @@ run(Bot)
         assert_warns(
             r#"
 task main() {
-  f = () => Ai.prompt("hello")
+  f = () => ai.prompt("hello")
   f()
 }
 
 main()
 "#,
-            "`Ai.prompt` called outside an agent",
+            "`ai.prompt` called outside an agent",
         );
     }
 
@@ -603,13 +603,13 @@ main()
         assert_warns(
             r#"
 task main() {
-  msg = "answer: {Ai.prompt("hello")}"
+  msg = "answer: {ai.prompt("hello")}"
   Io.show(msg)
 }
 
 main()
 "#,
-            "`Ai.prompt` called outside an agent",
+            "`ai.prompt` called outside an agent",
         );
     }
 

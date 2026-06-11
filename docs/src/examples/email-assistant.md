@@ -5,10 +5,16 @@
 A complete email agent that triages, auto-replies, and escalates.
 
 ```keel
+use std/ai
+use std/email
+use std/io
+use std/memory
+use std/schedule
+
 type Urgency = low | medium | high | critical
 
 task triage(email: {body: str, from: str, subject: str}) -> Urgency {
-  Ai.classify(email.body,
+  ai.classify(email.body,
     as: Urgency,
     considering: {
       "from a known VIP or executive":   Urgency.critical,
@@ -21,7 +27,7 @@ task triage(email: {body: str, from: str, subject: str}) -> Urgency {
 }
 
 task brief(email: {body: str}) -> str {
-  Ai.summarize(email.body,
+  ai.summarize(email.body,
     in: 1, unit: sentence,
     using: "fast"
   ) ?? "(no summary)"
@@ -29,15 +35,15 @@ task brief(email: {body: str}) -> str {
 
 task compose(email: {body: str, from: str}, guidance: str? = none) -> str {
   if guidance != none {
-    Ai.draft("response to {email.body}", tone: "professional", guidance: guidance)
+    ai.draft("response to {email.body}", tone: "professional", guidance: guidance)
   } else {
-    Ai.draft("response to {email.body}", tone: "friendly", max_length: 150)
+    ai.draft("response to {email.body}", tone: "friendly", max_length: 150)
   } ?? "(draft failed)"
 }
 
 agent EmailAssistant {
   @role "You are a professional email assistant"
-  @tools [Email]
+  @tools [email]
   @memory persistent
 
   state {
@@ -50,32 +56,32 @@ agent EmailAssistant {
 
     when urgency {
       low => {
-        Io.notify("Archived: {email.subject} [{urgency}]")
-        Email.archive(email)
+        io.notify("Archived: {email.subject} [{urgency}]")
+        email.archive(email)
       }
       medium => {
         reply = compose(email)
-        if Io.confirm("Auto-reply to '{email.subject}':\n\n{reply}") {
-          Email.send(reply, to: email.from)
+        if io.confirm("Auto-reply to '{email.subject}':\n\n{reply}") {
+          email.send(reply, to: email.from)
         }
       }
       high, critical => {
-        Io.notify("{urgency} email from {email.from}")
-        Io.show({
+        io.notify("{urgency} email from {email.from}")
+        io.show({
           from:    email.from,
           subject: email.subject,
           summary: summary,
           urgency: urgency
         })
-        guidance = Io.ask("How should I respond?")
+        guidance = io.ask("How should I respond?")
         reply = compose(email, guidance)
-        if Io.confirm(reply) {
-          Email.send(reply, to: email.from)
+        if io.confirm(reply) {
+          email.send(reply, to: email.from)
         }
       }
     }
 
-    Memory.remember({
+    memory.remember({
       contact:    email.from,
       subject:    email.subject,
       urgency:    urgency,
@@ -86,9 +92,9 @@ agent EmailAssistant {
   }
 
   @on_start {
-    Schedule.every(5.minutes, () => {
-      emails = Email.fetch(unread: true)
-      Io.notify("{emails.count} new emails")
+    schedule.every(5.minutes, () => {
+      emails = email.fetch(unread: true)
+      io.notify("{emails.count} new emails")
       for email in emails {
         self.handle(email)
       }
@@ -112,11 +118,11 @@ keel run email_agent.keel
 
 ## How it works
 
-1. Every 5 minutes, `Email.fetch(unread: true)` pulls new messages.
+1. Every 5 minutes, `email.fetch(unread: true)` pulls new messages.
 2. `triage` classifies each by urgency using a fast model.
 3. `low` → auto-archive.
 4. `medium` → draft a reply, confirm before sending.
 5. `high`/`critical` → show a summary, ask for guidance, draft with it, confirm.
 6. Each interaction is remembered for future context.
 
-Zero imports. `Ai`, `Io`, `Email`, `Schedule`, and `Memory` are all auto-imported via the [prelude](../guide/prelude.md).
+Zero imports. `Ai`, `Io`, `Email`, `Schedule`, and `Memory` are all auto-imported via the [prelude](../guide/stdlib.md).

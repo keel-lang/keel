@@ -114,6 +114,9 @@ email |> triage |> respond(tone: "friendly") |> log("email_responses")
 ## Field access
 
 ```keel
+use std/email
+use std/env
+
 email.subject                  # field access
 email?.subject                 # null-safe — returns none if email is none
 email!.subject                 # null assertion — throws if email is none
@@ -146,7 +149,7 @@ Unpack struct fields or tuple elements directly into named bindings.
 
 ```keel
 {name, age} = person
-Io.show("{name} is {age}")
+io.show("{name} is {age}")
 ```
 
 **Struct rename** — bind a field under a different local name:
@@ -165,15 +168,17 @@ Io.show("{name} is {age}")
 
 ```keel
 for {from, subject} in emails {
-  Io.show("{from}: {subject}")
+  io.show("{from}: {subject}")
 }
 ```
 
 **In a task parameter** — destructure a struct argument at the call boundary:
 
 ```keel
+use std/io
+
 task handle({body, from}: Email) {
-  Io.show("From {from}: {body}")
+  io.show("From {from}: {body}")
 }
 ```
 

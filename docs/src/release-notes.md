@@ -4,21 +4,55 @@
 
 ## Unreleased
 
+### Module system: `use std/<name>` and local file imports
+
+Keel programs can now span multiple files, and the standard library is
+imported explicitly — the ambient PascalCase prelude is gone:
+
+```keel
+use std/io
+use std/file
+use "./validation.keel"
+use Urgency from "./models.keel"
+
+task load_config() -> str {
+  file.read("config.json")
+}
+
+io.show("valid: {validation.email("ada@example.com")}")
+```
+
+- `use std/file` binds `file`; `use "./validation.keel"` binds `validation`
+  (the file stem); `as` renames either; `use A, B as C from ...` pulls
+  symbols unqualified.
+- Top-level statements are the **implicit main**: they run only when the
+  file is executed directly, never on import.
+- `keel test file.keel` runs only that file's tests; imported modules
+  contribute declarations (including test helpers), never their tests.
+- Agent verbs are built into the language: `run`, `stop`, `send`,
+  `delegate`, `broadcast` (the `Agent.*` namespace is gone).
+- **Breaking:** `File.read(...)` and friends now fail with a migration
+  hint — add `use std/file` and write `file.read(...)`. The bare `uuid()`
+  free function is removed; use `std/uuid` and `uuid.v4()`.
+
+See the new [Modules & Imports](./guide/modules.md) guide.
+
 ### Built-in test blocks
 
 Keel now has a first language-level test runner:
 
 ```keel
+use std/ai
 use std/testing
 
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-    Ai.classify(text, as: Severity) ?? Severity.low
+    ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "mocked classify returns critical" {
-    testing.mock(Ai.classify).returns(Severity.critical)
+    testing.mock(ai.classify).returns(Severity.critical)
     assert classify("payment outage") == Severity.critical, "expected critical"
 }
 ```
@@ -48,30 +82,35 @@ Now each failure domain has its own type: `FileError`, `CsvError`, `DbError`, `M
 `catch e: Error` continues to work as a catch-all for all types.
 
 ```keel
+use std/control
+use std/csv
+use std/file
+use std/io
+
 agent A {
     @on_start {
         try {
-            data = File.read("config.json")
+            data = file.read("config.json")
         } catch e: FileError {
-            Io.show("file error: {e.message}")
+            io.show("file error: {e.message}")
         }
 
         try {
-            rows = Csv.parse_records("{}")
+            rows = csv.parse_records("{}")
         } catch e: CsvError {
-            Io.show("CSV error: {e.message}")
+            io.show("CSV error: {e.message}")
         }
 
         try {
-            Control.with_timeout(5.seconds, () => { "ok" })
+            control.with_timeout(5.seconds, () => { "ok" })
         } catch e: TimeoutError {
-            Io.show("timeout error: {e.message}")
+            io.show("timeout error: {e.message}")
         }
 
         try {
             raise "quota exceeded"
         } catch e: UserRaised {
-            Io.show("raised: {e.message}")
+            io.show("raised: {e.message}")
         }
 
         stop(self)
@@ -113,18 +152,18 @@ Each producer uses non-blocking delivery with explicit overflow policy:
 
 | Producer | Overflow behaviour |
 |---|---|
-| `Schedule.every` / `Schedule.cron` (recurring ticks) | Drop (coalesce) — next tick fires on time |
-| `Schedule.after` / `Schedule.at` / `Schedule.every` first fire (one-shot) | Wait for queue space — delivery is guaranteed |
-| `Http.serve` | `503 Service Unavailable` returned to the HTTP client |
+| `schedule.every` / `schedule.cron` (recurring ticks) | Drop (coalesce) — next tick fires on time |
+| `schedule.after` / `schedule.at` / `schedule.every` first fire (one-shot) | Wait for queue space — delivery is guaranteed |
+| `http.serve` | `503 Service Unavailable` returned to the HTTP client |
 | `Agent.send` / `Agent.delegate` / `Agent.broadcast` | `RuntimeBusy` error raised |
 
 `RuntimeBusy` is a typed, catchable error:
 
 ```keel
 try {
-    Agent.send(Worker, payload)
+    send(Worker, payload)
 } catch e: RuntimeBusy {
-    Io.show("queue full — dropped: {e.message}")
+    io.show("queue full — dropped: {e.message}")
 }
 ```
 
@@ -141,18 +180,18 @@ Each producer uses non-blocking delivery with explicit overflow policy:
 
 | Producer | Overflow behaviour |
 |---|---|
-| `Schedule.every` / `Schedule.cron` (recurring ticks) | Drop (coalesce) — next tick fires on time |
-| `Schedule.after` / `Schedule.at` / `Schedule.every` first fire (one-shot) | Wait for queue space — delivery is guaranteed |
-| `Http.serve` | `503 Service Unavailable` returned to the HTTP client |
+| `schedule.every` / `schedule.cron` (recurring ticks) | Drop (coalesce) — next tick fires on time |
+| `schedule.after` / `schedule.at` / `schedule.every` first fire (one-shot) | Wait for queue space — delivery is guaranteed |
+| `http.serve` | `503 Service Unavailable` returned to the HTTP client |
 | `Agent.send` / `Agent.delegate` / `Agent.broadcast` | `RuntimeBusy` error raised |
 
 `RuntimeBusy` is a typed, catchable error:
 
 ```keel
 try {
-    Agent.send(Worker, payload)
+    send(Worker, payload)
 } catch e: RuntimeBusy {
-    Io.show("queue full — dropped: {e.message}")
+    io.show("queue full — dropped: {e.message}")
 }
 ```
 
@@ -203,11 +242,11 @@ Type-checker diagnostics inside string interpolation slots now underline the cor
 ### Strict runtime arguments for data APIs
 
 Runtime APIs now enforce their declared inputs. Data APIs such as
-`File.read(path: str)`, `Cache.get(key: str)`, `Json.parse(text: str)`, and
-`Shell.run(cmd: str)` reject non-string values with a clear error instead of silently
+`file.read(path: str)`, `cache.get(key: str)`, `json.parse(text: str)`, and
+`shell.run(cmd: str)` reject non-string values with a clear error instead of silently
 formatting them as strings. Required sleep and value-method arguments now also raise
 an error when omitted instead of silently acting as no-ops or empty strings.
-Display-oriented APIs such as interpolation, `Io.*`, and `Log.*` continue to format
+Display-oriented APIs such as interpolation, `io.*`, and `log.*` continue to format
 arbitrary values.
 
 ### Stable diagnostic codes for typed runtime errors
@@ -218,7 +257,7 @@ CLI, the code appears in the output — for example `keel::runtime::FileError`. 
 code follows the pattern `keel::runtime::<TypeName>` and can be inspected by tooling
 without parsing the error message.
 
-`FileError` is now a typed runtime error: `File.*` failures can be caught by type
+`FileError` is now a typed runtime error: `file.*` failures can be caught by type
 name (`catch e: FileError`), matching the behavior of `AiError` and `AiSchemaError`.
 `catch e: Error` continues to catch all failures as before.
 
@@ -260,34 +299,34 @@ The single overloaded `Unknown` fallback type has been replaced with four semant
 | Variant | When it appears | Fires in `--strict`? |
 |---|---|---|
 | `dynamic` | Explicit `dynamic` annotation written by the programmer | **Never** |
-| `Unknown(ExternalDynamic)` | Namespace method whose return depends on runtime data (`Json.parse`, LLM outputs) | Yes |
+| `Unknown(ExternalDynamic)` | Namespace method whose return depends on runtime data (`json.parse`, LLM outputs) | Yes |
 | `Unknown(InferenceLimitation)` | Checker cannot cheaply infer the type (agent refs, unannotated lambdas, dispatch fallthrough) | Yes |
 | `Unknown(UnsupportedFeature)` | Construct the checker does not yet implement | Yes |
 
-**User-visible change — `--strict` and `Json.parse`:**
+**User-visible change — `--strict` and `json.parse`:**
 
 `keel check --strict` no longer warns on `dynamic`-annotated bindings; it only warns on
-`Unknown(_)` results. `let x: dynamic = Json.parse("{}")` is clean in strict mode because
-the programmer explicitly opted into the dynamic type. `let x = Json.parse("{}")` (unannotated)
+`Unknown(_)` results. `let x: dynamic = json.parse("{}")` is clean in strict mode because
+the programmer explicitly opted into the dynamic type. `let x = json.parse("{}")` (unannotated)
 still fires `cannot infer type of 'x'` because the return type is now `Unknown(ExternalDynamic)`
 rather than `dynamic`.
 
 ```keel
 # always clean — explicit dynamic annotation
-data: dynamic = Json.parse(raw)
+data: dynamic = json.parse(raw)
 
 # clean in normal mode, flagged in --strict — unannotated binding
-data = Json.parse(raw)            # error in strict: cannot infer type of 'data'
+data = json.parse(raw)            # error in strict: cannot infer type of 'data'
 ```
 
-Fix unannotated `Json.parse` bindings with an explicit annotation or cast:
+Fix unannotated `json.parse` bindings with an explicit annotation or cast:
 
 ```keel
 # annotate as dynamic (accept at call site)
-data: dynamic = Json.parse(raw)
+data: dynamic = json.parse(raw)
 
 # or narrow immediately to a concrete type
-data = Json.parse(raw) as Payload
+data = json.parse(raw) as Payload
 ```
 
 ---
@@ -299,7 +338,7 @@ Handler references are now first-class compile-time expressions.
 **Symbol form** (new, preferred):
 
 ```keel
-Agent.delegate(Worker.process, payload)
+delegate(Worker.process, payload)
 ```
 
 `Worker.process` is resolved at compile time. The checker validates that `process` is a
@@ -309,7 +348,7 @@ A typo like `Worker.typo` is a compile-time error.
 **String form** (legacy, now also validated for plain literals):
 
 ```keel
-Agent.delegate(Worker, "process", payload)
+delegate(Worker, "process", payload)
 ```
 
 Both forms are accepted. Prefer the symbol form for new code — handler renames update
@@ -323,36 +362,36 @@ the reference automatically.
 
 Three functions cover the full round-trip. No `@tools` annotation required.
 
-- `Csv.parse(text) -> list[list[str]]` — every row as a list of strings; the caller decides whether to treat the first row as headers.
-- `Csv.parse_records(text) -> list[map[str, str]]` — first row becomes header keys; remaining rows become maps.
-- `Csv.stringify(rows) -> str` — converts `list[list[str]]` to RFC 4180 CSV; cells containing commas, quotes, or newlines are automatically quoted.
+- `csv.parse(text) -> list[list[str]]` — every row as a list of strings; the caller decides whether to treat the first row as headers.
+- `csv.parse_records(text) -> list[map[str, str]]` — first row becomes header keys; remaining rows become maps.
+- `csv.stringify(rows) -> str` — converts `list[list[str]]` to RFC 4180 CSV; cells containing commas, quotes, or newlines are automatically quoted.
 
 ```keel
 raw    = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9"
-trades = Csv.parse_records(raw)
+trades = csv.parse_records(raw)
 for trade in trades {
-    Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+    log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
 }
 
 rows = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
-text = Csv.stringify(rows)
+text = csv.stringify(rows)
 ```
 
 ### `Db` namespace — SQLite database access
 
-Query and modify SQLite databases. `Db.connect(url)` opens a database and returns a connection with `.query()` and `.exec()` methods. URLs use the `sqlite://` scheme.
+Query and modify SQLite databases. `db.connect(url)` opens a database and returns a connection with `.query()` and `.exec()` methods. URLs use the `sqlite://` scheme.
 
-- `Db.connect(url: str) -> DbConnection` — opens a SQLite database
+- `db.connect(url: str) -> DbConnection` — opens a SQLite database
 - `DbConnection.query(sql, params?) -> list[map[str, dynamic]]` — SELECT queries return rows as maps
 - `DbConnection.exec(sql, params?) -> int` — INSERT/UPDATE/DELETE return affected row count
 
 ```keel
-db = Db.connect("sqlite://trades.db")
+db = db.connect("sqlite://trades.db")
 db.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL)")
 db.exec("INSERT INTO trades VALUES (?, ?, ?)", ["t1", "BTCUSDT", 67000.0])
 rows = db.query("SELECT symbol, price FROM trades WHERE symbol = ?", ["BTCUSDT"])
 for row in rows {
-    Log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
+    log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
 }
 ```
 
@@ -399,59 +438,62 @@ The `...base` spread must appear first and can appear only once. For struct base
 
 ### `Shell` namespace — subprocess bridge
 
-Agents can now invoke external commands and capture their output via `Shell.run`. The command is passed to `/bin/sh -c`, so pipes, redirects, and shell builtins work as expected. Requires `@tools [Shell]`.
+Agents can now invoke external commands and capture their output via `shell.run`. The command is passed to `/bin/sh -c`, so pipes, redirects, and shell builtins work as expected. Requires `@tools [shell]`.
 
 ```keel
+use std/io
+use std/shell
+
 agent Builder {
-    @tools [Shell]
+    @tools [shell]
 
     @on_start {
-        r = Shell.run("cargo test --quiet 2>&1")
+        r = shell.run("cargo test --quiet 2>&1")
         if r.exit_code != 0 {
             raise "tests failed:\n{r.stdout}"
         }
-        Io.show("all tests passed")
+        io.show("all tests passed")
     }
 }
 run(Builder)
 ```
 
-`Shell.run` returns `{ stdout: str, stderr: str, exit_code: int }`. A non-zero exit code is not automatically an error — check it and raise yourself if needed. Spawn failures (e.g. `/bin/sh` not in `PATH`) do raise. Optional named args: `stdin: str` (piped to the process) and `cwd: str` (working directory).
+`shell.run` returns `{ stdout: str, stderr: str, exit_code: int }`. A non-zero exit code is not automatically an error — check it and raise yourself if needed. Spawn failures (e.g. `/bin/sh` not in `PATH`) do raise. Optional named args: `stdin: str` (piped to the process) and `cwd: str` (working directory).
 
 ### `Math` namespace
 
-Transcendental and power functions are now available under the `Math` namespace. All functions accept `int` or `float` and return `float`. Domain errors (`Math.sqrt(-1)`, `Math.log(0)`) raise at runtime and can be caught with `try/catch`.
+Transcendental and power functions are now available under the `Math` namespace. All functions accept `int` or `float` and return `float`. Domain errors (`math.sqrt(-1)`, `math.log(0)`) raise at runtime and can be caught with `try/catch`.
 
 ```keel
-h   = Math.sqrt(Math.pow(3, 2) + Math.pow(4, 2))  # 5.0
-ln2 = Math.log(2)                                   # ≈ 0.693
-s   = Math.sin(Math.PI() / 6.0)                    # 0.5
+h   = math.sqrt(math.pow(3, 2) + math.pow(4, 2))  # 5.0
+ln2 = math.log(2)                                   # ≈ 0.693
+s   = math.sin(math.PI() / 6.0)                    # 0.5
 ```
 
 | Function | Returns | Notes |
 |---|---|---|
-| `Math.PI()` | `float` | π |
-| `Math.E()` | `float` | e |
-| `Math.sqrt(x)` | `float` | Raises if `x < 0` |
-| `Math.pow(x, y)` | `float` | |
-| `Math.exp(x)` | `float` | e^x |
-| `Math.log(x)` | `float` | Natural log; raises if `x ≤ 0` |
-| `Math.log2(x)` | `float` | Raises if `x ≤ 0` |
-| `Math.log10(x)` | `float` | Raises if `x ≤ 0` |
-| `Math.sin(x)` | `float` | Radians |
-| `Math.cos(x)` | `float` | Radians |
-| `Math.tan(x)` | `float` | Radians |
-| `Math.asin(x)` | `float` | Raises if `x ∉ [-1, 1]` |
-| `Math.acos(x)` | `float` | Raises if `x ∉ [-1, 1]` |
-| `Math.atan(x)` | `float` | Radians |
-| `Math.atan2(y, x)` | `float` | Two positional args |
+| `math.PI()` | `float` | π |
+| `math.E()` | `float` | e |
+| `math.sqrt(x)` | `float` | Raises if `x < 0` |
+| `math.pow(x, y)` | `float` | |
+| `math.exp(x)` | `float` | e^x |
+| `math.log(x)` | `float` | Natural log; raises if `x ≤ 0` |
+| `math.log2(x)` | `float` | Raises if `x ≤ 0` |
+| `math.log10(x)` | `float` | Raises if `x ≤ 0` |
+| `math.sin(x)` | `float` | Radians |
+| `math.cos(x)` | `float` | Radians |
+| `math.tan(x)` | `float` | Radians |
+| `math.asin(x)` | `float` | Raises if `x ∉ [-1, 1]` |
+| `math.acos(x)` | `float` | Raises if `x ∉ [-1, 1]` |
+| `math.atan(x)` | `float` | Radians |
+| `math.atan2(y, x)` | `float` | Two positional args |
 
-### `Time.epoch_ms()`
+### `time.epoch_ms()`
 
 Returns the current Unix timestamp as an `int` in milliseconds — the Keel equivalent of JS `Date.now()`. Useful for database `BIGINT` columns, signed payloads, and any context where a raw numeric timestamp is more ergonomic than an RFC 3339 string.
 
 ```keel
-ms = Time.epoch_ms()   # e.g. 1705314600500
+ms = time.epoch_ms()   # e.g. 1705314600500
 ```
 
 ### `as T` coercions and `typeof()`
@@ -490,13 +532,13 @@ Slots now accept an optional format spec after a colon: `{expr:spec}`.
 
 ```keel
 pi = 3.14159
-Io.show("{pi:.2f}")        # → "3.14"
-Io.show("{pi:>10.2f}")     # → "      3.14"
-Io.show("{"hi":<8}!")      # → "hi      !"
-Io.show("{"hi":^8}")       # → "   hi   "
+io.show("{pi:.2f}")        # → "3.14"
+io.show("{pi:>10.2f}")     # → "      3.14"
+io.show("{"hi":<8}!")      # → "hi      !"
+io.show("{"hi":^8}")       # → "   hi   "
 n = 42
-Io.show("{n:.2f}")         # → "42.00"  (int auto-promoted to float)
-Io.show("{n:8}")           # → "      42" (bare width = right-align)
+io.show("{n:.2f}")         # → "42.00"  (int auto-promoted to float)
+io.show("{n:8}")           # → "      42" (bare width = right-align)
 ```
 
 See the [String Interpolation guide](guide/strings.md) for the full spec.
@@ -512,7 +554,7 @@ Unbounded iteration is now supported. The condition must be `bool`; `break` and 
 ```keel
 n = 5
 while n > 0 {
-    Io.show("tick: {n}")
+    io.show("tick: {n}")
     n -= 1
 }
 
@@ -547,6 +589,8 @@ Use `len()` to guard dynamic indices; `.first()` / `.last()` remain available wh
 Any user can now declare a named interface and implement it for a struct type. The compiler validates conformance — missing methods, wrong arity, and wrong return types are all compile-time errors:
 
 ```keel
+use std/io
+
 interface Printable {
   task print(self) -> str
 }
@@ -558,7 +602,7 @@ impl Printable for Point {
 }
 
 p: Point = { x: 1.5, y: 2.0 }
-Io.show(p.print())   # → "(1.5, 2.0)"
+io.show(p.print())   # → "(1.5, 2.0)"
 ```
 
 - Interface declarations and their `impl` blocks can appear in any order in the same file.
@@ -587,6 +631,8 @@ hi = items.max()        # { val: 30 }
 **`Equatable`** — typed equality check alongside structural `==`.
 
 ```keel
+use std/io
+
 type Point { x: int, y: int }
 impl Equatable for Point {
   task equals(self, other: Point) -> bool {
@@ -595,23 +641,28 @@ impl Equatable for Point {
 }
 a: Point = { x: 1, y: 2 }
 b: Point = { x: 1, y: 2 }
-Io.show("{a.equals(b)}")   # → true
+io.show("{a.equals(b)}")   # → true
 ```
 
-**`Serializable`** — override `Json.stringify` for a type.
+**`Serializable`** — override `json.stringify` for a type.
 
 ```keel
+use std/io
+use std/json
+
 type Event { name: str, score: int }
 impl Serializable for Event {
   task to_json(self) -> str { "name={self.name};score={self.score}" }
 }
 e: Event = { name: "goal", score: 3 }
-Io.show(Json.stringify(e))   # → "name=goal;score=3"
+io.show(json.stringify(e))   # → "name=goal;score=3"
 ```
 
 **`Iterable`** — use a struct in a `for` loop.
 
 ```keel
+use std/io
+
 type Range { lo: int, hi: int }
 impl Iterable for Range {
   task items(self) -> list[int] {
@@ -624,7 +675,7 @@ impl Iterable for Range {
     result
   }
 }
-for n in Range { lo: 1, hi: 3 } { Io.show("{n}") }   # → 1, 2, 3
+for n in Range { lo: 1, hi: 3 } { io.show("{n}") }   # → 1, 2, 3
 ```
 
 > `Iterable` materialises the full list before iteration — it is not a generator protocol.
@@ -638,6 +689,8 @@ User-defined struct types can now participate in `"{...}"` interpolation by impl
 The `impl` keyword introduces the block; `self` inside the block is the receiver value:
 
 ```keel
+use std/io
+
 type Point {
   x: float
   y: float
@@ -650,7 +703,7 @@ impl Stringable for Point {
 }
 
 p: Point = { x: 3.0, y: 4.0 }
-Io.show("Origin to {p}")   # → "Origin to (3.0, 4.0)"
+io.show("Origin to {p}")   # → "Origin to (3.0, 4.0)"
 s = p.to_str()             # explicit call
 ```
 
@@ -662,7 +715,7 @@ See the [String Interpolation guide](guide/strings.md#stringable-interface--cust
 
 ### Fixes
 
-- **Impl dispatch is now deterministic.** Calling an impl method on a struct value previously used field-set matching — if two types declared the same fields (e.g. `Point` and `Vec2` both `{x, y}`), the wrong impl could be selected. Struct values are now type-tagged at their binding site and impl dispatch is a direct O(1) lookup. `Ai.extract(... as: T)` results are tagged with `T` automatically.
+- **Impl dispatch is now deterministic.** Calling an impl method on a struct value previously used field-set matching — if two types declared the same fields (e.g. `Point` and `Vec2` both `{x, y}`), the wrong impl could be selected. Struct values are now type-tagged at their binding site and impl dispatch is a direct O(1) lookup. `ai.extract(... as: T)` results are tagged with `T` automatically.
 
 ---
 
@@ -687,12 +740,12 @@ count.abs()           # 5    — int stays int
 `Random` is now available in the prelude for non-cryptographic pseudo-random values:
 
 ```keel
-roll = Random.int(min: 1, max: 6)
-sample = Random.float()
-enabled = Random.bool()
+roll = random.int(min: 1, max: 6)
+sample = random.float()
+enabled = random.bool()
 ```
 
-Use `Random` for simulation, sampling, games, and similar non-security work. `Random.int`
+Use `Random` for simulation, sampling, games, and similar non-security work. `random.int`
 uses an inclusive `min:` / `max:` range and raises a runtime error if `min > max`.
 
 ### `Uuid` type and namespace
@@ -701,15 +754,15 @@ uses an inclusive `min:` / `max:` range and raises a runtime error if `min > max
 top-level `uuid()` alias:
 
 ```keel
-id: Uuid = uuid()
-trace = Uuid.v7()
-site = Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")
-parsed = Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
+id: Uuid = uuid.v4()
+trace = uuid.v7()
+site = uuid.v5(ns: uuid.DNS, name: "keel-lang.dev")
+parsed = uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479")
 simple = id.format(as: "simple")
 version = id.version()
 ```
 
-`Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, and `Uuid.X500` are built-in namespace constants for deterministic
+`uuid.DNS`, `uuid.URL`, `uuid.OID`, and `uuid.X500` are built-in namespace constants for deterministic
 version-5 UUIDs. Interpolation displays UUIDs in lowercase hyphenated form.
 
 ### `Crypto` namespace
@@ -717,15 +770,15 @@ version-5 UUIDs. Interpolation displays UUIDs in lowercase hyphenated form.
 `Crypto` is now available for security-sensitive hashes, HMACs, tokens, and random bytes:
 
 ```keel
-digest = Crypto.sha256("hello")
-sig = Crypto.hmac_sha256("message", key: secret)
-token = Crypto.token(bytes: 32)
-bytes = Crypto.random_bytes(16)
+digest = crypto.sha256("hello")
+sig = crypto.hmac_sha256("message", key: secret)
+token = crypto.token(bytes: 32)
+bytes = crypto.random_bytes(16)
 ```
 
 `Crypto` exposes fixed safe SHA-2 methods: `sha224`, `sha256`, `sha384`, `sha512`,
 `sha512_224`, and `sha512_256`, with matching `hmac_` methods. Legacy MD5 and SHA-1 are not exposed.
-`Crypto.token` returns hex, so `bytes: 16` produces a 32-character token. Use `Random` only for
+`crypto.token` returns hex, so `bytes: 16` produces a 32-character token. Use `Random` only for
 non-security work.
 
 ---
@@ -778,26 +831,26 @@ youngest = min(people, by: p => p.age) # {name: "Bob", age: 25}
 oldest   = max(people, by: p => p.age) # {name: "Alice", age: 30}
 ```
 
-See [Prelude → Free Functions](guide/prelude.md#free-functions).
+See [Prelude → Free Functions](guide/stdlib.md#free-functions).
 
 ### `File` namespace complete — `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp`
 
 The `File` namespace now covers all common filesystem operations:
 
 ```keel
-File.mkdir("output/reports")              # create directory (and parents)
-File.copy("template.txt", "output/r.txt") # copy a file; parent dirs created automatically
-File.remove("tmp/scratch.txt")            # delete file or directory (recursive for dirs)
-File.move("draft.txt", "final.txt")       # rename / move; creates dst parent dirs
-paths = File.glob("output/*.txt")         # list[str] of matching paths; empty list if none match
-tmp = File.mktemp()                       # create a temp file; caller removes it
-tmpdir = File.mktemp(dir: true)           # create a temp directory
+file.mkdir("output/reports")              # create directory (and parents)
+file.copy("template.txt", "output/r.txt") # copy a file; parent dirs created automatically
+file.remove("tmp/scratch.txt")            # delete file or directory (recursive for dirs)
+file.move("draft.txt", "final.txt")       # rename / move; creates dst parent dirs
+paths = file.glob("output/*.txt")         # list[str] of matching paths; empty list if none match
+tmp = file.mktemp()                       # create a temp file; caller removes it
+tmpdir = file.mktemp(dir: true)           # create a temp directory
 ```
 
-`File.remove` auto-detects files and directories — directories are removed recursively.
-`File.glob` supports standard glob patterns (`*`, `?`, `**`). An invalid pattern raises a runtime
-error; no matches returns an empty list. `File.mktemp` returns the path and leaves cleanup to the
-caller — use `File.remove(path)` when done.
+`file.remove` auto-detects files and directories — directories are removed recursively.
+`file.glob` supports standard glob patterns (`*`, `?`, `**`). An invalid pattern raises a runtime
+error; no matches returns an empty list. `file.mktemp` returns the path and leaves cleanup to the
+caller — use `file.remove(path)` when done.
 
 ### Bug fix: `datetime` comparison and arithmetic in `keel check`
 
@@ -886,7 +939,7 @@ names  = ["alice", "bob", "carol"]
 scores = [90, 85, 95]
 
 for (name, score) in names.zip(scores) {
-    Log.info("{name} scored {score}")
+    log.info("{name} scored {score}")
 }
 ```
 
@@ -900,8 +953,8 @@ Conditional tool entries in `@tools` now use `if` instead of `when`:
 
 ```keel
 @tools [
-  Email.send  if self.confirmed,   # only after confirmation
-  Db.exec     if self.admin,       # admin only
+  email.send  if self.confirmed,   # only after confirmation
+  db.exec     if self.admin,       # admin only
 ]
 ```
 
@@ -932,10 +985,12 @@ The type checker now rejects nullable arguments passed to non-nullable parameter
 at every task call site — top-level tasks, `self.task(...)`, and `self.method(...)`.
 
 ```keel
+use std/env
+
 task process(text: str) { ... }
 
 task t() {
-  val: str? = Env.get("PROMPT")
+  val: str? = env.get("PROMPT")
   process(val)          # error: expected str, got str? — use `!` or `??`
   process(val!)         # ok
   process(val ?? "")    # ok
@@ -996,6 +1051,8 @@ Bindings destructured from a generic enum variant now resolve to the substituted
 field type instead of `unknown`.
 
 ```keel
+use std/io
+
 type Pair[A, B] =
   | both { first: A, second: B }
   | only_first { value: A }
@@ -1007,8 +1064,8 @@ task t(p: Pair[str, int]) {
       f: str = first    # type-checked as str
       s: int = second   # type-checked as int
     }
-    only_first { value } => { Io.show(value) }
-    only_second { value } => { Io.show("{value}") }
+    only_first { value } => { io.show(value) }
+    only_second { value } => { io.show("{value}") }
   }
 }
 ```
@@ -1041,7 +1098,7 @@ Seven type checker gaps closed — no existing programs break.
 
 - **`?.` propagates nullable** — `x?.field` on a nullable struct now types as `FieldType?` instead of `unknown`.
 - **`??` unwraps nullable** — `x ?? fallback` now returns the inner type of `x`, not the fallback's type.
-- **`Ai.extract` / `Ai.decide` with `as:`** — when an `as: T` argument is present, the return type is inferred as `T?` rather than `unknown?`. Downstream field accesses on the result are now checked.
+- **`ai.extract` / `ai.decide` with `as:`** — when an `as: T` argument is present, the return type is inferred as `T?` rather than `unknown?`. Downstream field accesses on the result are now checked.
 - **Lambda block bodies** — `x => { ... }` now infers its return type from the last expression, matching expression-body lambdas.
 - **`set[]` literal type** — `set[1, 2, 3]` now infers as `set[int]` instead of `list[int]`.
 - **Implicit return checking** — when a task's last statement is an expression, its type is checked against the declared return type. Control-flow statements (`return`, `when`, `for`) are excluded to avoid false positives.
@@ -1055,8 +1112,8 @@ Seven type checker gaps closed — no existing programs break.
 
 Agent-owned tasks are now invoked as `self.task(...)`. Inside an agent body,
 bare `task(...)` resolves only through lexical and top-level scope, while
-cross-agent work stays on mailbox APIs such as `Agent.send(...)` and
-`Agent.delegate(...)`.
+cross-agent work stays on mailbox APIs such as `send(...)` and
+`delegate(...)`.
 
 ---
 
@@ -1069,15 +1126,18 @@ cross-agent work stays on mailbox APIs such as `Agent.send(...)` and
 Entries can gate a whole namespace or a specific method:
 
 ```keel
+use std/db
+use std/email
+
 agent SupportBot {
   state { confirmed: bool = false, admin: bool = false }
 
   @tools [
-    Email.fetch,                           # always allowed
-    Email.send when self.confirmed,        # only after confirmation
-    Db.query,                              # always allowed
-    Db.exec   when self.admin,             # admin only
-    Http,                                  # whole namespace, always
+    email.fetch,                           # always allowed
+    email.send when self.confirmed,        # only after confirmation
+    db.query,                              # always allowed
+    db.exec   when self.admin,             # admin only
+    http,                                  # whole namespace, always
   ]
 }
 ```
@@ -1119,20 +1179,20 @@ Seven new string methods added: `trim_start`, `trim_end`, `repeat`, `slice`, `in
 
 ## v0.1.15 — Error Handling Rework
 
-### Breaking: `fallback:` removed from all `Ai.*` calls
+### Breaking: `fallback:` removed from all `ai.*` calls
 
-`fallback:` is no longer a valid argument on any `Ai.*` function. Replace every call site with `??` at the expression level:
+`fallback:` is no longer a valid argument on any `ai.*` function. Replace every call site with `??` at the expression level:
 
 | Before | After |
 |---|---|
-| `Ai.classify(text, as: T, fallback: T.x)` | `Ai.classify(text, as: T) ?? T.x` |
-| `Ai.summarize(body, in: 3, unit: sentences, fallback: "none")` | `Ai.summarize(body, in: 3, unit: sentences) ?? "none"` |
+| `ai.classify(text, as: T, fallback: T.x)` | `ai.classify(text, as: T) ?? T.x` |
+| `ai.summarize(body, in: 3, unit: sentences, fallback: "none")` | `ai.summarize(body, in: 3, unit: sentences) ?? "none"` |
 
-The type-checker now always infers `T?` for `Ai.classify` regardless of arguments.
+The type-checker now always infers `T?` for `ai.classify` regardless of arguments.
 
 ### Two-tier failure model
 
-`Ai.*` calls have two distinct failure modes:
+`ai.*` calls have two distinct failure modes:
 
 | Failure | Result | Handle with |
 |---|---|---|
@@ -1145,12 +1205,12 @@ The type-checker now always infers `T?` for `Ai.classify` regardless of argument
 
 ```keel
 try {
-  urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
 } catch err: AiSchemaError {
-  Io.notify("Unexpected LLM output: {err.got}")
+  io.notify("Unexpected LLM output: {err.got}")
   urgency = Urgency.medium
 } catch err: Error {
-  Io.notify("Failed: {err.message}")
+  io.notify("Failed: {err.message}")
 }
 ```
 
@@ -1173,7 +1233,7 @@ try {
 
 ```keel
 for email in emails if email.unread { triage(email) }
-for n in 1..10 if n % 2 == 0 { Io.show(n) }
+for n in 1..10 if n % 2 == 0 { io.show(n) }
 ```
 
 **Breaking:** `for x in list where cond` no longer parses. Use `if` instead.
@@ -1184,10 +1244,10 @@ for n in 1..10 if n % 2 == 0 { Io.show(n) }
 
 ```keel
 # Factories — namespace style
-now  = Time.now()                          # UTC, millisecond precision
-ny   = Time.now(tz: "America/New_York")    # IANA timezone
-dt   = Time.parse("2026-05-06T09:00:00Z") # datetime? (none on failure)
-dt2  = Time.parse("2026-05-06", tz: "UTC") # coerce naive string with tz:
+now  = time.now()                          # UTC, millisecond precision
+ny   = time.now(tz: "America/New_York")    # IANA timezone
+dt   = time.parse("2026-05-06T09:00:00Z") # datetime? (none on failure)
+dt2  = time.parse("2026-05-06", tz: "UTC") # coerce naive string with tz:
 
 # Methods on the datetime value
 p    = dt.parts()           # {year, month, day, hour, minute, second, millisecond, tz}
@@ -1195,17 +1255,17 @@ s    = dt.format(as: "%Y-%m-%d")   # str?
 
 # Operators
 elapsed  = finish - start   # datetime - datetime → duration
-deadline = Time.now() + 3.days
-ok       = deadline > Time.now()
+deadline = time.now() + 3.days
+ok       = deadline > time.now()
 
 # Millisecond duration
 short = 500.ms              # aliases: millis, millisecond, milliseconds
 ```
 
 **Breaking changes from the earlier v0.1.14 Time stub:**
-- `Time.format(dt, as:)` removed → use `dt.format(as:)`
-- `Time.diff(a, b)` removed → use `a - b`
-- `Time.parse()` rejects naive strings without a TZ offset — returns `none` instead of raising. Use `Time.parse(str, tz: name)` to coerce.
+- `time.format(dt, as:)` removed → use `dt.format(as:)`
+- `time.diff(a, b)` removed → use `a - b`
+- `time.parse()` rejects naive strings without a TZ offset — returns `none` instead of raising. Use `time.parse(str, tz: name)` to coerce.
 
 Naive strings (no UTC offset in the string) are rejected by design — all datetimes in Keel are timezone-aware.
 
@@ -1239,7 +1299,7 @@ See the [Variables & Expressions guide](guide/expressions.md#destructuring) for 
 
 ```keel
 for i in 1..5 {
-  Io.notify("{i}")    # 1, 2, 3, 4, 5
+  io.notify("{i}")    # 1, 2, 3, 4, 5
 }
 
 xs = 0..3             # [0, 1, 2, 3]
@@ -1268,7 +1328,7 @@ Persistent memory is now both path-safe and cross-process safe:
 
 The `<hash12>` is derived from the SHA-256 of the canonical source file path, ensuring two programs with the same filename in different directories never share a storage bucket.
 
-**Cross-process writes are now safe.** Each `Memory.*` operation holds an advisory `flock` on a sidecar `<agent>.lock` file. Multiple concurrent `keel run` processes against the same agent serialize correctly.
+**Cross-process writes are now safe.** Each `memory.*` operation holds an advisory `flock` on a sidecar `<agent>.lock` file. Multiple concurrent `keel run` processes against the same agent serialize correctly.
 
 **Crash durability.** Writes call `fsync` on the temp file before rename, and `fsync` on the parent directory after rename.
 
@@ -1290,23 +1350,26 @@ See the [Agents guide](./guide/agents.md#memory--agent-memory-scope) for the upd
 
 ### Memory namespace
 
-`Memory.remember`, `Memory.recall`, and `Memory.forget` are now real — they were no-op stubs since v0.1.0.
+`memory.remember`, `memory.recall`, and `memory.forget` are now real — they were no-op stubs since v0.1.0.
 
 The `@memory` attribute selects the scope:
 
 - **`session`** (default) — in-process, cleared on restart.
 - **`persistent`** — file-backed JSON at `~/.keel/memory/<stem>_<hash12>/<agent>.json`, survives restarts. (Path format updated in v0.1.11; the directory includes a SHA-256 hash of the source file path to avoid cross-program collisions.)
-- **`none`** — `Memory.*` calls raise `CapabilityError`.
+- **`none`** — `memory.*` calls raise `CapabilityError`.
 
 ```keel
+use std/io
+use std/memory
+
 agent Counter {
   @memory session
 
   @on_start {
-    prev = Memory.recall("count")
+    prev = memory.recall("count")
     count = if prev == none { 1 } else { prev + 1 }
-    Memory.remember("count", count)
-    Io.show("Visit {count}")
+    memory.remember("count", count)
+    io.show("Visit {count}")
     stop(self)
   }
 }
@@ -1324,14 +1387,16 @@ See the [Agents guide](./guide/agents.md#memory--agent-memory-scope) for full sy
 
 **Path arguments** (`keel init /tmp/mybot`) now use the basename as the project name — previously the full path was injected into the agent name.
 
-**Runnable scaffold** — the generated template no longer uses `Schedule.every`. It prints and exits immediately via `stop(self)`, so `keel run main.keel` works out of the box.
+**Runnable scaffold** — the generated template no longer uses `schedule.every`. It prints and exits immediately via `stop(self)`, so `keel run main.keel` works out of the box.
 
 **`stop(self)`** — bare `self` now resolves to an `AgentRef` for the current agent anywhere inside an agent body.
 
 ```keel
+use std/io
+
 agent Worker {
   @on_start {
-    Io.show("Hello from Worker!")
+    io.show("Hello from Worker!")
     stop(self)
   }
 }
@@ -1356,7 +1421,7 @@ Four rules ship in v0.1.9:
 |------|---------|
 | Unused variable | binding assigned but never read |
 | Uncalled task | `task` declared but never invoked |
-| `Ai.*` outside agent | LLM call without `@role` / `@model` context |
+| `ai.*` outside agent | LLM call without `@role` / `@model` context |
 | State written, never read | `self.x =` appears but `self.x` is never used |
 
 `--fix` auto-removes unused variable assignments. Prefix a name with `_` to suppress the unused warning.
@@ -1388,10 +1453,10 @@ HTTP webhook handling, in-memory caching, regex & string tools, LSP go-to-defini
 Process-scoped in-memory cache with optional TTL. Useful for deduplication, rate-limit tokens, and short-lived computed results across agents.
 
 ```keel
-Cache.set("key", value, ttl: 5.minutes)
-v = Cache.get("key")    # value or none
-Cache.delete("key")
-Cache.clear()
+cache.set("key", value, ttl: 5.minutes)
+v = cache.get("key")    # value or none
+cache.delete("key")
+cache.clear()
 ```
 
 #### String value methods — regex & formatting
@@ -1407,13 +1472,13 @@ text.sub("\\d+", "N")                   # str — regex replace all
 "42".pad(6, char: "0")                  # "000042"
 ```
 
-#### `Http.serve` — webhook listener
+#### `http.serve` — webhook listener
 
 React to inbound HTTP requests without polling:
 
 ```keel
-Http.serve(8080, (req) => {
-  Io.show("Got {req["method"]} {req["path"]}")
+http.serve(8080, (req) => {
+  io.show("Got {req["method"]} {req["path"]}")
   { status: 200, body: "OK" }
 })
 ```
@@ -1437,14 +1502,14 @@ File I/O, JSON processing, async task spawning, cron scheduling, and agent capab
 Read, write, and list files on disk. The runtime creates intermediate directories automatically for writes.
 
 ```keel
-File.write("data.txt", "Hello Keel")
-content = File.read("data.txt")
+file.write("data.txt", "Hello Keel")
+content = file.read("data.txt")
 
-if File.exists("data.txt") {
-  Io.show(content)
+if file.exists("data.txt") {
+  io.show(content)
 }
 
-entries = File.list("data/")
+entries = file.list("data/")
 ```
 
 Methods: `read(path)`, `write(path, content)`, `exists(path)`, `list(dir)`.
@@ -1454,24 +1519,24 @@ Methods: `read(path)`, `write(path, content)`, `exists(path)`, `list(dir)`.
 Serialize and deserialize JSON. `parse` deserializes a JSON string into Keel values (maps, lists, scalars). `stringify` turns Keel values back into JSON.
 
 ```keel
-data = Json.parse("{\"name\": \"Alice\", \"age\": 30}")
+data = json.parse("{\"name\": \"Alice\", \"age\": 30}")
 name = data["name"]
 
 user = { name: "Bob", age: 25 }
-json_str = Json.stringify(user)
+json_str = json.stringify(user)
 ```
 
-#### Schedule.cron
+#### schedule.cron
 
 Schedule tasks using 5-field cron expressions. Supports standard cron syntax for minute, hour, day, month, and weekday.
 
 ```keel
-Schedule.cron("0 9 * * 1-5", () => {
-  Io.show("Morning digest")
+schedule.cron("0 9 * * 1-5", () => {
+  io.show("Morning digest")
 })
 
-Schedule.cron("*/5 * * * *", () => {
-  Io.show("Every 5 minutes")
+schedule.cron("*/5 * * * *", () => {
+  io.show("Every 5 minutes")
 })
 ```
 
@@ -1480,18 +1545,18 @@ Schedule.cron("*/5 * * * *", () => {
 Spawn independent Tokio tasks and await completion. `spawn` returns a task handle; `join_all` awaits a list of handles; `select` races handles to the first completion.
 
 ```keel
-task1 = Async.spawn(() => {
-  result = Http.get("https://api1.example.com")
-  Io.show(result)
+task1 = async.spawn(() => {
+  result = http.get("https://api1.example.com")
+  io.show(result)
 })
 
-task2 = Async.spawn(() => {
-  result = Http.get("https://api2.example.com")
-  Io.show(result)
+task2 = async.spawn(() => {
+  result = http.get("https://api2.example.com")
+  io.show(result)
 })
 
-results = Async.join_all([task1, task2])
-Io.show("All done")
+results = async.join_all([task1, task2])
+io.show("All done")
 ```
 
 #### @tools capability gating
@@ -1499,13 +1564,17 @@ Io.show("All done")
 Restrict which prelude namespaces are accessible inside an agent. Calls to unlisted namespaces raise `CapabilityError` at runtime.
 
 ```keel
+use std/file
+use std/http
+use std/io
+
 agent RestrictedAgent {
-  @tools [Io, File]
+  @tools [io, file]
 
   @on_start {
-    Io.show("Allowed")
-    File.write("x.txt", "Allowed")
-    # Http.get would raise CapabilityError
+    io.show("Allowed")
+    file.write("x.txt", "Allowed")
+    # http.get would raise CapabilityError
   }
 }
 ```
@@ -1514,14 +1583,16 @@ If no `@tools` attribute is specified, all namespaces are allowed.
 
 #### @limits agent attributes
 
-Extract and enforce resource limits (timeout, max_tokens, max_cost) on a per-agent basis. The infrastructure for extracting limits is in place; timeout wraps calls via `Control.with_timeout`.
+Extract and enforce resource limits (timeout, max_tokens, max_cost) on a per-agent basis. The infrastructure for extracting limits is in place; timeout wraps calls via `control.with_timeout`.
 
 ```keel
+use std/ai
+
 agent LimitedAgent {
   @limits { timeout: 30s, max_tokens: 1000, max_cost: 5.0 }
 
   @on_start {
-    response = Ai.prompt("...")
+    response = ai.prompt("...")
   }
 }
 ```
@@ -1555,28 +1626,28 @@ depth tracking and recursively handles nested `"..."`:
 
 ```keel
 name = "world"
-Io.show("hi {"there {name}"}")        # → "hi there world"
+io.show("hi {"there {name}"}")        # → "hi there world"
 ```
 
-#### `Control.retry` / `with_timeout` / `with_deadline`
+#### `control.retry` / `with_timeout` / `with_deadline`
 
 The three control-flow combinators now have real implementations.
 
 ```keel
 # Re-invoke until success or the budget is spent.
-result = Control.retry(5, () => Ai.prompt(system: "...", user: "..."))
+result = control.retry(5, () => ai.prompt(system: "...", user: "..."))
 
 # Abort if the closure runs past the duration.
-fast = Control.with_timeout(2.seconds, () => slow_call())
+fast = control.with_timeout(2.seconds, () => slow_call())
 
 # Abort once the absolute deadline has passed.
-done = Control.with_deadline("2026-12-31T23:59:00Z", () => long_task())
+done = control.with_deadline("2026-12-31T23:59:00Z", () => long_task())
 ```
 
 `with_timeout` and `with_deadline` raise `TimeoutError` / `DeadlineError`
 on expiry. `retry` surfaces the last attempt's error if every attempt fails.
 
-#### `Agent.broadcast(team, data)`
+#### `broadcast(team, data)`
 
 Tag agents with `@team [...]` and dispatch a single event to every
 member of a named team:
@@ -1586,16 +1657,16 @@ agent Alpha { @team ["frontline"]  on alert(m: str) { ... } }
 agent Beta  { @team ["frontline"]  on alert(m: str) { ... } }
 agent Gamma { @team ["backoffice"] on alert(m: str) { ... } }
 
-Agent.broadcast("frontline", "incident", event: "alert")
+broadcast("frontline", "incident", event: "alert")
 # Alpha and Beta fire; Gamma stays silent.
 ```
 
-#### `Email.archive(message)`
+#### `email.archive(message)`
 
-`Email.archive` performs an IMAP UID MOVE (with COPY + `\Deleted` +
+`email.archive` performs an IMAP UID MOVE (with COPY + `\Deleted` +
 EXPUNGE fallback for servers without the MOVE extension). The
 destination folder is `Archive` by default; override with the
-`IMAP_ARCHIVE_FOLDER` env var. `Email.fetch` now returns each message's
+`IMAP_ARCHIVE_FOLDER` env var. `email.fetch` now returns each message's
 UID under the `uid` key so `archive` can target the right one.
 
 #### `map[K, V]` method inference
@@ -1634,10 +1705,12 @@ Four new checks land in the type checker; zero breaking changes to valid program
 `T?` is now enforced at assignment and return sites. Passing a nullable value where a non-nullable is expected is a compile-time error. Use `!` to assert non-null (throws `NullError` at runtime if `none`) or `??` to provide a fallback.
 
 ```keel
+use std/env
+
 task t() {
-  x: str = Env.get("KEY")          # error: expected str, got str?
-  y: str = Env.get("KEY")!         # ok — throws if none
-  z: str = Env.get("KEY") ?? ""    # ok — falls back to ""
+  x: str = env.get("KEY")          # error: expected str, got str?
+  y: str = env.get("KEY")!         # ok — throws if none
+  z: str = env.get("KEY") ?? ""    # ok — falls back to ""
 }
 ```
 
@@ -1721,17 +1794,19 @@ summary = "Items: {cart.count()}, subtotal: {price * qty}"
 Agents can now declare a shutdown block that runs before the agent is removed from the runtime.
 
 ```keel
+use std/io
+
 agent Logger {
-  @on_stop { Io.show("Logger shutting down") }
+  @on_stop { io.show("Logger shutting down") }
 }
 ```
 
-#### `Agent.delegate(target, task, args)`
+#### `delegate(target, task, args)`
 
 Posts a named task event to another agent's mailbox; the receiving agent handles it via its `on <task>` handler.
 
 ```keel
-Agent.delegate(Processor, "handle", payload)
+delegate(Processor, "handle", payload)
 ```
 
 #### `Search`, `Db`, `Time` stub namespaces
@@ -1757,25 +1832,25 @@ agent Support {
 
 Rules are prepended as a bullet list in the system prompt, between the role preamble and the operation instructions. Enable `KEEL_TRACE=1` to see the full prompt for every call.
 
-#### `Ai.summarize` — `format:` and `max:` wired
+#### `ai.summarize` — `format:` and `max:` wired
 
 ```keel
-summary = Ai.summarize(article, format: bullets, max: 5, unit: sentences)
+summary = ai.summarize(article, format: bullets, max: 5, unit: sentences)
 ```
 
-#### `Ai.prompt` — `response_format: json` wired
+#### `ai.prompt` — `response_format: json` wired
 
 Appends "Respond with valid JSON only" to the system prompt and validates the reply.
 
 ```keel
-score = Ai.prompt(system: "Rate 1–10.", user: review, response_format: json)
+score = ai.prompt(system: "Rate 1–10.", user: review, response_format: json)
 ```
 
-#### `Ai.extract(x, as: T)` — schema derived from struct type
+#### `ai.extract(x, as: T)` — schema derived from struct type
 
 ```keel
 type Invoice { vendor: str, amount: float, date: str }
-result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
+result = ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
 ```
 
 ---
@@ -1784,7 +1859,7 @@ result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
 ### Internal hardening
 
 - Bumped to **Rust edition 2024** (requires rustc ≥ 1.85).
-- Runtime config decoupled from environment: `--trace` / `--log-level` / `Log.set_level` now go through typed setters, removing all `unsafe` env mutation.
+- Runtime config decoupled from environment: `--trace` / `--log-level` / `log.set_level` now go through typed setters, removing all `unsafe` env mutation.
 - Release pipeline: Homebrew tap push now uses a short-lived GitHub App installation token instead of a long-lived PAT.
 
 ---

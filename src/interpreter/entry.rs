@@ -29,6 +29,23 @@ pub async fn run_with_source_and_runtime(
     interp.execute(program).await
 }
 
+/// Execute a loaded module graph: register every module's declarations,
+/// bind imports, then run the entry file's top-level statements.
+pub async fn run_graph_with_runtime(
+    graph: &crate::modules::ModuleGraph,
+    runtime: Arc<crate::runtime::context::RuntimeContext>,
+) -> Result<()> {
+    let mut interp = Interpreter::with_runtime(runtime);
+    let entry = graph.entry();
+    if let Some(path) = &entry.path {
+        let raw = path.to_str().unwrap_or("__inline__");
+        interp.program_name =
+            crate::runtime::derive_program_name_with_fs(raw, interp.runtime.file_system.as_ref());
+    }
+    interp.source = Some(entry.source.clone());
+    interp.execute_graph(graph).await
+}
+
 #[derive(Debug, Clone)]
 pub struct TestOutcome {
     pub name: String,
@@ -171,6 +188,128 @@ pub async fn run_tests_with_source_and_runtime(
     Ok(outcomes)
 }
 
+/// Execute all test blocks of a module graph's entry file.
+///
+/// Imported modules contribute declarations (including test helpers as
+/// plain tasks) but never their own tests — `keel test` runs exactly the
+/// tests of the file it is pointed at.
+pub async fn run_graph_tests_with_runtime(
+    graph: &crate::modules::ModuleGraph,
+    runtime: Arc<crate::runtime::context::RuntimeContext>,
+    filter: Option<&str>,
+    fail_fast: bool,
+) -> Result<Vec<TestOutcome>> {
+    let entry = graph.entry();
+    let source_path = entry.path.clone();
+    let source_path = source_path.as_deref();
+    let tests: Vec<TestDecl> = entry
+        .program
+        .declarations
+        .iter()
+        .filter_map(|node| match &node.kind {
+            Decl::Test(test) if filter.is_none_or(|filter| test.name.contains(filter)) => {
+                Some(test.clone())
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut outcomes = Vec::new();
+    for test in tests {
+        let cases = graph_test_cases(graph, &runtime, &test).await;
+        let cases = match cases {
+            Ok(cases) => cases,
+            Err(failure) => {
+                outcomes.push(TestOutcome {
+                    name: test.name,
+                    passed: false,
+                    error: Some(failure.error),
+                    failure_location: format_failure_location(source_path, failure.span.as_ref()),
+                    elapsed: Duration::ZERO,
+                });
+                if fail_fast {
+                    break;
+                }
+                continue;
+            }
+        };
+        let total_cases = cases.len();
+        let parameterized = test.param.is_some();
+        for (index, case_value) in cases.into_iter().enumerate() {
+            let mut interp = graph_test_interpreter(graph, &runtime);
+            let started = Instant::now();
+            let result = async {
+                interp
+                    .prepare_graph(graph)
+                    .map_err(|err| TestFailure::new(err, None))?;
+                interp.execute_test_prepared(&test, case_value).await
+            }
+            .await;
+            let elapsed = started.elapsed();
+            let passed = result.is_ok();
+            let name = if parameterized {
+                format!("{} [{}]", test.name, index)
+            } else {
+                test.name.clone()
+            };
+            outcomes.push(TestOutcome {
+                name,
+                passed,
+                error: result.as_ref().err().map(|failure| failure.error.clone()),
+                failure_location: result.as_ref().err().and_then(|failure| {
+                    format_failure_location(source_path, failure.span.as_ref())
+                }),
+                elapsed,
+            });
+            if fail_fast && !passed {
+                break;
+            }
+        }
+        if fail_fast
+            && outcomes
+                .iter()
+                .rev()
+                .take(total_cases)
+                .any(|outcome| !outcome.passed)
+        {
+            break;
+        }
+    }
+    Ok(outcomes)
+}
+
+/// Fresh isolated interpreter for one graph test case.
+fn graph_test_interpreter(
+    graph: &crate::modules::ModuleGraph,
+    runtime: &Arc<crate::runtime::context::RuntimeContext>,
+) -> Interpreter {
+    let entry = graph.entry();
+    let test_runtime = crate::runtime::context::RuntimeContext::isolated_from(runtime);
+    let mut interp = Interpreter::with_runtime(test_runtime);
+    if let Some(path) = &entry.path {
+        let raw = path.to_str().unwrap_or("__inline__");
+        interp.program_name =
+            crate::runtime::derive_program_name_with_fs(raw, interp.runtime.file_system.as_ref());
+    }
+    interp.source = Some(entry.source.clone());
+    interp
+}
+
+async fn graph_test_cases(
+    graph: &crate::modules::ModuleGraph,
+    runtime: &Arc<crate::runtime::context::RuntimeContext>,
+    test: &TestDecl,
+) -> std::result::Result<Vec<Option<Value>>, TestFailure> {
+    let Some(param) = &test.param else {
+        return Ok(vec![None]);
+    };
+    let mut interp = graph_test_interpreter(graph, runtime);
+    interp
+        .prepare_graph(graph)
+        .map_err(|err| TestFailure::new(err, None))?;
+    evaluate_test_cases(&mut interp, param).await
+}
+
 async fn test_cases(
     program: Program,
     source: Option<NamedSource<String>>,
@@ -193,6 +332,13 @@ async fn test_cases(
     interp
         .prepare_program(&program)
         .map_err(|err| TestFailure::new(err, None))?;
+    evaluate_test_cases(&mut interp, param).await
+}
+
+async fn evaluate_test_cases(
+    interp: &mut Interpreter,
+    param: &crate::ast::TestParam,
+) -> std::result::Result<Vec<Option<Value>>, TestFailure> {
     let mut env = Environment::new();
     let value = match interp.eval_expr(&param.cases, &mut env).await {
         Ok(ExprFlow::Value(value) | ExprFlow::Return(value)) => value,
@@ -226,14 +372,136 @@ pub fn test_names(program: &Program, filter: Option<&str>) -> Vec<String> {
 impl Interpreter {
     pub async fn execute(&mut self, program: Program) -> Result<()> {
         self.prepare_program(&program)?;
+        // Top-level statements form the implicit main: they share one
+        // environment so earlier bindings are visible to later statements.
+        let mut env = Environment::new();
         for node in &program.declarations {
             if let Decl::Stmt(stmt_node) = &node.kind {
-                let mut env = Environment::new();
                 self.exec_stmt(&stmt_node.kind, &mut env).await?;
             }
         }
 
         self.run_event_loop().await
+    }
+
+    /// Execute the entry file's top-level statements after registering the
+    /// declarations of every module in the graph. Imported modules never
+    /// execute their own top-level statements — they only contribute
+    /// declarations (the implicit-main rule).
+    pub async fn execute_graph(&mut self, graph: &crate::modules::ModuleGraph) -> Result<()> {
+        self.prepare_graph(graph)?;
+        // Top-level statements form the implicit main: they share one
+        // environment so earlier bindings are visible to later statements.
+        let mut env = Environment::new();
+        for node in &graph.entry().program.declarations {
+            if let Decl::Stmt(stmt_node) = &node.kind {
+                self.exec_stmt(&stmt_node.kind, &mut env).await?;
+            }
+        }
+        self.run_event_loop().await
+    }
+
+    /// Register every module's declarations into the flat global table and
+    /// bind each module's imports. Top-level statements are not executed.
+    pub fn prepare_graph(&mut self, graph: &crate::modules::ModuleGraph) -> Result<()> {
+        // Pre-pass 1: interfaces from all modules, so impl blocks can
+        // reference them regardless of file or source order.
+        for unit in &graph.modules {
+            for node in &unit.program.declarations {
+                if let Decl::Interface(iface) = &node.kind {
+                    self.interfaces
+                        .insert(iface.name.clone(), iface.methods.clone());
+                }
+            }
+        }
+
+        // Pre-pass 2: type-resolution environment spanning the whole graph.
+        let mut type_env = TypeEnv::new();
+        for unit in &graph.modules {
+            type_env.collect_aliases(unit.program.declarations.iter().map(|n| &n.kind));
+        }
+        self.type_env = type_env;
+
+        for unit in &graph.modules {
+            for node in &unit.program.declarations {
+                self.register_decl(&node.kind)?;
+            }
+        }
+
+        for unit in &graph.modules {
+            self.bind_imports(graph, &unit.imports);
+        }
+        Ok(())
+    }
+
+    /// Install the values for one module's `use` declarations.
+    fn bind_imports(
+        &mut self,
+        graph: &crate::modules::ModuleGraph,
+        imports: &crate::modules::ModuleImports,
+    ) {
+        use crate::interpreter::value::ModuleValue;
+        use crate::modules::ModuleTarget;
+
+        for binding in &imports.bindings {
+            let value = match &binding.target {
+                ModuleTarget::Std(ns) => Value::Namespace(ns.clone()),
+                ModuleTarget::Local(index) => {
+                    let unit = &graph.modules[*index];
+                    let mut tasks = std::collections::HashSet::new();
+                    let mut agents = std::collections::HashSet::new();
+                    for node in &unit.program.declarations {
+                        match &node.kind {
+                            Decl::Task(d) => {
+                                tasks.insert(d.name.clone());
+                            }
+                            Decl::Extern(d) => {
+                                tasks.insert(d.name.clone());
+                            }
+                            Decl::Agent(d) => {
+                                agents.insert(d.name.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                    Value::Module(Arc::new(ModuleValue {
+                        name: unit.name.clone(),
+                        tasks,
+                        agents,
+                    }))
+                }
+            };
+            self.globals.insert(binding.name.clone(), value);
+        }
+
+        for symbol in &imports.symbols {
+            match &symbol.target {
+                ModuleTarget::Std(ns) => {
+                    // `use parse from std/json` — bind a thin forwarder.
+                    let ns = ns.clone();
+                    let method = symbol.original.clone();
+                    self.register_top_fn(
+                        &symbol.local,
+                        Arc::new(move |host, args| {
+                            let ns = ns.clone();
+                            let method = method.clone();
+                            Box::pin(
+                                async move { host.call_namespace_method(&ns, &method, args).await },
+                            )
+                        }),
+                    );
+                }
+                ModuleTarget::Local(_) => {
+                    // Declarations are registered flat under their declared
+                    // names; an alias just binds the same value again.
+                    if symbol.local != symbol.original
+                        && let Some(value) = self.globals.get(&symbol.original).cloned()
+                    {
+                        self.globals.insert(symbol.local.clone(), value);
+                    }
+                }
+            }
+        }
     }
 
     async fn execute_test(
@@ -244,7 +512,15 @@ impl Interpreter {
     ) -> std::result::Result<(), TestFailure> {
         self.prepare_program(&program)
             .map_err(|err| TestFailure::new(err, None))?;
+        self.execute_test_prepared(test, case_value).await
+    }
 
+    /// Run one test's setup and body against an already-prepared program.
+    async fn execute_test_prepared(
+        &mut self,
+        test: &TestDecl,
+        case_value: Option<Value>,
+    ) -> std::result::Result<(), TestFailure> {
         let mut env = Environment::new();
         if let (Some(param), Some(value)) = (&test.param, case_value) {
             env.define(param.name.clone(), value);

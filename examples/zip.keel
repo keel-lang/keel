@@ -1,12 +1,25 @@
+use std/log
+
 agent ZipDemo {
   @on_start {
     names = ["alice", "bob", "carol"]
     scores = [90, 85, 95]
     for (name, score) in names.zip(scores) {
-      Log.info("{name} scored {score}")
+      log.info("{name} scored {score}")
     }
     stop(self)
   }
 }
 
 run(ZipDemo)
+
+# Tests — run with: keel test examples/zip.keel
+test "zip pairs elements positionally" {
+  names = ["alice", "bob"]
+  scores = [90, 85]
+  out: list[str] = []
+  for (name, score) in names.zip(scores) {
+    out += ["{name}={score}"]
+  }
+  assert out.join(",") == "alice=90,bob=85"
+}

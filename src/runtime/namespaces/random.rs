@@ -5,14 +5,14 @@ use crate::runtime::namespace::{find_arg, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Random",
+        namespace: "random",
         name: "float",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return a random float in the range [0, 1).",
     },
     BuiltinMethod {
-        namespace: "Random",
+        namespace: "random",
         name: "int",
         params: &[
             BuiltinParam {
@@ -30,7 +30,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return a random integer in the inclusive range [min, max].",
     },
     BuiltinMethod {
-        namespace: "Random",
+        namespace: "random",
         name: "bool",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Bool),
@@ -39,20 +39,20 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Random", {
+    ns!("random", {
         "float" => |_interp, _args| Box::pin(async move {
             Ok(Value::Float(fastrand::f64()))
         }),
         "int" => |_interp, args| Box::pin(async move {
             let min = find_arg(&args, "min")
                 .and_then(Value::as_int)
-                .ok_or_else(|| miette::miette!("Random.int: missing integer `min:` argument"))?;
+                .ok_or_else(|| miette::miette!("random.int: missing integer `min:` argument"))?;
             let max = find_arg(&args, "max")
                 .and_then(Value::as_int)
-                .ok_or_else(|| miette::miette!("Random.int: missing integer `max:` argument"))?;
+                .ok_or_else(|| miette::miette!("random.int: missing integer `max:` argument"))?;
             if min > max {
                 return Err(miette::miette!(
-                    "Random.int: `min:` must be <= `max:`, got {min} > {max}"
+                    "random.int: `min:` must be <= `max:`, got {min} > {max}"
                 ));
             }
             Ok(Value::Integer(fastrand::i64(min..=max)))
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn namespace_has_random_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Random");
+        assert_eq!(ns.name, "random");
         assert!(ns.methods.contains_key("float"));
         assert!(ns.methods.contains_key("int"));
         assert!(ns.methods.contains_key("bool"));

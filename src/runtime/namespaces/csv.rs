@@ -6,7 +6,7 @@ use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Csv",
+        namespace: "csv",
         name: "parse",
         params: &[BuiltinParam {
             name: "s",
@@ -17,7 +17,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Parse a CSV string into a list of rows, each row a list of strings.",
     },
     BuiltinMethod {
-        namespace: "Csv",
+        namespace: "csv",
         name: "parse_records",
         params: &[BuiltinParam {
             name: "s",
@@ -28,7 +28,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Parse a CSV string into a list of named-column records.",
     },
     BuiltinMethod {
-        namespace: "Csv",
+        namespace: "csv",
         name: "stringify",
         params: &[BuiltinParam {
             name: "rows",
@@ -59,11 +59,11 @@ fn parse_csv(text: &str) -> miette::Result<Vec<Vec<String>>> {
 }
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Csv", {
+    ns!("csv", {
         // Csv.parse(text) — parse a CSV string into list[list[str]].
         // Each inner list is one row; all values are strings.
         "parse" => |_i, args| Box::pin(async move {
-            let text = expect_str(&args, 0, "Csv.parse")?;
+            let text = expect_str(&args, 0, "csv.parse")?;
 
             let rows = parse_csv(text)?;
             Ok(Value::List(
@@ -78,7 +78,7 @@ pub(crate) fn namespace() -> Namespace {
         // Csv.parse_records(text) — parse CSV using the first row as header names.
         // Returns list[map[str, str]]; absent fields default to "".
         "parse_records" => |_i, args| Box::pin(async move {
-            let text = expect_str(&args, 0, "Csv.parse_records")?;
+            let text = expect_str(&args, 0, "csv.parse_records")?;
 
             let rows = parse_csv(text)?;
             if rows.is_empty() {
@@ -89,7 +89,7 @@ pub(crate) fn namespace() -> Namespace {
                 if header.is_empty() {
                     return Err(make_typed_report(
                         RuntimeErrorKind::Csv,
-                        "Csv.parse_records: header names must not be empty",
+                        "csv.parse_records: header names must not be empty",
                     ));
                 }
             }
@@ -98,7 +98,7 @@ pub(crate) fn namespace() -> Namespace {
                 if !seen.insert(header.as_str()) {
                     return Err(make_typed_report(
                         RuntimeErrorKind::Csv,
-                        format!("Csv.parse_records: duplicate header name \"{header}\""),
+                        format!("csv.parse_records: duplicate header name \"{header}\""),
                     ));
                 }
             }
@@ -108,7 +108,7 @@ pub(crate) fn namespace() -> Namespace {
                     return Err(make_typed_report(
                         RuntimeErrorKind::Csv,
                         format!(
-                            "Csv.parse_records: row has {} cells but header defines {} columns",
+                            "csv.parse_records: row has {} cells but header defines {} columns",
                             row.len(),
                             headers.len()
                         ),
@@ -128,7 +128,7 @@ pub(crate) fn namespace() -> Namespace {
         // Each inner list is a row; every cell must be a string.
         // Include a header row as the first element if desired.
         "stringify" => |_i, args| Box::pin(async move {
-            let rows = expect_list(&args, 0, "Csv.stringify")?;
+            let rows = expect_list(&args, 0, "csv.stringify")?;
 
             let mut wtr = csv::WriterBuilder::new()
                 .terminator(csv::Terminator::CRLF)
@@ -141,7 +141,7 @@ pub(crate) fn namespace() -> Namespace {
                         return Err(make_typed_report(
                             RuntimeErrorKind::Csv,
                             format!(
-                                "Csv.stringify expects each row to be a list, got {}",
+                                "csv.stringify expects each row to be a list, got {}",
                                 other.type_name()
                             ),
                         ));
@@ -155,7 +155,7 @@ pub(crate) fn namespace() -> Namespace {
                             return Err(make_typed_report(
                                 RuntimeErrorKind::Csv,
                                 format!(
-                                    "Csv.stringify cell at column {} is {}, expected str",
+                                    "csv.stringify cell at column {} is {}, expected str",
                                     col,
                                     other.type_name()
                                 ),
@@ -164,15 +164,15 @@ pub(crate) fn namespace() -> Namespace {
                     }
                 }
                 wtr.write_record(&record).map_err(|e| {
-                    make_typed_report(RuntimeErrorKind::Csv, format!("Csv.stringify write failed: {e}"))
+                    make_typed_report(RuntimeErrorKind::Csv, format!("csv.stringify write failed: {e}"))
                 })?;
             }
 
             let bytes = wtr
                 .into_inner()
-                .map_err(|e| make_typed_report(RuntimeErrorKind::Csv, format!("Csv.stringify flush failed: {e}")))?;
+                .map_err(|e| make_typed_report(RuntimeErrorKind::Csv, format!("csv.stringify flush failed: {e}")))?;
             let text = String::from_utf8(bytes)
-                .map_err(|e| make_typed_report(RuntimeErrorKind::Csv, format!("Csv.stringify encoding error: {e}")))?;
+                .map_err(|e| make_typed_report(RuntimeErrorKind::Csv, format!("csv.stringify encoding error: {e}")))?;
             Ok(Value::String(text))
         }),
     })
@@ -197,7 +197,7 @@ mod tests {
     #[tokio::test]
     async fn namespace_has_all_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Csv");
+        assert_eq!(ns.name, "csv");
         for m in ["parse", "parse_records", "stringify"] {
             assert!(ns.methods.contains_key(m), "missing method: {m}");
         }

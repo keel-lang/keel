@@ -54,11 +54,26 @@ fn fail_on_type_errors(checked: &session::CheckedProgram, path: &Path) -> Result
     Ok(())
 }
 
-fn load_checked_source(path: &Path) -> Result<session::CheckedProgram> {
+fn fail_on_graph_type_errors(checked: &session::CheckedGraph, path: &Path) -> Result<()> {
+    if !checked.has_errors() {
+        return Ok(());
+    }
+    for (index, diagnostics) in checked.diagnostics.iter().enumerate() {
+        if !diagnostics.is_empty() {
+            report_type_errors(diagnostics, &checked.graph.modules[index].source);
+        }
+    }
+    Err(miette::miette!(
+        "{} type error(s) in {}",
+        checked.error_count(),
+        path.display()
+    ))
+}
+
+fn load_checked_graph(path: &Path) -> Result<session::CheckedGraph> {
     let (src, name) = load_source(path)?;
-    let (program, named_src) = session::parse_source(&src, &name)?;
-    let checked = session::check_source(program, named_src);
-    fail_on_type_errors(&checked, path)?;
+    let checked = session::load_and_check_graph(&src, &name, Some(path))?;
+    fail_on_graph_type_errors(&checked, path)?;
     Ok(checked)
 }
 
@@ -76,11 +91,8 @@ pub async fn run_file_with_runtime(path: &Path, runtime: Arc<RuntimeContext>) ->
         ));
     }
 
-    let (src, name) = load_source(path)?;
-    let (program, named_src) = session::parse_source(&src, &name)?;
-    let checked = session::check_source(program, named_src);
-    fail_on_type_errors(&checked, path)?;
-    session::run_source(checked, runtime, Some(path)).await
+    let checked = load_checked_graph(path)?;
+    session::run_graph(&checked, runtime).await
 }
 
 /// Execute all `test` blocks in a `.keel` file.
@@ -101,10 +113,10 @@ pub async fn test_file_with_runtime(
         return test_directory_with_runtime(path, runtime, filter, list, fail_fast, quiet).await;
     }
 
-    let checked = load_checked_source(path)?;
+    let checked = load_checked_graph(path)?;
 
     if list {
-        let names = session::test_names(&checked, filter);
+        let names = session::graph_test_names(&checked, filter);
         if names.is_empty() {
             eprintln!("0 tests found");
         } else {
@@ -116,7 +128,7 @@ pub async fn test_file_with_runtime(
     }
 
     let suite_started = Instant::now();
-    let outcomes = session::test_source(checked, runtime, Some(path), filter, fail_fast).await?;
+    let outcomes = session::test_graph(&checked, runtime, filter, fail_fast).await?;
     let suite_elapsed = suite_started.elapsed();
     if outcomes.is_empty() && filter.is_none() {
         eprintln!("0 tests found");
@@ -165,8 +177,8 @@ async fn test_directory_with_runtime(
     if list {
         let mut listed = 0_usize;
         for file in files {
-            let checked = load_checked_source(&file)?;
-            for name in session::test_names(&checked, filter) {
+            let checked = load_checked_graph(&file)?;
+            for name in session::graph_test_names(&checked, filter) {
                 eprintln!("{}: {name}", file.display());
                 listed += 1;
             }
@@ -183,15 +195,9 @@ async fn test_directory_with_runtime(
     let mut matched = 0_usize;
 
     for file in files {
-        let checked = load_checked_source(&file)?;
-        let outcomes = session::test_source(
-            checked,
-            Arc::clone(&runtime),
-            Some(&file),
-            filter,
-            fail_fast,
-        )
-        .await?;
+        let checked = load_checked_graph(&file)?;
+        let outcomes =
+            session::test_graph(&checked, Arc::clone(&runtime), filter, fail_fast).await?;
         if outcomes.is_empty() {
             continue;
         }
@@ -335,13 +341,12 @@ fn format_failed_summary(failed: usize) -> String {
 /// Returns an error with a count if one or more type errors are found.
 pub fn check_file(path: &Path, strict: bool) -> Result<()> {
     let (src, name) = load_source(path)?;
-    let (program, named_src) = session::parse_source(&src, &name)?;
     let checked = if strict {
-        session::check_source_strict(program, named_src)
+        session::load_and_check_graph_strict(&src, &name, Some(path))?
     } else {
-        session::check_source(program, named_src)
+        session::load_and_check_graph(&src, &name, Some(path))?
     };
-    fail_on_type_errors(&checked, path)?;
+    fail_on_graph_type_errors(&checked, path)?;
 
     eprintln!("✓ {} is valid", path.display());
     Ok(())
@@ -403,18 +408,21 @@ pub fn fmt_file(path: &Path) -> Result<()> {
 /// one or more lint warnings are found.
 pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
     let (src, name) = load_source(path)?;
-    let (program, named_src) = session::parse_source(&src, &name)?;
-    let checked = session::check_source(program, named_src);
+    let checked = session::load_and_check_graph(&src, &name, Some(path))?;
     if checked.has_errors() {
-        report_type_errors(&checked.diagnostics, &checked.source);
+        for (index, diagnostics) in checked.diagnostics.iter().enumerate() {
+            if !diagnostics.is_empty() {
+                report_type_errors(diagnostics, &checked.graph.modules[index].source);
+            }
+        }
         return Err(miette::miette!(
             "{} type error(s) in {} — fix before linting",
-            checked.diagnostics.len(),
+            checked.error_count(),
             path.display()
         ));
     }
 
-    let warnings = lint::lint(&checked.ast);
+    let warnings = lint::lint(&checked.graph.entry().program);
 
     if warnings.is_empty() {
         eprintln!("✓ {} — no lint warnings", path.display());
@@ -431,7 +439,7 @@ pub fn lint_file(path: &Path, fix: bool) -> Result<()> {
                 labels = vec![miette::LabeledSpan::at(span.clone(), &label)],
                 "Lint warning"
             )
-            .with_source_code(checked.source.clone());
+            .with_source_code(checked.graph.entry().source.clone());
             eprintln!("{:?}", report);
         } else {
             eprint!("  warning: {}", w.message);
@@ -578,10 +586,12 @@ task greet(name: str) -> str { "hi {name}" }
     fn pipeline_lint_fix_removes_safe_unused_binding_and_keeps_program_valid() {
         let file = write_keel_file(
             r#"
+use std/io
+
 agent A {
   @on_start {
     unused = "hello"
-    Io.show("done")
+    io.show("done")
   }
 }
 run(A)
@@ -651,10 +661,12 @@ task answer() -> int {
     async fn pipeline_run_file_reports_type_errors_before_execution() {
         let file = write_keel_file(
             r#"
+use std/io
+
 agent A {
   @on_start {
     x: int = "wrong"
-    Io.show("should not run")
+    io.show("should not run")
   }
 }
 run(A)
@@ -694,6 +706,8 @@ task answer() -> int {
     fn pipeline_lint_clean_program_succeeds_without_fixes() {
         let file = write_keel_file(
             r#"
+use std/io
+
 task greet(name: str) -> str {
   "hello {name}"
 }
@@ -701,7 +715,7 @@ task greet(name: str) -> str {
 agent A {
   @on_start {
     msg = greet("keel")
-    Io.show(msg)
+    io.show(msg)
   }
 }
 run(A)

@@ -30,6 +30,9 @@ pub async fn start_with_runtime(runtime: Arc<RuntimeContext>) -> Result<()> {
     }
 
     let mut interp = Interpreter::with_runtime(runtime);
+    // The REPL pre-imports the full stdlib for convenience; programs must
+    // import modules explicitly with `use std/<name>`.
+    interp.bind_all_namespaces();
     let mut env = Environment::new();
     let mut pending = String::new();
 

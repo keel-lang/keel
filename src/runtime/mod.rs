@@ -1,11 +1,10 @@
-//! Runtime: prelude namespace installation for v0.1.
+//! Runtime: stdlib module and built-in installation.
 //!
-//! Every Keel program starts with these namespaces in scope:
-//!   `Ai`, `Io`, `Schedule`, `Email`, `Http`, `Memory`, `Async`,
-//!   `Control`, `Env`, `Log`, `Agent`, `Cache`, `File`, `Json`,
-//!   `Random`, `Uuid`.
-//!
-//! Top-level convenience bindings (`run`, `stop`) wrap `Agent.*`.
+//! std modules (`ai`, `io`, `file`, …) are registered in the interpreter's
+//! namespace registry but enter a program's scope only through
+//! `use std/<name>`. The always-ambient surface is limited to the agent
+//! verbs (`run`, `stop`, `send`, `delegate`, `broadcast`), generic
+//! utilities (`min`, `max`, `typeof`), and the symbol-hint identifiers.
 
 use std::sync::Arc;
 
@@ -59,8 +58,8 @@ pub fn install_prelude(host: &mut dyn Host) {
 
     namespaces::install(host);
     install_top_level_agent_fns(host);
+    namespaces::agent::install_messaging_fns(host);
     install_min_max(host);
-    install_uuid_alias(host);
     install_typeof(host);
 }
 
@@ -258,15 +257,6 @@ fn install_top_level_agent_fns(host: &mut dyn Host) {
                 host.stop_agent(&agent_name).await?;
                 Ok(Value::None)
             })
-        }),
-    );
-}
-
-fn install_uuid_alias(host: &mut dyn Host) {
-    host.register_top_fn(
-        "uuid",
-        Arc::new(|host: &mut dyn Host, _args: Vec<CallArgValue>| {
-            Box::pin(async move { host.call_namespace_method("Uuid", "v4", vec![]).await })
         }),
     );
 }

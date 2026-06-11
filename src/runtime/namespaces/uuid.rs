@@ -6,21 +6,21 @@ use crate::runtime::namespace::{find_arg, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Uuid",
+        namespace: "uuid",
         name: "v4",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Uuid),
         doc: "Generate a random UUID v4.",
     },
     BuiltinMethod {
-        namespace: "Uuid",
+        namespace: "uuid",
         name: "v7",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Uuid),
         doc: "Generate a time-sortable UUID v7.",
     },
     BuiltinMethod {
-        namespace: "Uuid",
+        namespace: "uuid",
         name: "v5",
         params: &[
             BuiltinParam {
@@ -38,7 +38,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Generate a deterministic UUID v5 from a namespace UUID and a name.",
     },
     BuiltinMethod {
-        namespace: "Uuid",
+        namespace: "uuid",
         name: "parse",
         params: &[BuiltinParam {
             name: "s",
@@ -56,7 +56,7 @@ const UUID_OID: &str = "6ba7b812-9dad-11d1-80b4-00c04fd430c8";
 const UUID_X500: &str = "6ba7b814-9dad-11d1-80b4-00c04fd430c8";
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Uuid", {
+    ns!("uuid", {
         "v4" => |_interp, _args| Box::pin(async move {
             let mut bytes = random_bytes()?;
             set_version_and_variant(&mut bytes, 4);
@@ -77,13 +77,13 @@ pub(crate) fn namespace() -> Namespace {
         "v5" => |_interp, args| Box::pin(async move {
             let ns = find_arg(&args, "ns")
                 .or_else(|| positional(&args, 0))
-                .ok_or_else(|| miette::miette!("Uuid.v5: missing `ns:` argument"))?;
+                .ok_or_else(|| miette::miette!("uuid.v5: missing `ns:` argument"))?;
             let name = match find_arg(&args, "name") {
-                Some(value) => expect_str_value(value, "`name:`", "Uuid.v5")?,
-                None => expect_str(&args, 1, "Uuid.v5")?,
+                Some(value) => expect_str_value(value, "`name:`", "uuid.v5")?,
+                None => expect_str(&args, 1, "uuid.v5")?,
             };
             let ns_bytes = uuid_bytes_from_value(ns)
-                .ok_or_else(|| miette::miette!("Uuid.v5: `ns:` must be a Uuid value"))?;
+                .ok_or_else(|| miette::miette!("uuid.v5: `ns:` must be a Uuid value"))?;
             let digest = sha1_uuid(&ns_bytes, name.as_bytes());
             let mut bytes = [0_u8; 16];
             bytes.copy_from_slice(&digest[..16]);
@@ -91,7 +91,7 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::Uuid(format_uuid(bytes)))
         }),
         "parse" => |_interp, args| Box::pin(async move {
-            let s = expect_str(&args, 0, "Uuid.parse")?;
+            let s = expect_str(&args, 0, "uuid.parse")?;
             Ok(parse_uuid(s)
                 .map(|bytes| Value::Uuid(format_uuid(bytes)))
                 .unwrap_or(Value::None))
@@ -119,7 +119,7 @@ fn random_bytes() -> miette::Result<[u8; 16]> {
 fn uuid_bytes_from_value(value: &Value) -> Option<[u8; 16]> {
     match value {
         Value::Uuid(id) => parse_uuid(id),
-        Value::EnumVariant(ty, name, _) if ty == "Uuid" => {
+        Value::EnumVariant(ty, name, _) if ty == "uuid" => {
             uuid_namespace_constant(name).and_then(|v| match v {
                 Value::Uuid(id) => parse_uuid(&id),
                 _ => None,
@@ -295,7 +295,7 @@ mod tests {
     #[test]
     fn namespace_has_uuid_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Uuid");
+        assert_eq!(ns.name, "uuid");
         assert!(ns.methods.contains_key("v4"));
         assert!(ns.methods.contains_key("v7"));
         assert!(ns.methods.contains_key("v5"));

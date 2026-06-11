@@ -1,8 +1,8 @@
 # LLM Providers
 
-> **Alpha (v0.1).** Ollama is the only supported backend. Additional providers implementing the `LlmProvider` interface ([prelude.md](../guide/prelude.md)) will land in a future release.
+> **Alpha (v0.1).** Ollama is the only supported backend. Additional providers implementing the `LlmProvider` interface ([stdlib.md](../guide/stdlib.md)) will land in a future release.
 
-Keel's `Ai.*` operations call a local Ollama instance.
+Keel's `ai.*` operations call a local Ollama instance.
 
 ## Required
 
@@ -14,7 +14,7 @@ ollama pull gemma4
 export KEEL_OLLAMA_MODEL=gemma4
 ```
 
-That's the minimum. Every `Ai.classify(...)`, `Ai.draft(...)`, etc. now resolves through this model.
+That's the minimum. Every `ai.classify(...)`, `ai.draft(...)`, etc. now resolves through this model.
 
 ## Custom host
 
@@ -44,7 +44,7 @@ The lookup order when a call wants model `X`:
 export KEEL_LLM=mock
 ```
 
-All `Ai.*` calls return `none` (or throw `AiSchemaError` for schema mismatches). Absence is handled by `??` at the call site. Used by the integration test suite.
+All `ai.*` calls return `none` (or throw `AiSchemaError` for schema mismatches). Absence is handled by `??` at the call site. Used by the integration test suite.
 
 ## Troubleshooting
 

@@ -117,12 +117,12 @@ for email in emails if email.unread {
 
 # Works with destructuring too
 for { from, subject } in emails if subject != "" {
-  Io.show("{from}: {subject}")
+  io.show("{from}: {subject}")
 }
 
 # Works with ranges
 for x in 1..10 if x % 2 == 0 {
-  Io.show(x)
+  io.show(x)
 }
 ```
 
@@ -133,7 +133,7 @@ Repeat a body until the condition becomes false:
 ```keel
 n = 5
 while n > 0 {
-    Io.show("tick: {n}")
+    io.show("tick: {n}")
     n -= 1
 }
 ```
@@ -184,7 +184,7 @@ for outer in 1..5 {
             break          # exits inner loop only
         }
     }
-    Io.show("outer={outer}")   # still runs 5 times
+    io.show("outer={outer}")   # still runs 5 times
 }
 ```
 
@@ -238,35 +238,35 @@ The `Control` namespace wraps a closure with resilience primitives. Each
 takes a 0-arg lambda and returns whatever the lambda returned (or
 raises an error if the budget is exhausted).
 
-### `Control.retry(n, fn)`
+### `control.retry(n, fn)`
 
 Re-invoke `fn` up to `n` times until it returns without raising. The
 last attempt's error is surfaced if every attempt fails.
 
 ```keel
-result = Control.retry(5, () => {
-  return Ai.prompt(system: "rate 1-10", user: review, response_format: json)
+result = control.retry(5, () => {
+  return ai.prompt(system: "rate 1-10", user: review, response_format: json)
 })
 ```
 
-### `Control.with_timeout(duration, fn)`
+### `control.with_timeout(duration, fn)`
 
 Race the closure against a duration. Raises `TimeoutError` if the
 closure runs past the deadline.
 
 ```keel
-fast = Control.with_timeout(2.seconds, () => {
+fast = control.with_timeout(2.seconds, () => {
   return slow_external_call()
 })
 ```
 
-### `Control.with_deadline(datetime, fn)`
+### `control.with_deadline(datetime, fn)`
 
 Same shape as `with_timeout`, but the limit is an absolute RFC 3339
 timestamp instead of a duration. Raises `DeadlineError` on expiry.
 
 ```keel
-done = Control.with_deadline("2026-12-31T23:59:00Z", () => {
+done = control.with_deadline("2026-12-31T23:59:00Z", () => {
   return long_task()
 })
 ```

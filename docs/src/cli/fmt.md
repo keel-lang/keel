@@ -21,9 +21,12 @@ keel fmt <file.keel>
 Before:
 
 ```keel
+use std/io
+use std/schedule
+
 agent Bot{@role "helper"
 state{count:int=0}
-@on_start{Schedule.every(1.day, () => {Io.notify("hello")
+@on_start{schedule.every(1.day, () => {io.notify("hello")
 self.count=self.count+1})}}
 run(Bot)
 ```
@@ -31,6 +34,9 @@ run(Bot)
 After `keel fmt`:
 
 ```keel
+use std/io
+use std/schedule
+
 agent Bot {
   @role "helper"
 
@@ -39,8 +45,8 @@ agent Bot {
   }
 
   @on_start {
-    Schedule.every(1.day, () => {
-      Io.notify("hello")
+    schedule.every(1.day, () => {
+      io.notify("hello")
       self.count = self.count + 1
     })
   }

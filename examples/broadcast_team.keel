@@ -8,35 +8,37 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/broadcast_team.keel
 
+use std/io
+
 agent Alpha {
   @team ["frontline"]
   on alert(msg: str) {
-    Io.show("Alpha (frontline) handling: {msg}")
+    io.show("Alpha (frontline) handling: {msg}")
   }
 }
 
 agent Beta {
   @team ["frontline"]
   on alert(msg: str) {
-    Io.show("Beta (frontline) handling: {msg}")
+    io.show("Beta (frontline) handling: {msg}")
   }
 }
 
 agent Gamma {
   @team ["backoffice"]
   on alert(msg: str) {
-    Io.show("Gamma (backoffice) ignored — wrong team")
+    io.show("Gamma (backoffice) ignored — wrong team")
   }
 }
 
 agent Coordinator {
   @on_start {
-    Agent.run(Alpha)
-    Agent.run(Beta)
-    Agent.run(Gamma)
+    run(Alpha)
+    run(Beta)
+    run(Gamma)
 
-    Io.show("dispatching incident to frontline...")
-    Agent.broadcast("frontline", "production-down", event: "alert")
+    io.show("dispatching incident to frontline...")
+    broadcast("frontline", "production-down", event: "alert")
   }
 }
 

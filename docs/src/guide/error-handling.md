@@ -19,10 +19,10 @@ Keel separates *absence* from *failure*:
 Provide a default when the result is `none`:
 
 ```keel
-urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
-summary = Ai.summarize(article, in: 3, unit: sentences) ?? "No summary"
+urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
+summary = ai.summarize(article, in: 3, unit: sentences) ?? "No summary"
 name    = user_input ?? "anonymous"
-port    = Env.get("PORT")?.to_int() ?? 3000
+port    = env.get("PORT")?.to_int() ?? 3000
 ```
 
 This is the right tool when you don't care *why* the result is absent — just provide a sensible default.
@@ -32,39 +32,47 @@ This is the right tool when you don't care *why* the result is absent — just p
 Use `try/catch` when you need to distinguish failure causes. Every stdlib namespace that can fail raises a named error type; `Error` is the catch-all:
 
 ```keel
+use std/ai
+use std/csv
+use std/email
+use std/file
+use std/http
+use std/io
+use std/shell
+
 try {
-  data = File.read("config.json")
+  data = file.read("config.json")
 } catch e: FileError {
   data = "{}"                      # handle missing/unreadable file
 } catch e: Error {
-  Io.show("unexpected: {e.message}")
+  io.show("unexpected: {e.message}")
 }
 
 try {
-  rows = Csv.parse_records(raw)
+  rows = csv.parse_records(raw)
 } catch e: CsvError {
-  Io.show("bad CSV: {e.message}")
+  io.show("bad CSV: {e.message}")
 }
 
 try {
-  resp = Http.get("https://api.example.com/data")
+  resp = http.get("https://api.example.com/data")
 } catch e: HttpError {
-  Io.show("network error: {e.message}")
+  io.show("network error: {e.message}")
 }
 
 try {
-  result = Shell.run("build.sh")
+  result = shell.run("build.sh")
 } catch e: ShellError {
-  Io.show("shell error: {e.message}")
+  io.show("shell error: {e.message}")
 }
 
 try {
-  urgency = Ai.classify(email.body, as: Urgency)
+  urgency = ai.classify(email.body, as: Urgency)
 } catch err: AiSchemaError {
-  Io.notify("Unexpected LLM output: {err.got}")
+  io.notify("Unexpected LLM output: {err.got}")
   urgency = Urgency.medium
 } catch err: Error {
-  Io.notify("Failed: {err.message}")
+  io.notify("Failed: {err.message}")
 }
 ```
 
@@ -76,22 +84,22 @@ All stdlib error types and the namespaces that raise them:
 
 | Error type | Raised by | Notes |
 |---|---|---|
-| `FileError` | `File.*` | I/O failures: not found, permission denied, etc. |
-| `CsvError` | `Csv.*` | Parse failures, bad row structure, non-string cells |
-| `DbError` | `Db.*` | Query/exec failures, connection errors |
-| `CacheError` | `Cache.*` | Serialization errors |
-| `MathError` | `Math.*` | Domain errors: `sqrt(-1)`, `log(0)`, `asin(2)` |
-| `MemoryError` | `Memory.*` | Persistence errors, `@memory none` restriction |
-| `EmailError` | `Email.*` | IMAP/SMTP failures |
-| `HttpError` | `Http.*` | Network failures (connection refused, timeout) |
-| `ShellError` | `Shell.*` | Failed to spawn shell or wait for process |
-| `JsonError` | `Json.*` | JSON parse errors, serialization failures |
-| `EnvError` | `Env.require` | Required env variable not set |
-| `AiError` | `Ai.*` | LLM config errors |
-| `AiSchemaError` | `Ai.extract`, `Ai.classify` | LLM output didn't match expected schema (`got` field contains raw output) |
+| `FileError` | `file.*` | I/O failures: not found, permission denied, etc. |
+| `CsvError` | `csv.*` | Parse failures, bad row structure, non-string cells |
+| `DbError` | `db.*` | Query/exec failures, connection errors |
+| `CacheError` | `cache.*` | Serialization errors |
+| `MathError` | `math.*` | Domain errors: `sqrt(-1)`, `log(0)`, `asin(2)` |
+| `MemoryError` | `memory.*` | Persistence errors, `@memory none` restriction |
+| `EmailError` | `email.*` | IMAP/SMTP failures |
+| `HttpError` | `http.*` | Network failures (connection refused, timeout) |
+| `ShellError` | `shell.*` | Failed to spawn shell or wait for process |
+| `JsonError` | `json.*` | JSON parse errors, serialization failures |
+| `EnvError` | `env.require` | Required env variable not set |
+| `AiError` | `ai.*` | LLM config errors |
+| `AiSchemaError` | `ai.extract`, `ai.classify` | LLM output didn't match expected schema (`got` field contains raw output) |
 | `CapabilityError` | any `@tools`-restricted method | Method not allowed by the agent's `@tools` list |
-| `TimeoutError` | `Control.with_timeout` | Closure exceeded the given duration |
-| `DeadlineError` | `Control.with_deadline` | Closure ran past the deadline |
+| `TimeoutError` | `control.with_timeout` | Closure exceeded the given duration |
+| `DeadlineError` | `control.with_deadline` | Closure ran past the deadline |
 | `UserRaised` | `raise` statement | User-raised error |
 | `RuntimeBusy` | any async event | Interpreter event queue full |
 
@@ -110,7 +118,7 @@ When an uncaught error reaches the CLI, the stable diagnostic code appears:
 
 ```
 Error: keel::runtime::FileError
-  × FileError: File.read `missing.txt`: No such file or directory
+  × FileError: file.read `missing.txt`: No such file or directory
 ```
 
 Codes follow the pattern `keel::runtime::<TypeName>`. Tooling and host integrations can inspect the code directly without parsing the message string.
@@ -134,47 +142,47 @@ task divide(a: int, b: int) -> int {
 try {
     result = divide(10, 0)
 } catch err: UserRaised {
-    Io.notify("Raised: {err.message}")
+    io.notify("Raised: {err.message}")
 } catch err: Error {
-    Io.notify("Other failure: {err.message}")
+    io.notify("Other failure: {err.message}")
 }
 ```
 
 Non-string values are converted using their display representation.
 
-## `Control.retry`
+## `control.retry`
 
 Retry a failing operation:
 
 ```keel
 # Retry up to 3 times; last error surfaces if all fail
-Control.retry(3, () => { Email.send(reply, to: addr) })
+control.retry(3, () => { email.send(reply, to: addr) })
 
 # Combine with try/catch to handle specific errors after all retries fail
 try {
-    Control.retry(3, () => { Http.get(url) })
+    control.retry(3, () => { http.get(url) })
 } catch e: HttpError {
-    Io.show("still failing after 3 tries: {e.message}")
+    io.show("still failing after 3 tries: {e.message}")
 }
 ```
 
-## `Control.with_timeout` / `Control.with_deadline`
+## `control.with_timeout` / `control.with_deadline`
 
 ```keel
 try {
-    result = Control.with_timeout(5.seconds, () => {
-        Http.get("https://slow.example.com/api")
+    result = control.with_timeout(5.seconds, () => {
+        http.get("https://slow.example.com/api")
     })
 } catch e: TimeoutError {
-    Io.show("timed out: {e.message}")
+    io.show("timed out: {e.message}")
 }
 
 try {
-    result = Control.with_deadline("2025-12-31T23:59:59Z", () => {
+    result = control.with_deadline("2025-12-31T23:59:59Z", () => {
         process_batch()
     })
 } catch e: DeadlineError {
-    Io.show("deadline passed: {e.message}")
+    io.show("deadline passed: {e.message}")
 }
 ```
 

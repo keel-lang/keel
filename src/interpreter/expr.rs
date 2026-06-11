@@ -295,7 +295,7 @@ impl Interpreter {
                         }));
                     }
                     if let Expr::Ident(name) = &obj.as_ref().kind
-                        && name == "Uuid"
+                        && name == "uuid"
                         && let Some(value) =
                             crate::runtime::namespaces::uuid::uuid_namespace_constant(field)
                     {
@@ -335,16 +335,42 @@ impl Interpreter {
                     };
                     match &obj_v {
                         Value::Namespace(ns_name) => {
-                            if ns_name == "Uuid"
+                            if ns_name == "uuid"
                                 && let Some(value) =
                                     crate::runtime::namespaces::uuid::uuid_namespace_constant(field)
                             {
                                 return Ok(ExprFlow::Value(value));
                             }
+                            // Aliased std binding (`use std/file as f`) used as a
+                            // mock target: resolve through the canonical name.
+                            if crate::types::prelude::catalog_method(ns_name, field).is_some() {
+                                return Ok(ExprFlow::Value(Value::MockTarget {
+                                    namespace: ns_name.clone(),
+                                    method: field.clone(),
+                                }));
+                            }
                             Ok(ExprFlow::Value(Value::EnumVariant(
                                 ns_name.clone(),
                                 field.clone(),
                                 None,
+                            )))
+                        }
+                        Value::Module(module) => {
+                            if module.tasks.contains(field) {
+                                if let Some(value) = self.globals.get(field) {
+                                    return Ok(ExprFlow::Value(value.clone()));
+                                }
+                                return Err(runtime_error(format!(
+                                    "module `{}` member `{field}` is not registered",
+                                    module.name
+                                )));
+                            }
+                            if module.agents.contains(field) {
+                                return Ok(ExprFlow::Value(Value::AgentRef(field.clone())));
+                            }
+                            Err(runtime_error(format!(
+                                "module `{}` has no member `{field}`",
+                                module.name
                             )))
                         }
                         Value::Map(_) | Value::Struct(_, _) => {
@@ -651,13 +677,37 @@ impl Interpreter {
                             .await
                             .map(ExprFlow::Value);
                     }
+                    // Module member call: `validation.email(...)` resolves the
+                    // member task from the flat global table.
+                    if let Value::Module(module) = &obj_val {
+                        if module.tasks.contains(method.as_str())
+                            && let Some(Value::Task(name, decl)) =
+                                self.globals.get(method.as_str()).cloned()
+                        {
+                            return self
+                                .call_task(&name, &decl, arg_values)
+                                .await
+                                .map(ExprFlow::Value);
+                        }
+                        if module.agents.contains(method.as_str()) {
+                            return Err(runtime_error(format!(
+                                "`{}.{method}` is an agent, not a task — start it with \
+                                 run({}.{method}) or message it with send(...)",
+                                module.name, module.name
+                            )));
+                        }
+                        return Err(runtime_error(format!(
+                            "module `{}` has no member `{method}`",
+                            module.name
+                        )));
+                    }
                     // Agent references are still first-class values for lifecycle
                     // and mailbox APIs, but direct cross-agent task invocation is not.
                     if let Value::AgentRef(name) = &obj_val {
                         return Err(runtime_error(format!(
                             "direct agent task calls like `{name}.{method}(...)` are unsupported; \
                              use `self.{method}(...)` inside that agent or mailbox APIs such as \
-                             `Agent.send(...)` / `Agent.delegate(...)` for cross-agent work"
+                             `send(...)` / `delegate(...)` for cross-agent work"
                         )));
                     }
                     // Otherwise: method on a value (e.g., list.map).

@@ -73,12 +73,64 @@ pub struct UseDecl {
 
 #[derive(Debug, Clone)]
 pub enum UseKind {
-    /// `use "./path.keel"`
+    /// `use "./path.keel" [as alias]` or `use std/file [as alias]` —
+    /// binds the module under one namespace identifier.
+    Module {
+        source: UseSource,
+        alias: Option<String>,
+    },
+    /// `use A, B as C from "./path.keel"` / `from std/json` —
+    /// binds the listed symbols unqualified.
+    Symbols {
+        items: Vec<ImportItem>,
+        source: UseSource,
+    },
+}
+
+/// Where an import comes from.
+#[derive(Debug, Clone)]
+pub enum UseSource {
+    /// `"./path.keel"` — local file, resolved relative to the importing file.
     File(String),
-    /// `use Symbol from "./path.keel"`
-    Symbol { name: String, source: String },
-    /// `use keel/slack` — package path
-    Package(Vec<String>),
+    /// `std/file` — slash-separated module path.
+    Module(Vec<String>),
+}
+
+/// One item in a `use A, B as C from ...` list.
+#[derive(Debug, Clone)]
+pub struct ImportItem {
+    pub name: String,
+    /// Byte span of the imported symbol name token.
+    pub name_span: Span,
+    pub alias: Option<String>,
+}
+
+impl UseKind {
+    /// The namespace identifier a module import binds: the explicit alias,
+    /// the file stem for paths, or the last segment for module paths.
+    /// `None` for symbol imports (they bind each item instead).
+    pub fn binding(&self) -> Option<&str> {
+        match self {
+            UseKind::Module { source, alias } => Some(match alias {
+                Some(alias) => alias.as_str(),
+                None => source.default_binding(),
+            }),
+            UseKind::Symbols { .. } => None,
+        }
+    }
+}
+
+impl UseSource {
+    /// The namespace identifier this source binds when no alias is given.
+    pub fn default_binding(&self) -> &str {
+        match self {
+            UseSource::File(path) => {
+                let stem = path.rsplit('/').next().unwrap_or(path);
+                stem.strip_suffix(".keel").unwrap_or(stem)
+            }
+            UseSource::Module(segments) => segments.last().map(String::as_str).unwrap_or(""),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

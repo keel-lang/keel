@@ -1,19 +1,22 @@
+use std/io
+use std/schedule
+
 agent CronScheduler {
   state {
     run_count: int = 0
   }
   @on_start {
-    Schedule.cron("0 9 * * 1-5", () => {
+    schedule.cron("0 9 * * 1-5", () => {
       self.run_count = self.run_count + 1
-      Io.show("Morning digest triggered")
+      io.show("Morning digest triggered")
     })
-    Schedule.cron("*/5 * * * *", () => {
-      Io.show("Periodic task running")
+    schedule.cron("*/5 * * * *", () => {
+      io.show("Periodic task running")
     })
-    Schedule.cron("0 0 * * *", () => {
-      Io.show("Daily reset")
+    schedule.cron("0 0 * * *", () => {
+      io.show("Daily reset")
     })
-    Io.show("Cron tasks scheduled")
+    io.show("Cron tasks scheduled")
   }
 }
 

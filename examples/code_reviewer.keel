@@ -1,3 +1,7 @@
+use std/ai
+use std/io
+use std/schedule
+
 use std/testing
 
 type Severity = info | warning | error
@@ -8,20 +12,20 @@ type ReviewResult {
 }
 
 task review_code(diff: str) -> str {
-  Ai.draft("code review feedback for this diff:\n{diff}", tone: "constructive", guidance: "focus on bugs, security issues, and readability") ?? "(review failed)"
+  ai.draft("code review feedback for this diff:\n{diff}", tone: "constructive", guidance: "focus on bugs, security issues, and readability") ?? "(review failed)"
 }
 
 task assess_risk(diff: str) -> Severity {
-  Ai.classify(diff, as: Severity, considering: { "changes authentication or authorization": Severity.error, "modifies database schema": Severity.warning, "formatting or comment changes only": Severity.info }) ?? Severity.warning
+  ai.classify(diff, as: Severity, considering: { "changes authentication or authorization": Severity.error, "modifies database schema": Severity.warning, "formatting or comment changes only": Severity.info }) ?? Severity.warning
 }
 
 test "risk assessment can be mocked" {
-  testing.mock(Ai.classify).returns(Severity.error)
+  testing.mock(ai.classify).returns(Severity.error)
   assert assess_risk("changes authentication") == Severity.error
 }
 
 test "review text can be mocked" {
-  testing.mock(Ai.draft).returns("check auth boundary")
+  testing.mock(ai.draft).returns("check auth boundary")
   assert review_code("+ changed auth") == "check auth boundary"
 }
 
@@ -35,23 +39,23 @@ agent CodeReviewer {
   task process(pr: { title: str, diff: str, author: str }) {
     risk = assess_risk(pr.diff)
     feedback = review_code(pr.diff)
-    Io.show({ title: pr.title, author: pr.author, risk: risk, feedback: feedback })
+    io.show({ title: pr.title, author: pr.author, risk: risk, feedback: feedback })
     when risk {
       error => {
-        Io.notify("HIGH RISK: {pr.title} needs careful review")
-        if Io.confirm("Approve this PR?") {
-          Io.notify("PR approved")
+        io.notify("HIGH RISK: {pr.title} needs careful review")
+        if io.confirm("Approve this PR?") {
+          io.notify("PR approved")
         }
       }
-      warning => Io.notify("Review feedback posted for: {pr.title}")
-      info => Io.notify("Auto-approved: {pr.title} (low risk)")
+      warning => io.notify("Review feedback posted for: {pr.title}")
+      info => io.notify("Auto-approved: {pr.title} (low risk)")
     }
     self.reviews_done = self.reviews_done + 1
   }
   @on_start {
-    Schedule.every(5.minutes, () => {
-      Io.notify("Checking for PRs to review...")
-      Io.notify("Reviews completed: {self.reviews_done}")
+    schedule.every(5.minutes, () => {
+      io.notify("Checking for PRs to review...")
+      io.notify("Reviews completed: {self.reviews_done}")
     })
   }
 }

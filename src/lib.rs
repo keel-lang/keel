@@ -21,6 +21,7 @@
 pub mod ast;
 pub mod catalog;
 pub mod diagnostics;
+pub mod modules;
 pub mod session;
 
 // ── Internal implementation modules ─────────────────────────────────────────

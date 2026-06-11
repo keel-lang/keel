@@ -9,11 +9,12 @@ use std::process::Command;
 fn strict_mode_passes_fully_typed_program() {
     use std::io::Write;
     let src = r#"
+use std/io
 agent A {
   @on_start {
     n: int = 42
     s: str = "hello"
-    Io.show("{n} {s}")
+    io.show("{n} {s}")
     stop(self)
   }
 }
@@ -40,10 +41,12 @@ run(A)
 fn strict_mode_rejects_unknown_typed_binding() {
     use std::io::Write;
     let src = r#"
+use std/io
+use std/json
 agent A {
   @on_start {
-    data = Json.parse("{}")
-    Io.show("{data}")
+    data = json.parse("{}")
+    io.show("{data}")
     stop(self)
   }
 }
@@ -74,10 +77,12 @@ run(A)
 fn normal_check_accepts_json_parse_without_annotation() {
     use std::io::Write;
     let src = r#"
+use std/io
+use std/json
 agent A {
   @on_start {
-    data = Json.parse("{}")
-    Io.show("{data}")
+    data = json.parse("{}")
+    io.show("{data}")
     stop(self)
   }
 }
@@ -95,7 +100,7 @@ run(A)
         .expect("failed to run keel check");
     assert!(
         output.status.success(),
-        "normal check should accept unannotated Json.parse\nstderr: {}",
+        "normal check should accept unannotated json.parse\nstderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -104,13 +109,15 @@ run(A)
 fn strict_mode_accepts_explicit_dynamic_annotation() {
     use std::io::Write;
     // An explicit `dynamic` annotation is an intentional programmer choice —
-    // it must never trigger a --strict error, even though Json.parse returns
+    // it must never trigger a --strict error, even though json.parse returns
     // Unknown(ExternalDynamic) when unannotated.
     let src = r#"
+use std/io
+use std/json
 agent A {
   @on_start {
-    data: dynamic = Json.parse("{}")
-    Io.show("{data}")
+    data: dynamic = json.parse("{}")
+    io.show("{data}")
     stop(self)
   }
 }
@@ -145,9 +152,10 @@ fn strict_mode_accepts_map_concrete_first_opaque_second() {
     // `expect(Unknown, Str, ...)` short-circuits on opaque actual → no error.
     // Strict passes because the inferred map type is fully concrete: map[int,str].
     let src = r#"
+use std/json
 agent A {
   @on_start {
-    m = {1: "x", 2: Json.parse("{}")}
+    m = {1: "x", 2: json.parse("{}")}
     stop(self)
   }
 }
@@ -196,12 +204,13 @@ run(Bot)
 #[test]
 fn readonly_state_readable_in_on_start() {
     let src = r#"
+use std/io
 agent Bot {
   state {
     session_id: readonly str = "s42"
   }
   @on_start {
-    Io.show(self.session_id)
+    io.show(self.session_id)
     stop(self)
   }
 }

@@ -7,13 +7,14 @@ use crate::common::*;
 #[test]
 fn list_concat_with_plus() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         a = ["x", "y"]
         b = ["z"]
         all = a + b
         for item in all {
-            Io.show(item)
+            io.show(item)
         }
     }
 }
@@ -29,12 +30,13 @@ run(A)
 #[test]
 fn list_push_returns_extended_list() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         items = ["a", "b"]
         items = items.push("c")
         for item in items {
-            Io.show(item)
+            io.show(item)
         }
     }
 }
@@ -55,10 +57,11 @@ run(A)
 #[test]
 fn list_any_returns_true_when_predicate_matches() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [1, 5, 10, 15]
-    Io.show("{nums.any(n => n > 8)}")
+    io.show("{nums.any(n => n > 8)}")
     stop(self)
   }
 }
@@ -77,10 +80,11 @@ stderr: {stderr}"
 #[test]
 fn list_all_returns_false_when_one_fails() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [1, 5, 10, 15]
-    Io.show("{nums.all(n => n > 8)}")
+    io.show("{nums.all(n => n > 8)}")
     stop(self)
   }
 }
@@ -99,13 +103,14 @@ stderr: {stderr}"
 #[test]
 fn list_find_returns_first_match_or_none() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [3, 7, 12, 20]
     found = nums.find(n => n > 10)
-    Io.show("{found}")
+    io.show("{found}")
     missing = nums.find(n => n > 100)
-    Io.show("{missing}")
+    io.show("{missing}")
     stop(self)
   }
 }
@@ -125,11 +130,12 @@ stderr: {stderr}"
 #[test]
 fn list_reduce_sums_with_accumulator() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [1, 2, 3, 4, 5]
     total = nums.reduce((acc, x) => acc + x, 0)
-    Io.show("{total}")
+    io.show("{total}")
     stop(self)
   }
 }
@@ -148,12 +154,13 @@ stderr: {stderr}"
 #[test]
 fn list_sum_min_max_on_integers() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [4, 1, 9, 2, 7]
-    Io.show("{nums.sum()}")
-    Io.show("{nums.min()}")
-    Io.show("{nums.max()}")
+    io.show("{nums.sum()}")
+    io.show("{nums.min()}")
+    io.show("{nums.max()}")
     stop(self)
   }
 }
@@ -174,6 +181,7 @@ stderr: {stderr}"
 #[test]
 fn list_min_max_with_by_key() {
     let src = r#"
+use std/io
 type Item { name: str, score: int }
 task run_test() {
   items: list[Item] = [
@@ -181,8 +189,8 @@ task run_test() {
     { name: "a", score: 1 },
     { name: "c", score: 9 },
   ]
-  Io.show(items.min(by: x => x.score).name)
-  Io.show(items.max(by: x => x.score).name)
+  io.show(items.min(by: x => x.score).name)
+  io.show(items.max(by: x => x.score).name)
 }
 run_test()
 "#;
@@ -199,10 +207,11 @@ run_test()
 #[test]
 fn list_join_produces_delimited_string() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     tags = ["a", "b", "c"]
-    Io.show("{tags.join(", ")}")
+    io.show("{tags.join(", ")}")
     stop(self)
   }
 }
@@ -221,11 +230,12 @@ stderr: {stderr}"
 #[test]
 fn list_sort_and_reverse() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [3, 1, 4, 1, 5]
-    Io.show("{nums.sort().join(" ")}")
-    Io.show("{nums.sort().reverse().first()}")
+    io.show("{nums.sort().join(" ")}")
+    io.show("{nums.sort().reverse().first()}")
     stop(self)
   }
 }
@@ -245,11 +255,12 @@ stderr: {stderr}"
 #[test]
 fn list_sort_by_int_key() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [3, 1, 4, 1, 5, 9, 2]
     sorted = nums.sort(by: x => x)
-    Io.show(sorted.join(" "))
+    io.show(sorted.join(" "))
     stop(self)
   }
 }
@@ -266,6 +277,7 @@ run(A)
 #[test]
 fn list_sort_by_field() {
     let src = r#"
+use std/io
 type Item { name: str, score: int }
 task run_test() {
   items: list[Item] = [
@@ -275,7 +287,7 @@ task run_test() {
   ]
   sorted = items.sort(by: x => x.score)
   for item in sorted {
-    Io.show(item.name)
+    io.show(item.name)
   }
 }
 run_test()
@@ -293,11 +305,12 @@ run_test()
 #[test]
 fn list_sort_by_string_key() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     words = ["banana", "apple", "cherry"]
     sorted = words.sort(by: w => w)
-    Io.show(sorted.join(" "))
+    io.show(sorted.join(" "))
     stop(self)
   }
 }
@@ -314,11 +327,12 @@ run(A)
 #[test]
 fn list_sort_by_descending_via_negation() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [3, 1, 4, 1, 5]
     sorted = nums.sort(by: x => 0 - x)
-    Io.show(sorted.join(" "))
+    io.show(sorted.join(" "))
     stop(self)
   }
 }
@@ -332,11 +346,12 @@ run(A)
 #[test]
 fn list_sort_by_empty_list_is_ok() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [1]
     empty = nums.filter(x => x > 999)
-    Io.show("{empty.sort(by: x => x).count()}")
+    io.show("{empty.sort(by: x => x).count()}")
     stop(self)
   }
 }
@@ -350,10 +365,11 @@ run(A)
 #[test]
 fn list_sort_by_non_function_arg_is_error() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [3, 1, 2]
-    Io.show("{nums.sort(by: 42).count()}")
+    io.show("{nums.sort(by: 42).count()}")
     stop(self)
   }
 }
@@ -388,10 +404,11 @@ run_test()
 #[test]
 fn list_flatten_merges_nested_lists() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nested = [[1, 2], [3], [4, 5]]
-    Io.show("{nested.flatten().join(" ")}")
+    io.show("{nested.flatten().join(" ")}")
     stop(self)
   }
 }
@@ -410,11 +427,12 @@ stderr: {stderr}"
 #[test]
 fn list_take_and_skip() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     nums = [10, 20, 30, 40, 50]
-    Io.show("{nums.take(3).join(" ")}")
-    Io.show("{nums.skip(3).join(" ")}")
+    io.show("{nums.take(3).join(" ")}")
+    io.show("{nums.skip(3).join(" ")}")
     stop(self)
   }
 }
@@ -439,14 +457,15 @@ stderr: {stderr}"
 #[ignore]
 fn list_zip_pairs_elements() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     a = [1, 2, 3]
     b = ["x", "y", "z"]
     pairs = a.zip(b)
-    Io.show("{pairs.len()}")
-    Io.show("{pairs[1][0]}")
-    Io.show("{pairs[1][1]}")
+    io.show("{pairs.len()}")
+    io.show("{pairs[1][0]}")
+    io.show("{pairs[1][1]}")
     stop(self)
   }
 }
@@ -468,10 +487,11 @@ stderr: {stderr}"
 #[ignore]
 fn list_zip_stops_at_shorter_list() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     pairs = [1, 2, 3].zip(["a", "b"])
-    Io.show("{pairs.len()}")
+    io.show("{pairs.len()}")
     stop(self)
   }
 }
@@ -491,12 +511,13 @@ stderr: {stderr}"
 #[ignore]
 fn list_zip_destructuring_in_for_loop() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     names = ["alice", "bob"]
     scores = [90, 85]
     for (name, score) in names.zip(scores) {
-        Io.show("{name}:{score}")
+        io.show("{name}:{score}")
     }
     stop(self)
   }

@@ -7,11 +7,13 @@ use crate::common::*;
 #[test]
 fn time_epoch_ms_returns_positive_integer() {
     let src = r#"
+use std/io
+use std/time
 agent EpochTest {
     @on_start {
-        ms = Time.epoch_ms()
+        ms = time.epoch_ms()
         if ms > 0 {
-            Io.show("ok={ms > 1_000_000_000_000}")
+            io.show("ok={ms > 1_000_000_000_000}")
         }
         stop(self)
     }
@@ -22,6 +24,6 @@ run(EpochTest)
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
     assert!(
         stdout.contains("ok=true"),
-        "Time.epoch_ms() should exceed 1_000_000_000_000:\n{stdout}"
+        "time.epoch_ms() should exceed 1_000_000_000_000:\n{stdout}"
     );
 }

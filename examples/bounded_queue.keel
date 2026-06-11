@@ -1,3 +1,5 @@
+use std/io
+
 agent BurstBot {
   state {
     sent: int = 0
@@ -6,17 +8,17 @@ agent BurstBot {
   @on_start {
     for i in 1..5 {
       try {
-        Agent.send(BurstBot, i)
+        send(BurstBot, i)
         self.sent = self.sent + 1
       } catch e: RuntimeBusy {
         self.dropped = self.dropped + 1
       }
     }
-    Io.show("sent={self.sent} dropped={self.dropped}")
+    io.show("sent={self.sent} dropped={self.dropped}")
   }
 
   on message(n: int) {
-    Io.show("handled={n}")
+    io.show("handled={n}")
   }
 }
 

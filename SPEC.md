@@ -9,9 +9,9 @@
 Keel is a programming language for building AI agents. Two ideas define it:
 
 1. **The actor model is core.** An `agent` is the primitive unit of concurrency — a serial-handler mailbox with isolated mutable state. This is the only primitive that can't be a library.
-2. **Everything else is a library.** AI calls, scheduling, I/O, HTTP, memory, search, tool integration — all live in a standard library that ships with the runtime and is **auto-imported** (the *prelude*). Users don't write `use keel/ai`; they just write `Ai.classify(...)` and it works.
+2. **Everything else is a library.** AI calls, scheduling, I/O, HTTP, memory, search, tool integration — all live in a standard library that ships with the runtime as modules. One import line — `use std/ai` — and `ai.classify(...)` works. Stdlib modules and local files are the same concept (§20).
 
-Because the prelude is auto-imported, `Ai.classify(...)` reads as if `classify` were a keyword — but the compiler doesn't know or care what `Ai` is. That keeps the core language small (fewer keywords, fewer parser special cases, fewer type-inference rules) while keeping the ergonomics.
+The import is one line of ceremony, after which `ai.classify(...)` reads as if `classify` were a keyword — but the compiler doesn't know or care what `ai` is. That keeps the core language small (fewer keywords, fewer parser special cases, fewer type-inference rules) while keeping the ergonomics. Top-level statements form a file's **implicit main**: they run when the file is executed directly, never on import, so every `.keel` file is both runnable and importable with zero boilerplate.
 
 ### Design principles
 
@@ -310,15 +310,15 @@ Tuples are structural, immutable. Single-element tuples are not a thing (`(str)`
 ```keel
 extern task parse_legacy(data: str) -> dynamic from "legacy"
 
-raw = Ai.prompt(...) as dynamic       # must opt in
+raw = ai.prompt(...) as dynamic       # must opt in
 info: MyStruct = raw as MyStruct      # narrow with runtime check
 ```
 
 `dynamic` defeats autocomplete and type checking. Narrow as early as possible. The compiler warns on `dynamic` use outside the explicit escape hatches.
 
-**Strict runtime arguments.** Runtime APIs enforce their declared arguments. A dynamic value passed to `File.read(path: str)`, `Cache.get(key: str)`, `Json.parse(s: str)`, or another typed API is rejected when its runtime type does not match. Required namespace and value-method arguments also raise an error when omitted. Display formatting is explicit: interpolation, `Io.*`, and `Log.*` may render arbitrary values, while data APIs do not silently stringify them.
+**Strict runtime arguments.** Runtime APIs enforce their declared arguments. A dynamic value passed to `file.read(path: str)`, `cache.get(key: str)`, `json.parse(s: str)`, or another typed API is rejected when its runtime type does not match. Required namespace and value-method arguments also raise an error when omitted. Display formatting is explicit: interpolation, `io.*`, and `log.*` may render arbitrary values, while data APIs do not silently stringify them.
 
-**`Json.parse` return-type semantics.** `Json.parse(s)` returns an untyped value — the type checker does not infer a precise return type. Narrow with `as T` before use, or annotate the binding as `dynamic` to opt out of static typing at that site. The JSON-to-Keel runtime mapping is:
+**`json.parse` return-type semantics.** `json.parse(s)` returns an untyped value — the type checker does not infer a precise return type. Narrow with `as T` before use, or annotate the binding as `dynamic` to opt out of static typing at that site. The JSON-to-Keel runtime mapping is:
 
 | JSON type | Keel runtime value |
 |---|---|
@@ -333,8 +333,8 @@ info: MyStruct = raw as MyStruct      # narrow with runtime check
 Named-field access (`parsed.price`) resolves at runtime; a missing key raises rather than returning `none`. Narrow as early as possible with `as T` or by reading individual fields:
 
 ```keel
-body = Http.get("https://api.example.com/ticker")?.body ?? ""
-data = Json.parse(body) as dynamic
+body = http.get("https://api.example.com/ticker")?.body ?? ""
+data = json.parse(body) as dynamic
 price  = (data.price as str).to_float() ?? 0.0  # str field → float
 volume = data.volume as int                      # int field
 rows   = data.candles as list[dynamic]           # array field
@@ -343,34 +343,34 @@ for row in rows {
 }
 ```
 
-In strict mode (`keel check --strict`), an unannotated `Json.parse` binding is flagged because its type cannot be statically inferred. Two accepted escape hatches silence the warning:
+In strict mode (`keel check --strict`), an unannotated `json.parse` binding is flagged because its type cannot be statically inferred. Two accepted escape hatches silence the warning:
 
 ```keel
 # Cast form — annotate the cast target
-data = Json.parse(body) as dynamic
+data = json.parse(body) as dynamic
 
 # Annotation form — declare the binding type explicitly
-data: dynamic = Json.parse(body)
+data: dynamic = json.parse(body)
 ```
 
 Both are accepted by strict mode because `dynamic` is an intentional programmer choice, not a checker gap. `Unknown` (an unannotated, un-narrowed result) is what triggers the strict diagnostic.
 
-**`Cache.get` return-type semantics.** `Cache.get(key: str) -> dynamic?` returns the stored value at its original type, or `none` if the key is absent or the entry has expired. The stored type is preserved exactly — a value written as `str` is read back as `str`, a value written as `int` is read back as `int`. Use `as T` to recover a concrete type:
+**`cache.get` return-type semantics.** `cache.get(key: str) -> dynamic?` returns the stored value at its original type, or `none` if the key is absent or the entry has expired. The stored type is preserved exactly — a value written as `str` is read back as `str`, a value written as `int` is read back as `int`. Use `as T` to recover a concrete type:
 
 ```keel
-Cache.set("price", "50000.12")
-raw = Cache.get("price")                # dynamic?
+cache.set("price", "50000.12")
+raw = cache.get("price")                # dynamic?
 if raw != none {
   price = raw as str                    # "50000.12"
 }
 
-Cache.set("count", 42)
-n = (Cache.get("count") ?? 0) as int   # 42
+cache.set("count", 42)
+n = (cache.get("count") ?? 0) as int   # 42
 ```
 
 ### 2.10 Built-in runtime types
 
-Provided by the prelude, available without imports:
+Built-in runtime types, available without imports:
 
 ```keel
 type Message {
@@ -393,11 +393,11 @@ type HttpResponse {
 type Decision[T] { choice: T, reason: str, confidence: float }
 
 # Uuid — distinct type, not str; implements Stringable
-# Construction via Uuid.v4(), Uuid.v7(), Uuid.v5(ns:, name:), or uuid() shorthand
-# uuid() is an alias for Uuid.v4()
+# Construction via uuid.v4(), uuid.v7(), uuid.v5(ns:, name:), or uuid.v4() shorthand
+# uuid.v4() is an alias for uuid.v4()
 # Methods: .version() -> int, .to_str() -> str, .format(as: "hyphenated"|"simple"|"urn") -> str
-# Uuid.parse(s: str) -> Uuid?  — none if invalid format
-# Predefined namespace constants: Uuid.DNS, Uuid.URL, Uuid.OID, Uuid.X500
+# uuid.parse(s: str) -> Uuid?  — none if invalid format
+# Predefined namespace constants: uuid.DNS, uuid.URL, uuid.OID, uuid.X500
 
 type Error =
   # Namespace-specific — catch these to handle a specific failure domain
@@ -416,8 +416,8 @@ type Error =
   | AiSchemaError { message: str, got: str }
   # Cross-namespace — catch these for general conditions
   | CapabilityError { message: str }   # @tools restriction
-  | TimeoutError { message: str }      # Control.with_timeout exceeded
-  | DeadlineError { message: str }     # Control.with_deadline exceeded
+  | TimeoutError { message: str }      # control.with_timeout exceeded
+  | DeadlineError { message: str }     # control.with_deadline exceeded
   | UserRaised { message: str }        # raise statement
   | RuntimeBusy { message: str }       # event queue full
 # All variants carry at minimum message: str
@@ -442,57 +442,59 @@ self.count = self.count + 1
 
 ---
 
-## 3. The Prelude (the Stdlib as Keywords)
+## 3. The Standard Library
 
-The Keel standard library lives in a set of namespaces that are **auto-imported into every program**. Users don't write `use keel/ai` to get `Ai.classify` — the name is already in scope.
+The Keel standard library lives in a set of modules imported with `use std/<name>` (§20). `use std/ai` binds `ai`; `ai.classify(...)` is then an ordinary function call.
 
-### 3.1 Why a prelude
+### 3.1 Why modules
 
-- **Small core.** The compiler doesn't know about `classify`, `fetch`, or `every`. Those are stdlib function calls that happen to always be in scope. Parser, lexer, and type checker stay free of domain-specific special cases.
-- **Keyword feel.** Users still write `Ai.classify(...)` without ceremony. The namespace qualifier is short; autocomplete takes care of the rest.
+- **Small core.** The compiler doesn't know about `classify`, `fetch`, or `every`. Those are stdlib function calls. Parser, lexer, and type checker stay free of domain-specific special cases.
+- **Explicit dependencies.** A file's imports are its capability surface — auditable at a glance, and gated per agent via `@tools`.
+- **Keyword feel.** `ai.classify(...)` stays ceremony-free; the import is one line and autocomplete takes care of the rest.
 - **Swappable implementations.** Stdlib functions dispatch through **interfaces** (§5). Users can install their own LLM provider, scheduler, memory store, or HTTP client without leaving the language.
-- **No grammatical ambiguity.** `fetch x where y` required whole-grammar disambiguation. `Http.get(x, where: y)` is unambiguous and tool-friendly.
+- **No grammatical ambiguity.** `fetch x where y` required whole-grammar disambiguation. `http.get(x, where: y)` is unambiguous and tool-friendly.
 
-### 3.2 Prelude namespaces (v0.1)
+### 3.2 std modules (v0.1)
 
-| Namespace | Purpose | Key operations |
+| Module | Purpose | Key operations |
 |---|---|---|
-| `Ai` | LLM-backed operations | `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt`, `embed` |
-| `Io` | Human interaction | `ask`, `confirm`, `notify`, `show` |
-| `Http` | HTTP client | `get`, `post`, `request` |
-| `Email` | IMAP/SMTP | `fetch`, `send`, `archive` |
-| `Search` | Web search providers | `web(query)`, custom providers via interface |
-| `Db` | SQLite databases | `connect(url) -> DbConnection`, `db.query(sql, params?) -> list[map[str,dynamic]]`, `db.exec(sql, params?) -> int` |
-| `Memory` | Per-agent key-value store | `remember(key, value)`, `recall(key) -> Value?`, `forget(key)` |
-| `File` | Local filesystem | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` |
-| `Schedule` | Time-based scheduling | `every`, `after`, `at`, `cron` |
-| `Async` | Structured concurrency | `spawn`, `join_all`, `select`, `sleep` |
-| `Control` | Control combinators | `retry`, `with_timeout`, `with_deadline` |
-| `Env` | Environment and config | `get(name)`, `require(name)` |
-| `Time` | Time utilities | `now()`, `parse`, `format`, `diff`, duration math |
-| `Log` | Structured logging | `info`, `warn`, `error`, `debug` |
-| `Agent` | Agent lifecycle | `run`, `stop`, `send(target, message)`, `delegate`, `broadcast` (also exposed as bare `run`/`stop` at top level) |
-| `Random` | Pseudo-random generation | `float()`, `int(min:, max:)`, `bool()` |
-| `Uuid` | UUID generation | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
-| `Crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
-| `Math` | Transcendental and power functions | `PI()`, `E()`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x)`, `log2(x)`, `log10(x)`, `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)` |
-| `Csv` | CSV serialization | `parse(text)`, `parse_records(text)`, `stringify(rows)` |
-| `Shell` | Subprocess bridge | `run(cmd, stdin:?, cwd:?) -> { stdout, stderr, exit_code }` |
+| `std/ai` | LLM-backed operations | `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt`, `embed` |
+| `std/io` | Human interaction | `ask`, `confirm`, `notify`, `show` |
+| `std/http` | HTTP client | `get`, `post`, `request` |
+| `std/email` | IMAP/SMTP | `fetch`, `send`, `archive` |
+| `std/search` | Web search providers | `web(query)`, custom providers via interface |
+| `std/db` | SQLite databases | `connect(url) -> DbConnection`, `conn.query(sql, params?) -> list[map[str,dynamic]]`, `conn.exec(sql, params?) -> int` |
+| `std/memory` | Per-agent key-value store | `remember(key, value)`, `recall(key) -> Value?`, `forget(key)` |
+| `std/file` | Local filesystem | `read`, `write`, `exists`, `list`, `mkdir`, `remove`, `copy`, `move`, `glob`, `mktemp` |
+| `std/schedule` | Time-based scheduling | `every`, `after`, `at`, `cron` |
+| `std/async` | Structured concurrency | `spawn`, `join_all`, `select`, `sleep` |
+| `std/control` | Control combinators | `retry`, `with_timeout`, `with_deadline` |
+| `std/env` | Environment and config | `get(name)`, `require(name)` |
+| `std/time` | Time utilities | `now()`, `parse`, `format`, `diff`, duration math |
+| `std/log` | Structured logging | `info`, `warn`, `error`, `debug` |
+| `std/random` | Pseudo-random generation | `float()`, `int(min:, max:)`, `bool()` |
+| `std/uuid` | UUID constructors (the `Uuid` *type* is built in) | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
+| `std/crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
+| `std/math` | Transcendental and power functions | `PI()`, `E()`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x)`, `log2(x)`, `log10(x)`, `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)` |
+| `std/csv` | CSV serialization | `parse(text)`, `parse_records(text)`, `stringify(rows)` |
+| `std/testing` | Test doubles | `mock(module.method)` (§19) |
 
-### 3.3 Prelude free functions
+Agent lifecycle and messaging — `run`, `stop`, `send(target, message)`, `delegate`, `broadcast` — are **built into the language**, always in scope without imports.
+| `std/shell` | Subprocess bridge | `run(cmd, stdin:?, cwd:?) -> { stdout, stderr, exit_code }` |
 
-A small set of functions live directly in the root scope — no namespace qualifier needed:
+### 3.3 Built-in free functions
+
+A small set of functions live directly in the root scope — no import needed:
 
 | Function | Signature | Returns | Notes |
 |---|---|---|---|
-| `uuid()` | `() -> Uuid` | `Uuid` | Alias for `Uuid.v4()` |
+| `run(agent)` / `stop(agent)` | `(agent) -> none` | `none` | Agent lifecycle |
+| `send(agent, msg)` / `delegate(...)` / `broadcast(team, msg)` | — | `none` | Agent messaging (§4) |
 | `min(...)` | `(...items: T, by: ((T) -> any)? = none) -> T?` | `T?` | Minimum; `none` on empty |
 | `max(...)` | `(...items: T, by: ((T) -> any)? = none) -> T?` | `T?` | Maximum; `none` on empty |
 | `typeof(x)` | `(any) -> str` | `str` | Runtime type name: `"int"`, `"float"`, `"str"`, `"bool"`, `"none"`, `"list"`, `"map"`, `"duration"`, `"Uuid"`, or the declared name for structs and enums (`"Point"`, `"Color"`) |
 
 ```keel
-id = uuid()                           # Uuid
-
 min(3, 1, 4)                          # 1
 max(3, 1, 4)                          # 4
 
@@ -514,14 +516,17 @@ typeof(p)                             # "Point"
 
 `min` / `max` return `T?` — an empty input (no args, or all spreads empty) yields `none`.
 
-### 3.5 Prelude surface is identifiers, not keywords
+### 3.5 Module names are identifiers, not keywords
 
-`Ai`, `Io`, `Schedule`, etc. are **identifiers** whose bindings are installed by the runtime into the root scope. A user program can shadow them (`Ai = my_module` is legal, if unwise). They do not appear in the reserved keyword list (§10). This is the crucial difference: the language doesn't know about `Ai`. The runtime does.
+`ai`, `io`, `schedule`, etc. are **identifiers** bound by `use std/<name>` declarations — they do not appear in the reserved keyword list (§10). A lexical binding can shadow a module binding inside a body (`conn = db.connect(...)` is the idiomatic connection pattern; rebinding `db` itself is legal, if unwise). This is the crucial difference: the language doesn't know about `ai`. The standard library does. See §20 for the module system.
 
-### 3.6 Example: everything you need, no imports
+### 3.6 Example: three imports, everything you need
 
 ```keel
-# Zero imports. All namespaces are in scope.
+use std/ai
+use std/io
+use std/email
+use std/schedule
 
 type Urgency = low | medium | high | critical
 
@@ -533,21 +538,21 @@ agent EmailBot {
   }
 
   on message(msg: Message) {
-    urgency = Ai.classify(msg.body, as: Urgency) ?? Urgency.medium
+    urgency = ai.classify(msg.body, as: Urgency) ?? Urgency.medium
 
     when urgency {
       low, medium => {
-        reply = Ai.draft("response to {msg.body}", tone: "friendly")
-        if Io.confirm(reply) {
-          Email.send(reply, to: msg.from)
+        reply = ai.draft("response to {msg.body}", tone: "friendly")
+        if io.confirm(reply) {
+          email.send(reply, to: msg.from)
         }
       }
       high, critical => {
-        Io.notify("{urgency}: {msg.subject}")
-        guidance = Io.ask("How to respond?")
-        reply = Ai.draft("response to {msg.body}", guidance: guidance)
-        if Io.confirm(reply) {
-          Email.send(reply, to: msg.from)
+        io.notify("{urgency}: {msg.subject}")
+        guidance = io.ask("How to respond?")
+        reply = ai.draft("response to {msg.body}", guidance: guidance)
+        if io.confirm(reply) {
+          email.send(reply, to: msg.from)
         }
       }
     }
@@ -558,10 +563,10 @@ agent EmailBot {
   # Scheduling is a library call, not a keyword.
   # The block registers a recurring event on this agent's mailbox.
   @on_start {
-    Schedule.every(5.minutes, () => {
-      for email in Email.fetch(unread: true) {
+    schedule.every(5.minutes, () => {
+      for email in email.fetch(unread: true) {
         # deliver to this agent's message handler
-        Agent.send(self, email.as_message())
+        send(self, email.as_message())
       }
     })
   }
@@ -590,10 +595,10 @@ agent Greeter {
 agent AgentName {
   # --- Attributes (stdlib-defined metadata) ---
   @role "Natural language description"
-  @model "smart"                      # LLM binding for Ai.* inside this agent
-  @tools [Email, Calendar]           # whole-namespace capability bindings
+  @model "smart"                      # LLM binding for ai.* inside this agent
+  @tools [email, Calendar]           # whole-namespace capability bindings
   # or with method-level guards:
-  # @tools [Email.fetch, Email.send if self.confirmed, Http]
+  # @tools [email.fetch, email.send if self.confirmed, http]
   @memory persistent                 # stdlib memory binding (none | session | persistent)
   @rules [
     "Never reveal internal pricing",
@@ -615,20 +620,20 @@ agent AgentName {
 
   # --- Agent tasks (methods) ---
   task greet(name: str) -> str {
-    Ai.draft("greeting for {name}", tone: "warm") ?? "Hello!"
+    ai.draft("greeting for {name}", tone: "warm") ?? "Hello!"
   }
 
   # --- Event handlers ---
   on message(msg: Message) {
     response = self.greet(msg.from)
-    Email.send(response, to: msg)
+    email.send(response, to: msg)
     self.processed = self.processed + 1
   }
 
   # --- Lifecycle hooks (stdlib attribute) ---
   @on_start {
-    Schedule.every(1.day, at: @9am, () => {
-      Io.notify("Good morning — {self.processed} messages processed yesterday")
+    schedule.every(1.day, at: @9am, () => {
+      io.notify("Good morning — {self.processed} messages processed yesterday")
     })
   }
 }
@@ -640,8 +645,8 @@ Attributes are identifier-prefixed metadata clauses inside an agent body. The co
 
 | Attribute | Core-defined? | Semantics |
 |---|---|---|
-| `@role` | Yes | The agent's identity string, bound to the installed `LlmProvider` for all `Ai.*` calls. |
-| `@model` | Yes | The model name string, overrides the global default for this agent's `Ai.*` calls. |
+| `@role` | Yes | The agent's identity string, bound to the installed `LlmProvider` for all `ai.*` calls. |
+| `@model` | Yes | The model name string, overrides the global default for this agent's `ai.*` calls. |
 
 Everything else (`@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, custom attributes) is **stdlib-defined**: libraries register attribute handlers at startup, and the runtime invokes them during agent initialization to wire up capabilities.
 
@@ -660,11 +665,11 @@ Ns.method if expr           # specific method, allowed when expr is true
 
 ```keel
 @tools [
-  Email.fetch,                      # always can read
-  Email.send if self.confirmed,      # send only after confirmation
-  Db.query,
-  Db.exec   if self.admin,
-  Http,                             # whole namespace, always
+  email.fetch,                      # always can read
+  email.send if self.confirmed,      # send only after confirmation
+  db.query,
+  db.exec   if self.admin,
+  http,                             # whole namespace, always
 ]
 ```
 
@@ -678,14 +683,14 @@ run(MyAgent, background: true)  # non-blocking
 stop(MyAgent)                # graceful shutdown
 ```
 
-`run` and `stop` are **prelude functions** in the `Agent` namespace, re-exported at top level for convenience.
+`run` and `stop` are **built-in agent verbs**, always in scope — like `send`, `delegate`, and `broadcast` (§20.9).
 
 ### 4.5 State and thread safety
 
 - Agent `state` fields are mutable **only via `self.`**.
 - Event handlers for one agent run **sequentially**. No concurrent access to `state`.
 - Different agents run concurrently but share no state.
-- Cross-agent data flows through `Agent.delegate`, `Agent.broadcast`, or `Memory.*`.
+- Cross-agent data flows through `Agent.delegate`, `Agent.broadcast`, or `memory.*`.
 
 #### Readonly state fields
 
@@ -701,7 +706,7 @@ agent SessionBot {
   on message(msg: str) {
     self.turns = self.turns + 1          # ok — writable
     # self.session_id = "x"             # compile error: field is declared readonly
-    Io.show(self.session_id)             # reading is fine
+    io.show(self.session_id)             # reading is fine
   }
 }
 ```
@@ -718,14 +723,14 @@ Top-level tasks are reusable and testable. Prefer small agents that call top-lev
 
 ```keel
 task triage(email: EmailInfo) -> Urgency {
-  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
 agent EmailAssistant {
   @role "Triage and respond"
   on message(msg: Message) {
     urgency = triage(msg)
-    Io.show({urgency: urgency, subject: msg.subject})
+    io.show({urgency: urgency, subject: msg.subject})
   }
 }
 ```
@@ -771,7 +776,7 @@ impl Printable for Point {
 }
 
 p: Point = { x: 1.5, y: 2.0 }
-Io.show(p.print())    # → "(1.5, 2.0)"
+io.show(p.print())    # → "(1.5, 2.0)"
 ```
 
 **Rules for `impl` blocks:**
@@ -783,7 +788,7 @@ Io.show(p.print())    # → "(1.5, 2.0)"
 - Return types must match exactly.
 - `self` inside the block receives the struct value. Use `self.field` to access fields.
 
-**Dispatch rule.** The runtime dispatches `impl` methods by the value's declared type tag. A value acquires its tag at the first typed boundary it crosses: a `let x: TypeName = ...` binding, a task parameter with a named type annotation, a task return with a named return type, or an `Ai.extract(…, as: TypeName)` call. List elements are promoted to `Value::Struct` when the list is assigned to a `list[TypeName]` variable. Untagged maps (struct literals not yet passed through a typed boundary) do not dispatch to any `impl` method.
+**Dispatch rule.** The runtime dispatches `impl` methods by the value's declared type tag. A value acquires its tag at the first typed boundary it crosses: a `let x: TypeName = ...` binding, a task parameter with a named type annotation, a task return with a named return type, or an `ai.extract(…, as: TypeName)` call. List elements are promoted to `Value::Struct` when the list is assigned to a `list[TypeName]` variable. Untagged maps (struct literals not yet passed through a typed boundary) do not dispatch to any `impl` method.
 
 ### 5.3 Built-in interfaces
 
@@ -805,7 +810,7 @@ impl Stringable for Point {
 }
 
 p: Point = { x: 3, y: 4 }
-Io.show("origin is {p}")    # → "origin is (3, 4)"
+io.show("origin is {p}")    # → "origin is (3, 4)"
 ```
 
 **`Comparable`** — enables sorting and comparison for user-defined types:
@@ -828,7 +833,7 @@ interface Equatable {
 
 Method-only. `==` remains structural comparison.
 
-**`Serializable`** — override `Json.stringify`:
+**`Serializable`** — override `json.stringify`:
 
 ```keel
 interface Serializable {
@@ -836,7 +841,7 @@ interface Serializable {
 }
 ```
 
-When a type implements `Serializable`, `Json.stringify(value)` calls `to_json()` instead of the default serialiser.
+When a type implements `Serializable`, `json.stringify(value)` calls `to_json()` instead of the default serialiser.
 
 **`Iterable`** — use a struct in a `for` loop:
 
@@ -861,14 +866,14 @@ impl Iterable for Range {
     result
   }
 }
-for n in Range { lo: 1, hi: 3 } { Io.show("{n}") }   # 1, 2, 3
+for n in Range { lo: 1, hi: 3 } { io.show("{n}") }   # 1, 2, 3
 ```
 
 ### 5.4 Why interfaces are core
 
-- `Ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding a single provider into the runtime locks users out of self-hosted, proprietary, or novel backends.
+- `ai.classify` needs to dispatch to *some* LLM implementation. Hard-coding a single provider into the runtime locks users out of self-hosted, proprietary, or novel backends.
 - `Memory` in v0.1 is a plain K/V store (JSON file); in v0.2 it will dispatch through a `VectorStore` interface so users can swap backends.
-- `Log.info` needs a sink — users want OTel, Datadog, or plain stdout.
+- `log.info` needs a sink — users want OTel, Datadog, or plain stdout.
 
 The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and, once the runtime registry is wired, let users swap implementations.
 
@@ -878,7 +883,7 @@ Custom implementation installation is planned, but not registered in the v0.1 ru
 
 ```keel
 # At startup — swap the default LLM provider
-Ai.install(MyCustomProvider)
+ai.install(MyCustomProvider)
 
 # Per-agent override
 agent Specialist {
@@ -909,7 +914,7 @@ The last expression is the implicit return. Explicit `return` is supported for e
 
 ```keel
 task triage(email: {body: str}) -> Urgency {
-  Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 ```
 
@@ -1003,7 +1008,7 @@ agent Mailbox {
   }
 
   on message(msg: Message) {
-    Io.show(self.summarize(msg.subject))
+    io.show(self.summarize(msg.subject))
   }
 }
 ```
@@ -1017,7 +1022,7 @@ and top-level scope. Agent-local tasks are not injected into bare-name lookup.
 
 `Agent.delegate` posts a named event to a target agent's mailbox. Two forms are supported:
 
-**Symbol form (preferred):** `Agent.delegate(TargetAgent.handlerName, data)`
+**Symbol form (preferred):** `delegate(TargetAgent.handlerName, data)`
 
 The handler reference `TargetAgent.handlerName` is resolved at compile time. The type
 checker verifies:
@@ -1028,27 +1033,27 @@ checker verifies:
 ```keel
 agent Worker {
   on process(task: Task) {
-    Log.info("processing {task.id}")
+    log.info("processing {task.id}")
   }
 }
 
 agent Boss {
   @on_start {
-    Agent.run(Worker)
-    Agent.delegate(Worker.process, my_task)   # ✓ type-checked at compile time
-    Agent.delegate(Worker.typo, my_task)      # ✗ compile error: no handler `typo`
+    run(Worker)
+    delegate(Worker.process, my_task)   # ✓ type-checked at compile time
+    delegate(Worker.typo, my_task)      # ✗ compile error: no handler `typo`
   }
 }
 ```
 
-**String form (legacy):** `Agent.delegate(TargetAgent, "handlerName", data)`
+**String form (legacy):** `delegate(TargetAgent, "handlerName", data)`
 
 The handler name is a string literal. The type checker validates it when the string
 is a plain literal (no interpolation). Handler renames do not update string literals
 automatically — prefer the symbol form for all new code.
 
 ```keel
-Agent.delegate(Worker, "process", my_task)   # checked when literal is plain
+delegate(Worker, "process", my_task)   # checked when literal is plain
 ```
 
 Both forms enqueue the event on the target agent's mailbox and return immediately;
@@ -1098,9 +1103,9 @@ if urgency == Urgency.high { escalate(email) }
 
 # As expression (else REQUIRED, branches must produce compatible types)
 reply = if guidance != none {
-  Ai.draft("response", guidance: guidance)
+  ai.draft("response", guidance: guidance)
 } else {
-  Ai.draft("response", tone: "friendly")
+  ai.draft("response", tone: "friendly")
 } ?? "(draft failed)"
 ```
 
@@ -1136,12 +1141,12 @@ All arms must produce the same type. The expression form is valid anywhere an ex
 
 ```keel
 when action {
-  reply { to, tone }   => Email.send(Ai.draft("reply", tone: tone), to: to)
-  forward { to }       => Email.send(email, to: to)
-  archive              => Email.archive(email)
+  reply { to, tone }   => email.send(ai.draft("reply", tone: tone), to: to)
+  forward { to }       => email.send(email, to: to)
+  archive              => email.archive(email)
   escalate { reason, urgency }
     where urgency == Urgency.critical => page_oncall(reason)
-  escalate { reason, _ } => Io.notify("Escalation: {reason}")
+  escalate { reason, _ } => io.notify("Escalation: {reason}")
 }
 ```
 
@@ -1175,29 +1180,29 @@ Catches by **variant matching**. `Error` is the catch-all type; every stdlib err
 
 ```keel
 try {
-  data = File.read("config.json")
+  data = file.read("config.json")
 } catch e: FileError {
   data = "{}"                   # handle missing file specifically
 } catch e: Error {
-  Io.show("unexpected: {e.message}")
+  io.show("unexpected: {e.message}")
 }
 
 try {
-  resp = Http.get("https://api.example.com/data")
+  resp = http.get("https://api.example.com/data")
 } catch e: HttpError {
-  Io.show("network error: {e.message}")
+  io.show("network error: {e.message}")
 }
 
 try {
-  rows = Csv.parse_records(raw)
+  rows = csv.parse_records(raw)
 } catch e: CsvError {
-  Io.show("bad CSV: {e.message}")
+  io.show("bad CSV: {e.message}")
 }
 
 try {
-  Control.with_timeout(5.seconds, () => { slow_operation() })
+  control.with_timeout(5.seconds, () => { slow_operation() })
 } catch e: TimeoutError {
-  Io.show("timed out: {e.message}")
+  io.show("timed out: {e.message}")
 }
 ```
 
@@ -1214,9 +1219,9 @@ raise "validation failed"
 try {
   raise "quota exceeded"
 } catch err: UserRaised {
-  Io.notify("User raised: {err.message}")
+  io.notify("User raised: {err.message}")
 } catch err: Error {
-  Io.notify("Other error: {err.message}")
+  io.notify("Other error: {err.message}")
 }
 ```
 
@@ -1279,7 +1284,7 @@ Unbounded iteration — repeat the body as long as the condition is `true`.
 # Basic countdown
 n = 5
 while n > 0 {
-    Io.show("tick: {n}")
+    io.show("tick: {n}")
     n -= 1
 }
 
@@ -1315,16 +1320,16 @@ The core runtime exposes exactly three concurrency primitives, surfaced via `Asy
 
 | Primitive | Type | Behavior |
 |---|---|---|
-| `Async.spawn(fn)` | `() -> T` returning `Task[T]` | Start a child task. Parent-cancels-children semantics. |
+| `async.spawn(fn)` | `() -> T` returning `Task[T]` | Start a child task. Parent-cancels-children semantics. |
 | `Task[T].await()` | `T` | Block the current handler until the task completes. |
 | `Task[T].cancel()` | `none` | Cancel the task. |
 
 Everything else is a library combinator:
 
 ```keel
-Async.join_all(tasks: list[Task[T]]) -> list[T]   # all-or-nothing; cancels siblings on error
-Async.select(tasks: list[Task[T]]) -> T            # first to complete wins
-Async.sleep(d: duration) -> none
+async.join_all(tasks: list[Task[T]]) -> list[T]   # all-or-nothing; cancels siblings on error
+async.select(tasks: list[Task[T]]) -> T            # first to complete wins
+async.sleep(d: duration) -> none
 ```
 
 ### 9.2 Structured concurrency
@@ -1336,9 +1341,9 @@ Cancellation is structured: when a parent task cancels or errors, all spawned ch
 Concurrent composition is expressed through library functions, not grammar:
 
 ```keel
-[urgency, sentiment] = Async.join_all([
-  Async.spawn(() => Ai.classify(body, as: Urgency) ?? Urgency.medium),
-  Async.spawn(() => Ai.classify(body, as: Sentiment) ?? Sentiment.neutral)
+[urgency, sentiment] = async.join_all([
+  async.spawn(() => ai.classify(body, as: Urgency) ?? Urgency.medium),
+  async.spawn(() => ai.classify(body, as: Sentiment) ?? Sentiment.neutral)
 ])
 ```
 
@@ -1353,7 +1358,7 @@ Trade-off: a dedicated `parallel { ... }` block would read slightly nicer. The l
               └──────────────────┘
 ```
 
-Events land in the agent's mailbox. The runtime processes them one at a time. A handler that calls `Io.ask`, `Async.sleep`, or `Agent.delegate` suspends — other *agents* continue. Other events for the *same* agent queue behind.
+Events land in the agent's mailbox. The runtime processes them one at a time. A handler that calls `io.ask`, `async.sleep`, or `Agent.delegate` suspends — other *agents* continue. Other events for the *same* agent queue behind.
 
 ---
 
@@ -1367,11 +1372,11 @@ use std/testing
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-  Ai.classify(text, as: Severity) ?? Severity.low
+  ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "mocked classify returns critical" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   assert classify("payment outage") == Severity.critical
 }
 ```
@@ -1381,7 +1386,7 @@ test "mocked classify returns critical" {
 Inside a test block:
 
 - `use std/testing` brings the `testing` namespace into scope for test helpers.
-- `testing.mock(Namespace.method).returns(value)` overrides one prelude namespace method for the current test only.
+- `testing.mock(module.method).returns(value)` overrides one std module method for the current test only.
 - Repeating the same mock target returns values in order; after the sequence is exhausted, the final value repeats.
 - Mocked methods expose test-local metadata: `Namespace.method.called: bool`, `Namespace.method.call_count: int`, and `Namespace.method.called_with(...): bool`.
 - `setup { ... }` runs before the assertion/body statements in the same test and can bind values used by the body.
@@ -1411,7 +1416,7 @@ set
 
 That's it.
 
-Namespaces (`Ai`, `Io`, `Http`, `Schedule`, `Async`, …) are identifiers, not keywords. Same for `run`, `stop`, `spawn`, `delegate`, `broadcast` — prelude functions.
+Module bindings (`ai`, `io`, `http`, `schedule`, `async`, …) are identifiers bound by `use std/<name>`, not keywords (§20). Same for `run`, `stop`, `send`, `delegate`, `broadcast` — built-in agent verbs — and `min`, `max`, `typeof`.
 
 Attribute names (`@role`, `@model`, `@tools`, …) are identifiers. Only the `@` prefix is syntax.
 
@@ -1433,7 +1438,7 @@ The two-tier model:
 |---|---|---|
 | Network failure / mock mode / timeout | Returns `none` | `??` or `when` |
 | LLM output didn't match the expected schema | Throws `AiSchemaError` | `try/catch` |
-| Event queue full (`Agent.send` / `.delegate` / `.broadcast`) | Throws `RuntimeBusy` | `try/catch` |
+| Event queue full (`send` / `delegate` / `broadcast`) | Throws `RuntimeBusy` | `try/catch` |
 
 `AiSchemaError` carries `message: str` and `got: str` (the raw LLM output that failed to match). It is caught by `catch err: AiSchemaError` or the catch-all `catch err: Error`.
 
@@ -1441,17 +1446,17 @@ The two-tier model:
 
 ### 11.2 Nullable-aware stdlib
 
-`Ai.*` calls return `T?` for genuine absence (e.g. the model returned nothing parseable). Use `??` or `when` for the simple fallback case:
+`ai.*` calls return `T?` for genuine absence (e.g. the model returned nothing parseable). Use `??` or `when` for the simple fallback case:
 
 ```keel
 # Simple default via ??
-summary = Ai.summarize(article, in: 3, unit: sentences) ?? "No summary available"
-urgency = Ai.classify(text, as: Urgency) ?? Urgency.medium
+summary = ai.summarize(article, in: 3, unit: sentences) ?? "No summary available"
+urgency = ai.classify(text, as: Urgency) ?? Urgency.medium
 
 # Explicit when
-when Ai.classify(text, as: Urgency) {
+when ai.classify(text, as: Urgency) {
   some(u)  => handle(u)
-  none     => Io.notify("Could not classify")
+  none     => io.notify("Could not classify")
 }
 ```
 
@@ -1459,30 +1464,30 @@ When you need to distinguish *why* a call failed, use `try/catch`:
 
 ```keel
 try {
-  urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
 } catch err: AiSchemaError {
-  Io.notify("Unexpected LLM output: {err.got}")
+  io.notify("Unexpected LLM output: {err.got}")
   urgency = Urgency.medium
 } catch err: AiError {
-  Control.retry(3, () => {
-    urgency = Ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  control.retry(3, () => {
+    urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
   })
 } catch err: Error {
-  Io.notify("Unexpected failure: {err.message}")
+  io.notify("Unexpected failure: {err.message}")
 }
 ```
 
 ### 11.3 Retry
 
-`Control.retry` is a stdlib function:
+`control.retry` is a stdlib function:
 
 ```keel
-Control.retry(3, backoff: exponential, () => {
-  Email.send(reply, to: addr)
+control.retry(3, backoff: exponential, () => {
+  email.send(reply, to: addr)
 })
 
-Control.retry(5, delay: 10.seconds, () => {
-  Http.get("https://api.example.com/data")
+control.retry(5, delay: 10.seconds, () => {
+  http.get("https://api.example.com/data")
 })
 ```
 
@@ -1499,17 +1504,17 @@ The separation is intentional: limits are verifiable, rules are aspirational. Mi
 
 ## 12. Memory
 
-`Memory` is a per-agent key-value store. Agents opt in with `@memory persistent` (survives restarts), `@memory session` (in-process, default), or `@memory none` (disables `Memory.*` entirely).
+`Memory` is a per-agent key-value store. Agents opt in with `@memory persistent` (survives restarts), `@memory session` (in-process, default), or `@memory none` (disables `memory.*` entirely).
 
 ```keel
 agent Counter {
   @memory persistent
 
   @on_start {
-    count = Memory.recall("visits")
+    count = memory.recall("visits")
     next = if count == none { 1 } else { count + 1 }
-    Memory.remember("visits", next)
-    Io.show("Visit {next}")
+    memory.remember("visits", next)
+    io.show("Visit {next}")
     stop(self)
   }
 }
@@ -1519,15 +1524,15 @@ agent Counter {
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Memory.remember(key, value)` | `none` | Store any Keel value under `key`, scoped to this agent |
-| `Memory.recall(key)` | `Value?` | Return stored value or `none` if absent |
-| `Memory.forget(key)` | `none` | Delete the key |
+| `memory.remember(key, value)` | `none` | Store any Keel value under `key`, scoped to this agent |
+| `memory.recall(key)` | `Value?` | Return stored value or `none` if absent |
+| `memory.forget(key)` | `none` | Delete the key |
 
 ### Scope and isolation
 
 Keys are namespaced per `(program, agent)` pair — two programs that happen to share an agent name (`Counter`) each get their own memory bucket. Two agents within the same program with different names also get separate buckets.
 
-`Memory.*` is only valid inside an agent body. Calling it from a top-level statement or a plain `task` raises a runtime error.
+`memory.*` is only valid inside an agent body. Calling it from a top-level statement or a plain `task` raises a runtime error.
 
 ### Persistence mode
 
@@ -1535,7 +1540,7 @@ Keys are namespaced per `(program, agent)` pair — two programs that happen to 
 |---|---|
 | `@memory session` | In-process HashMap; cleared at process exit (default when attribute is omitted) |
 | `@memory persistent` | JSON file at `~/.keel/memory/<stem>_<hash12>/<agent>.json`; survives restarts |
-| `@memory none` | Any `Memory.*` call raises `MemoryError` |
+| `@memory none` | Any `memory.*` call raises `MemoryError` |
 
 #### Persistent storage path
 
@@ -1551,7 +1556,7 @@ Special sources that have no stable on-disk path use fixed namespace names:
 
 #### Multi-process safety
 
-Each `Memory.*` operation acquires an advisory `flock` on a sidecar `<agent>.lock` file (exclusive for writes, shared for reads). Concurrent `keel run` processes against the same program/agent are safe — writes are serialized by the kernel lock. The lock target is a stable sidecar file that is never renamed.
+Each `memory.*` operation acquires an advisory `flock` on a sidecar `<agent>.lock` file (exclusive for writes, shared for reads). Concurrent `keel run` processes against the same program/agent are safe — writes are serialized by the kernel lock. The lock target is a stable sidecar file that is never renamed.
 
 ### v0.2 note: semantic search
 
@@ -1564,29 +1569,29 @@ v0.1 `Memory` is a plain K/V store. The planned v0.2 upgrade adds a `VectorStore
 The `Time` namespace provides datetime construction and parsing. Datetimes are RFC 3339 strings with an explicit timezone offset — naive strings (no offset) are rejected. Methods `parts()` and `format()` live on the datetime value itself.
 
 ```keel
-now      = Time.now()                          # UTC, millisecond precision
-ny       = Time.now(tz: "America/New_York")    # offset-shifted RFC 3339
-parsed   = Time.parse("2026-05-01T09:00:00Z") # datetime? — none if bad/no TZ
-coerced  = Time.parse("2026-05-01", tz: "UTC") # naive + tz: → datetime?
-ts       = Time.epoch_ms()                     # int — ms since Unix epoch
+now      = time.now()                          # UTC, millisecond precision
+ny       = time.now(tz: "America/New_York")    # offset-shifted RFC 3339
+parsed   = time.parse("2026-05-01T09:00:00Z") # datetime? — none if bad/no TZ
+coerced  = time.parse("2026-05-01", tz: "UTC") # naive + tz: → datetime?
+ts       = time.epoch_ms()                     # int — ms since Unix epoch
 
 p = parsed.parts()   # {year, month, day, hour, minute, second, millisecond, tz}
 s = parsed.format(as: "%Y-%m-%d")  # str? — none if receiver is not a datetime
 
 elapsed  = finish - start   # datetime - datetime → duration
-deadline = Time.now() + 3.days
-ago      = Time.now() - 1.hour
+deadline = time.now() + 3.days
+ago      = time.now() - 1.hour
 ```
 
 ### Factories (namespace)
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Time.now()` | `datetime` | Current UTC time, millisecond-precision RFC 3339 |
-| `Time.now(tz: name)` | `datetime` | Offset-shifted; IANA name e.g. `"America/New_York"` |
-| `Time.parse(str)` | `datetime?` | Accepts RFC 3339 with explicit TZ offset; returns `none` on failure |
-| `Time.parse(str, tz: name)` | `datetime?` | Coerces a naive string into the given timezone |
-| `Time.epoch_ms()` | `int` | Unix timestamp in milliseconds (suitable for JS interop, BIGINT columns, signed payloads) |
+| `time.now()` | `datetime` | Current UTC time, millisecond-precision RFC 3339 |
+| `time.now(tz: name)` | `datetime` | Offset-shifted; IANA name e.g. `"America/New_York"` |
+| `time.parse(str)` | `datetime?` | Accepts RFC 3339 with explicit TZ offset; returns `none` on failure |
+| `time.parse(str, tz: name)` | `datetime?` | Coerces a naive string into the given timezone |
+| `time.epoch_ms()` | `int` | Unix timestamp in milliseconds (suitable for JS interop, BIGINT columns, signed payloads) |
 
 ### Methods (on value)
 
@@ -1610,15 +1615,15 @@ ago      = Time.now() - 1.hour
 
 ```keel
 # datetime ± duration → datetime
-deadline = Time.now() + 7.days
-ago      = Time.now() - 30.minutes
+deadline = time.now() + 7.days
+ago      = time.now() - 30.minutes
 
 # datetime - datetime → duration
 elapsed  = finish - start
 
 # comparison
-if deadline > Time.now() {
-  Io.show("still time left")
+if deadline > time.now() {
+  io.show("still time left")
 }
 ```
 
@@ -1629,37 +1634,37 @@ if deadline > Time.now() {
 The `Math` namespace provides transcendental and power functions. All functions accept `int` or `float` arguments and always return `float`. The value-level methods `.abs()`, `.floor()`, `.ceil()`, `.round()` remain on the value itself (e.g. `(-3).abs()`) and are not duplicated here.
 
 ```keel
-h   = Math.sqrt(Math.pow(3, 2) + Math.pow(4, 2))  # 5.0  (Pythagoras)
-ln2 = Math.log(2)                                   # ≈ 0.693
+h   = math.sqrt(math.pow(3, 2) + math.pow(4, 2))  # 5.0  (Pythagoras)
+ln2 = math.log(2)                                   # ≈ 0.693
 deg = 45.0
-rad = deg * Math.PI() / 180.0
-s   = Math.sin(rad)                                 # ≈ 0.707
+rad = deg * math.PI() / 180.0
+s   = math.sin(rad)                                 # ≈ 0.707
 ```
 
 ### Constants
 
 | Call | Returns | Value |
 |---|---|---|
-| `Math.PI()` | `float` | π ≈ 3.14159265358979 |
-| `Math.E()` | `float` | e ≈ 2.71828182845905 |
+| `math.PI()` | `float` | π ≈ 3.14159265358979 |
+| `math.E()` | `float` | e ≈ 2.71828182845905 |
 
 ### Functions
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Math.sqrt(x)` | `float` | Square root; raises if `x < 0` |
-| `Math.pow(x, y)` | `float` | `x` raised to the power `y` |
-| `Math.exp(x)` | `float` | e^x |
-| `Math.log(x)` | `float` | Natural logarithm (ln); raises if `x ≤ 0` |
-| `Math.log2(x)` | `float` | Base-2 logarithm; raises if `x ≤ 0` |
-| `Math.log10(x)` | `float` | Base-10 logarithm; raises if `x ≤ 0` |
-| `Math.sin(x)` | `float` | Sine (radians) |
-| `Math.cos(x)` | `float` | Cosine (radians) |
-| `Math.tan(x)` | `float` | Tangent (radians) |
-| `Math.asin(x)` | `float` | Arc-sine (radians); raises if `x ∉ [-1, 1]` |
-| `Math.acos(x)` | `float` | Arc-cosine (radians); raises if `x ∉ [-1, 1]` |
-| `Math.atan(x)` | `float` | Arc-tangent (radians) |
-| `Math.atan2(y, x)` | `float` | `atan(y/x)` with correct quadrant; two positional args |
+| `math.sqrt(x)` | `float` | Square root; raises if `x < 0` |
+| `math.pow(x, y)` | `float` | `x` raised to the power `y` |
+| `math.exp(x)` | `float` | e^x |
+| `math.log(x)` | `float` | Natural logarithm (ln); raises if `x ≤ 0` |
+| `math.log2(x)` | `float` | Base-2 logarithm; raises if `x ≤ 0` |
+| `math.log10(x)` | `float` | Base-10 logarithm; raises if `x ≤ 0` |
+| `math.sin(x)` | `float` | Sine (radians) |
+| `math.cos(x)` | `float` | Cosine (radians) |
+| `math.tan(x)` | `float` | Tangent (radians) |
+| `math.asin(x)` | `float` | Arc-sine (radians); raises if `x ∉ [-1, 1]` |
+| `math.acos(x)` | `float` | Arc-cosine (radians); raises if `x ∉ [-1, 1]` |
+| `math.atan(x)` | `float` | Arc-tangent (radians) |
+| `math.atan2(y, x)` | `float` | `atan(y/x)` with correct quadrant; two positional args |
 
 ---
 
@@ -1671,36 +1676,36 @@ The `Csv` namespace parses and produces RFC 4180–compliant CSV text. It is alw
 raw = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9"
 
 # Raw parse — list[list[str]], first row is whatever the input contains
-rows = Csv.parse(raw)         # [["symbol","price","volume"], ["BTC","67000","1234.5"], …]
+rows = csv.parse(raw)         # [["symbol","price","volume"], ["BTC","67000","1234.5"], …]
 
 # Header parse — list[map[str, str]], first row becomes map keys
-trades = Csv.parse_records(raw)   # [{symbol: "BTC", price: "67000", …}, …]
+trades = csv.parse_records(raw)   # [{symbol: "BTC", price: "67000", …}, …]
 for trade in trades {
-    Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+    log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
 }
 
 # Stringify — list[list[str]] → CSV string (include a header row as the first inner list)
 out = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
-text = Csv.stringify(out)
+text = csv.stringify(out)
 ```
 
 ### Functions
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Csv.parse(text: str)` | `list[list[str]]` | Parse CSV; every cell is a `str`. Raises `CsvError` on malformed input. |
-| `Csv.parse_records(text: str)` | `list[map[str, str]]` | First row becomes header keys; remaining rows become maps. Returns `[]` when only a header row is present. |
-| `Csv.stringify(rows: list[list[str]])` | `str` | Convert rows to CSV text. Each inner list is one row; every cell must be a `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list or a cell is not a `str`. |
+| `csv.parse(text: str)` | `list[list[str]]` | Parse CSV; every cell is a `str`. Raises `CsvError` on malformed input. |
+| `csv.parse_records(text: str)` | `list[map[str, str]]` | First row becomes header keys; remaining rows become maps. Returns `[]` when only a header row is present. |
+| `csv.stringify(rows: list[list[str]])` | `str` | Convert rows to CSV text. Each inner list is one row; every cell must be a `str`. Cells containing commas, quotes, or newlines are automatically quoted per RFC 4180. Raises `CsvError` if a row element is not a list or a cell is not a `str`. |
 
 ### Notes
 
-- `Csv.stringify` only accepts `list[list[str]]`. To convert `list[map[str, str]]` to CSV, project the fields you want into lists first:
+- `csv.stringify` only accepts `list[list[str]]`. To convert `list[map[str, str]]` to CSV, project the fields you want into lists first:
   ```keel
   lines = trades.map(t => [t["symbol"], t["price"]])
-  text  = Csv.stringify([["symbol", "price"]] + lines)
+  text  = csv.stringify([["symbol", "price"]] + lines)
   ```
-- Empty input to `Csv.parse` returns `[]`.
-- `Csv.parse_records` with only a header row (no data rows) returns `[]`.
+- Empty input to `csv.parse` returns `[]`.
+- `csv.parse_records` with only a header row (no data rows) returns `[]`.
 
 ---
 
@@ -1712,29 +1717,30 @@ text = Csv.stringify(out)
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Random.float()` | `float` | Uniform in `[0.0, 1.0)` |
-| `Random.int(min:, max:)` | `int` | Inclusive range |
-| `Random.bool()` | `bool` | 50/50 |
+| `random.float()` | `float` | Uniform in `[0.0, 1.0)` |
+| `random.int(min:, max:)` | `int` | Inclusive range |
+| `random.bool()` | `bool` | 50/50 |
 
 ```keel
-Random.float()              # 0.7341...
-Random.int(min: 1, max: 6)  # dice roll
-Random.bool()               # true or false
+random.float()              # 0.7341...
+random.int(min: 1, max: 6)  # dice roll
+random.bool()               # true or false
 ```
 
 ### 15.2 `Uuid` — UUID generation
 
 `Uuid` is a distinct type (not `str`). It implements `Stringable` so it interpolates cleanly.
 
+All constructors require `use std/uuid`; the `Uuid` type itself is built in.
+
 | Call | Returns | Notes |
 |---|---|---|
-| `uuid()` | `Uuid` | Prelude alias for `Uuid.v4()` |
-| `Uuid.v4()` | `Uuid` | Random (CSPRNG) |
-| `Uuid.v7()` | `Uuid` | Time-ordered — monotonically increasing, B-tree friendly |
-| `Uuid.v5(ns:, name:)` | `Uuid` | Deterministic — SHA-1 of namespace + name |
-| `Uuid.parse(s)` | `Uuid?` | `none` if invalid format |
+| `uuid.v4()` | `Uuid` | Random (CSPRNG) |
+| `uuid.v7()` | `Uuid` | Time-ordered — monotonically increasing, B-tree friendly |
+| `uuid.v5(ns:, name:)` | `Uuid` | Deterministic — SHA-1 of namespace + name |
+| `uuid.parse(s)` | `Uuid?` | `none` if invalid format |
 
-**Namespace constants:** `Uuid.DNS`, `Uuid.URL`, `Uuid.OID`, `Uuid.X500` — for use with `Uuid.v5`.
+**Namespace constants:** `uuid.DNS`, `uuid.URL`, `uuid.OID`, `uuid.X500` — for use with `uuid.v5`.
 
 **Value methods:**
 
@@ -1745,11 +1751,11 @@ Random.bool()               # true or false
 | `.format(as:)` | `str` | `"hyphenated"` (default), `"simple"` (no hyphens), `"urn"` |
 
 ```keel
-id = uuid()                                        # Uuid v4
-Log.info("created {id}")                           # interpolates via Stringable
-Uuid.v7()                                          # time-ordered
-Uuid.v5(ns: Uuid.DNS, name: "keel-lang.dev")       # deterministic
-Uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479") # Uuid?
+id = uuid.v4()                                        # Uuid v4
+log.info("created {id}")                           # interpolates via Stringable
+uuid.v7()                                          # time-ordered
+uuid.v5(ns: uuid.DNS, name: "keel-lang.dev")       # deterministic
+uuid.parse("f47ac10b-58cc-4372-a567-0e02b2c3d479") # Uuid?
 id.format(as: "simple")                            # "f47ac10b58cc4372a5670e02b2c3d479"
 ```
 
@@ -1759,28 +1765,28 @@ id.format(as: "simple")                            # "f47ac10b58cc4372a5670e02b2
 
 | Call | Returns | Notes |
 |---|---|---|
-| `Crypto.sha224(data)` | `str` | SHA-224 hex digest |
-| `Crypto.sha256(data)` | `str` | SHA-256 hex digest |
-| `Crypto.sha384(data)` | `str` | SHA-384 hex digest |
-| `Crypto.sha512(data)` | `str` | SHA-512 hex digest |
-| `Crypto.sha512_224(data)` | `str` | SHA-512/224 hex digest |
-| `Crypto.sha512_256(data)` | `str` | SHA-512/256 hex digest |
-| `Crypto.hmac_sha224(data, key:)` | `str` | HMAC-SHA-224 hex signature |
-| `Crypto.hmac_sha256(data, key:)` | `str` | HMAC-SHA-256 hex signature |
-| `Crypto.hmac_sha384(data, key:)` | `str` | HMAC-SHA-384 hex signature |
-| `Crypto.hmac_sha512(data, key:)` | `str` | HMAC-SHA-512 hex signature |
-| `Crypto.hmac_sha512_224(data, key:)` | `str` | HMAC-SHA-512/224 hex signature |
-| `Crypto.hmac_sha512_256(data, key:)` | `str` | HMAC-SHA-512/256 hex signature |
-| `Crypto.token(bytes: 32)` | `str` | Cryptographically secure random hex token |
-| `Crypto.random_bytes(n)` | `list[int]` | `n` CSPRNG bytes |
+| `crypto.sha224(data)` | `str` | SHA-224 hex digest |
+| `crypto.sha256(data)` | `str` | SHA-256 hex digest |
+| `crypto.sha384(data)` | `str` | SHA-384 hex digest |
+| `crypto.sha512(data)` | `str` | SHA-512 hex digest |
+| `crypto.sha512_224(data)` | `str` | SHA-512/224 hex digest |
+| `crypto.sha512_256(data)` | `str` | SHA-512/256 hex digest |
+| `crypto.hmac_sha224(data, key:)` | `str` | HMAC-SHA-224 hex signature |
+| `crypto.hmac_sha256(data, key:)` | `str` | HMAC-SHA-256 hex signature |
+| `crypto.hmac_sha384(data, key:)` | `str` | HMAC-SHA-384 hex signature |
+| `crypto.hmac_sha512(data, key:)` | `str` | HMAC-SHA-512 hex signature |
+| `crypto.hmac_sha512_224(data, key:)` | `str` | HMAC-SHA-512/224 hex signature |
+| `crypto.hmac_sha512_256(data, key:)` | `str` | HMAC-SHA-512/256 hex signature |
+| `crypto.token(bytes: 32)` | `str` | Cryptographically secure random hex token |
+| `crypto.random_bytes(n)` | `list[int]` | `n` CSPRNG bytes |
 
 ```keel
-Crypto.sha256("hello")                        # "2cf24db..."
-Crypto.sha384("hello")
-Crypto.hmac_sha256("msg", key: secret)
-Crypto.token()                                # 64-char hex string (32 bytes)
-Crypto.token(bytes: 16)                       # 32-char hex string
-Crypto.random_bytes(16)                       # list[int] of 16 bytes
+crypto.sha256("hello")                        # "2cf24db..."
+crypto.sha384("hello")
+crypto.hmac_sha256("msg", key: secret)
+crypto.token()                                # 64-char hex string (32 bytes)
+crypto.token(bytes: 16)                       # 32-char hex string
+crypto.random_bytes(16)                       # list[int] of 16 bytes
 ```
 
 `Crypto` intentionally exposes fixed safe SHA-2 methods only. MD5, SHA-1, and string-selected hash algorithms are not available through `Crypto`.
@@ -1789,12 +1795,12 @@ Crypto.random_bytes(16)                       # list[int] of 16 bytes
 
 ## 17. Shell — Subprocess Bridge
 
-`Shell` lets agents invoke external commands and capture their output. It is gated by `@tools [Shell]` — an agent must declare the capability before any `Shell.run` call is allowed.
+`Shell` lets agents invoke external commands and capture their output. It is gated by `@tools [shell]` — an agent must declare the capability before any `shell.run` call is allowed.
 
-### `Shell.run`
+### `shell.run`
 
 ```
-Shell.run(cmd: str, stdin: str? = none, cwd: str? = none) -> { stdout: str, stderr: str, exit_code: int }
+shell.run(cmd: str, stdin: str? = none, cwd: str? = none) -> { stdout: str, stderr: str, exit_code: int }
 ```
 
 `cmd` is passed to `/bin/sh -c`, so pipes, redirects, and shell builtins work as expected.
@@ -1815,27 +1821,27 @@ Shell.run(cmd: str, stdin: str? = none, cwd: str? = none) -> { stdout: str, stde
 
 **Error semantics:**
 
-- If `/bin/sh` cannot be spawned (e.g. missing in `PATH`), `Shell.run` **raises** at runtime.
+- If `/bin/sh` cannot be spawned (e.g. missing in `PATH`), `shell.run` **raises** at runtime.
 - A non-zero exit code is **not** an error — it is returned in `exit_code`. The caller decides whether to raise.
 
 ```keel
 agent Builder {
-    @tools [Shell]
+    @tools [shell]
 
     @on_start {
-        r = Shell.run("cargo test --quiet 2>&1")
+        r = shell.run("cargo test --quiet 2>&1")
         if r.exit_code != 0 {
             raise "build failed:\n{r.stdout}"
         }
-        Io.show("Tests passed.")
+        io.show("Tests passed.")
     }
 }
 run(Builder)
 ```
 
-**Capability gating:** `@tools` restricts an agent to the listed namespaces. If an agent declares `@tools [Io]` but not `Shell`, any `Shell.run` call raises `CapabilityError` at runtime. An agent with no `@tools` declaration is unrestricted. This gating is process-level, not OS-level — future releases may add stricter sandboxing.
+**Capability gating:** `@tools` restricts an agent to the listed namespaces. If an agent declares `@tools [io]` but not `Shell`, any `shell.run` call raises `CapabilityError` at runtime. An agent with no `@tools` declaration is unrestricted. This gating is process-level, not OS-level — future releases may add stricter sandboxing.
 
-**Environment isolation:** The subprocess runs with a clean environment. Only `PATH`, `HOME`, `SHELL`, `TMPDIR`, `USER`, and `LANG` are forwarded from the keel process. All other variables — including secrets, API keys, or credentials present in the keel process environment — are not visible to the shell command. To read the keel process environment from within a script, use `Env.*` instead.
+**Environment isolation:** The subprocess runs with a clean environment. Only `PATH`, `HOME`, `SHELL`, `TMPDIR`, `USER`, and `LANG` are forwarded from the keel process. All other variables — including secrets, API keys, or credentials present in the keel process environment — are not visible to the shell command. To read the keel process environment from within a script, use `env.*` instead.
 
 **Security note:** `cmd` is passed directly to `/bin/sh -c`. Never interpolate untrusted user input into `cmd` without sanitisation.
 
@@ -1844,10 +1850,10 @@ run(Builder)
 ## 18. Escape Hatches
 
 
-### 17.1 `Ai.prompt` — raw LLM access
+### 17.1 `ai.prompt` — raw LLM access
 
 ```keel
-score = Ai.prompt(
+score = ai.prompt(
   system: "Rate sentiment 1–10.",
   user: "Text: {review}",
   response_format: json
@@ -1855,25 +1861,25 @@ score = Ai.prompt(
 # score: SentimentScore? — parsing/validation may fail
 ```
 
-`Ai.prompt(...)` **must be followed by `as T`**. A bare `Ai.prompt(...)` that tries to use the result is a compile error. Use `as dynamic` to explicitly opt out of typing.
+`ai.prompt(...)` **must be followed by `as T`**. A bare `ai.prompt(...)` that tries to use the result is a compile error. Use `as dynamic` to explicitly opt out of typing.
 
-### 17.2 `Http.request` — raw HTTP
+### 17.2 `http.request` — raw HTTP
 
 ```keel
-r = Http.request(
+r = http.request(
   method: POST,
   url: "https://api.example.com/v2",
-  headers: {Authorization: "Bearer {Env.require("API_KEY")}"},
+  headers: {Authorization: "Bearer {env.require("API_KEY")}"},
   body: {text: review},
   timeout: 10.seconds
 )
 # r: HttpResponse?
 ```
 
-### 17.3 `Db.query` — raw SQL
+### 17.3 `db.query` — raw SQL
 
 ```keel
-rows = Db.query(
+rows = db.query(
   "SELECT * FROM interactions WHERE contact = ? AND created_at > ?",
   params: [email.from, 30.days.ago]
 )
@@ -1897,11 +1903,11 @@ tokens = tokenize(document.body)
 ### 18.1 Environment variables
 
 ```keel
-api_key = Env.require("OPENAI_API_KEY")   # fails at startup if missing
-db_url  = Env.get("DATABASE_URL")          # str? — none if missing
+api_key = env.require("OPENAI_API_KEY")   # fails at startup if missing
+db_url  = env.get("DATABASE_URL")          # str? — none if missing
 ```
 
-`Env` is a prelude namespace backed by the host environment.
+`std/env` is backed by the host environment; `use std/env` binds `env`.
 
 ### 18.2 Configuration file
 
@@ -1923,13 +1929,157 @@ log:
 
 ## 20. Modules & Imports
 
+Keel has one source file type: `.keel`. Every file is both **runnable** (an
+entrypoint when executed directly) and **importable** (a module when another
+file `use`s it). Stdlib modules and local modules are the same concept.
+
+### 20.1 The module model
+
 ```keel
-use "./email_utils.keel"               # import a local file
-use Classifier from "./classifiers.keel"  # import a symbol
-use community/crm                      # import a package
+use std/testing
+use std/file
+use "./validation.keel"
+
+test "valid email" {
+  assert validation.email("ada@example.com")
+}
+
+task load_config() -> str {
+  file.read("config.json")
+}
 ```
 
-The prelude is always imported. `use` adds additional modules to scope.
+A module's identity is its resolved path (`std/<name>` for stdlib modules,
+the canonical file path for local ones). Each file in a program is parsed
+and loaded exactly once, no matter how many files import it.
+
+### 20.2 `use` forms
+
+| Form | Binds | Notes |
+|---|---|---|
+| `use std/file` | `file` | last path segment |
+| `use std/file as f` | `f` | alias |
+| `use "./validation.keel"` | `validation` | file stem |
+| `use "./validation.keel" as v` | `v` | alias |
+| `use A, B as C from "./m.keel"` | `A`, `C` | symbol import, per-item `as` |
+| `use parse from std/json` | `parse` | symbol import from std |
+
+Namespace derivation is predictable: the explicit alias, otherwise the file
+stem (local) or last segment (std). Imports never put names into scope
+implicitly; `use ... from ...` is the explicit opt-in for unqualified names.
+
+### 20.3 Names, shadowing, collisions
+
+Module bindings are identifiers, not keywords (§3.5). Within a body, a
+lexical binding may shadow a module binding — `conn = db.connect(url)` is
+the idiomatic pattern (the linter warns when a binding shadows an import).
+
+Collisions are compile errors with an alias fix-it:
+
+- two imports binding the same name in one file;
+- a top-level declaration reusing a name bound by an import in that file.
+
+### 20.4 Exports
+
+Every top-level declaration — `task`, `type`, `agent`, `interface`,
+`extern` — is exported. There is no `pub` keyword (reserved; see §20.11).
+Top-level *statements* are not declarations: they are never exported and
+never run on import (§20.5).
+
+Module constants do not exist yet; use a zero-arg task. A `const`
+declaration is reserved for a future release.
+
+### 20.5 Execution: the implicit main
+
+Importing a module loads its declarations only. Top-level statements form
+the file's **implicit main** and execute — in order, sharing one scope —
+only when that file is the entry file of `keel run` or `keel test`. Every
+`.keel` file is therefore both a library and a runnable script with zero
+boilerplate, and an import can never have side effects.
+
+Agents are exported like any declaration: `run(watchers.Watcher)` starts an
+imported agent; `use Watcher from "./watchers.keel"` then `run(Watcher)`
+works identically.
+
+`impl` blocks travel with their module: importing a module activates its
+impls program-wide. An impl must live in the same module as the type or the
+interface it implements.
+
+**Modules gate entry points; values carry their methods.** `conn.query(...)`,
+`dt.format(...)`, `id.to_str()`, and every other value method dispatch on
+the value's type and need no import. Only entry-point calls
+(`db.connect(...)`, `time.now()`, `uuid.v4()`) require the module binding.
+
+### 20.6 Resolution
+
+- Relative imports (`"./..."`, `"../..."`) resolve from the **importing
+  file's** directory and must name a `.keel` file. There are no search
+  paths.
+- `std/<name>` resolves only against the catalog compiled into the `keel`
+  binary. No `KEEL_PATH`; a local `./std/` directory cannot shadow the
+  stdlib. An unknown std name is an error listing the available modules.
+- Resolution is case-sensitive.
+
+### 20.7 Circular imports
+
+Cycles are a compile error reporting the full path
+(`a.keel → b.keel → a.keel`) with the remediation: move the shared
+declarations into a third file both can import. This restriction may be
+relaxed in a later release; programs that compile today keep compiling.
+
+### 20.8 Tests and modules
+
+`keel test file.keel` runs only that file's `test` blocks. Imported modules
+contribute declarations — test helpers are ordinary tasks — never their
+tests. `keel test <dir>` runs each file's own tests (§19).
+
+### 20.9 The standard library as modules
+
+Every stdlib namespace is a module under `std/`:
+
+`std/ai`, `std/io`, `std/http`, `std/email`, `std/file`, `std/shell`,
+`std/json`, `std/csv`, `std/cache`, `std/search`, `std/db`, `std/memory`,
+`std/schedule`, `std/async`, `std/control`, `std/env`, `std/time`,
+`std/log`, `std/random`, `std/uuid`, `std/crypto`, `std/math`,
+`std/testing`.
+
+Always in scope without imports (language-level, not library):
+
+- agent verbs: `run`, `stop`, `send`, `delegate`, `broadcast`;
+- generic utilities: `min`, `max`, `typeof`;
+- built-in types (`str`, `int`, `datetime`, `duration`, `Uuid`, …),
+  duration literals (`5.minutes`), and built-in interfaces (§18);
+- `self`, attributes (`@role`, `@tools`, …), and the contextual test words.
+
+`Uuid` is split: the type is built in; the constructors (`uuid.v4()`,
+`uuid.parse()`, `uuid.DNS`, …) live in `std/uuid`. There is no `std/agent`
+module — agent verbs are language-level.
+
+`@tools` capability lists name modules: `@tools [shell, http]`.
+
+The REPL pre-imports the entire stdlib for convenience.
+
+### 20.10 One global namespace (v0.1)
+
+The runtime registers every module's declarations in one flat global table;
+modules are a visibility discipline enforced statically. Consequently a
+name must mean the same thing across the whole program:
+
+- two modules may not declare the same top-level name;
+- two files may not bind the same import name to different targets.
+
+Both are compile errors naming the conflicting files. Types, enums, and
+interfaces are accessed by symbol import (`use Urgency from ...`), keep
+their declared identity (no `as` on type imports), and may only appear in
+annotations of files that declare or import them. Module-private scoping is
+planned.
+
+### 20.11 Reserved
+
+- `community/...` package paths parse but error — registry, versioning,
+  and resolution are unspecified.
+- Nested std paths (`std/http/server`) parse but no nested module exists.
+- `pub` / export lists and module-level `const` declarations.
 
 ---
 
@@ -1967,7 +2117,7 @@ The prelude is always imported. `use` adds additional modules to scope.
 | `Uuid` | `str` | Hyphenated string: `"f47ac10b-..."` |
 | `str` | `Uuid` | Validates UUID format; raises if invalid |
 | same type | same type | Identity |
-| `dynamic` | any | Pass-through (runtime narrowing for `Ai.prompt`, `Json.parse`) |
+| `dynamic` | any | Pass-through (runtime narrowing for `ai.prompt`, `json.parse`) |
 | `none` | any | Raises |
 | anything else | | Raises |
 
@@ -1998,10 +2148,10 @@ The runtime is intentionally small. It provides only what stdlib needs to exist 
 
 1. **Event loop** (Tokio).
 2. **Agent scheduler** — mailboxes, handler sequencing, structured cancellation.
-3. **Timer primitives** — `sleep`, `deadline`. Stdlib `Schedule.*` is built on these.
+3. **Timer primitives** — `sleep`, `deadline`. Stdlib `schedule.*` is built on these.
 4. **Interface dispatch** — registry of installed implementations per interface.
 5. **Plugin ABI** — for `extern` and dynamically loaded stdlib backends.
-6. **Tracer hook** — emits structured events at task/handler boundaries; stdlib `Log.*` subscribes.
+6. **Tracer hook** — emits structured events at task/handler boundaries; stdlib `log.*` subscribes.
 
 Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — is stdlib and ships with the runtime binary but is replaceable.
 
@@ -2018,7 +2168,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 | Missing `else` on `if`-expression | Error |
 | Missing `_` in non-enum `when` | Error |
 | `self` outside an agent | Error |
-| `Ai.prompt(...)` without `as T` | Error |
+| `ai.prompt(...)` without `as T` | Error |
 | Unused variable | Warning |
 | Shadowed built-in name | Warning |
 | Unreachable code / catch | Warning |
@@ -2040,7 +2190,7 @@ All `keel check` errors and warnings include a source-span pointer (line:column)
 |------|---------|-------------|
 | Unused variable | binding assigned but never read | prefix name with `_` |
 | Uncalled task | `task` declared but never invoked | — |
-| `Ai.*` outside agent | LLM method called without `@role` / `@model` context | — |
+| `ai.*` outside agent | LLM method called without `@role` / `@model` context | — |
 | State written, never read | `self.x =` appears but `self.x` never used | — |
 
 `keel lint --fix` auto-removes unused variable assignment lines.
@@ -2053,17 +2203,17 @@ Every feature is designed for tooling.
 
 | Context | Autocomplete |
 |---|---|
-| After `Ai.` | `classify`, `draft`, `summarize`, etc. |
-| After `Ai.classify(x, as: ` | In-scope enum types |
+| After `ai.` | `classify`, `draft`, `summarize`, etc. |
+| After `ai.classify(x, as: ` | In-scope enum types |
 | After `@` inside agent body | Registered attribute names |
 | After `email.` | Fields of email's structural type |
 | After `when urgency { ` | Variants of the enum, marking covered/uncovered |
-| After `Agent.delegate(` | In-scope agent names |
+| After `delegate(` | In-scope agent names |
 | After `using: ` | Known model strings |
 
 **Hover:** infers and displays types, signatures, attribute docs.
 
-**Go-to-definition:** works through types, prelude namespaces, interface implementations.
+**Go-to-definition:** works through types, module bindings, interface implementations.
 
 **Refactoring:** rename is variant-aware and interface-aware.
 
@@ -2073,7 +2223,7 @@ Every feature is designed for tooling.
 
 ```peg
 Program     <- (Decl / Stmt)* EOF
-Decl        <- Agent / TaskDecl / TestDecl / TypeDecl / InterfaceDecl / ExternDecl / UseStmt
+Decl        <- Agent / TaskDecl / TestDecl / TypeDecl / InterfaceDecl / ExternDecl / UseDecl
 
 Agent       <- "agent" IDENT "{" (Attribute / StateBlock / TaskDecl / OnHandler)* "}"
 Attribute   <- "@" IDENT AttributeBody
@@ -2101,9 +2251,11 @@ EnumDef     <- EnumVariant ("|" EnumVariant)*
 EnumVariant <- IDENT ("{" FieldDef* "}")?
 
 ExternDecl  <- "extern" "task" IDENT "(" Params? ")" "->" Type "from" STRING
-UseStmt     <- "use" STRING
-             / "use" IDENT "from" STRING
-             / "use" IDENT ("/" IDENT)+
+UseDecl     <- "use" ImportItem ("," ImportItem)* "from" UseSource     # symbol import
+             / "use" UseSource ("as" IDENT)?                            # module import
+UseSource   <- STRING / ModulePath
+ModulePath  <- IDENT ("/" IDENT)+
+ImportItem  <- IDENT ("as" IDENT)?
 
 # --- Expressions ---
 Expr        <- NullCoalesce
@@ -2161,7 +2313,7 @@ CatchClause <- "catch" IDENT ":" Type Block
 # --- Terminals, literals, duration as before (§2.2) ---
 ```
 
-Notably absent: dedicated grammar for `ClassifyExpr`, `ExtractExpr`, `SummarizeExpr`, `DraftExpr`, `TranslateExpr`, `DecideExpr`, `PromptExpr`, `HttpExpr`, `SqlExpr`, `AskExpr`, `ConfirmExpr`, `NotifyStmt`, `ShowStmt`, `FetchExpr`, `SearchExpr`, `SendStmt`, `ArchiveStmt`, `RememberStmt`, `ForgetStmt`, `RecallExpr`, `EveryBlock`, `AfterStmt`, `WaitStmt`, `RetryStmt`, `ParallelExpr`, `RaceExpr`, `DelegateExpr`, `ConnectStmt`, `BroadcastStmt`, `RunStmt`, `RulesBlock`, `ConfigBlock`, `ToolsClause`, `TeamClause`, `RoleClause`, `ModelClause`, `MemoryClause`. All are ordinary function calls in the prelude or stdlib attribute handlers.
+Notably absent: dedicated grammar for `ClassifyExpr`, `ExtractExpr`, `SummarizeExpr`, `DraftExpr`, `TranslateExpr`, `DecideExpr`, `PromptExpr`, `HttpExpr`, `SqlExpr`, `AskExpr`, `ConfirmExpr`, `NotifyStmt`, `ShowStmt`, `FetchExpr`, `SearchExpr`, `SendStmt`, `ArchiveStmt`, `RememberStmt`, `ForgetStmt`, `RecallExpr`, `EveryBlock`, `AfterStmt`, `WaitStmt`, `RetryStmt`, `ParallelExpr`, `RaceExpr`, `DelegateExpr`, `ConnectStmt`, `BroadcastStmt`, `RunStmt`, `RulesBlock`, `ConfigBlock`, `ToolsClause`, `TeamClause`, `RoleClause`, `ModelClause`, `MemoryClause`. All are ordinary function calls in the stdlib or stdlib attribute handlers.
 
 That keeps the parser small, type inference uniform (no hard-coded primitive signatures), and the IDE free of per-keyword special cases.
 

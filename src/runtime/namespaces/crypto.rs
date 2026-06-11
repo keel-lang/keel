@@ -8,7 +8,7 @@ use crate::runtime::namespace::{find_arg, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "sha224",
         params: &[BuiltinParam {
             name: "data",
@@ -19,7 +19,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the SHA-224 hex digest of a string.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "sha256",
         params: &[BuiltinParam {
             name: "data",
@@ -30,7 +30,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the SHA-256 hex digest of a string.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "sha384",
         params: &[BuiltinParam {
             name: "data",
@@ -41,7 +41,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the SHA-384 hex digest of a string.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "sha512",
         params: &[BuiltinParam {
             name: "data",
@@ -52,7 +52,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the SHA-512 hex digest of a string.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "sha512_224",
         params: &[BuiltinParam {
             name: "data",
@@ -63,7 +63,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the SHA-512/224 hex digest of a string.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "sha512_256",
         params: &[BuiltinParam {
             name: "data",
@@ -74,7 +74,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the SHA-512/256 hex digest of a string.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "hmac_sha224",
         params: &[
             BuiltinParam {
@@ -92,7 +92,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the HMAC-SHA-224 hex digest.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "hmac_sha256",
         params: &[
             BuiltinParam {
@@ -110,7 +110,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the HMAC-SHA-256 hex digest.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "hmac_sha384",
         params: &[
             BuiltinParam {
@@ -128,7 +128,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the HMAC-SHA-384 hex digest.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "hmac_sha512",
         params: &[
             BuiltinParam {
@@ -146,7 +146,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the HMAC-SHA-512 hex digest.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "hmac_sha512_224",
         params: &[
             BuiltinParam {
@@ -164,7 +164,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the HMAC-SHA-512/224 hex digest.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "hmac_sha512_256",
         params: &[
             BuiltinParam {
@@ -182,7 +182,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the HMAC-SHA-512/256 hex digest.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "token",
         params: &[BuiltinParam {
             name: "len",
@@ -193,7 +193,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Generate a random URL-safe token of the given byte length.",
     },
     BuiltinMethod {
-        namespace: "Crypto",
+        namespace: "crypto",
         name: "random_bytes",
         params: &[BuiltinParam {
             name: "len",
@@ -211,52 +211,52 @@ const DEFAULT_TOKEN_BYTES: usize = 32;
 const MAX_RANDOM_BYTES: usize = 1024 * 1024;
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Crypto", {
+    ns!("crypto", {
         "sha224" => |_interp, args| Box::pin(async move {
-            hash_call(args, HashAlgo::Sha224, "Crypto.sha224")
+            hash_call(args, HashAlgo::Sha224, "crypto.sha224")
         }),
         "sha256" => |_interp, args| Box::pin(async move {
-            hash_call(args, HashAlgo::Sha256, "Crypto.sha256")
+            hash_call(args, HashAlgo::Sha256, "crypto.sha256")
         }),
         "sha384" => |_interp, args| Box::pin(async move {
-            hash_call(args, HashAlgo::Sha384, "Crypto.sha384")
+            hash_call(args, HashAlgo::Sha384, "crypto.sha384")
         }),
         "sha512" => |_interp, args| Box::pin(async move {
-            hash_call(args, HashAlgo::Sha512, "Crypto.sha512")
+            hash_call(args, HashAlgo::Sha512, "crypto.sha512")
         }),
         "sha512_224" => |_interp, args| Box::pin(async move {
-            hash_call(args, HashAlgo::Sha512_224, "Crypto.sha512_224")
+            hash_call(args, HashAlgo::Sha512_224, "crypto.sha512_224")
         }),
         "sha512_256" => |_interp, args| Box::pin(async move {
-            hash_call(args, HashAlgo::Sha512_256, "Crypto.sha512_256")
+            hash_call(args, HashAlgo::Sha512_256, "crypto.sha512_256")
         }),
         "hmac_sha224" => |_interp, args| Box::pin(async move {
-            hmac_call(args, HashAlgo::Sha224, "Crypto.hmac_sha224")
+            hmac_call(args, HashAlgo::Sha224, "crypto.hmac_sha224")
         }),
         "hmac_sha256" => |_interp, args| Box::pin(async move {
-            hmac_call(args, HashAlgo::Sha256, "Crypto.hmac_sha256")
+            hmac_call(args, HashAlgo::Sha256, "crypto.hmac_sha256")
         }),
         "hmac_sha384" => |_interp, args| Box::pin(async move {
-            hmac_call(args, HashAlgo::Sha384, "Crypto.hmac_sha384")
+            hmac_call(args, HashAlgo::Sha384, "crypto.hmac_sha384")
         }),
         "hmac_sha512" => |_interp, args| Box::pin(async move {
-            hmac_call(args, HashAlgo::Sha512, "Crypto.hmac_sha512")
+            hmac_call(args, HashAlgo::Sha512, "crypto.hmac_sha512")
         }),
         "hmac_sha512_224" => |_interp, args| Box::pin(async move {
-            hmac_call(args, HashAlgo::Sha512_224, "Crypto.hmac_sha512_224")
+            hmac_call(args, HashAlgo::Sha512_224, "crypto.hmac_sha512_224")
         }),
         "hmac_sha512_256" => |_interp, args| Box::pin(async move {
-            hmac_call(args, HashAlgo::Sha512_256, "Crypto.hmac_sha512_256")
+            hmac_call(args, HashAlgo::Sha512_256, "crypto.hmac_sha512_256")
         }),
         "token" => |_interp, args| Box::pin(async move {
-            let n = byte_count_arg(&args, DEFAULT_TOKEN_BYTES, "Crypto.token")?;
-            let bytes = secure_random_bytes(n, "Crypto.token")?;
+            let n = byte_count_arg(&args, DEFAULT_TOKEN_BYTES, "crypto.token")?;
+            let bytes = secure_random_bytes(n, "crypto.token")?;
             Ok(Value::String(hex(&bytes)))
         }),
         "random_bytes" => |_interp, args| Box::pin(async move {
-            let n = expect_int(&args, 0, "Crypto.random_bytes")?;
-            let n = validate_byte_count(n, "Crypto.random_bytes")?;
-            let bytes = secure_random_bytes(n, "Crypto.random_bytes")?;
+            let n = expect_int(&args, 0, "crypto.random_bytes")?;
+            let n = validate_byte_count(n, "crypto.random_bytes")?;
+            let bytes = secure_random_bytes(n, "crypto.random_bytes")?;
             Ok(Value::List(
                 bytes
                     .into_iter()
@@ -411,7 +411,7 @@ mod tests {
     #[test]
     fn namespace_has_crypto_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Crypto");
+        assert_eq!(ns.name, "crypto");
         for method in [
             "sha224",
             "sha256",
@@ -542,7 +542,7 @@ mod tests {
             .expect_err("string byte count must fail");
         assert_eq!(
             err.to_string(),
-            "Crypto.random_bytes: argument at position 0 must be int, got str"
+            "crypto.random_bytes: argument at position 0 must be int, got str"
         );
     }
 

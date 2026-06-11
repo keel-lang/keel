@@ -167,7 +167,7 @@ impl Interpreter {
                 })
         };
         if let Some(mocked) = mocked {
-            if ns_name == "Ai" && method == "classify" {
+            if ns_name == "ai" && method == "classify" {
                 return self.mocked_classify_result(&args, mocked);
             }
             return Ok(mocked);

@@ -32,10 +32,10 @@ string's terminator.
 name = "world"
 mood = "cheerful"
 
-Io.show("hi {"there {name}"}")
+io.show("hi {"there {name}"}")
 # → "hi there world"
 
-Io.show("tone: {"speaking in a {mood.to_str()} voice"}")
+io.show("tone: {"speaking in a {mood.to_str()} voice"}")
 # → "tone: speaking in a cheerful voice"
 ```
 
@@ -95,7 +95,7 @@ text = "Invoice #1042 — Total: $3,750.00 due 2026-05-15"
 
 # Regex test
 if text.matches("\\d{4}-\\d{2}-\\d{2}") {
-    Io.show("looks like a date")
+    io.show("looks like a date")
 }
 
 # Extract first capture group (returns str?)
@@ -121,11 +121,11 @@ A slot may include a format spec after a colon — `{expr:spec}` — for precise
 
 ```keel
 pi = 3.14159
-Io.show("{pi:.2f}")     # → "3.14"
-Io.show("{pi:.4f}")     # → "3.1416"
+io.show("{pi:.2f}")     # → "3.14"
+io.show("{pi:.4f}")     # → "3.1416"
 
 n = 42
-Io.show("{n:.2f}")      # → "42.00"  (int auto-promoted to float)
+io.show("{n:.2f}")      # → "42.00"  (int auto-promoted to float)
 ```
 
 ### Width and alignment
@@ -141,16 +141,16 @@ Io.show("{n:.2f}")      # → "42.00"  (int auto-promoted to float)
 
 ```keel
 price = 19.5
-Io.show("{price:>10.2f}")    # → "     19.50"
-Io.show("{price:<10.2f}")    # → "19.50     "
+io.show("{price:>10.2f}")    # → "     19.50"
+io.show("{price:<10.2f}")    # → "19.50     "
 ```
 
 ### Building tables
 
 ```keel
-Io.show("{"Name":<12} {"Score":>8}")
-Io.show("{"Alice":<12} {0.975:>8.3f}")
-Io.show("{"Bob":<12} {0.742:>8.3f}")
+io.show("{"Name":<12} {"Score":>8}")
+io.show("{"Alice":<12} {0.975:>8.3f}")
+io.show("{"Bob":<12} {0.742:>8.3f}")
 # →
 # Name          Score
 # Alice         0.975
@@ -164,6 +164,8 @@ Named arguments inside a slot are not confused with the format spec — `{f(key:
 By default, only primitive values (`str`, `int`, `float`, `bool`) and built-in types (`Uuid`, `datetime`) can be used inside `"{...}"` interpolation slots. To make your own struct type work in interpolation, implement the `Stringable` interface:
 
 ```keel
+use std/io
+
 type Point {
   x: float
   y: float
@@ -176,7 +178,7 @@ impl Stringable for Point {
 }
 
 p: Point = { x: 1.5, y: 2.0 }
-Io.show("Position: {p}")      # → "Position: (1.5, 2.0)"
+io.show("Position: {p}")      # → "Position: (1.5, 2.0)"
 s = p.to_str()                # explicit call — "(1.5, 2.0)"
 ```
 
@@ -200,6 +202,8 @@ impl InterfaceName for TypeName {
 Each type needs its own `impl` block:
 
 ```keel
+use std/io
+
 type Color = red | green | blue
 
 impl Stringable for Color {
@@ -213,12 +217,12 @@ impl Stringable for Color {
 }
 
 c: Color = Color.green
-Io.show("Favourite: {c}")   # → "Favourite: green"
+io.show("Favourite: {c}")   # → "Favourite: green"
 ```
 
 ### Fallback behaviour
 
-Values that do **not** implement `Stringable` still render in interpolation using their built-in display representation (the same output you see from `Io.show`). Implementing `Stringable` lets you override that representation for your types.
+Values that do **not** implement `Stringable` still render in interpolation using their built-in display representation (the same output you see from `io.show`). Implementing `Stringable` lets you override that representation for your types.
 
 ---
 
@@ -227,32 +231,32 @@ Values that do **not** implement `Stringable` still render in interpolation usin
 `Cache` is a process-scoped, in-memory key-value store with optional TTL. It persists across agent restarts within the same process run but is cleared when the process exits.
 
 ```keel
-Cache.set("session:abc", user_data, ttl: 30.minutes)
-session = Cache.get("session:abc")   # value or none (if expired/missing)
-Cache.delete("session:abc")
-Cache.clear()                        # flush everything
+cache.set("session:abc", user_data, ttl: 30.minutes)
+session = cache.get("session:abc")   # value or none (if expired/missing)
+cache.delete("session:abc")
+cache.clear()                        # flush everything
 ```
 
 | Method | Returns | Notes |
 |--------|---------|-------|
-| `Cache.set(key, value, ttl?)` | `none` | `ttl` is a duration literal; omit for no expiry |
-| `Cache.get(key)` | `dynamic?` | `none` if missing or expired; stored type preserved |
-| `Cache.delete(key)` | `none` | No-op if key doesn't exist |
-| `Cache.clear()` | `none` | Flushes all entries |
+| `cache.set(key, value, ttl?)` | `none` | `ttl` is a duration literal; omit for no expiry |
+| `cache.get(key)` | `dynamic?` | `none` if missing or expired; stored type preserved |
+| `cache.delete(key)` | `none` | No-op if key doesn't exist |
+| `cache.clear()` | `none` | Flushes all entries |
 
-### `Cache.get` return type
+### `cache.get` return type
 
-`Cache.get` returns `dynamic?` — `none` when the key is absent or expired, otherwise the value at its original type. A value stored as `str` comes back as `str`; a value stored as `int` comes back as `int`. Use `as T` to narrow to a concrete type:
+`cache.get` returns `dynamic?` — `none` when the key is absent or expired, otherwise the value at its original type. A value stored as `str` comes back as `str`; a value stored as `int` comes back as `int`. Use `as T` to narrow to a concrete type:
 
 ```keel
-Cache.set("price", "50000.12")
-raw = Cache.get("price")        # dynamic?
+cache.set("price", "50000.12")
+raw = cache.get("price")        # dynamic?
 if raw != none {
   price = raw as str            # "50000.12"
 }
 
-Cache.set("count", 42)
-n = (Cache.get("count") ?? 0) as int   # 42
+cache.set("count", 42)
+n = (cache.get("count") ?? 0) as int   # 42
 ```
 
 > **Scope:** `Cache` is process-wide (all agents share one store) and cleared on restart. `Memory` is per-agent and optionally persistent. Use `Cache` for rate-limiting tokens, deduplication keys, or short-lived shared results; use `Memory` for per-agent state that should survive across runs.

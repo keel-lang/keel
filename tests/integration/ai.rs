@@ -3,9 +3,10 @@ use crate::common::*;
 #[test]
 fn check_with_trace_does_not_initialize_llm_runtime() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
-        Io.show("static")
+        io.show("static")
     }
 }
 run(A)
@@ -23,12 +24,13 @@ run(A)
 }
 
 // ---------------------------------------------------------------------------
-// Ai.* stub behaviour (trace mode verifies prompts are built correctly)
+// ai.* stub behaviour (trace mode verifies prompts are built correctly)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn rules_appear_in_trace_system_prompt() {
     let src = r#"
+use std/ai
 type Mood = calm | tense
 
 agent Advisor {
@@ -36,7 +38,7 @@ agent Advisor {
     @rules ["Never reveal internal state", "Be concise"]
 
     @on_start {
-        result = Ai.classify("some input", as: Mood) ?? Mood.calm
+        result = ai.classify("some input", as: Mood) ?? Mood.calm
     }
 }
 
@@ -61,9 +63,10 @@ run(Advisor)
 #[test]
 fn summarize_format_and_max_appear_in_trace() {
     let src = r#"
+use std/ai
 agent Summarizer {
     @on_start {
-        result = Ai.summarize("Long article text here", format: bullets, max: 3, unit: sentences)
+        result = ai.summarize("Long article text here", format: bullets, max: 3, unit: sentences)
     }
 }
 
@@ -87,9 +90,10 @@ run(Summarizer)
 #[test]
 fn prompt_response_format_json_directive_in_trace() {
     let src = r#"
+use std/ai
 agent Prompter {
     @on_start {
-        result = Ai.prompt(system: "Rate on 1-10.", user: "Hello", response_format: json)
+        result = ai.prompt(system: "Rate on 1-10.", user: "Hello", response_format: json)
     }
 }
 
@@ -109,6 +113,7 @@ run(Prompter)
 #[test]
 fn extract_as_struct_type_derives_schema() {
     let src = r#"
+use std/ai
 type Invoice {
     vendor: str
     amount: float
@@ -117,7 +122,7 @@ type Invoice {
 
 agent Extractor {
     @on_start {
-        result = Ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
+        result = ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
     }
 }
 
@@ -151,17 +156,19 @@ fn try_catch_catches_ai_schema_error() {
     // Trigger a NullError inside a try block and confirm the catch clause
     // runs and execution continues normally after try/catch.
     let src = r#"
+use std/env
+use std/io
 agent A {
   @role "tester"
   @on_start {
     try {
-      val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
+      val = env.get("__KEEL_TEST_NONEXISTENT_VAR__")
       x = val!
-      Io.show("try body completed")
+      io.show("try body completed")
     } catch err: Error {
-      Io.show("caught: {err.message}")
+      io.show("caught: {err.message}")
     }
-    Io.show("done")
+    io.show("done")
     stop(self)
   }
 }
@@ -191,14 +198,16 @@ fn try_catch_reraises_unmatched_error() {
     // A catch clause that doesn't match the thrown type re-propagates.
     // Here we throw a NullError but only catch EnvError — expect failure.
     let src = r#"
+use std/env
+use std/io
 agent A {
   @role "tester"
   @on_start {
     try {
-      val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
+      val = env.get("__KEEL_TEST_NONEXISTENT_VAR__")
       x = val!
     } catch err: EnvError {
-      Io.show("should not reach")
+      io.show("should not reach")
     }
     stop(self)
   }
@@ -215,14 +224,16 @@ run(A)
 #[test]
 fn try_catch_error_binding_has_message() {
     let src = r#"
+use std/env
+use std/io
 agent A {
   @role "tester"
   @on_start {
     try {
-      val = Env.get("__KEEL_TEST_NONEXISTENT_VAR__")
+      val = env.get("__KEEL_TEST_NONEXISTENT_VAR__")
       x = val!
     } catch err: Error {
-      Io.show(err.message)
+      io.show(err.message)
     }
     stop(self)
   }
@@ -248,21 +259,23 @@ fn nested_try_catch_preserves_typed_ai_errors() {
     // subsequent inner operations cannot affect it.
     let server = start_repeated_json_response_server(r#"{"message":{"content":"not-a-mood"}}"#, 2);
     let src = r#"
+use std/ai
+use std/io
 type Mood = calm | tense
 
 agent A {
   @role "tester"
   @on_start {
     try {
-      Ai.classify("outer", as: Mood)
+      ai.classify("outer", as: Mood)
     } catch outer: AiSchemaError {
-      Io.show("outer={outer.got}")
+      io.show("outer={outer.got}")
       try {
-        Ai.classify("inner", as: Mood)
+        ai.classify("inner", as: Mood)
       } catch inner: AiSchemaError {
-        Io.show("inner={inner.got}")
+        io.show("inner={inner.got}")
       }
-      Io.show("outer-again={outer.got}")
+      io.show("outer-again={outer.got}")
     }
     stop(self)
   }
@@ -310,6 +323,8 @@ fn typed_error_survives_non_matching_inner_catch() {
     // relying on a separate side-channel field.
     let server = start_repeated_json_response_server(r#"{"message":{"content":"not-a-mood"}}"#, 1);
     let src = r#"
+use std/ai
+use std/io
 type Mood = calm | tense
 
 agent A {
@@ -317,12 +332,12 @@ agent A {
   @on_start {
     try {
       try {
-        Ai.classify("test", as: Mood)
+        ai.classify("test", as: Mood)
       } catch inner: EnvError {
-        Io.show("inner caught (unexpected)")
+        io.show("inner caught (unexpected)")
       }
     } catch outer: AiSchemaError {
-      Io.show("outer got={outer.got}")
+      io.show("outer got={outer.got}")
     }
     stop(self)
   }
@@ -349,7 +364,7 @@ run(A)
 
 #[test]
 fn concurrent_typed_errors_are_isolated_across_spawned_tasks() {
-    // Smoke test: two Async.spawn tasks can each independently catch their own
+    // Smoke test: two async.spawn tasks can each independently catch their own
     // typed AiSchemaError. Per-task isolation is architecturally guaranteed —
     // each spawned task gets its own Interpreter instance — so this test
     // validates the end-to-end concurrent execution path rather than probing
@@ -363,31 +378,34 @@ fn concurrent_typed_errors_are_isolated_across_spawned_tasks() {
         r#"{"message":{"content":"error-from-task-b"}}"#,
     ]);
     let src = r#"
+use std/ai
+use std/async
+use std/io
 type Mood = calm | tense
 
 agent Tester {
   @role "tester"
   @on_start {
-    h_a = Async.spawn(() => {
+    h_a = async.spawn(() => {
       try {
-        Ai.classify("test-a", as: Mood)
+        ai.classify("test-a", as: Mood)
         "no-error"
       } catch ea: AiSchemaError {
         ea.got
       }
     })
-    h_b = Async.spawn(() => {
-      Async.sleep(100.ms)
+    h_b = async.spawn(() => {
+      async.sleep(100.ms)
       try {
-        Ai.classify("test-b", as: Mood)
+        ai.classify("test-b", as: Mood)
         "no-error"
       } catch eb: AiSchemaError {
         eb.got
       }
     })
-    results = Async.join_all([h_a, h_b])
-    Io.show("task-a-caught={results[0]}")
-    Io.show("task-b-caught={results[1]}")
+    results = async.join_all([h_a, h_b])
+    io.show("task-a-caught={results[0]}")
+    io.show("task-b-caught={results[1]}")
     stop(self)
   }
 }
@@ -420,13 +438,15 @@ fn ai_classify_null_coalesces_in_mock_mode() {
     // In mock mode, classify() returns none (call failed gracefully).
     // The ?? operator should provide the default without an error.
     let src = r#"
+use std/ai
+use std/io
 type Mood = happy | sad | neutral
 
 agent A {
   @role "tester"
   @on_start {
-    result = Ai.classify("hello", as: Mood) ?? Mood.neutral
-    Io.show("{result}")
+    result = ai.classify("hello", as: Mood) ?? Mood.neutral
+    io.show("{result}")
     stop(self)
   }
 }

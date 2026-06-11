@@ -10,22 +10,35 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/map_methods.keel
 
+use std/io
+
 agent Inventory {
   @on_start {
     stock: map[str, int] = {apples: 12, pears: 5, plums: 0}
 
-    Io.show("tracking {stock.count()} items")
-    Io.show("keys: {stock.keys()}")
-    Io.show("values: {stock.values()}")
+    io.show("tracking {stock.count()} items")
+    io.show("keys: {stock.keys()}")
+    io.show("values: {stock.values()}")
 
     if stock.contains("pears") {
       pears = stock.get("pears") ?? 0
-      Io.show("pears in stock: {pears}")
+      io.show("pears in stock: {pears}")
     }
 
     missing = stock.get("oranges") ?? 0
-    Io.show("oranges in stock: {missing}")
+    io.show("oranges in stock: {missing}")
   }
 }
 
 run(Inventory)
+
+# Tests — run with: keel test examples/map_methods.keel
+test "maps expose count, contains, and get" {
+  stock: map[str, int] = {apples: 12, pears: 5, plums: 0}
+  assert stock.count() == 3
+  assert stock.contains("pears")
+  pears = stock.get("pears") ?? 0
+  assert pears == 5
+  missing = stock.get("oranges") ?? 0
+  assert missing == 0
+}

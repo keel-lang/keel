@@ -6,7 +6,7 @@ use crate::runtime::namespace::{make_typed_report, ns};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "read",
         params: &[BuiltinParam {
             name: "path",
@@ -17,7 +17,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Read a file and return its contents as a string.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "write",
         params: &[
             BuiltinParam {
@@ -35,7 +35,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Write a string to a file, creating or overwriting it.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "exists",
         params: &[BuiltinParam {
             name: "path",
@@ -46,7 +46,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return true if the path exists on the filesystem.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "list",
         params: &[BuiltinParam {
             name: "path",
@@ -57,7 +57,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "List the entries in a directory.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "mkdir",
         params: &[BuiltinParam {
             name: "path",
@@ -68,7 +68,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Create a directory and all intermediate parents.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "remove",
         params: &[BuiltinParam {
             name: "path",
@@ -79,7 +79,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Remove a file or directory.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "copy",
         params: &[
             BuiltinParam {
@@ -97,7 +97,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Copy a file from src to dst.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "glob",
         params: &[BuiltinParam {
             name: "pattern",
@@ -108,7 +108,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return file paths that match a glob pattern.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "move",
         params: &[
             BuiltinParam {
@@ -126,7 +126,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Move (rename) a file from src to dst.",
     },
     BuiltinMethod {
-        namespace: "File",
+        namespace: "file",
         name: "mktemp",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Str),
@@ -135,82 +135,82 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("File", {
+    ns!("file", {
         "read" => |host, args| Box::pin(async move {
-            let path = expect_str(&args, 0, "File.read")?.to_owned();
+            let path = expect_str(&args, 0, "file.read")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.read_to_string(std::path::Path::new(&path_inner))
             })
             .await
-            .map_err(|e| miette::miette!("File.read: {e}"))?
+            .map_err(|e| miette::miette!("file.read: {e}"))?
             .map(Value::String)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.read `{path}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.read `{path}`: {e}")))
         }),
         "write" => |host, args| Box::pin(async move {
-            let path = expect_str(&args, 0, "File.write")?.to_owned();
-            let content = expect_str(&args, 1, "File.write")?.to_owned();
+            let path = expect_str(&args, 0, "file.write")?.to_owned();
+            let content = expect_str(&args, 1, "file.write")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.write_string(std::path::Path::new(&path_inner), &content)
             })
             .await
-            .map_err(|e| miette::miette!("File.write: {e}"))?
+            .map_err(|e| miette::miette!("file.write: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.write `{path}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.write `{path}`: {e}")))
         }),
         "exists" => |host, args| Box::pin(async move {
-            let path = expect_str(&args, 0, "File.exists")?.to_owned();
+            let path = expect_str(&args, 0, "file.exists")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             let exists = tokio::task::spawn_blocking(move || {
                 fs.exists(std::path::Path::new(&path_inner))
             })
             .await
-            .map_err(|e| miette::miette!("File.exists: {e}"))?;
+            .map_err(|e| miette::miette!("file.exists: {e}"))?;
             Ok(Value::Bool(exists))
         }),
         "list" => |host, args| Box::pin(async move {
-            let dir_path = expect_str(&args, 0, "File.list")?.to_owned();
+            let dir_path = expect_str(&args, 0, "file.list")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let dir_inner = dir_path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.read_dir_names(std::path::Path::new(&dir_inner))
             })
             .await
-            .map_err(|e| miette::miette!("File.list: {e}"))?
+            .map_err(|e| miette::miette!("file.list: {e}"))?
             .map(|names| Value::List(names.into_iter().map(Value::String).collect()))
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.list `{dir_path}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.list `{dir_path}`: {e}")))
         }),
         "mkdir" => |host, args| Box::pin(async move {
-            let path = expect_str(&args, 0, "File.mkdir")?.to_owned();
+            let path = expect_str(&args, 0, "file.mkdir")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.mkdir(std::path::Path::new(&path_inner))
             })
             .await
-            .map_err(|e| miette::miette!("File.mkdir: {e}"))?
+            .map_err(|e| miette::miette!("file.mkdir: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.mkdir `{path}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.mkdir `{path}`: {e}")))
         }),
         "remove" => |host, args| Box::pin(async move {
-            let path = expect_str(&args, 0, "File.remove")?.to_owned();
+            let path = expect_str(&args, 0, "file.remove")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let path_inner = path.clone();
             tokio::task::spawn_blocking(move || {
                 fs.remove(std::path::Path::new(&path_inner))
             })
             .await
-            .map_err(|e| miette::miette!("File.remove: {e}"))?
+            .map_err(|e| miette::miette!("file.remove: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.remove `{path}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.remove `{path}`: {e}")))
         }),
         "copy" => |host, args| Box::pin(async move {
-            let src = expect_str(&args, 0, "File.copy")?.to_owned();
-            let dst = expect_str(&args, 1, "File.copy")?.to_owned();
+            let src = expect_str(&args, 0, "file.copy")?.to_owned();
+            let dst = expect_str(&args, 1, "file.copy")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let (src_inner, dst_inner) = (src.clone(), dst.clone());
             tokio::task::spawn_blocking(move || {
@@ -220,23 +220,23 @@ pub(crate) fn namespace() -> Namespace {
                 )
             })
             .await
-            .map_err(|e| miette::miette!("File.copy: {e}"))?
+            .map_err(|e| miette::miette!("file.copy: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.copy `{src}` -> `{dst}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.copy `{src}` -> `{dst}`: {e}")))
         }),
         "glob" => |host, args| Box::pin(async move {
-            let pattern = expect_str(&args, 0, "File.glob")?.to_owned();
+            let pattern = expect_str(&args, 0, "file.glob")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let pat_inner = pattern.clone();
             tokio::task::spawn_blocking(move || fs.glob(&pat_inner))
             .await
-            .map_err(|e| miette::miette!("File.glob: {e}"))?
+            .map_err(|e| miette::miette!("file.glob: {e}"))?
             .map(|paths| Value::List(paths.into_iter().map(Value::String).collect()))
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.glob `{pattern}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.glob `{pattern}`: {e}")))
         }),
         "move" => |host, args| Box::pin(async move {
-            let src = expect_str(&args, 0, "File.move")?.to_owned();
-            let dst = expect_str(&args, 1, "File.move")?.to_owned();
+            let src = expect_str(&args, 0, "file.move")?.to_owned();
+            let dst = expect_str(&args, 1, "file.move")?.to_owned();
             let fs = host.runtime().file_system.clone();
             let (src_inner, dst_inner) = (src.clone(), dst.clone());
             tokio::task::spawn_blocking(move || {
@@ -246,18 +246,18 @@ pub(crate) fn namespace() -> Namespace {
                 )
             })
             .await
-            .map_err(|e| miette::miette!("File.move: {e}"))?
+            .map_err(|e| miette::miette!("file.move: {e}"))?
             .map(|_| Value::None)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.move `{src}` -> `{dst}`: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.move `{src}` -> `{dst}`: {e}")))
         }),
         "mktemp" => |host, args| Box::pin(async move {
-            let is_dir = expect_bool_named(&args, "dir", "File.mktemp")?.unwrap_or(false);
+            let is_dir = expect_bool_named(&args, "dir", "file.mktemp")?.unwrap_or(false);
             let fs = host.runtime().file_system.clone();
             tokio::task::spawn_blocking(move || fs.mktemp(is_dir))
             .await
-            .map_err(|e| miette::miette!("File.mktemp: {e}"))?
+            .map_err(|e| miette::miette!("file.mktemp: {e}"))?
             .map(Value::String)
-            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("File.mktemp: {e}")))
+            .map_err(|e| make_typed_report(RuntimeErrorKind::File, format!("file.mktemp: {e}")))
         }),
     })
 }
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn namespace_has_all_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "File");
+        assert_eq!(ns.name, "file");
         assert!(ns.methods.contains_key("read"));
         assert!(ns.methods.contains_key("write"));
         assert!(ns.methods.contains_key("exists"));
@@ -334,7 +334,7 @@ mod tests {
             .expect_err("integer path must fail");
         assert_eq!(
             err.to_string(),
-            "File.read: argument at position 0 must be str, got int"
+            "file.read: argument at position 0 must be str, got int"
         );
     }
 
@@ -355,7 +355,7 @@ mod tests {
         .expect_err("integer content must fail");
         assert_eq!(
             err.to_string(),
-            "File.write: argument at position 1 must be str, got int"
+            "file.write: argument at position 1 must be str, got int"
         );
     }
 

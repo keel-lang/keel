@@ -43,7 +43,7 @@ impl DocumentState {
     /// Analyse `text` synchronously and build the complete document state.
     /// Used in tests to populate the docs map with a pre-built semantic index.
     pub(crate) fn analyzed(text: String) -> Self {
-        let (diagnostics, semantic_index) = analyze_document(&text);
+        let (diagnostics, semantic_index) = analyze_document(&text, None);
         Self {
             text,
             version: 0,
@@ -116,7 +116,8 @@ impl LanguageServer for Backend {
         let uri = params.text_document.uri.clone();
         let text = params.text_document.text;
         let version = params.text_document.version;
-        let (diagnostics, semantic_index) = analyze_document(&text);
+        let path = uri.to_file_path().ok();
+        let (diagnostics, semantic_index) = analyze_document(&text, path.as_deref());
         self.docs.lock().insert(
             uri.clone(),
             DocumentState {
@@ -137,7 +138,8 @@ impl LanguageServer for Backend {
         // FULL sync mode: the last content change holds the new full text.
         if let Some(change) = params.content_changes.pop() {
             let text = change.text;
-            let (diagnostics, semantic_index) = analyze_document(&text);
+            let path = uri.to_file_path().ok();
+            let (diagnostics, semantic_index) = analyze_document(&text, path.as_deref());
             self.docs.lock().insert(
                 uri.clone(),
                 DocumentState {
@@ -342,7 +344,7 @@ mod tests {
         };
         assert!(!items.is_empty(), "completions should not be empty");
         let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert!(labels.contains(&"Ai"), "should contain namespace Ai");
+        assert!(labels.contains(&"ai"), "should contain module ai");
         assert!(labels.contains(&"agent"), "should contain keyword agent");
         assert!(labels.contains(&"test"), "should contain contextual test");
         assert!(labels.contains(&"mock"), "should contain contextual mock");

@@ -2,27 +2,30 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
-The `Shell` namespace lets agents invoke external commands and capture their output. It must be declared in `@tools` before use — an agent that calls `Shell.run` without listing `Shell` in `@tools` raises `CapabilityError` at runtime.
+The `Shell` namespace lets agents invoke external commands and capture their output. It must be declared in `@tools` before use — an agent that calls `shell.run` without listing `Shell` in `@tools` raises `CapabilityError` at runtime.
 
 ```keel
+use std/io
+use std/shell
+
 agent Builder {
-    @tools [Shell, Io]
+    @tools [shell, io]
 
     @on_start {
-        r = Shell.run("cargo test --quiet 2>&1")
+        r = shell.run("cargo test --quiet 2>&1")
         if r.exit_code != 0 {
             raise "tests failed:\n{r.stdout}"
         }
-        Io.show("all tests passed")
+        io.show("all tests passed")
     }
 }
 run(Builder)
 ```
 
-## `Shell.run`
+## `shell.run`
 
 ```
-Shell.run(cmd: str, stdin: str? = none, cwd: str? = none)
+shell.run(cmd: str, stdin: str? = none, cwd: str? = none)
     -> { stdout: str, stderr: str, exit_code: int }
 ```
 
@@ -57,11 +60,11 @@ The subprocess runs with a clean environment. Only the following variables are f
 | `USER` | Identity for tools that need it |
 | `LANG` | Locale / character encoding |
 
-All other variables — including secrets, API keys, database URLs, and any other credentials present in the keel process environment — are **not** visible to the shell command. To read the keel process environment from Keel code, use `Env.*`.
+All other variables — including secrets, API keys, database URLs, and any other credentials present in the keel process environment — are **not** visible to the shell command. To read the keel process environment from Keel code, use `env.*`.
 
 ## Capability gating
 
-`@tools` restricts an agent to the listed namespaces. An agent that declares `@tools [Io]` but not `Shell` will get a `CapabilityError` on any `Shell.run` call. An agent with no `@tools` declaration is unrestricted.
+`@tools` restricts an agent to the listed namespaces. An agent that declares `@tools [io]` but not `Shell` will get a `CapabilityError` on any `shell.run` call. An agent with no `@tools` declaration is unrestricted.
 
 In v0.1 this is process-level gating only — there is no OS-level sandbox.
 

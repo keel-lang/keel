@@ -1,3 +1,5 @@
+use std/io
+
 type Product { name: str, price: float, rating: float }
 
 task run_test() {
@@ -10,21 +12,34 @@ task run_test() {
 
     # Sort by price ascending
     by_price = products.sort(by: p => p.price)
-    Io.show("By price:")
+    io.show("By price:")
     for p in by_price {
-        Io.show("  {p.name}: {p.price:.2f}")
+        io.show("  {p.name}: {p.price:.2f}")
     }
 
     # Sort by rating descending (negate the key)
     by_rating = products.sort(by: p => 0.0 - p.rating)
-    Io.show("By rating (best first):")
+    io.show("By rating (best first):")
     for p in by_rating {
-        Io.show("  {p.name}: {p.rating:.1f}")
+        io.show("  {p.name}: {p.rating:.1f}")
     }
 
     # Sort strings alphabetically
     by_name = products.sort(by: p => p.name)
-    Io.show("Alphabetical: {by_name.map(p => p.name).join(", ")}")
+    io.show("Alphabetical: {by_name.map(p => p.name).join(", ")}")
 }
 
 run_test()
+
+# Tests — run with: keel test examples/sort_by.keel
+test "sort by key ascending and descending" {
+  products: list[Product] = [
+    { name: "Widget", price: 9.99, rating: 4.2 },
+    { name: "Gadget", price: 24.99, rating: 4.8 },
+    { name: "Doohickey", price: 4.99, rating: 3.9 },
+  ]
+  by_price = products.sort(by: p => p.price)
+  assert by_price.map(p => p.name).join(",") == "Doohickey,Widget,Gadget"
+  by_rating = products.sort(by: p => 0.0 - p.rating)
+  assert by_rating[0].name == "Gadget"
+}

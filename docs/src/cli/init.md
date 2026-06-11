@@ -20,13 +20,15 @@ keel init <path>           # create at an absolute or relative path
 The generated `main.keel`:
 
 ```keel
+use std/io
+
 # myproject — built with Keel
 
 agent Myproject {
   @role "Describe what this agent does"
 
   @on_start {
-    Io.show("Hello from Myproject!")
+    io.show("Hello from Myproject!")
     stop(self)
   }
 }

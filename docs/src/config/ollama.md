@@ -2,7 +2,7 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
-[Ollama](https://ollama.com) runs LLMs locally. No API key, fully offline. In v0.1 it is the only supported backend for `Ai.*`.
+[Ollama](https://ollama.com) runs LLMs locally. No API key, fully offline. In v0.1 it is the only supported backend for `ai.*`.
 
 ## Install Ollama
 
@@ -48,8 +48,8 @@ export KEEL_MODEL_SMART=mistral:7b-instruct
 Then in your program:
 
 ```keel
-urgency = Ai.classify(email.body, as: Urgency, using: "fast")
-reply   = Ai.draft("response to {email}", using: "smart")
+urgency = ai.classify(email.body, as: Urgency, using: "fast")
+reply   = ai.draft("response to {email}", using: "smart")
 ```
 
 ## Custom host

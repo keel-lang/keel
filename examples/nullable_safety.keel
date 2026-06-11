@@ -1,18 +1,22 @@
+use std/ai
+use std/env
+use std/io
+
 use std/testing
 
 type Sentiment = positive | neutral | negative
 
 task sentiment_of(text: str) -> Sentiment {
-  Ai.classify(text, as: Sentiment) ?? Sentiment.neutral
+  ai.classify(text, as: Sentiment) ?? Sentiment.neutral
 }
 
 task summarize_or_default(text: str) -> str {
-  Ai.summarize(text, format: prose, max: 1, unit: sentences) ?? "No summary available."
+  ai.summarize(text, format: prose, max: 1, unit: sentences) ?? "No summary available."
 }
 
 task env_config() -> str {
-  host: str = Env.get("KEEL_HOST") ?? "localhost"
-  port: str = Env.get("KEEL_PORT") ?? "8080"
+  host: str = env.get("KEEL_HOST") ?? "localhost"
+  port: str = env.get("KEEL_PORT") ?? "8080"
   "{host}:{port}"
 }
 
@@ -23,18 +27,18 @@ task greet(name: str) -> str {
 }
 
 task greet_from_env() -> str {
-  # Env.get returns str?, so it must be unwrapped before passing to greet(name: str).
-  raw: str? = Env.get("USER_NAME")
+  # env.get returns str?, so it must be unwrapped before passing to greet(name: str).
+  raw: str? = env.get("USER_NAME")
   greet(raw ?? "stranger")   # coalesce to non-nullable before the call
 }
 
 test "sentiment can be mocked" {
-  testing.mock(Ai.classify).returns(Sentiment.positive)
+  testing.mock(ai.classify).returns(Sentiment.positive)
   assert sentiment_of("great release") == Sentiment.positive
 }
 
 test "summary can be mocked" {
-  testing.mock(Ai.summarize).returns("Release shipped.")
+  testing.mock(ai.summarize).returns("Release shipped.")
   assert summarize_or_default("The team shipped a release.") == "Release shipped."
 }
 
@@ -50,10 +54,10 @@ agent NullableDemo {
       sentiment = sentiment_of(text)
       summary = summarize_or_default(text)
       label = if sentiment == Sentiment.positive { "good news" } else if sentiment == Sentiment.negative { "incident" } else { "routine" }
-      Io.show("[{label}] {summary}")
+      io.show("[{label}] {summary}")
     }
     endpoint: str = env_config()
-    Io.show("Connecting to {endpoint}")
+    io.show("Connecting to {endpoint}")
   }
 }
 

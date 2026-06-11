@@ -7,12 +7,14 @@ use crate::common::*;
 #[test]
 fn csv_parse_returns_rows_of_strings() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
-        rows = Csv.parse("name,score\nAlice,10\nBob,20")
-        Io.show("rows={rows.len()}")
-        Io.show("col0={rows[0][0]}")
-        Io.show("val={rows[2][1]}")
+        rows = csv.parse("name,score\nAlice,10\nBob,20")
+        io.show("rows={rows.len()}")
+        io.show("col0={rows[0][0]}")
+        io.show("val={rows[2][1]}")
         stop(self)
     }
 }
@@ -28,10 +30,12 @@ run(A)
 #[test]
 fn csv_parse_handles_quoted_fields_with_commas() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
-        rows = Csv.parse("\"hello, world\",plain")
-        Io.show("field={rows[0][0]}")
+        rows = csv.parse("\"hello, world\",plain")
+        io.show("field={rows[0][0]}")
         stop(self)
     }
 }
@@ -48,12 +52,14 @@ run(A)
 #[test]
 fn csv_parse_records_returns_list_of_maps() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
-        rows = Csv.parse_records("symbol,price\nBTC,67000\nETH,3500")
-        Io.show("count={rows.len()}")
-        Io.show("sym={rows[0]["symbol"]}")
-        Io.show("price={rows[1]["price"]}")
+        rows = csv.parse_records("symbol,price\nBTC,67000\nETH,3500")
+        io.show("count={rows.len()}")
+        io.show("sym={rows[0]["symbol"]}")
+        io.show("price={rows[1]["price"]}")
         stop(self)
     }
 }
@@ -69,11 +75,13 @@ run(A)
 #[test]
 fn csv_stringify_produces_valid_csv() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         rows = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
-        text = Csv.stringify(rows)
-        Io.show(text)
+        text = csv.stringify(rows)
+        io.show(text)
         stop(self)
     }
 }
@@ -89,11 +97,13 @@ run(A)
 #[test]
 fn csv_stringify_quotes_fields_with_commas() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         rows = [["a,b", "plain"]]
-        text = Csv.stringify(rows)
-        Io.show(text)
+        text = csv.stringify(rows)
+        io.show(text)
         stop(self)
     }
 }
@@ -110,14 +120,16 @@ run(A)
 #[test]
 fn csv_parse_then_stringify_roundtrip() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         raw = "name,score\nAlice,10\nBob,20"
-        rows = Csv.parse(raw)
-        text = Csv.stringify(rows)
-        reparsed = Csv.parse(text)
-        Io.show("rows={reparsed.len()}")
-        Io.show("name={reparsed[1][0]}")
+        rows = csv.parse(raw)
+        text = csv.stringify(rows)
+        reparsed = csv.parse(text)
+        io.show("rows={reparsed.len()}")
+        io.show("name={reparsed[1][0]}")
         stop(self)
     }
 }
@@ -132,12 +144,14 @@ run(A)
 #[test]
 fn csv_stringify_invalid_row_type_raises() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
-            Csv.stringify(["not a row"])
+            csv.stringify(["not a row"])
         } catch e: Error {
-            Io.show("caught={e.message.len() > 0}")
+            io.show("caught={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -155,12 +169,14 @@ run(A)
 #[test]
 fn csv_parse_records_duplicate_header_raises() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
-            Csv.parse_records("name,name,score\nAlice,Bob,10")
+            csv.parse_records("name,name,score\nAlice,Bob,10")
         } catch e: Error {
-            Io.show("caught={e.message.len() > 0}")
+            io.show("caught={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -178,12 +194,14 @@ run(A)
 #[test]
 fn csv_parse_records_empty_header_name_raises() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
-            Csv.parse_records("name,,score\nAlice,,10")
+            csv.parse_records("name,,score\nAlice,,10")
         } catch e: Error {
-            Io.show("caught={e.message.len() > 0}")
+            io.show("caught={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -201,12 +219,14 @@ run(A)
 #[test]
 fn csv_parse_records_extra_cells_raises() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
-            Csv.parse_records("a,b\n1,2,3")
+            csv.parse_records("a,b\n1,2,3")
         } catch e: Error {
-            Io.show("caught={e.message.len() > 0}")
+            io.show("caught={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -224,13 +244,15 @@ run(A)
 #[test]
 fn csv_stringify_non_string_cell_raises() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
             rows = [[1, "ok"]]
-            Csv.stringify(rows)
+            csv.stringify(rows)
         } catch e: Error {
-            Io.show("caught={e.message.len() > 0}")
+            io.show("caught={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -248,13 +270,15 @@ run(A)
 #[test]
 fn csv_error_is_catchable_by_specific_type() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
-            Csv.parse_records("name,name\nAlice,Bob")
+            csv.parse_records("name,name\nAlice,Bob")
         } catch e: CsvError {
-            Io.show("kind=CsvError")
-            Io.show("msg={e.message.len() > 0}")
+            io.show("kind=CsvError")
+            io.show("msg={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -276,14 +300,16 @@ run(A)
 #[test]
 fn csv_error_is_also_caught_by_error_fallback() {
     let src = r#"
+use std/csv
+use std/io
 agent A {
     @on_start {
         try {
-            Csv.stringify(["not a row"])
+            csv.stringify(["not a row"])
         } catch e: CsvError {
-            Io.show("specific=true")
+            io.show("specific=true")
         } catch e: Error {
-            Io.show("specific=false")
+            io.show("specific=false")
         }
         stop(self)
     }

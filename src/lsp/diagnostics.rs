@@ -49,9 +49,15 @@ pub(crate) struct SemanticIndex {
 /// Run the full analysis pipeline for `text` and return LSP diagnostics plus,
 /// on parse success, a populated [`SemanticIndex`].
 ///
+/// `path` (the document's on-disk location, when it has one) anchors
+/// relative `use "./..."` imports; without it only std imports resolve.
+///
 /// On parse failure `semantic_index` is `None`; handlers fall back to the
 /// existing reparse-on-demand helpers in that case.
-pub(crate) fn analyze_document(text: &str) -> (Vec<Diagnostic>, Option<SemanticIndex>) {
+pub(crate) fn analyze_document(
+    text: &str,
+    path: Option<&std::path::Path>,
+) -> (Vec<Diagnostic>, Option<SemanticIndex>) {
     match session::parse_source(text, "file") {
         Err(report) => {
             let diags = spans_from_report(&report)
@@ -61,9 +67,48 @@ pub(crate) fn analyze_document(text: &str) -> (Vec<Diagnostic>, Option<SemanticI
             (diags, None)
         }
         Ok((program, _source)) => {
-            // Lower once; reuse the HIR for both type-checking and the semantic index.
-            let hir = hir::lower_ast(&program);
-            let type_diags = checker::check(&hir);
+            // Module-graph analysis when the document is a real file: local
+            // imports resolve, and diagnostics for this buffer come from the
+            // graph check of its entry module.
+            if let Some(path) = path {
+                match crate::modules::load_graph(text, "file", Some(path)) {
+                    Ok(graph) => {
+                        let all = checker::check_graph(&graph);
+                        let entry_diags = &all[graph.entry_index()];
+                        let lsp_diags = entry_diags
+                            .iter()
+                            .map(|err| {
+                                diag(
+                                    text,
+                                    err.span().clone(),
+                                    err.message(),
+                                    DiagnosticSeverity::ERROR,
+                                )
+                            })
+                            .collect();
+                        let hir = checker::lower_entry_for_ide(&graph);
+                        let index = build_semantic_index(text, &graph.entry().program, &hir);
+                        return (lsp_diags, Some(index));
+                    }
+                    Err(report) => {
+                        // Import-resolution failure (missing file, cycle, …):
+                        // surface it at the offending `use` span and still
+                        // build a single-file index so hover keeps working.
+                        let diags = spans_from_report(&report)
+                            .into_iter()
+                            .map(|(msg, span)| diag(text, span, msg, DiagnosticSeverity::ERROR))
+                            .collect();
+                        let hir = hir::lower_ast(&program);
+                        let index = build_semantic_index(text, &program, &hir);
+                        return (diags, Some(index));
+                    }
+                }
+            }
+
+            // In-memory buffer: std imports resolve, file imports error.
+            let (hir, std_diags, members) = checker::lower_single(&program);
+            let mut type_diags = std_diags;
+            type_diags.extend(checker::check_lowered(&hir, members, false));
             let lsp_diags = type_diags
                 .iter()
                 .map(|err| {
@@ -413,7 +458,7 @@ task t(u: U) {
     /// `build_semantic_index` this test will fail.
     #[test]
     fn semantic_index_name_types_excludes_prelude_labels() {
-        let (_, index) = analyze_document("task t() { x = 1 }\n");
+        let (_, index) = analyze_document("task t() { x = 1 }\n", None);
         let idx = index.expect("clean program should produce an index");
         assert!(
             idx.name_types.contains_key("x"),

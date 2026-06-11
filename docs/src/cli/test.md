@@ -12,6 +12,8 @@ keel test <path>
 
 When `<path>` is a directory, Keel recursively discovers `.keel` files with test blocks and skips files without tests.
 
+Tests are discovered **per file**: `keel test file.keel` runs only that file's `test` blocks. Modules imported with `use` contribute their declarations — test helpers are ordinary tasks — but never their own tests. Point `keel test` at each file (or the directory) to run a whole project's suite.
+
 To run a subset by name:
 
 ```bash
@@ -43,16 +45,17 @@ keel test <path> --quiet
 ## Example
 
 ```keel
+use std/ai
 use std/testing
 
 type Severity = low | medium | critical
 
 task classify(text: str) -> Severity {
-  Ai.classify(text, as: Severity) ?? Severity.low
+  ai.classify(text, as: Severity) ?? Severity.low
 }
 
 test "mocked classify returns critical" {
-  testing.mock(Ai.classify).returns(Severity.critical)
+  testing.mock(ai.classify).returns(Severity.critical)
   assert classify("payment outage") == Severity.critical, "expected critical"
 }
 ```

@@ -29,8 +29,10 @@ Types are either **enums** (a set of variants, optionally with data) or **struct
 ## 3. A classification task
 
 ```keel
+use std/ai
+
 task prioritize(t: Task) -> Priority {
-  Ai.classify(t.description,
+  ai.classify(t.description,
     as: Priority,
     considering: {
       "blocks other people":       Priority.critical,
@@ -41,11 +43,14 @@ task prioritize(t: Task) -> Priority {
 }
 ```
 
-`Ai.classify` sends `t.description` to the LLM with the hints and parses the response into the enum. `?? Priority.medium` supplies a default when the LLM is unavailable or returns nothing parseable.
+`ai.classify` sends `t.description` to the LLM with the hints and parses the response into the enum. `?? Priority.medium` supplies a default when the LLM is unavailable or returns nothing parseable.
 
 ## 4. Build the agent
 
 ```keel
+use std/io
+use std/schedule
+
 agent Prioritizer {
   @role "You help prioritize a task list"
 
@@ -59,17 +64,17 @@ agent Prioritizer {
       self.processed = self.processed + 1
 
       when priority {
-        critical => Io.notify("CRITICAL: {t.title}")
-        high     => Io.notify("HIGH: {t.title}")
-        medium   => Io.notify("MEDIUM: {t.title}")
-        low      => Io.notify("LOW: {t.title}")
+        critical => io.notify("CRITICAL: {t.title}")
+        high     => io.notify("HIGH: {t.title}")
+        medium   => io.notify("MEDIUM: {t.title}")
+        low      => io.notify("LOW: {t.title}")
       }
     }
-    Io.notify("Processed {self.processed} tasks total")
+    io.notify("Processed {self.processed} tasks total")
   }
 
   @on_start {
-    Schedule.every(1.hour, () => {
+    schedule.every(1.hour, () => {
       tasks = [
         {title: "Fix login bug", description: "Users can't log in, blocks the team"},
         {title: "Update README",  description: "Nice to have, not urgent"},
@@ -103,7 +108,7 @@ Forget a `when` variant and the compiler stops you:
  18 │       when priority {
    ·       ─────┬─────
    ·            ╰── Non-exhaustive match on Priority: missing high, medium, low
- 19 │         critical => Io.notify("CRITICAL")
+ 19 │         critical => io.notify("CRITICAL")
    ╰────
 ```
 
@@ -112,15 +117,15 @@ Forget a `when` variant and the compiler stops you:
 | Concept | What it does |
 |---|---|
 | `type Priority = low \| medium \| high \| critical` | Enum — the type checker enforces exhaustive matching |
-| `Ai.classify(x, as: T) ?? V` | LLM-powered classification into an enum; `??` supplies a default when the result is absent |
+| `ai.classify(x, as: T) ?? V` | LLM-powered classification into an enum; `??` supplies a default when the result is absent |
 | `considering: [...]` | Hints to the LLM per variant |
 | `when value { ... }` | Exhaustive pattern matching, checked at compile time |
 | `state { field: T = default }` | Mutable agent state, accessed via `self.field` |
 | `@on_start { ... }` | Runs once when the agent starts |
-| `Schedule.every(duration, () => { ... })` | Recurring execution, from the stdlib |
-| `Io.notify(...)` | Terminal notification from the stdlib |
+| `schedule.every(duration, () => { ... })` | Recurring execution, from the stdlib |
+| `io.notify(...)` | Terminal notification from the stdlib |
 | `run(MyAgent)` | Starts the agent |
 
-No imports. Every namespace (`Ai`, `Io`, `Schedule`) is in scope via the [prelude](../guide/prelude.md).
+No imports. Every namespace (`Ai`, `Io`, `Schedule`) is in scope via the [prelude](../guide/stdlib.md).
 
 ## Next: [Language Guide →](../guide/types.md)

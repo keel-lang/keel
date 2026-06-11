@@ -1,11 +1,22 @@
+use std/io
+use std/random
+
 agent RandomDemo {
   @on_start {
-    roll = Random.int(min: 1, max: 6)
-    sample = Random.float()
-    enabled = Random.bool()
-    Io.show("roll={roll} sample={sample} enabled={enabled}")
+    roll = random.int(min: 1, max: 6)
+    sample = random.float()
+    enabled = random.bool()
+    io.show("roll={roll} sample={sample} enabled={enabled}")
     stop(self)
   }
 }
 
 run(RandomDemo)
+
+# Tests — run with: keel test examples/random_demo.keel
+test "random values respect their bounds" {
+  roll = random.int(min: 1, max: 6)
+  assert roll >= 1 and roll <= 6
+  sample = random.float()
+  assert sample >= 0.0 and sample < 1.0
+}

@@ -1,25 +1,22 @@
 //! Rename support for the language server.
 //!
-//! [`is_rename_blocked`] guards prelude namespaces, primitive types, and
-//! other identifiers that the user cannot legally rename.  The namespace set
-//! is derived dynamically from [`prelude_names()`] so it stays in sync as new
-//! namespaces are added to the catalog.
+//! [`is_rename_blocked`] guards primitive types and built-in identifiers
+//! that the user cannot legally rename. std module names (`file`, `json`,
+//! …) are deliberately NOT in this set: they are ordinary identifiers that
+//! only mean something after `use std/<name>`, and a user task may reuse
+//! the name in a file that does not import the module.
 //!
 //! [`is_top_level_at_offset`] and [`get_usages`] query the semantic index when
 //! available, falling back to reparse-on-demand helpers otherwise.
 
 use crate::lexer::Span;
 use crate::types::checker;
-use crate::types::prelude::namespace_names;
 
 use super::diagnostics::SemanticIndex;
 
-/// Return `true` if `name` is a prelude namespace, primitive type, or
-/// built-in identifier that must not be renamed.
+/// Return `true` if `name` is a primitive type or built-in identifier that
+/// must not be renamed.
 pub(crate) fn is_rename_blocked(name: &str) -> bool {
-    if namespace_names().contains(name) {
-        return true;
-    }
     matches!(
         name,
         "int"
@@ -29,11 +26,17 @@ pub(crate) fn is_rename_blocked(name: &str) -> bool {
             | "none"
             | "datetime"
             | "duration"
+            | "Uuid"
             | "true"
             | "false"
             | "run"
             | "stop"
-            | "uuid"
+            | "send"
+            | "delegate"
+            | "broadcast"
+            | "min"
+            | "max"
+            | "typeof"
     )
 }
 

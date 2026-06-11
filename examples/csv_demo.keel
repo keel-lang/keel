@@ -1,14 +1,18 @@
+use std/csv
+use std/io
+use std/log
+
 agent CsvDemo {
     @on_start {
         # Parse raw CSV into list[list[str]]
         raw = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9\nSOL,150,9999.0"
-        rows = Csv.parse(raw)
-        Log.info("total rows (including header): {rows.len()}")
+        rows = csv.parse(raw)
+        log.info("total rows (including header): {rows.len()}")
 
         # Use parse_records to get list[map[str, str]] keyed by column name
-        trades = Csv.parse_records(raw)
+        trades = csv.parse_records(raw)
         for trade in trades {
-            Log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
+            log.info("{trade["symbol"]} @ {trade["price"] as float:.2f}")
         }
 
         # Build new rows and stringify back to CSV
@@ -16,11 +20,29 @@ agent CsvDemo {
         for trade in trades {
             out_rows.push([trade["symbol"], trade["price"]])
         }
-        csv_text = Csv.stringify(out_rows)
-        Io.show(csv_text)
+        csv_text = csv.stringify(out_rows)
+        io.show(csv_text)
 
         stop(self)
     }
 }
 
 run(CsvDemo)
+
+# Tests — run with: keel test examples/csv_demo.keel
+test "parse keeps header and data rows" {
+  rows = csv.parse("symbol,price\nBTC,67000\nETH,3500")
+  assert rows.len() == 3
+  assert rows[0] == ["symbol", "price"]
+}
+
+test "parse_records keys rows by header" {
+  trades = csv.parse_records("symbol,price\nBTC,67000")
+  assert trades.len() == 1
+  assert trades[0]["symbol"] == "BTC"
+}
+
+test "stringify round-trips through parse" {
+  out = csv.stringify([["a", "b"], ["1", "2"]])
+  assert csv.parse(out) == [["a", "b"], ["1", "2"]]
+}

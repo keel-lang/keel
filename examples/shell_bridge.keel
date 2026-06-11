@@ -1,17 +1,20 @@
+use std/io
+use std/shell
+
 agent ShellDemo {
-  @tools [Shell]
+  @tools [shell]
   @on_start {
-    r = Shell.run("echo 'hello from shell'")
-    Io.show("exit_code={r.exit_code}")
-    Io.show("stdout={r.stdout}")
-    fail = Shell.run("exit 1")
+    r = shell.run("echo 'hello from shell'")
+    io.show("exit_code={r.exit_code}")
+    io.show("stdout={r.stdout}")
+    fail = shell.run("exit 1")
     if fail.exit_code != 0 {
-      Io.show("command failed with code {fail.exit_code}")
+      io.show("command failed with code {fail.exit_code}")
     }
-    wc = Shell.run("wc -c", stdin: "hello")
-    Io.show("byte count: {wc.stdout}")
-    ls = Shell.run("ls *.keel", cwd: "examples")
-    Io.show("keel files: {ls.stdout}")
+    wc = shell.run("wc -c", stdin: "hello")
+    io.show("byte count: {wc.stdout}")
+    ls = shell.run("ls *.keel", cwd: "examples")
+    io.show("keel files: {ls.stdout}")
     stop(self)
   }
 }

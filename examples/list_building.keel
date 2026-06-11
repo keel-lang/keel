@@ -10,10 +10,13 @@
 # Run:
 #   KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/list_building.keel
 
+use std/ai
+use std/io
+
 type Risk = low | medium | high
 
 task advisory(name: str, version: str) -> str {
-  Ai.summarize(
+  ai.summarize(
     "Security advisory for {name} v{version}",
     format: prose,
     max: 1,
@@ -47,7 +50,7 @@ agent DependencyAuditor {
     all_packages = all_packages.push({name: "minimist", version: "1.2.5", risk: Risk.high})
 
     # String interpolation with a method call inside {…}
-    Io.show("Auditing {all_packages.count()} packages across 2 services\n")
+    io.show("Auditing {all_packages.count()} packages across 2 services\n")
 
     # Filter by risk level using lambdas
     high_risk   = all_packages.filter(p => p.risk == Risk.high)
@@ -55,22 +58,34 @@ agent DependencyAuditor {
 
     # String interpolation with an arithmetic expression inside {…}
     pct = high_risk.count() * 100 / all_packages.count()
-    Io.show("{high_risk.count()} high-risk packages ({pct}% of total) — upgrade immediately")
+    io.show("{high_risk.count()} high-risk packages ({pct}% of total) — upgrade immediately")
 
-    Io.show("\nHigh-risk:")
+    io.show("\nHigh-risk:")
     for pkg in high_risk {
       note = advisory(pkg.name, pkg.version)
-      Io.show("  ! {pkg.name} {pkg.version} — {note}")
+      io.show("  ! {pkg.name} {pkg.version} — {note}")
     }
 
-    Io.show("\nMedium-risk:")
+    io.show("\nMedium-risk:")
     for pkg in medium_risk {
-      Io.show("  ~ {pkg.name} {pkg.version}")
+      io.show("  ~ {pkg.name} {pkg.version}")
     }
 
     # Interpolation combining two method calls in one expression
-    Io.show("\nTotal to upgrade: {high_risk.count() + medium_risk.count()} of {all_packages.count()}")
+    io.show("\nTotal to upgrade: {high_risk.count() + medium_risk.count()} of {all_packages.count()}")
   }
 }
 
 run(DependencyAuditor)
+
+# Tests — run with: keel test examples/list_building.keel
+test "concatenation, push, and filtering" {
+  api = [{name: "openssl", risk: Risk.high}, {name: "express", risk: Risk.medium}]
+  worker = [{name: "ws", risk: Risk.medium}]
+  all = api + worker
+  all = all.push({name: "minimist", risk: Risk.high})
+  assert all.count() == 4
+  high = all.filter(p => p.risk == Risk.high)
+  assert high.count() == 2
+  assert high.count() * 100 / all.count() == 50
+}

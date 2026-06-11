@@ -17,7 +17,7 @@ src/
   vm/               # Placeholder module for v0.1 — `keel build` is deferred
                     #   post-v0.1; the tree-walking interpreter is the only
                     #   execution path shipping today
-  runtime/          # LLM client (Ollama), email (IMAP/SMTP), human I/O, prelude namespaces
+  runtime/          # LLM client (Ollama), email (IMAP/SMTP), human I/O, std module namespaces
   formatter.rs      # Pretty-printer (keel fmt)
   repl.rs           # Interactive REPL
   lsp.rs            # Language Server Protocol (diagnostics only in v0.1)
@@ -113,4 +113,4 @@ true false none
 set
 ```
 
-Anything else — `classify`, `every`, `role`, `memory`, `tools`, `delegate`, `fetch`, `send`, `ask`, `confirm`, `run`, `stop`, … — is a prelude identifier, not a keyword. See `SPEC.md §10`.
+Anything else — `classify`, `every`, `role`, `memory`, `tools`, `delegate`, `fetch`, `send`, `ask`, `confirm`, `run`, `stop`, … — is an identifier, not a keyword. Stdlib functions live in `std/<name>` modules imported with `use std/<name>` (binding the lowercase module name, e.g. `file.read`); agent verbs (`run`, `stop`, `send`, `delegate`, `broadcast`) and `min`/`max`/`typeof` are built-in free functions. See `SPEC.md §10` and `§20`.

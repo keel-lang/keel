@@ -5,21 +5,21 @@ use crate::runtime::namespace::{make_typed_report, ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "PI",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "The mathematical constant π (3.14159…).",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "E",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "The mathematical constant e (2.71828…).",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "sqrt",
         params: &[BuiltinParam {
             name: "x",
@@ -30,7 +30,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the square root of x.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "pow",
         params: &[
             BuiltinParam {
@@ -48,7 +48,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return x raised to the power y.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "exp",
         params: &[BuiltinParam {
             name: "x",
@@ -59,7 +59,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return e raised to the power x.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "log",
         params: &[BuiltinParam {
             name: "x",
@@ -70,7 +70,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the natural logarithm of x.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "log2",
         params: &[BuiltinParam {
             name: "x",
@@ -81,7 +81,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the base-2 logarithm of x.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "log10",
         params: &[BuiltinParam {
             name: "x",
@@ -92,7 +92,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the base-10 logarithm of x.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "sin",
         params: &[BuiltinParam {
             name: "x",
@@ -103,7 +103,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the sine of x (x in radians).",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "cos",
         params: &[BuiltinParam {
             name: "x",
@@ -114,7 +114,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the cosine of x (x in radians).",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "tan",
         params: &[BuiltinParam {
             name: "x",
@@ -125,7 +125,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the tangent of x (x in radians).",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "asin",
         params: &[BuiltinParam {
             name: "x",
@@ -136,7 +136,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the arcsine of x in radians.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "acos",
         params: &[BuiltinParam {
             name: "x",
@@ -147,7 +147,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the arccosine of x in radians.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "atan",
         params: &[BuiltinParam {
             name: "x",
@@ -158,7 +158,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Return the arctangent of x in radians.",
     },
     BuiltinMethod {
-        namespace: "Math",
+        namespace: "math",
         name: "atan2",
         params: &[
             BuiltinParam {
@@ -192,11 +192,11 @@ fn num_arg(
 ) -> miette::Result<f64> {
     match positional(args, idx) {
         None => Err(miette::miette!(
-            "Math.{fn_name}: expected a numeric argument at position {idx}, got nothing"
+            "math.{fn_name}: expected a numeric argument at position {idx}, got nothing"
         )),
         Some(v) => as_num(v).ok_or_else(|| {
             miette::miette!(
-                "Math.{fn_name}: expected int or float at position {idx}, got {}",
+                "math.{fn_name}: expected int or float at position {idx}, got {}",
                 v.type_name()
             )
         }),
@@ -204,7 +204,7 @@ fn num_arg(
 }
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Math", {
+    ns!("math", {
         "PI" => |_interp, _args| Box::pin(async move {
             Ok(Value::Float(std::f64::consts::PI))
         }),
@@ -214,7 +214,7 @@ pub(crate) fn namespace() -> Namespace {
         "sqrt" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "sqrt")?;
             if x < 0.0 {
-                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.sqrt: argument must be non-negative, got {x}")));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("math.sqrt: argument must be non-negative, got {x}")));
             }
             Ok(Value::Float(x.sqrt()))
         }),
@@ -230,21 +230,21 @@ pub(crate) fn namespace() -> Namespace {
         "log" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "log")?;
             if x <= 0.0 {
-                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.log: argument must be positive, got {x}")));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("math.log: argument must be positive, got {x}")));
             }
             Ok(Value::Float(x.ln()))
         }),
         "log2" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "log2")?;
             if x <= 0.0 {
-                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.log2: argument must be positive, got {x}")));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("math.log2: argument must be positive, got {x}")));
             }
             Ok(Value::Float(x.log2()))
         }),
         "log10" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "log10")?;
             if x <= 0.0 {
-                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.log10: argument must be positive, got {x}")));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("math.log10: argument must be positive, got {x}")));
             }
             Ok(Value::Float(x.log10()))
         }),
@@ -260,14 +260,14 @@ pub(crate) fn namespace() -> Namespace {
         "asin" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "asin")?;
             if !(-1.0..=1.0).contains(&x) {
-                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.asin: argument must be in [-1, 1], got {x}")));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("math.asin: argument must be in [-1, 1], got {x}")));
             }
             Ok(Value::Float(x.asin()))
         }),
         "acos" => |_interp, args| Box::pin(async move {
             let x = num_arg(&args, 0, "acos")?;
             if !(-1.0..=1.0).contains(&x) {
-                return Err(make_typed_report(RuntimeErrorKind::Math, format!("Math.acos: argument must be in [-1, 1], got {x}")));
+                return Err(make_typed_report(RuntimeErrorKind::Math, format!("math.acos: argument must be in [-1, 1], got {x}")));
             }
             Ok(Value::Float(x.acos()))
         }),
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn namespace_has_all_methods() {
         let ns = namespace();
-        assert_eq!(ns.name, "Math");
+        assert_eq!(ns.name, "math");
         for name in [
             "PI", "E", "sqrt", "pow", "exp", "log", "log2", "log10", "sin", "cos", "tan", "asin",
             "acos", "atan", "atan2",

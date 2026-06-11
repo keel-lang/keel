@@ -8,7 +8,7 @@ use crate::runtime::namespace::ns;
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Schedule",
+        namespace: "schedule",
         name: "every",
         params: &[BuiltinParam {
             name: "interval",
@@ -19,7 +19,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Schedule a task to run on a recurring interval.",
     },
     BuiltinMethod {
-        namespace: "Schedule",
+        namespace: "schedule",
         name: "after",
         params: &[BuiltinParam {
             name: "delay",
@@ -30,7 +30,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Schedule a task to run after a delay.",
     },
     BuiltinMethod {
-        namespace: "Schedule",
+        namespace: "schedule",
         name: "at",
         params: &[BuiltinParam {
             name: "time",
@@ -41,7 +41,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Schedule a task to run at a specific wall-clock time.",
     },
     BuiltinMethod {
-        namespace: "Schedule",
+        namespace: "schedule",
         name: "cron",
         params: &[BuiltinParam {
             name: "expr",
@@ -52,7 +52,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Schedule a task using a cron expression.",
     },
     BuiltinMethod {
-        namespace: "Schedule",
+        namespace: "schedule",
         name: "sleep",
         params: &[BuiltinParam {
             name: "duration",
@@ -65,7 +65,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Schedule", {
+    ns!("schedule", {
         // `Schedule.every(duration, () => { ... })` fires the closure
         // once immediately, then again every `duration` for the life
         // of the enclosing agent. Must be called from an @on_start or
@@ -94,16 +94,16 @@ pub(crate) fn namespace() -> Namespace {
             schedule_cron(host, args).await
         }),
         "sleep" => |_host, args| Box::pin(async move {
-            super::asynchronous::sleep_for_duration(args, "Schedule.sleep").await
+            super::asynchronous::sleep_for_duration(args, "schedule.sleep").await
         }),
     })
 }
 
 async fn schedule_at(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Result<Value> {
-    let when_str = expect_str(&args, 0, "Schedule.at")?.to_owned();
+    let when_str = expect_str(&args, 0, "schedule.at")?.to_owned();
 
     let target = parse_datetime(&when_str).ok_or_else(|| {
-        miette::miette!("Schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime")
+        miette::miette!("schedule.at: cannot parse `{when_str}` as an ISO 8601 datetime")
     })?;
     let now = host.runtime().clock.now_utc();
     let delay_secs = (target - now).num_seconds().max(0) as f64;
@@ -114,11 +114,11 @@ async fn schedule_at(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Re
             Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
             _ => None,
         })
-        .ok_or_else(|| miette::miette!("Schedule.at: missing closure argument"))?;
+        .ok_or_else(|| miette::miette!("schedule.at: missing closure argument"))?;
 
     let agent_name = host
         .current_agent_name()
-        .ok_or_else(|| miette::miette!("Schedule.at must be called from within an agent"))?;
+        .ok_or_else(|| miette::miette!("schedule.at must be called from within an agent"))?;
 
     let closure_id = host.register_closure(agent_name.clone(), params, body);
     let tx = host.background_event_tx();
@@ -165,7 +165,7 @@ pub(crate) fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 }
 
 async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Result<Value> {
-    let expr_str = expect_str(&args, 0, "Schedule.cron")?.to_owned();
+    let expr_str = expect_str(&args, 0, "schedule.cron")?.to_owned();
 
     let (params, body) = args
         .iter()
@@ -173,11 +173,11 @@ async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::
             Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
             _ => None,
         })
-        .ok_or_else(|| miette::miette!("Schedule.cron: missing closure argument"))?;
+        .ok_or_else(|| miette::miette!("schedule.cron: missing closure argument"))?;
 
     let agent_name = host
         .current_agent_name()
-        .ok_or_else(|| miette::miette!("Schedule.cron must be called from within an agent"))?;
+        .ok_or_else(|| miette::miette!("schedule.cron must be called from within an agent"))?;
 
     let closure_id = host.register_closure(agent_name.clone(), params, body);
     let tx = host.background_event_tx();
@@ -185,7 +185,7 @@ async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::
 
     // Parse and validate the cron expression (5 fields: minute hour day month weekday)
     let cron_spec = parse_cron_spec(&expr_str)
-        .ok_or_else(|| miette::miette!("Schedule.cron: invalid cron expression `{expr_str}`"))?;
+        .ok_or_else(|| miette::miette!("schedule.cron: invalid cron expression `{expr_str}`"))?;
 
     tokio::spawn(async move {
         loop {
@@ -422,7 +422,7 @@ mod tests {
             .expect_err("missing delay must fail");
         assert_eq!(
             err.to_string(),
-            "Schedule.sleep: missing argument at position 0"
+            "schedule.sleep: missing argument at position 0"
         );
     }
 
@@ -442,7 +442,7 @@ mod tests {
         .expect_err("integer delay must fail");
         assert_eq!(
             err.to_string(),
-            "Schedule.sleep: argument at position 0 must be duration, got int"
+            "schedule.sleep: argument at position 0 must be duration, got int"
         );
     }
 

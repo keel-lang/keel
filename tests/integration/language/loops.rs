@@ -7,6 +7,7 @@ use crate::common::*;
 #[test]
 fn break_exits_loop_early() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         count = 0
@@ -16,7 +17,7 @@ agent A {
             }
             count += 1
         }
-        Io.show("{count}")
+        io.show("{count}")
     }
 }
 run(A)
@@ -29,6 +30,7 @@ run(A)
 #[test]
 fn continue_skips_current_iteration() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         sum = 0
@@ -38,7 +40,7 @@ agent A {
             }
             sum += i
         }
-        Io.show("{sum}")
+        io.show("{sum}")
     }
 }
 run(A)
@@ -54,6 +56,7 @@ fn break_inside_if_stmt_in_loop() {
     // Verifies break inside an `if` inside a `for` exits the loop.
     // Items before 99 are counted; break fires at 99 so count stays at 2.
     let src = r#"
+use std/io
 agent A {
     @on_start {
         items = [10, 20, 99, 30, 40]
@@ -64,7 +67,7 @@ agent A {
             }
             count += 1
         }
-        Io.show("{count}")
+        io.show("{count}")
     }
 }
 run(A)
@@ -77,6 +80,7 @@ run(A)
 #[test]
 fn continue_and_break_together() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         result = 0
@@ -89,7 +93,7 @@ agent A {
             }
             result += i
         }
-        Io.show("{result}")
+        io.show("{result}")
     }
 }
 run(A)
@@ -103,6 +107,7 @@ run(A)
 #[test]
 fn break_in_nested_loop_only_exits_inner() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         outer = 0
@@ -114,7 +119,7 @@ agent A {
                 }
             }
         }
-        Io.show("{outer}")
+        io.show("{outer}")
     }
 }
 run(A)
@@ -130,11 +135,12 @@ run(A)
 #[test]
 fn while_basic_countdown() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         n = 3
         while n > 0 {
-            Io.show("tick:{n}")
+            io.show("tick:{n}")
             n -= 1
         }
     }
@@ -155,6 +161,7 @@ run(A)
 #[test]
 fn while_break_exits_loop() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         count = 0
@@ -164,7 +171,7 @@ agent A {
                 break
             }
         }
-        Io.show("{count}")
+        io.show("{count}")
     }
 }
 run(A)
@@ -177,6 +184,7 @@ run(A)
 #[test]
 fn while_continue_skips_iteration() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 0
@@ -188,7 +196,7 @@ agent A {
             }
             sum += x
         }
-        Io.show("{sum}")
+        io.show("{sum}")
     }
 }
 run(A)
@@ -202,6 +210,7 @@ run(A)
 #[test]
 fn while_nested_in_for() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         total = 0
@@ -212,7 +221,7 @@ agent A {
                 j += 1
             }
         }
-        Io.show("{total}")
+        io.show("{total}")
     }
 }
 run(A)

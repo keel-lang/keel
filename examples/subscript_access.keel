@@ -1,23 +1,35 @@
+use std/io
+
 agent Demo {
   @on_start {
     items = ["alpha", "beta", "gamma"]
 
     first = items[0]
-    Io.show(first)
+    io.show(first)
 
     mid = items[1]
-    Io.show(mid)
+    io.show(mid)
 
     scores = [42, 17, 99, 5]
     top = scores[2]
-    Io.show(top)
+    io.show(top)
 
     word = "keel"
     ch0 = word[0]
     ch3 = word[3]
-    Io.show(ch0)
-    Io.show(ch3)
+    io.show(ch0)
+    io.show(ch3)
   }
 }
 
 run(Demo)
+
+# Tests — run with: keel test examples/subscript_access.keel
+test "subscripts index lists and strings" {
+  items = ["alpha", "beta", "gamma"]
+  assert items[0] == "alpha"
+  assert [42, 17, 99, 5][2] == 99
+  word = "keel"
+  assert word[0] == "k"
+  assert word[3] == "l"
+}

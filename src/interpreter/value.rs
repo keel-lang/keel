@@ -119,6 +119,20 @@ pub enum Value {
 
     /// A top-level built-in (by name) — `run`, `stop`, etc.
     BuiltinFn(String),
+
+    /// A local module namespace bound by `use "./x.keel"`.
+    /// Member access resolves against the flat global table.
+    Module(Arc<ModuleValue>),
+}
+
+/// Runtime view of a local module: its name and exposed member names.
+#[derive(Debug)]
+pub struct ModuleValue {
+    pub name: String,
+    /// Top-level task names (including externs).
+    pub tasks: std::collections::HashSet<String>,
+    /// Agent declaration names.
+    pub agents: std::collections::HashSet<String>,
 }
 
 impl Value {
@@ -144,6 +158,7 @@ impl Value {
             Value::MockHandle { .. } => "mock",
             Value::DbConnection(_, _) => "DbConnection",
             Value::BuiltinFn(_) => "builtin",
+            Value::Module(_) => "module",
         }
     }
 
@@ -307,6 +322,7 @@ impl fmt::Display for Value {
             Value::MockHandle { namespace, method } => write!(f, "<mock {namespace}.{method}>"),
             Value::DbConnection(url, _) => write!(f, "<DbConnection {url}>"),
             Value::BuiltinFn(name) => write!(f, "<builtin {name}>"),
+            Value::Module(module) => write!(f, "<module {}>", module.name),
         }
     }
 }

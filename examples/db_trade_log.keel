@@ -1,12 +1,17 @@
 ## Simple trade ledger backed by SQLite.
-## Demonstrates Db.connect, db.exec, and db.query.
+## Demonstrates db.connect, db.exec, and db.query.
+
+use std/db
+use std/log
+use std/time
+use std/uuid
 
 agent LedgerAgent {
     @role "Trade ledger — records fills and reports P&L"
-    @tools [Db, Log, Uuid, Time]
+    @tools [db, log, uuid, time]
 
     @on_start {
-        db = Db.connect("sqlite://:memory:")
+        db = db.connect("sqlite://:memory:")
 
         db.exec("CREATE TABLE IF NOT EXISTS trades (
             id          TEXT PRIMARY KEY,
@@ -18,9 +23,9 @@ agent LedgerAgent {
         )")
 
         # Record three fills
-        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{Uuid.v4()}", "BTCUSDT", "buy",  0.01, 67000.0, "{Time.now()}"])
-        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{Uuid.v4()}", "ETHUSDT", "buy",  0.5,   3500.0, "{Time.now()}"])
-        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{Uuid.v4()}", "BTCUSDT", "sell", 0.01, 68500.0, "{Time.now()}"])
+        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{uuid.v4()}", "BTCUSDT", "buy",  0.01, 67000.0, "{time.now()}"])
+        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{uuid.v4()}", "ETHUSDT", "buy",  0.5,   3500.0, "{time.now()}"])
+        db.exec("INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?)", ["{uuid.v4()}", "BTCUSDT", "sell", 0.01, 68500.0, "{time.now()}"])
 
         # Report all trades
         rows = db.query("SELECT symbol, side, quantity, price FROM trades ORDER BY executed_at")
@@ -29,7 +34,7 @@ agent LedgerAgent {
             side     = row["side"]     as str
             quantity = row["quantity"] as float
             price    = row["price"]    as float
-            Log.info("[Ledger] {side} {quantity} {symbol} @ {price:.2f}")
+            log.info("[Ledger] {side} {quantity} {symbol} @ {price:.2f}")
         }
 
         # Simple P&L per symbol
@@ -43,9 +48,19 @@ agent LedgerAgent {
         for r in pnl_rows {
             symbol = r["symbol"] as str
             pnl    = r["pnl"]    as float
-            Log.info("[P&L] {symbol}: {pnl:.2f} USD")
+            log.info("[P&L] {symbol}: {pnl:.2f} USD")
         }
     }
 }
 
 run(LedgerAgent)
+
+# Tests — run with: keel test examples/db_trade_log.keel
+test "exec inserts and query reads back" {
+  conn = db.connect("sqlite://:memory:")
+  conn.exec("CREATE TABLE trades (symbol TEXT, qty REAL)")
+  conn.exec("INSERT INTO trades VALUES (?, ?)", ["BTCUSDT", 0.01])
+  rows = conn.query("SELECT symbol, qty FROM trades")
+  assert rows.len() == 1
+  assert rows[0]["symbol"] as str == "BTCUSDT"
+}

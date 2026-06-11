@@ -5,11 +5,13 @@ fn http_get_returns_status_body_headers_and_ok_flag() {
     let url = start_single_response_server("hello http");
     let src = format!(
         r#"
+use std/http
+use std/io
 agent A {{
     @on_start {{
-        resp = Http.get("{url}")
+        resp = http.get("{url}")
         header = resp.headers.get("x-keel-test") ?? "missing"
-        Io.show("status={{resp.status}} ok={{resp.is_ok}} body={{resp.body}} header={{header}}")
+        io.show("status={{resp.status}} ok={{resp.is_ok}} body={{resp.body}} header={{header}}")
         stop(self)
     }}
 }}
@@ -19,7 +21,7 @@ run(A)
     let (ok, stdout, stderr) = run_inline(&src, false);
     assert!(
         ok,
-        "Http.get program failed\nstdout: {stdout}\nstderr: {stderr}"
+        "http.get program failed\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(stdout.contains("status=200"), "{stdout}");
     assert!(stdout.contains("ok=true"), "{stdout}");
@@ -32,10 +34,12 @@ fn http_post_sends_json_body_and_reports_success() {
     let url = start_single_response_server("posted");
     let src = format!(
         r#"
+use std/http
+use std/io
 agent A {{
     @on_start {{
-        resp = Http.post("{url}", json: {{name: "Ada", count: 2}})
-        Io.show("status={{resp.status}} ok={{resp.is_ok}} body={{resp.body}}")
+        resp = http.post("{url}", json: {{name: "Ada", count: 2}})
+        io.show("status={{resp.status}} ok={{resp.is_ok}} body={{resp.body}}")
         stop(self)
     }}
 }}
@@ -45,7 +49,7 @@ run(A)
     let (ok, stdout, stderr) = run_inline(&src, false);
     assert!(
         ok,
-        "Http.post program failed\nstdout: {stdout}\nstderr: {stderr}"
+        "http.post program failed\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(stdout.contains("status=200"), "{stdout}");
     assert!(stdout.contains("ok=true"), "{stdout}");
@@ -57,10 +61,12 @@ fn http_request_accepts_named_args_and_body_string() {
     let url = start_single_response_server("patched");
     let src = format!(
         r#"
+use std/http
+use std/io
 agent A {{
     @on_start {{
-        resp = Http.request(method: "PATCH", url: "{url}", body: "payload")
-        Io.show("status={{resp.status}} body={{resp.body}}")
+        resp = http.request(method: "PATCH", url: "{url}", body: "payload")
+        io.show("status={{resp.status}} body={{resp.body}}")
         stop(self)
     }}
 }}
@@ -70,7 +76,7 @@ run(A)
     let (ok, stdout, stderr) = run_inline(&src, false);
     assert!(
         ok,
-        "Http.request program failed\nstdout: {stdout}\nstderr: {stderr}"
+        "http.request program failed\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(stdout.contains("status=200"), "{stdout}");
     assert!(stdout.contains("body=patched"), "{stdout}");
@@ -79,15 +85,16 @@ run(A)
 #[test]
 fn http_request_rejects_unsupported_method_before_network_call() {
     let src = r#"
+use std/http
 agent A {
     @on_start {
-        Http.request(method: "TRACE", url: "http://127.0.0.1:1")
+        http.request(method: "TRACE", url: "http://127.0.0.1:1")
     }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "unsupported Http.request method should fail");
+    assert!(!ok, "unsupported http.request method should fail");
     assert!(
         stderr.contains("Http: unsupported method `TRACE`"),
         "expected unsupported method diagnostic:\n{stderr}"
@@ -97,17 +104,18 @@ run(A)
 #[test]
 fn http_request_requires_url() {
     let src = r#"
+use std/http
 agent A {
     @on_start {
-        Http.request(method: "GET")
+        http.request(method: "GET")
     }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "Http.request without URL should fail");
+    assert!(!ok, "http.request without URL should fail");
     assert!(
-        stderr.contains("Http.request: missing `url`"),
+        stderr.contains("http.request: missing `url`"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -117,10 +125,12 @@ fn http_request_map_form_accepts_method_and_url() {
     let url = start_single_response_server("map-form");
     let src = format!(
         r#"
+use std/http
+use std/io
 agent A {{
     @on_start {{
-        resp = Http.request({{method: "POST", url: "{url}", body: "map-body"}})
-        Io.show("status={{resp.status}} body={{resp.body}}")
+        resp = http.request({{method: "POST", url: "{url}", body: "map-body"}})
+        io.show("status={{resp.status}} body={{resp.body}}")
         stop(self)
     }}
 }}
@@ -130,7 +140,7 @@ run(A)
     let (ok, stdout, stderr) = run_inline(&src, false);
     assert!(
         ok,
-        "Http.request map form failed\nstdout: {stdout}\nstderr: {stderr}"
+        "http.request map form failed\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(stdout.contains("status=200"), "{stdout}");
     assert!(stdout.contains("body=map-form"), "{stdout}");
@@ -139,17 +149,18 @@ run(A)
 #[test]
 fn http_request_map_form_requires_url() {
     let src = r#"
+use std/http
 agent A {
     @on_start {
-        Http.request({method: "GET"})
+        http.request({method: "GET"})
     }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "Http.request map form without URL should fail");
+    assert!(!ok, "http.request map form without URL should fail");
     assert!(
-        stderr.contains("Http.request: missing `url`"),
+        stderr.contains("http.request: missing `url`"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -157,17 +168,18 @@ run(A)
 #[test]
 fn http_get_missing_url() {
     let src = r#"
+use std/http
 agent A {
     @on_start {
-        Http.get()
+        http.get()
     }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "Http.get without URL should fail");
+    assert!(!ok, "http.get without URL should fail");
     assert!(
-        stderr.contains("Http.get: missing argument at position 0"),
+        stderr.contains("http.get: missing argument at position 0"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -175,17 +187,18 @@ run(A)
 #[test]
 fn http_post_missing_url() {
     let src = r#"
+use std/http
 agent A {
     @on_start {
-        Http.post(body: "hello")
+        http.post(body: "hello")
     }
 }
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
-    assert!(!ok, "Http.post without URL should fail");
+    assert!(!ok, "http.post without URL should fail");
     assert!(
-        stderr.contains("Http.post: missing argument at position 0"),
+        stderr.contains("http.post: missing argument at position 0"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -195,10 +208,12 @@ fn http_post_body_arg_sends_string_body() {
     let url = start_single_response_server("body-arg");
     let src = format!(
         r#"
+use std/http
+use std/io
 agent A {{
     @on_start {{
-        resp = Http.post("{url}", body: "string-body")
-        Io.show("status={{resp.status}} body={{resp.body}}")
+        resp = http.post("{url}", body: "string-body")
+        io.show("status={{resp.status}} body={{resp.body}}")
         stop(self)
     }}
 }}
@@ -208,7 +223,7 @@ run(A)
     let (ok, stdout, stderr) = run_inline(&src, false);
     assert!(
         ok,
-        "Http.post body: arg failed\nstdout: {stdout}\nstderr: {stderr}"
+        "http.post body: arg failed\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(stdout.contains("status=200"), "{stdout}");
     assert!(stdout.contains("body=body-arg"), "{stdout}");
@@ -217,11 +232,13 @@ run(A)
 #[test]
 fn email_archive_without_config_is_graceful() {
     let src = r#"
+use std/email
+use std/io
 agent A {
     @on_start {
         msg = {uid: 42, body: "hi", subject: "x", from: "y"}
-        Email.archive(msg)
-        Io.show("archived")
+        email.archive(msg)
+        io.show("archived")
     }
 }
 run(A)
@@ -240,9 +257,10 @@ run(A)
 #[test]
 fn email_send_with_config_validates_missing_body_before_transport() {
     let src = r#"
+use std/email
 agent A {
     @on_start {
-        Email.send(to: "ops@example.com")
+        email.send(to: "ops@example.com")
     }
 }
 run(A)
@@ -255,9 +273,9 @@ run(A)
             ("EMAIL_PASS", "secret"),
         ],
     );
-    assert!(!ok, "Email.send without body should fail");
+    assert!(!ok, "email.send without body should fail");
     assert!(
-        stderr.contains("Email.send: missing message body"),
+        stderr.contains("email.send: missing message body"),
         "expected missing body diagnostic:\n{stderr}"
     );
 }
@@ -265,9 +283,10 @@ run(A)
 #[test]
 fn email_send_with_config_validates_missing_recipient_before_transport() {
     let src = r#"
+use std/email
 agent A {
     @on_start {
-        Email.send("hello")
+        email.send("hello")
     }
 }
 run(A)
@@ -280,9 +299,9 @@ run(A)
             ("EMAIL_PASS", "secret"),
         ],
     );
-    assert!(!ok, "Email.send without recipient should fail");
+    assert!(!ok, "email.send without recipient should fail");
     assert!(
-        stderr.contains("Email.send: missing `to:` argument"),
+        stderr.contains("email.send: missing `to:` argument"),
         "expected missing recipient diagnostic:\n{stderr}"
     );
 }
@@ -290,9 +309,10 @@ run(A)
 #[test]
 fn email_archive_with_config_validates_uid_before_transport() {
     let src = r#"
+use std/email
 agent A {
     @on_start {
-        Email.archive({body: "hello"})
+        email.archive({body: "hello"})
     }
 }
 run(A)
@@ -305,9 +325,9 @@ run(A)
             ("EMAIL_PASS", "secret"),
         ],
     );
-    assert!(!ok, "Email.archive without UID should fail");
+    assert!(!ok, "email.archive without UID should fail");
     assert!(
-        stderr.contains("Email.archive: message has no UID"),
+        stderr.contains("email.archive: message has no UID"),
         "expected missing UID diagnostic:\n{stderr}"
     );
 }

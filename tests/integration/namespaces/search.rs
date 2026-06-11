@@ -3,9 +3,10 @@ use crate::common::*;
 #[test]
 fn search_stub_raises_v2_error() {
     let src = r#"
+use std/search
 agent A {
     @on_start {
-        Search.web("query")
+        search.web("query")
     }
 }
 run(A)

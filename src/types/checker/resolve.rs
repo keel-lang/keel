@@ -23,6 +23,7 @@ impl Checker<'_, '_> {
     /// an unsupported key type. Built-in hashable types are `str`, `int`, `bool`.
     /// `float` is excluded because NaN violates the Hash/Eq contract.
     pub(crate) fn resolve_and_check_type(&mut self, ty: &TypeExpr) -> Ty {
+        self.check_type_visibility(ty);
         let resolved = self.resolve_type(ty);
         if let Ty::Map(key_ty, _) = &resolved {
             match key_ty.as_ref() {
@@ -43,6 +44,31 @@ impl Checker<'_, '_> {
             }
         }
         resolved
+    }
+
+    /// In module-graph mode, an annotation may only name types declared in
+    /// the current module or imported with `use X from ...`. The checker's
+    /// tables span the whole graph (the runtime is flat), so a name found in
+    /// a table but absent from the visible set means a missing import.
+    fn check_type_visibility(&mut self, ty: &TypeExpr) {
+        let Some(visible) = self.visible_types.clone() else {
+            return;
+        };
+        let mut names = Vec::new();
+        collect_named_types(ty, &mut names);
+        for name in names {
+            let known = self.enum_variants.contains_key(&name)
+                || self.structs.contains_key(&name)
+                || self.aliases.contains_key(&name)
+                || self.generic_decls.contains_key(&name)
+                || self.interfaces.contains_key(&name);
+            if known && !visible.contains(&name) {
+                self.err(format!(
+                    "type `{name}` is declared in another module — import it with \
+                     `use {name} from \"./<module>.keel\"`"
+                ));
+            }
+        }
     }
 
     /// Resolve a type expression, substituting any names found in `env` (type
@@ -301,6 +327,43 @@ impl Checker<'_, '_> {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Collect every type name referenced by a type expression.
+fn collect_named_types(ty: &TypeExpr, out: &mut Vec<String>) {
+    match ty {
+        TypeExpr::Named(n) => out.push(n.clone()),
+        TypeExpr::Nullable(inner) | TypeExpr::List(inner) | TypeExpr::Set(inner) => {
+            collect_named_types(inner, out)
+        }
+        TypeExpr::Map(k, v) => {
+            collect_named_types(k, out);
+            collect_named_types(v, out);
+        }
+        TypeExpr::Struct(fields) => {
+            for f in fields {
+                collect_named_types(&f.ty.kind, out);
+            }
+        }
+        TypeExpr::Tuple(items) => {
+            for item in items {
+                collect_named_types(item, out);
+            }
+        }
+        TypeExpr::Func(params, ret) => {
+            for p in params {
+                collect_named_types(p, out);
+            }
+            collect_named_types(ret, out);
+        }
+        TypeExpr::Generic(name, args) => {
+            out.push(name.clone());
+            for a in args {
+                collect_named_types(a, out);
+            }
+        }
+        TypeExpr::Dynamic | TypeExpr::SelfType => {}
+    }
+}
 
 /// Bind type-parameter names from a `TypeExpr`/`Ty` pair into `env`.
 ///

@@ -1,3 +1,5 @@
+use std/io
+
 agent SessionBot {
   @role "Answer questions for the current session"
 
@@ -6,12 +8,12 @@ agent SessionBot {
     session_id: readonly str = "default-session"
   }
   @on_start {
-    Io.show("Session started: " + self.session_id)
+    io.show("Session started: " + self.session_id)
   }
 
   on message(msg: str) {
     self.turns = self.turns + 1
-    Io.show("Turn {self.turns} in session {self.session_id}")
+    io.show("Turn {self.turns} in session {self.session_id}")
   }
 }
 

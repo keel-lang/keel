@@ -1,29 +1,34 @@
+use std/ai
+use std/email
+use std/io
+use std/schedule
+
 task shorten(text: str) -> str {
-  Ai.summarize(text, in: 2, unit: sentences) ?? "(no summary available)"
+  ai.summarize(text, in: 2, unit: sentences) ?? "(no summary available)"
 }
 
 agent DailyDigest {
   @role "You compile a daily digest of important updates"
-  @tools [Email, Schedule, Io]
+  @tools [email, schedule, io]
 
   state {
     days_run: int = 0
   }
   @on_start {
-    Schedule.every(1.days, () => {
+    schedule.every(1.days, () => {
       self.days_run = self.days_run + 1
-      Io.notify("--- Daily Digest #{self.days_run} ---")
-      emails = Email.fetch(unread: true)
+      io.notify("--- Daily Digest #{self.days_run} ---")
+      emails = email.fetch(unread: true)
       if emails.count > 0 {
-        Io.notify("{emails.count} unread emails:")
+        io.notify("{emails.count} unread emails:")
         for email in emails {
           brief = shorten(email.body)
-          Io.notify("  - {email.from}: {brief}")
+          io.notify("  - {email.from}: {brief}")
         }
       } else {
-        Io.notify("No unread emails")
+        io.notify("No unread emails")
       }
-      Io.notify("--- End of Digest ---")
+      io.notify("--- End of Digest ---")
     })
   }
 }

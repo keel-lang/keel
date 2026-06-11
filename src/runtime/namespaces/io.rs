@@ -6,7 +6,7 @@ use crate::runtime::namespace::{ns, positional};
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Io",
+        namespace: "io",
         name: "ask",
         params: &[BuiltinParam {
             name: "prompt",
@@ -17,7 +17,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Ask the user a question and return the response as a string.",
     },
     BuiltinMethod {
-        namespace: "Io",
+        namespace: "io",
         name: "confirm",
         params: &[BuiltinParam {
             name: "prompt",
@@ -28,7 +28,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Ask the user to confirm a choice and return true or false.",
     },
     BuiltinMethod {
-        namespace: "Io",
+        namespace: "io",
         name: "notify",
         params: &[BuiltinParam {
             name: "message",
@@ -39,7 +39,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
         doc: "Show a notification to the user.",
     },
     BuiltinMethod {
-        namespace: "Io",
+        namespace: "io",
         name: "show",
         params: &[BuiltinParam {
             name: "value",
@@ -52,7 +52,7 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Io", {
+    ns!("io", {
         "notify" => |_host, args| Box::pin(async move {
             let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
             human::notify(&msg);
@@ -69,16 +69,16 @@ pub(crate) fn namespace() -> Namespace {
             // can keep polling other tasks (signal watcher, scheduler).
             let answer = tokio::task::spawn_blocking(move || human::ask(&prompt))
                 .await
-                .map_err(|e| miette::miette!("Io.ask task join error: {e}"))?
-                .map_err(|e| miette::miette!("Io.ask failed: {e}"))?;
+                .map_err(|e| miette::miette!("io.ask task join error: {e}"))?
+                .map_err(|e| miette::miette!("io.ask failed: {e}"))?;
             Ok(Value::String(answer))
         }),
         "confirm" => |_i, args| Box::pin(async move {
             let prompt = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
             let answer = tokio::task::spawn_blocking(move || human::confirm(&prompt))
                 .await
-                .map_err(|e| miette::miette!("Io.confirm task join error: {e}"))?
-                .map_err(|e| miette::miette!("Io.confirm failed: {e}"))?;
+                .map_err(|e| miette::miette!("io.confirm task join error: {e}"))?
+                .map_err(|e| miette::miette!("io.confirm failed: {e}"))?;
             Ok(Value::Bool(answer))
         }),
     })

@@ -9,13 +9,15 @@ fn file_namespace_write_read_exists_and_list() {
     let file = keel_string_literal(&file_path.to_string_lossy());
     let src = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
-        File.write("{file}", "hello from keel")
-        content = File.read("{file}")
-        exists = File.exists("{file}")
-        names = File.list("{nested}")
-        Io.show("content={{content}} exists={{exists}} names={{names}}")
+        file.write("{file}", "hello from keel")
+        content = file.read("{file}")
+        exists = file.exists("{file}")
+        names = file.list("{nested}")
+        io.show("content={{content}} exists={{exists}} names={{names}}")
         stop(self)
     }}
 }}
@@ -41,18 +43,19 @@ fn file_namespace_missing_read_reports_file_error() {
     let file = keel_string_literal(&missing.to_string_lossy());
     let src = format!(
         r#"
+use std/file
 agent A {{
     @on_start {{
-        File.read("{file}")
+        file.read("{file}")
     }}
 }}
 run(A)
 "#
     );
     let (ok, _stdout, stderr) = run_inline(&src, false);
-    assert!(!ok, "missing File.read should fail");
+    assert!(!ok, "missing file.read should fail");
     assert!(
-        stderr.contains("FileError: File.read"),
+        stderr.contains("FileError: file.read"),
         "expected FileError diagnostic:\n{stderr}"
     );
 }
@@ -66,12 +69,14 @@ fn file_error_is_catchable_by_type_name() {
     let file = keel_string_literal(&missing.to_string_lossy());
     let src = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
         try {{
-            File.read("{file}")
+            file.read("{file}")
         }} catch e: FileError {{
-            Io.show("caught={{e.message}}")
+            io.show("caught={{e.message}}")
         }}
         stop(self)
     }}
@@ -89,8 +94,8 @@ run(A)
         "FileError clause must fire, not Error fallback:\n{stdout}"
     );
     assert!(
-        stdout.contains("File.read"),
-        "caught message should mention File.read:\n{stdout}"
+        stdout.contains("file.read"),
+        "caught message should mention file.read:\n{stdout}"
     );
 }
 
@@ -103,12 +108,14 @@ fn file_error_also_caught_by_error_fallback() {
     let file = keel_string_literal(&missing.to_string_lossy());
     let src = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
         try {{
-            File.read("{file}")
+            file.read("{file}")
         }} catch e: Error {{
-            Io.show("caught-as-error")
+            io.show("caught-as-error")
         }}
         stop(self)
     }}
@@ -134,11 +141,13 @@ fn file_namespace_mkdir_creates_directory() {
     let dir = keel_string_literal(&new_dir.to_string_lossy());
     let src = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
-        File.mkdir("{dir}")
-        exists = File.exists("{dir}")
-        Io.show("exists={{exists}}")
+        file.mkdir("{dir}")
+        exists = file.exists("{dir}")
+        io.show("exists={{exists}}")
         stop(self)
     }}
 }}
@@ -158,11 +167,13 @@ fn file_namespace_remove_deletes_file() {
     let file = keel_string_literal(&file_path.to_string_lossy());
     let src = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
-        File.remove("{file}")
-        exists = File.exists("{file}")
-        Io.show("exists={{exists}}")
+        file.remove("{file}")
+        exists = file.exists("{file}")
+        io.show("exists={{exists}}")
         stop(self)
     }}
 }}
@@ -184,11 +195,13 @@ fn file_namespace_copy_duplicates_file() {
     let dst_f = keel_string_literal(&dst_path.to_string_lossy());
     let prog = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
-        File.copy("{src_f}", "{dst_f}")
-        content = File.read("{dst_f}")
-        Io.show("content={{content}}")
+        file.copy("{src_f}", "{dst_f}")
+        content = file.read("{dst_f}")
+        io.show("content={{content}}")
         stop(self)
     }}
 }}
@@ -209,10 +222,12 @@ fn file_namespace_glob_returns_matching_paths() {
     let pattern = keel_string_literal(&format!("{}/*.txt", tmp.path().display()));
     let src = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
-        paths = File.glob("{pattern}")
-        Io.show("count={{paths}}")
+        paths = file.glob("{pattern}")
+        io.show("count={{paths}}")
         stop(self)
     }}
 }}
@@ -242,12 +257,14 @@ fn file_namespace_move_renames_file() {
     let dst_f = keel_string_literal(&dst_path.to_string_lossy());
     let prog = format!(
         r#"
+use std/file
+use std/io
 agent A {{
     @on_start {{
-        File.move("{src_f}", "{dst_f}")
-        src_exists = File.exists("{src_f}")
-        dst_exists = File.exists("{dst_f}")
-        Io.show("src={{src_exists}} dst={{dst_exists}}")
+        file.move("{src_f}", "{dst_f}")
+        src_exists = file.exists("{src_f}")
+        dst_exists = file.exists("{dst_f}")
+        io.show("src={{src_exists}} dst={{dst_exists}}")
         stop(self)
     }}
 }}
@@ -263,13 +280,15 @@ run(A)
 #[test]
 fn file_namespace_mktemp_returns_writable_path() {
     let src = r#"
+use std/file
+use std/io
 agent A {
     @on_start {
-        path = File.mktemp()
-        File.write(path, "temp data")
-        content = File.read(path)
-        File.remove(path)
-        Io.show("content={content}")
+        path = file.mktemp()
+        file.write(path, "temp data")
+        content = file.read(path)
+        file.remove(path)
+        io.show("content={content}")
         stop(self)
     }
 }

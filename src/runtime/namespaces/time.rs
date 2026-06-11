@@ -6,21 +6,21 @@ use crate::runtime::namespace::ns;
 
 pub(crate) const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
-        namespace: "Time",
+        namespace: "time",
         name: "now",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Datetime),
         doc: "Return the current UTC datetime.",
     },
     BuiltinMethod {
-        namespace: "Time",
+        namespace: "time",
         name: "epoch_ms",
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Int),
         doc: "Return the current Unix timestamp in milliseconds.",
     },
     BuiltinMethod {
-        namespace: "Time",
+        namespace: "time",
         name: "parse",
         params: &[BuiltinParam {
             name: "s",
@@ -33,12 +33,12 @@ pub(crate) const SPEC: &[BuiltinMethod] = &[
 ];
 
 pub(crate) fn namespace() -> Namespace {
-    ns!("Time", {
+    ns!("time", {
         "now" => |host, args| Box::pin(async move {
             use chrono::SecondsFormat;
-            if let Some(tz_str) = expect_str_named(&args, "tz", "Time.now")? {
+            if let Some(tz_str) = expect_str_named(&args, "tz", "time.now")? {
                 let tz: chrono_tz::Tz = tz_str.parse().map_err(|_| {
-                    miette::miette!("Time.now: unknown timezone {tz_str:?}. Use an IANA name like \"America/New_York\".")
+                    miette::miette!("time.now: unknown timezone {tz_str:?}. Use an IANA name like \"America/New_York\".")
                 })?;
                 let now = host.runtime().clock.now_utc().with_timezone(&tz);
                 Ok(Value::String(now.to_rfc3339_opts(SecondsFormat::Millis, false)))
@@ -52,13 +52,13 @@ pub(crate) fn namespace() -> Namespace {
         }),
         "parse" => |_i, args| Box::pin(async move {
             use chrono::SecondsFormat;
-            let s = expect_str(&args, 0, "Time.parse")?;
+            let s = expect_str(&args, 0, "time.parse")?;
 
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
                 return Ok(Value::String(dt.to_rfc3339_opts(SecondsFormat::Millis, false)));
             }
 
-            if let Some(tz_str) = expect_str_named(&args, "tz", "Time.parse")? {
+            if let Some(tz_str) = expect_str_named(&args, "tz", "time.parse")? {
                 let Ok(tz) = tz_str.parse::<chrono_tz::Tz>() else {
                     return Ok(Value::None);
                 };
@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn namespace_has_now_parse_and_epoch_ms() {
         let ns = namespace();
-        assert_eq!(ns.name, "Time");
+        assert_eq!(ns.name, "time");
         assert!(ns.methods.contains_key("now"));
         assert!(ns.methods.contains_key("parse"));
         assert!(ns.methods.contains_key("epoch_ms"));

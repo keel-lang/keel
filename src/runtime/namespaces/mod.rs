@@ -1,7 +1,7 @@
 use crate::builtins::BuiltinMethod;
 use crate::interpreter::{Host, Namespace};
 
-mod agent;
+pub(crate) mod agent;
 mod ai;
 mod asynchronous;
 mod cache;
@@ -36,7 +36,6 @@ pub(crate) mod uuid;
 /// to a neutral leaf crate first.
 pub(crate) fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
     const ALL: &[&[BuiltinMethod]] = &[
-        agent::SPEC,
         ai::SPEC,
         asynchronous::SPEC,
         cache::SPEC,
@@ -70,7 +69,7 @@ pub(crate) fn install(host: &mut dyn Host) {
     }
 }
 
-fn namespaces() -> [Namespace; 24] {
+fn namespaces() -> [Namespace; 23] {
     [
         io::namespace(),
         schedule::namespace(),
@@ -79,7 +78,6 @@ fn namespaces() -> [Namespace; 24] {
         env::namespace(),
         memory::namespace(),
         log::namespace(),
-        agent::namespace(),
         control::namespace(),
         asynchronous::namespace(),
         http::namespace(),
@@ -111,7 +109,6 @@ mod tests {
     #[test]
     fn spec_matches_installed_methods_for_all_namespaces() {
         let pairs: &[(&[crate::builtins::BuiltinMethod], Namespace)] = &[
-            (agent::SPEC, agent::namespace()),
             (ai::SPEC, ai::namespace()),
             (asynchronous::SPEC, asynchronous::namespace()),
             (cache::SPEC, cache::namespace()),

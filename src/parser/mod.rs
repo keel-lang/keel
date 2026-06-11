@@ -188,43 +188,121 @@ interface LlmProvider {
 
     // ─── Use declarations ────────────────────────────────────────────────────────
 
+    fn use_kind(prog: &Program) -> &UseKind {
+        match first_decl(prog) {
+            Decl::Use(u) => &u.kind,
+            other => panic!("expected Use, got {:?}", other),
+        }
+    }
+
     #[test]
     fn parse_use_file() {
         let prog = parse_ok(r#"use "./email_utils.keel""#);
-        match first_decl(&prog) {
-            Decl::Use(u) => match &u.kind {
-                UseKind::File(path) => assert_eq!(path, "./email_utils.keel"),
-                other => panic!("expected File, got {:?}", other),
-            },
-            other => panic!("expected Use, got {:?}", other),
+        match use_kind(&prog) {
+            UseKind::Module {
+                source: UseSource::File(path),
+                alias: None,
+            } => assert_eq!(path, "./email_utils.keel"),
+            other => panic!("expected file module import, got {:?}", other),
         }
+        assert_eq!(use_kind(&prog).binding(), Some("email_utils"));
+    }
+
+    #[test]
+    fn parse_use_file_with_alias() {
+        let prog = parse_ok(r#"use "./email_utils.keel" as mail"#);
+        match use_kind(&prog) {
+            UseKind::Module {
+                source: UseSource::File(path),
+                alias: Some(alias),
+            } => {
+                assert_eq!(path, "./email_utils.keel");
+                assert_eq!(alias, "mail");
+            }
+            other => panic!("expected aliased file import, got {:?}", other),
+        }
+        assert_eq!(use_kind(&prog).binding(), Some("mail"));
     }
 
     #[test]
     fn parse_use_symbol() {
         let prog = parse_ok(r#"use Classifier from "./classifiers.keel""#);
-        match first_decl(&prog) {
-            Decl::Use(u) => match &u.kind {
-                UseKind::Symbol { name, source } => {
-                    assert_eq!(name, "Classifier");
-                    assert_eq!(source, "./classifiers.keel");
-                }
-                other => panic!("expected Symbol, got {:?}", other),
-            },
-            other => panic!("expected Use, got {:?}", other),
+        match use_kind(&prog) {
+            UseKind::Symbols {
+                items,
+                source: UseSource::File(source),
+            } => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].name, "Classifier");
+                assert_eq!(items[0].alias, None);
+                assert_eq!(source, "./classifiers.keel");
+            }
+            other => panic!("expected symbol import, got {:?}", other),
         }
     }
 
     #[test]
-    fn parse_use_package() {
-        let prog = parse_ok("use keel/slack");
-        match first_decl(&prog) {
-            Decl::Use(u) => match &u.kind {
-                UseKind::Package(parts) => assert_eq!(parts, &vec!["keel", "slack"]),
-                other => panic!("expected Package, got {:?}", other),
-            },
-            other => panic!("expected Use, got {:?}", other),
+    fn parse_use_symbol_list_with_aliases() {
+        let prog = parse_ok(r#"use Classifier, Urgency as U from "./classifiers.keel""#);
+        match use_kind(&prog) {
+            UseKind::Symbols {
+                items,
+                source: UseSource::File(source),
+            } => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0].name, "Classifier");
+                assert_eq!(items[0].alias, None);
+                assert_eq!(items[1].name, "Urgency");
+                assert_eq!(items[1].alias.as_deref(), Some("U"));
+                assert_eq!(source, "./classifiers.keel");
+            }
+            other => panic!("expected symbol list import, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn parse_use_symbol_from_std() {
+        let prog = parse_ok("use parse from std/json");
+        match use_kind(&prog) {
+            UseKind::Symbols {
+                items,
+                source: UseSource::Module(segments),
+            } => {
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].name, "parse");
+                assert_eq!(segments, &vec!["std", "json"]);
+            }
+            other => panic!("expected std symbol import, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_use_std_module() {
+        let prog = parse_ok("use std/file");
+        match use_kind(&prog) {
+            UseKind::Module {
+                source: UseSource::Module(segments),
+                alias: None,
+            } => assert_eq!(segments, &vec!["std", "file"]),
+            other => panic!("expected std module import, got {:?}", other),
+        }
+        assert_eq!(use_kind(&prog).binding(), Some("file"));
+    }
+
+    #[test]
+    fn parse_use_std_module_with_alias() {
+        let prog = parse_ok("use std/file as f");
+        match use_kind(&prog) {
+            UseKind::Module {
+                source: UseSource::Module(segments),
+                alias: Some(alias),
+            } => {
+                assert_eq!(segments, &vec!["std", "file"]);
+                assert_eq!(alias, "f");
+            }
+            other => panic!("expected aliased std import, got {:?}", other),
+        }
+        assert_eq!(use_kind(&prog).binding(), Some("f"));
     }
 
     // ─── Tasks ───────────────────────────────────────────────────────────────────

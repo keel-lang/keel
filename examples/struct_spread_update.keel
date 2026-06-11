@@ -1,3 +1,5 @@
+use std/io
+
 type Order {
   id: str
   status: str
@@ -18,16 +20,34 @@ task process_order(o: Order) -> Order {
 task run_test() {
   pending: Order = { id: "ord-42", status: "pending", amount: 250.0, filled_at: "" }
   filled = process_order(pending)
-  Io.show("id:        {filled.id}")
-  Io.show("status:    {filled.status}")
-  Io.show("amount:    {filled.amount}")
-  Io.show("filled_at: {filled.filled_at}")
+  io.show("id:        {filled.id}")
+  io.show("status:    {filled.status}")
+  io.show("amount:    {filled.amount}")
+  io.show("filled_at: {filled.filled_at}")
   base: Config = { host: "localhost", port: 8080, debug: false }
   dev = { ...base, debug: true }
   prod = { ...dev, host: "api.example.com", debug: false }
-  Io.show("prod host:  {prod.host}")
-  Io.show("prod port:  {prod.port}")
-  Io.show("prod debug: {prod.debug}")
+  io.show("prod host:  {prod.host}")
+  io.show("prod port:  {prod.port}")
+  io.show("prod debug: {prod.debug}")
 }
 
 run_test()
+
+# Tests — run with: keel test examples/struct_spread_update.keel
+test "spread copies unchanged fields" {
+  pending: Order = { id: "ord-42", status: "pending", amount: 250.0, filled_at: "" }
+  filled = process_order(pending)
+  assert filled.status == "filled"
+  assert filled.id == "ord-42"
+  assert filled.amount == 250.0
+}
+
+test "later overrides win" {
+  base: Config = { host: "localhost", port: 8080, debug: false }
+  dev = { ...base, debug: true }
+  prod = { ...dev, host: "api.example.com", debug: false }
+  assert prod.host == "api.example.com"
+  assert prod.port == 8080
+  assert not prod.debug
+}

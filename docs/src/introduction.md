@@ -11,36 +11,41 @@
 
 **Keel** is a small, statically-typed language for building AI agents. The actor model is its one concurrency primitive. Everything else — AI calls, scheduling, human-in-the-loop, HTTP, email, memory — lives in a **standard library that is auto-imported** into every program.
 
-You never write `use keel/ai`. You write `Ai.classify(...)` and the prelude makes it work.
+You never write `use keel/ai`. You write `ai.classify(...)` and the prelude makes it work.
 
 ```keel
+use std/ai
+use std/email
+use std/io
+use std/schedule
+
 type Urgency = low | medium | high | critical
 
 agent EmailAssistant {
   @role "Professional email assistant"
-  @tools [Email]
+  @tools [email]
 
   on message(msg: Message) {
-    urgency = Ai.classify(msg.body, as: Urgency) ?? Urgency.medium
+    urgency = ai.classify(msg.body, as: Urgency) ?? Urgency.medium
 
     when urgency {
       low, medium => {
-        reply = Ai.draft("response to {msg.body}", tone: "friendly")
-        if Io.confirm(reply) { Email.send(reply, to: msg.from) }
+        reply = ai.draft("response to {msg.body}", tone: "friendly")
+        if io.confirm(reply) { email.send(reply, to: msg.from) }
       }
       high, critical => {
-        Io.notify("{urgency}: {msg.subject}")
-        guidance = Io.ask("How should I respond?")
-        reply = Ai.draft("response to {msg.body}", guidance: guidance)
-        if Io.confirm(reply) { Email.send(reply, to: msg.from) }
+        io.notify("{urgency}: {msg.subject}")
+        guidance = io.ask("How should I respond?")
+        reply = ai.draft("response to {msg.body}", guidance: guidance)
+        if io.confirm(reply) { email.send(reply, to: msg.from) }
       }
     }
   }
 
   @on_start {
-    Schedule.every(5.minutes, () => {
-      for email in Email.fetch(unread: true) {
-        Agent.send(self, email.as_message())
+    schedule.every(5.minutes, () => {
+      for email in email.fetch(unread: true) {
+        send(self, email.as_message())
       }
     })
   }

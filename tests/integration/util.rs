@@ -3,10 +3,12 @@ use crate::common::*;
 #[test]
 fn time_parse_shipped_in_v0_1_14() {
     let src = r#"
+use std/io
+use std/time
 agent A {
     @on_start {
-        p = Time.parse("2026-01-01T00:00:00Z")
-        Io.show(p)
+        p = time.parse("2026-01-01T00:00:00Z")
+        io.show(p)
         stop(self)
     }
 }
@@ -15,7 +17,7 @@ run(A)
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(
         ok,
-        "Time.parse should work in v0.1.14\nstdout: {stdout}\nstderr: {stderr}"
+        "time.parse should work in v0.1.14\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(
         stdout.contains("2026-01-01"),
@@ -26,10 +28,12 @@ run(A)
 #[test]
 fn control_retry_succeeds_on_third_attempt() {
     let src = r#"
+use std/control
+use std/io
 agent A {
     state { count: int = 0 }
     @on_start {
-        result = Control.retry(5, () => {
+        result = control.retry(5, () => {
             self.count = self.count + 1
             if self.count < 3 {
                 x = none
@@ -38,14 +42,14 @@ agent A {
             }
             return "ok"
         })
-        Io.show("attempts={self.count}")
-        Io.show("result={result}")
+        io.show("attempts={self.count}")
+        io.show("result={result}")
     }
 }
 run(A)
 "#;
     // The closure raises NullError on the first 2 attempts (via `!` on none)
-    // and returns "ok" on the 3rd. Control.retry must catch the runtime
+    // and returns "ok" on the 3rd. control.retry must catch the runtime
     // errors and re-invoke the closure until success.
     let (ok, stdout, stderr) = run_inline(src, false);
     assert!(
@@ -65,12 +69,14 @@ run(A)
 #[test]
 fn control_with_timeout_returns_value_on_fast_path() {
     let src = r#"
+use std/control
+use std/io
 agent A {
     @on_start {
-        result = Control.with_timeout(5.seconds, () => {
+        result = control.with_timeout(5.seconds, () => {
             return "fast"
         })
-        Io.show("result={result}")
+        io.show("result={result}")
     }
 }
 run(A)
@@ -89,13 +95,16 @@ run(A)
 #[test]
 fn control_with_timeout_aborts_long_call() {
     let src = r#"
+use std/async
+use std/control
+use std/io
 agent A {
     @on_start {
-        Control.with_timeout(1.seconds, () => {
-            Async.sleep(5.seconds)
+        control.with_timeout(1.seconds, () => {
+            async.sleep(5.seconds)
             return "done"
         })
-        Io.show("did-not-time-out")
+        io.show("did-not-time-out")
     }
 }
 run(A)
@@ -120,15 +129,18 @@ run(A)
 #[test]
 fn control_with_timeout_is_catchable_as_timeout_error() {
     let src = r#"
+use std/async
+use std/control
+use std/io
 agent A {
     @on_start {
         try {
-            Control.with_timeout(1.seconds, () => {
-                Async.sleep(60.seconds)
+            control.with_timeout(1.seconds, () => {
+                async.sleep(60.seconds)
             })
         } catch e: TimeoutError {
-            Io.show("kind=TimeoutError")
-            Io.show("msg={e.message.len() > 0}")
+            io.show("kind=TimeoutError")
+            io.show("msg={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -150,15 +162,18 @@ run(A)
 #[test]
 fn control_with_deadline_past_is_catchable_as_deadline_error() {
     let src = r#"
+use std/async
+use std/control
+use std/io
 agent A {
     @on_start {
         try {
-            Control.with_deadline("2020-01-01T00:00:00Z", () => {
-                Async.sleep(5.seconds)
+            control.with_deadline("2020-01-01T00:00:00Z", () => {
+                async.sleep(5.seconds)
             })
         } catch e: DeadlineError {
-            Io.show("kind=DeadlineError")
-            Io.show("msg={e.message.len() > 0}")
+            io.show("kind=DeadlineError")
+            io.show("msg={e.message.len() > 0}")
         }
         stop(self)
     }
@@ -177,14 +192,15 @@ run(A)
     );
 }
 
-// ─── Control.retry error paths ───────────────────────────────────────────────
+// ─── control.retry error paths ───────────────────────────────────────────────
 
 #[test]
 fn control_retry_rejects_zero_attempts() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.retry(0, () => {
+        control.retry(0, () => {
             return "never"
         })
     }
@@ -202,9 +218,10 @@ run(A)
 #[test]
 fn control_retry_rejects_missing_closure() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.retry(3)
+        control.retry(3)
     }
 }
 run(A)
@@ -217,14 +234,15 @@ run(A)
     );
 }
 
-// ─── Control.with_timeout error paths ────────────────────────────────────────
+// ─── control.with_timeout error paths ────────────────────────────────────────
 
 #[test]
 fn control_with_timeout_rejects_missing_duration() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.with_timeout(() => {
+        control.with_timeout(() => {
             return "ok"
         })
     }
@@ -242,9 +260,10 @@ run(A)
 #[test]
 fn control_with_timeout_rejects_missing_closure() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.with_timeout(5.seconds)
+        control.with_timeout(5.seconds)
     }
 }
 run(A)
@@ -260,9 +279,10 @@ run(A)
 #[test]
 fn control_with_timeout_propagates_closure_error() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.with_timeout(5.seconds, () => {
+        control.with_timeout(5.seconds, () => {
             x = none
             y = x!
             return "never"
@@ -283,17 +303,19 @@ run(A)
     );
 }
 
-// ─── Control.with_deadline ───────────────────────────────────────────────────
+// ─── control.with_deadline ───────────────────────────────────────────────────
 
 #[test]
 fn control_with_deadline_completes_before_deadline() {
     let src = r#"
+use std/control
+use std/io
 agent A {
     @on_start {
-        result = Control.with_deadline("2099-01-01T00:00:00Z", () => {
+        result = control.with_deadline("2099-01-01T00:00:00Z", () => {
             return "early"
         })
-        Io.show("result={result}")
+        io.show("result={result}")
     }
 }
 run(A)
@@ -312,13 +334,16 @@ run(A)
 #[test]
 fn control_with_deadline_aborts_on_past_deadline() {
     let src = r#"
+use std/async
+use std/control
+use std/io
 agent A {
     @on_start {
-        Control.with_deadline("2020-01-01T00:00:00Z", () => {
-            Async.sleep(5.seconds)
+        control.with_deadline("2020-01-01T00:00:00Z", () => {
+            async.sleep(5.seconds)
             return "too-late"
         })
-        Io.show("did-not-time-out")
+        io.show("did-not-time-out")
     }
 }
 run(A)
@@ -341,9 +366,10 @@ run(A)
 #[test]
 fn control_with_deadline_rejects_missing_datetime() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.with_deadline()
+        control.with_deadline()
     }
 }
 run(A)
@@ -351,7 +377,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing datetime");
     assert!(
-        stderr.contains("Control.with_deadline: missing argument at position 0"),
+        stderr.contains("control.with_deadline: missing argument at position 0"),
         "expected missing argument error:\n{stderr}"
     );
 }
@@ -359,9 +385,10 @@ run(A)
 #[test]
 fn control_with_deadline_rejects_unparseable_datetime() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.with_deadline("not-a-date", () => {
+        control.with_deadline("not-a-date", () => {
             return "ok"
         })
     }
@@ -379,9 +406,10 @@ run(A)
 #[test]
 fn control_with_deadline_rejects_missing_closure() {
     let src = r#"
+use std/control
 agent A {
     @on_start {
-        Control.with_deadline("2099-01-01T00:00:00Z")
+        control.with_deadline("2099-01-01T00:00:00Z")
     }
 }
 run(A)
@@ -397,12 +425,14 @@ run(A)
 #[test]
 fn async_spawn_returns_handle() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        h = Async.spawn(() => {
-            Io.show("spawned")
+        h = async.spawn(() => {
+            io.show("spawned")
         })
-        Io.show("spawn-ok")
+        io.show("spawn-ok")
     }
 }
 run(AsyncTest)
@@ -414,22 +444,24 @@ run(AsyncTest)
     );
     assert!(
         stdout.contains("spawn-ok"),
-        "Async.spawn should work:\n{stdout}"
+        "async.spawn should work:\n{stdout}"
     );
 }
 
 #[test]
 fn async_join_all_returns_results_and_preserves_agent_context() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     state { count: int = 41 }
 
     @on_start {
-        h = Async.spawn(() => {
+        h = async.spawn(() => {
             return self.count + 1
         })
-        results = Async.join_all([h])
-        Io.show(results)
+        results = async.join_all([h])
+        io.show(results)
         stop(self)
     }
 }
@@ -442,11 +474,11 @@ run(AsyncTest)
     );
     assert!(
         stdout.contains("42"),
-        "Async.join_all should return spawned closure results:\n{stdout}"
+        "async.join_all should return spawned closure results:\n{stdout}"
     );
     assert!(
         !stdout.contains("_status"),
-        "Async.join_all must not return raw handles:\n{stdout}"
+        "async.join_all must not return raw handles:\n{stdout}"
     );
 }
 
@@ -459,13 +491,16 @@ fn async_join_all_propagates_spawned_errors() {
     let file = keel_string_literal(&missing.to_string_lossy());
     let src = format!(
         r#"
+use std/async
+use std/file
+use std/io
 agent AsyncTest {{
     @on_start {{
-        h = Async.spawn(() => {{
-            File.read("{file}")
+        h = async.spawn(() => {{
+            file.read("{file}")
         }})
-        Async.join_all([h])
-        Io.show("unreachable")
+        async.join_all([h])
+        io.show("unreachable")
         stop(self)
     }}
 }}
@@ -473,9 +508,9 @@ run(AsyncTest)
 "#
     );
     let (ok, stdout, stderr) = run_inline(&src, false);
-    assert!(!ok, "spawned File.read error should fail");
+    assert!(!ok, "spawned file.read error should fail");
     assert!(
-        stderr.contains("Async.join_all: task failed") && stderr.contains("FileError: File.read"),
+        stderr.contains("async.join_all: task failed") && stderr.contains("FileError: file.read"),
         "expected propagated async task error\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(
@@ -491,10 +526,12 @@ run(AsyncTest)
 #[test]
 fn time_now_returns_iso_string() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    t = Time.now()
-    Io.show(t)
+    t = time.now()
+    io.show(t)
     stop(self)
   }
 }
@@ -507,17 +544,19 @@ run(A)
     );
     assert!(
         stdout.contains('T') && (stdout.contains('+') || stdout.contains('Z')),
-        "Time.now() should return RFC 3339:\n{stdout}"
+        "time.now() should return RFC 3339:\n{stdout}"
     );
 }
 
 #[test]
 fn time_parse_normalises_date() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    p = Time.parse("2026-05-01T00:00:00Z")
-    Io.show(p)
+    p = time.parse("2026-05-01T00:00:00Z")
+    io.show(p)
     stop(self)
   }
 }
@@ -537,11 +576,13 @@ run(A)
 #[test]
 fn time_parse_rejects_naive_without_tz() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    p = Time.parse("2026-05-01")
+    p = time.parse("2026-05-01")
     if p == none {
-      Io.show("none")
+      io.show("none")
     }
     stop(self)
   }
@@ -562,10 +603,12 @@ run(A)
 #[test]
 fn time_parse_with_tz_coerces_naive() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    p = Time.parse("2026-05-01", tz: "UTC")
-    Io.show(p)
+    p = time.parse("2026-05-01", tz: "UTC")
+    io.show(p)
     stop(self)
   }
 }
@@ -585,11 +628,13 @@ run(A)
 #[test]
 fn time_format_strftime() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    dt = Time.parse("2026-05-01T09:30:00Z")
+    dt = time.parse("2026-05-01T09:30:00Z")
     s = dt.format(as: "%Y-%m-%d")
-    Io.show(s)
+    io.show(s)
     stop(self)
   }
 }
@@ -609,12 +654,14 @@ run(A)
 #[test]
 fn time_diff_one_day() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    a = Time.parse("2026-05-02T00:00:00Z")
-    b = Time.parse("2026-05-01T00:00:00Z")
+    a = time.parse("2026-05-02T00:00:00Z")
+    b = time.parse("2026-05-01T00:00:00Z")
     d = a - b
-    Io.show(d)
+    io.show(d)
     stop(self)
   }
 }
@@ -634,15 +681,17 @@ run(A)
 #[test]
 fn time_parts_returns_map() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    dt = Time.parse("2026-05-06T14:30:45Z")
+    dt = time.parse("2026-05-06T14:30:45Z")
     p = dt.parts()
-    Io.show(p.year)
-    Io.show(p.month)
-    Io.show(p.day)
-    Io.show(p.hour)
-    Io.show(p.tz)
+    io.show(p.year)
+    io.show(p.month)
+    io.show(p.day)
+    io.show(p.hour)
+    io.show(p.tz)
     stop(self)
   }
 }
@@ -666,10 +715,12 @@ run(A)
 #[test]
 fn time_now_with_tz() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    t = Time.now(tz: "Europe/Paris")
-    Io.show(t)
+    t = time.now(tz: "Europe/Paris")
+    io.show(t)
     stop(self)
   }
 }
@@ -683,18 +734,20 @@ run(A)
     // Paris is UTC+1 or UTC+2 — either offset appears
     assert!(
         stdout.contains("+01:00") || stdout.contains("+02:00"),
-        "Time.now(tz: Paris) should emit a European offset:\n{stdout}"
+        "time.now(tz: Paris) should emit a European offset:\n{stdout}"
     );
 }
 
 #[test]
 fn time_datetime_arithmetic() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    base = Time.parse("2026-05-01T00:00:00Z")
+    base = time.parse("2026-05-01T00:00:00Z")
     future = base + 1.days
-    Io.show(future)
+    io.show(future)
     stop(self)
   }
 }
@@ -714,12 +767,14 @@ run(A)
 #[test]
 fn time_datetime_comparison() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    a = Time.parse("2026-05-02T00:00:00Z")
-    b = Time.parse("2026-05-01T00:00:00Z")
+    a = time.parse("2026-05-02T00:00:00Z")
+    b = time.parse("2026-05-01T00:00:00Z")
     if a > b {
-      Io.show("later")
+      io.show("later")
     }
     stop(self)
   }
@@ -740,12 +795,13 @@ run(A)
 #[test]
 fn millisecond_duration_literal() {
     let src = r#"
+use std/io
 agent A {
   @on_start {
     d = 500.ms
-    Io.show(d)
+    io.show(d)
     d2 = 1500.millis
-    Io.show(d2)
+    io.show(d2)
     stop(self)
   }
 }
@@ -769,10 +825,12 @@ run(A)
 #[test]
 fn time_now_emits_millisecond_precision() {
     let src = r#"
+use std/io
+use std/time
 agent A {
   @on_start {
-    t = Time.now()
-    Io.show(t)
+    t = time.now()
+    io.show(t)
     stop(self)
   }
 }
@@ -786,26 +844,28 @@ run(A)
     // RFC 3339 with milliseconds: contains a dot before Z or +
     assert!(
         stdout.contains('.') && (stdout.contains('Z') || stdout.contains('+')),
-        "Time.now() should emit millisecond-precision RFC 3339:\n{stdout}"
+        "time.now() should emit millisecond-precision RFC 3339:\n{stdout}"
     );
 }
 
-// ─── Async.select ────────────────────────────────────────────────────────────
+// ─── async.select ────────────────────────────────────────────────────────────
 
 #[test]
 fn async_select_returns_first_completed() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        h1 = Async.spawn(() => {
+        h1 = async.spawn(() => {
             return "fast"
         })
-        h2 = Async.spawn(() => {
-            Async.sleep(5.seconds)
+        h2 = async.spawn(() => {
+            async.sleep(5.seconds)
             return "slow"
         })
-        result = Async.select([h1, h2])
-        Io.show(result)
+        result = async.select([h1, h2])
+        io.show(result)
     }
 }
 run(AsyncTest)
@@ -830,10 +890,12 @@ run(AsyncTest)
 #[test]
 fn async_select_with_empty_list_fails() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        Async.select([])
-        Io.show("unreachable")
+        async.select([])
+        io.show("unreachable")
     }
 }
 run(AsyncTest)
@@ -851,15 +913,17 @@ run(AsyncTest)
     );
 }
 
-// ─── Async.sleep ────────────────────────────────────────────────────────────
+// ─── async.sleep ────────────────────────────────────────────────────────────
 
 #[test]
 fn async_sleep_returns_none() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        r = Async.sleep(10.millis)
-        Io.show("slept")
+        r = async.sleep(10.millis)
+        io.show("slept")
     }
 }
 run(AsyncTest)
@@ -875,15 +939,17 @@ run(AsyncTest)
     );
 }
 
-// ─── Async.join_all edge cases ──────────────────────────────────────────────
+// ─── async.join_all edge cases ──────────────────────────────────────────────
 
 #[test]
 fn async_join_all_empty_list_returns_empty() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        results = Async.join_all([])
-        Io.show("ok")
+        results = async.join_all([])
+        io.show("ok")
         stop(self)
     }
 }
@@ -903,10 +969,12 @@ run(AsyncTest)
 #[test]
 fn async_join_all_with_non_list_fails() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        Async.join_all("not-a-list")
-        Io.show("unreachable")
+        async.join_all("not-a-list")
+        io.show("unreachable")
     }
 }
 run(AsyncTest)
@@ -919,15 +987,17 @@ run(AsyncTest)
     );
 }
 
-// ─── Async.spawn edge cases ─────────────────────────────────────────────────
+// ─── async.spawn edge cases ─────────────────────────────────────────────────
 
 #[test]
 fn async_spawn_missing_closure_fails() {
     let src = r#"
+use std/async
+use std/io
 agent AsyncTest {
     @on_start {
-        Async.spawn()
-        Io.show("unreachable")
+        async.spawn()
+        io.show("unreachable")
     }
 }
 run(AsyncTest)
@@ -940,21 +1010,23 @@ run(AsyncTest)
     );
 }
 
-// ── Regression: Async.spawn can call user-defined tasks (B3) ─────────────────
+// ── Regression: async.spawn can call user-defined tasks (B3) ─────────────────
 
 #[test]
 fn async_spawn_can_call_user_defined_task() {
     let src = r#"
+use std/async
+use std/io
 task double(n: int) -> int {
     n * 2
 }
 agent AsyncTest {
     @on_start {
-        h = Async.spawn(() => {
+        h = async.spawn(() => {
             double(21)
         })
-        results = Async.join_all([h])
-        Io.show("{results}")
+        results = async.join_all([h])
+        io.show("{results}")
         stop(self)
     }
 }

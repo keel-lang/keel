@@ -7,11 +7,12 @@ use crate::common::*;
 #[test]
 fn null_assert_on_none_raises_runtime_error() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = none
         val = x!
-        Io.show(val)
+        io.show(val)
     }
 }
 run(A)
@@ -75,10 +76,11 @@ run(A)
 #[test]
 fn modulo_by_zero_is_runtime_error() {
     let src = r#"
+use std/io
 agent A {
     @on_start {
         x = 5 % 0
-        Io.show(x)
+        io.show(x)
     }
 }
 run(A)
@@ -94,14 +96,15 @@ run(A)
 #[test]
 fn return_inside_if_expr_propagates_out_of_task() {
     let src = r#"
+use std/io
 task classify(n: int) -> str {
     label = if n > 0 { return "positive" } else { "other" }
     label
 }
 agent A {
     @on_start {
-        Io.show(classify(5))
-        Io.show(classify(-1))
+        io.show(classify(5))
+        io.show(classify(-1))
         stop(self)
     }
 }
@@ -123,14 +126,15 @@ run(A)
 fn return_inside_if_expr_else_branch_propagates() {
     // Exercises the else-body path of the IfExpr EarlyReturn fix.
     let src = r#"
+use std/io
 task classify(n: int) -> str {
     label = if n > 0 { "positive" } else { return "non-positive" }
     label
 }
 agent A {
     @on_start {
-        Io.show(classify(5))
-        Io.show(classify(-3))
+        io.show(classify(5))
+        io.show(classify(-3))
         stop(self)
     }
 }
@@ -154,14 +158,15 @@ fn return_inside_list_literal_propagates() {
     // dropped into the list as a stray EarlyReturn value instead of exiting
     // the enclosing task.
     let src = r#"
+use std/io
 task get_early(flag: bool) -> int {
     nums = [1, if flag { return 42 } else { 0 }, 3]
     nums[0]
 }
 agent A {
     @on_start {
-        Io.show(get_early(true))
-        Io.show(get_early(false))
+        io.show(get_early(true))
+        io.show(get_early(false))
         stop(self)
     }
 }
@@ -236,10 +241,11 @@ run(Bot)
 #[test]
 fn raise_string_is_caught_by_error() {
     let src = r#"
+use std/io
 try {
     raise "something went wrong"
 } catch err: Error {
-    Io.show("caught: {err.message}")
+    io.show("caught: {err.message}")
 }
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
@@ -253,12 +259,13 @@ try {
 #[test]
 fn raise_stops_execution_in_block() {
     let src = r#"
+use std/io
 try {
-    Io.show("before")
+    io.show("before")
     raise "stop"
-    Io.show("after")
+    io.show("after")
 } catch err: Error {
-    Io.show("caught")
+    io.show("caught")
 }
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);
@@ -283,6 +290,7 @@ raise "unhandled error"
 #[test]
 fn raise_inside_task_propagates() {
     let src = r#"
+use std/io
 task validate(x: int) {
     if x < 0 {
         raise "x must be non-negative"
@@ -292,7 +300,7 @@ task validate(x: int) {
 try {
     validate(-1)
 } catch err: Error {
-    Io.show("task raised: {err.message}")
+    io.show("task raised: {err.message}")
 }
 "#;
     let (ok, stdout, stderr) = run_inline(src, false);

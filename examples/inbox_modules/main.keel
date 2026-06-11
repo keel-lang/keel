@@ -1,0 +1,26 @@
+# Multi-file Keel program.
+#
+#   use std/<name>            std modules (file, io, ai, ...)
+#   use "./module.keel"       local modules, namespaced by file stem
+#   use X from "./m.keel"     pull a symbol unqualified
+#
+# Run with:  KEEL_ONESHOT=1 keel run examples/inbox_modules/main.keel
+# Test with: keel test examples/inbox_modules/validation_test.keel
+
+use std/io
+use "./validation.keel"
+use "./triage.keel"
+use subject_priority from "./validation.keel"
+
+task summarize(addresses: list[str]) -> int {
+  valid = addresses.filter(a => validation.email(a))
+  valid.len()
+}
+
+addresses = ["ada@example.com", "not-an-email", "grace@nav.mil"]
+io.show("{summarize(addresses)} of {addresses.len()} addresses are valid")
+subject = "urgent: ship it"
+io.show("priority: {subject_priority(subject)}")
+
+run(triage.Triage)
+send(triage.Triage, "ada@example.com")

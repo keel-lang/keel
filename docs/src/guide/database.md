@@ -2,23 +2,26 @@
 
 > **Alpha (v0.1).** Breaking changes expected.
 
-The `Db` namespace provides access to SQLite databases via `Db.connect()`. Each connection can execute queries and commands. No `@tools` annotation is required.
+The `Db` namespace provides access to SQLite databases via `db.connect()`. Each connection can execute queries and commands. No `@tools` annotation is required.
 
 ```keel
+use std/db
+use std/log
+
 agent DataPipeline {
     @on_start {
-        db = Db.connect("sqlite://trades.db")
+        db = db.connect("sqlite://trades.db")
 
         db.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL)")
         db.exec("INSERT INTO trades VALUES (?, ?, ?)", ["t1", "BTCUSDT", 67000.0])
 
         rows = db.query("SELECT symbol, price FROM trades WHERE symbol = ?", ["BTCUSDT"])
         for row in rows {
-            Log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
+            log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
         }
 
         count = db.exec("DELETE FROM trades WHERE symbol = ?", ["BTCUSDT"])
-        Log.info("Deleted {count} row(s)")
+        log.info("Deleted {count} row(s)")
 
         stop(self)
     }
@@ -38,12 +41,12 @@ SQLite is bundled into the Keel binary — no system library required. Other sch
 
 ## Functions
 
-### `Db.connect(url: str) -> DbConnection`
+### `db.connect(url: str) -> DbConnection`
 
 Open or create a SQLite database. Returns a connection value with `.query()` and `.exec()` methods.
 
 ```keel
-db = Db.connect("sqlite://data/app.db")
+db = db.connect("sqlite://data/app.db")
 ```
 
 ---
@@ -55,7 +58,7 @@ Execute a SELECT query and return all matching rows. Each row is a `map[str, dyn
 ```keel
 rows = db.query("SELECT name, score FROM users")
 for row in rows {
-    Log.info("{row["name"]}: {row["score"]}")
+    log.info("{row["name"]}: {row["score"]}")
 }
 
 # Parameterized query — use ? placeholders
@@ -89,7 +92,7 @@ count = db.exec("UPDATE users SET age = ? WHERE name = ?", [31, "Alice"])
 
 # Delete
 count = db.exec("DELETE FROM users WHERE age < ?", [18])
-Log.info("Deleted {count} user(s)")
+log.info("Deleted {count} user(s)")
 ```
 
 ---
@@ -136,13 +139,16 @@ Malformed SQL, constraint violations, and I/O errors raise exceptions and halt e
 Use `sqlite://:memory:` for temporary data that doesn't persist:
 
 ```keel
+use std/db
+use std/io
+
 agent Scratchpad {
     @on_start {
-        scratch = Db.connect("sqlite://:memory:")
+        scratch = db.connect("sqlite://:memory:")
         scratch.exec("CREATE TABLE temp (id INT, value TEXT)")
         scratch.exec("INSERT INTO temp VALUES (1, 'hello')")
         results = scratch.query("SELECT * FROM temp")
-        Io.show(results[0])
+        io.show(results[0])
         stop(self)
     }
 }

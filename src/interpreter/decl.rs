@@ -326,7 +326,7 @@ mod tests {
     use crate::ast::{
         AgentDecl, AgentItem, AttributeBody, AttributeDecl, Decl, Expr, Field, InterfaceDecl, Node,
         OnHandler, Param, SpannedExpr, StateField, TaskDecl, TypeDecl, TypeDef, TypeExpr, UseDecl,
-        UseKind,
+        UseKind, UseSource,
     };
 
     // ── helpers ──────────────────────────────────────────────────────────
@@ -493,7 +493,10 @@ mod tests {
     fn register_use_is_noop() {
         let mut interp = new_interp();
         let decl = Decl::Use(UseDecl {
-            kind: UseKind::File("./lib.keel".into()),
+            kind: UseKind::Module {
+                source: UseSource::File("./lib.keel".into()),
+                alias: None,
+            },
         });
         let prev_count = interp.globals.len();
         interp.register_decl(&decl).unwrap();

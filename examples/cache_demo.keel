@@ -1,31 +1,49 @@
+use std/cache
+use std/io
+
 agent CacheDemo {
     @on_start {
         # Basic set and get
-        Cache.set("greeting", "Hello, Keel!")
-        val = Cache.get("greeting")
-        Io.show(val)
+        cache.set("greeting", "Hello, Keel!")
+        val = cache.get("greeting")
+        io.show(val)
 
         # Set with TTL
-        Cache.set("token", "abc123", ttl: 5.minutes)
-        token = Cache.get("token")
-        Io.show("Token: {token}")
+        cache.set("token", "abc123", ttl: 5.minutes)
+        token = cache.get("token")
+        io.show("Token: {token}")
 
         # Delete a key
-        Cache.set("temp", "remove-me")
-        Cache.delete("temp")
-        gone = Cache.get("temp")
+        cache.set("temp", "remove-me")
+        cache.delete("temp")
+        gone = cache.get("temp")
         if gone == none {
-            Io.show("key deleted")
+            io.show("key deleted")
         }
 
         # Clear all entries
-        Cache.set("a", "1")
-        Cache.set("b", "2")
-        Cache.clear()
-        empty = Cache.get("a")
+        cache.set("a", "1")
+        cache.set("b", "2")
+        cache.clear()
+        empty = cache.get("a")
         if empty == none {
-            Io.show("cache cleared")
+            io.show("cache cleared")
         }
     }
 }
 run(CacheDemo)
+
+# Tests — run with: keel test examples/cache_demo.keel
+test "set then get round-trips" {
+  cache.set("greeting", "Hello, Keel!")
+  assert cache.get("greeting") == "Hello, Keel!"
+}
+
+test "delete and clear remove entries" {
+  cache.set("temp", "remove-me")
+  cache.delete("temp")
+  assert cache.get("temp") == none
+  cache.set("a", "1")
+  cache.clear()
+  assert cache.get("a") == none
+}
