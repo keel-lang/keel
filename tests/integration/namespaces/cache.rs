@@ -10,6 +10,7 @@ fn cache_set_get() {
 use std/cache
 use std/io
 agent CacheTest {
+    @tools [io]
     @on_start {
         cache.set("key", "value")
         v = cache.get("key")
@@ -32,6 +33,7 @@ fn cache_delete() {
 use std/cache
 use std/io
 agent CacheTest {
+    @tools [io]
     @on_start {
         cache.set("temp", "x")
         cache.delete("temp")
@@ -54,6 +56,7 @@ fn cache_clear() {
 use std/cache
 use std/io
 agent CacheTest {
+    @tools [io]
     @on_start {
         cache.set("a", "1")
         cache.set("b", "2")

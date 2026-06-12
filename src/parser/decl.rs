@@ -476,13 +476,23 @@ fn agent_item() -> P<AgentItem> {
             condition,
         });
 
-    let tools_attr = just(Token::AtSign)
-        .ignore_then(just(Token::Ident("tools".to_string())))
-        .ignore_then(just(Token::LBracket))
+    let tools_list = just(Token::LBracket)
         .ignore_then(newlines())
         .ignore_then(tool_entry.separated_by(field_sep()).allow_trailing())
         .then_ignore(newlines())
-        .then_ignore(just(Token::RBracket))
+        .then_ignore(just(Token::RBracket));
+
+    // `@tools all` — the explicit unrestricted form. Lowered as a single
+    // wildcard entry so the runtime and checker treat it uniformly.
+    let tools_all = just(Token::Ident("all".to_string())).to(vec![ToolEntry {
+        namespace: "all".to_string(),
+        method: None,
+        condition: None,
+    }]);
+
+    let tools_attr = just(Token::AtSign)
+        .ignore_then(just(Token::Ident("tools".to_string())))
+        .ignore_then(choice((tools_list, tools_all)))
         .map(|entries| {
             AgentItem::Attribute(AttributeDecl {
                 name: "tools".to_string(),

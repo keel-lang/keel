@@ -2,6 +2,7 @@ use std/io
 use std/random
 
 agent RandomDemo {
+  @tools [io]
   @on_start {
     roll = random.int(min: 1, max: 6)
     sample = random.float()

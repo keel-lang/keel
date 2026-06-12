@@ -6,6 +6,7 @@ fn time_parse_shipped_in_v0_1_14() {
 use std/io
 use std/time
 agent A {
+    @tools [io]
     @on_start {
         p = time.parse("2026-01-01T00:00:00Z")
         io.show(p)
@@ -31,6 +32,7 @@ fn control_retry_succeeds_on_third_attempt() {
 use std/control
 use std/io
 agent A {
+    @tools [io]
     state { count: int = 0 }
     @on_start {
         result = control.retry(5, () => {
@@ -72,6 +74,7 @@ fn control_with_timeout_returns_value_on_fast_path() {
 use std/control
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = control.with_timeout(5.seconds, () => {
             return "fast"
@@ -99,6 +102,7 @@ use std/async
 use std/control
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         control.with_timeout(1.seconds, () => {
             async.sleep(5.seconds)
@@ -133,6 +137,7 @@ use std/async
 use std/control
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             control.with_timeout(1.seconds, () => {
@@ -166,6 +171,7 @@ use std/async
 use std/control
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             control.with_deadline("2020-01-01T00:00:00Z", () => {
@@ -311,6 +317,7 @@ fn control_with_deadline_completes_before_deadline() {
 use std/control
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = control.with_deadline("2099-01-01T00:00:00Z", () => {
             return "early"
@@ -338,6 +345,7 @@ use std/async
 use std/control
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         control.with_deadline("2020-01-01T00:00:00Z", () => {
             async.sleep(5.seconds)
@@ -428,6 +436,7 @@ fn async_spawn_returns_handle() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         h = async.spawn(() => {
             io.show("spawned")
@@ -454,6 +463,7 @@ fn async_join_all_returns_results_and_preserves_agent_context() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     state { count: int = 41 }
 
     @on_start {
@@ -495,6 +505,7 @@ use std/async
 use std/file
 use std/io
 agent AsyncTest {{
+    @tools [file, io]
     @on_start {{
         h = async.spawn(() => {{
             file.read("{file}")
@@ -529,6 +540,7 @@ fn time_now_returns_iso_string() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     t = time.now()
     io.show(t)
@@ -554,6 +566,7 @@ fn time_parse_normalises_date() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     p = time.parse("2026-05-01T00:00:00Z")
     io.show(p)
@@ -579,6 +592,7 @@ fn time_parse_rejects_naive_without_tz() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     p = time.parse("2026-05-01")
     if p == none {
@@ -606,6 +620,7 @@ fn time_parse_with_tz_coerces_naive() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     p = time.parse("2026-05-01", tz: "UTC")
     io.show(p)
@@ -631,6 +646,7 @@ fn time_format_strftime() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     dt = time.parse("2026-05-01T09:30:00Z")
     s = dt.format(as: "%Y-%m-%d")
@@ -657,6 +673,7 @@ fn time_diff_one_day() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     a = time.parse("2026-05-02T00:00:00Z")
     b = time.parse("2026-05-01T00:00:00Z")
@@ -684,6 +701,7 @@ fn time_parts_returns_map() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     dt = time.parse("2026-05-06T14:30:45Z")
     p = dt.parts()
@@ -718,6 +736,7 @@ fn time_now_with_tz() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     t = time.now(tz: "Europe/Paris")
     io.show(t)
@@ -744,6 +763,7 @@ fn time_datetime_arithmetic() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     base = time.parse("2026-05-01T00:00:00Z")
     future = base + 1.days
@@ -770,6 +790,7 @@ fn time_datetime_comparison() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     a = time.parse("2026-05-02T00:00:00Z")
     b = time.parse("2026-05-01T00:00:00Z")
@@ -797,6 +818,7 @@ fn millisecond_duration_literal() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     d = 500.ms
     io.show(d)
@@ -828,6 +850,7 @@ fn time_now_emits_millisecond_precision() {
 use std/io
 use std/time
 agent A {
+  @tools [io]
   @on_start {
     t = time.now()
     io.show(t)
@@ -856,6 +879,7 @@ fn async_select_returns_first_completed() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         h1 = async.spawn(() => {
             return "fast"
@@ -893,6 +917,7 @@ fn async_select_with_empty_list_fails() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         async.select([])
         io.show("unreachable")
@@ -921,6 +946,7 @@ fn async_sleep_returns_none() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         r = async.sleep(10.millis)
         io.show("slept")
@@ -947,6 +973,7 @@ fn async_join_all_empty_list_returns_empty() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         results = async.join_all([])
         io.show("ok")
@@ -972,6 +999,7 @@ fn async_join_all_with_non_list_fails() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         async.join_all("not-a-list")
         io.show("unreachable")
@@ -995,6 +1023,7 @@ fn async_spawn_missing_closure_fails() {
 use std/async
 use std/io
 agent AsyncTest {
+    @tools [io]
     @on_start {
         async.spawn()
         io.show("unreachable")
@@ -1021,6 +1050,7 @@ task double(n: int) -> int {
     n * 2
 }
 agent AsyncTest {
+    @tools [io]
     @on_start {
         h = async.spawn(() => {
             double(21)

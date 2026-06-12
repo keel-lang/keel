@@ -76,9 +76,8 @@ run(A)
 }
 
 #[test]
-fn shell_run_capability_error_when_tools_list_excludes_shell() {
-    // When @tools restricts the agent to specific namespaces, shell.run must
-    // raise CapabilityError if Shell is not in the list.
+fn shell_run_excluded_from_tools_is_a_compile_error() {
+    // A direct std call not covered by @tools is rejected statically.
     let src = r#"
 use std/shell
 agent A {
@@ -91,9 +90,33 @@ agent A {
 run(A)
 "#;
     let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected compile-time @tools rejection");
+    assert!(
+        stderr.contains("@tools does not allow it"),
+        "expected static capability error in stderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn shell_run_capability_error_when_guard_is_false() {
+    // A conditional entry is declared (passes the static check) but its
+    // guard is false at runtime: the call raises CapabilityError.
+    let src = r#"
+use std/shell
+agent A {
+    state { enabled: bool = false }
+    @tools [shell.run if self.enabled]
+    @on_start {
+        shell.run("echo hi")
+        stop(self)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(
         !ok,
-        "expected CapabilityError when Shell excluded from @tools"
+        "expected CapabilityError when the @tools guard is false"
     );
     assert!(
         stderr.contains("CapabilityError"),

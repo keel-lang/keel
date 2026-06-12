@@ -9,6 +9,7 @@ fn numeric_abs_float() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = -3.75
         io.show("abs={v.abs()}")
@@ -27,6 +28,7 @@ fn numeric_abs_int() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = -5
         io.show("abs={v.abs()}")
@@ -45,6 +47,7 @@ fn numeric_floor() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = 3.7
         io.show("floor={v.floor()}")
@@ -63,6 +66,7 @@ fn numeric_ceil() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = 3.2
         io.show("ceil={v.ceil()}")
@@ -81,6 +85,7 @@ fn numeric_round() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = 3.5
         io.show("round={v.round()}")
@@ -99,6 +104,7 @@ fn numeric_chain() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = -3.75
         io.show("chained={v.abs().ceil()}")
@@ -120,6 +126,7 @@ fn numeric_int_floor_noop() {
     let src = r#"
 use std/io
 agent NumTest {
+    @tools [io]
     @on_start {
         v = 7
         io.show("floor={v.floor()}")

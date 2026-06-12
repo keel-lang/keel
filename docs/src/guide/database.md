@@ -9,6 +9,7 @@ use std/db
 use std/log
 
 agent DataPipeline {
+    @tools [db]
     @on_start {
         db = db.connect("sqlite://trades.db")
 
@@ -143,6 +144,7 @@ use std/db
 use std/io
 
 agent Scratchpad {
+    @tools [db, io]
     @on_start {
         scratch = db.connect("sqlite://:memory:")
         scratch.exec("CREATE TABLE temp (id INT, value TEXT)")

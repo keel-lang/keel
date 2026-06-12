@@ -3,6 +3,7 @@ use std/io
 use std/log
 
 agent CsvDemo {
+    @tools [io]
     @on_start {
         # Parse raw CSV into list[list[str]]
         raw = "symbol,price,volume\nBTC,67000,1234.5\nETH,3500,5678.9\nSOL,150,9999.0"

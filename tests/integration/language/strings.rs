@@ -9,6 +9,7 @@ fn string_interp_method_call() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         items = [1, 2, 3]
         msg = "size={items.count()}"
@@ -30,6 +31,7 @@ fn string_interp_binary_expr() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 5
         msg = "doubled={x * 2}"
@@ -51,6 +53,7 @@ fn nested_string_in_interpolation_slot() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         score = 0.9
         msg = "label={if score > 0.8 { "high" } else { "low" }}"
@@ -72,6 +75,7 @@ fn nested_string_double_layer() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = "world"
         msg = "hi {"there {x}"}"
@@ -99,6 +103,7 @@ fn interp_underscore_ident_is_not_mangled() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     x1_2 = "hello"
     io.show("{x1_2}")
@@ -121,6 +126,7 @@ fn interp_digit_separator_in_numeric_literal() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     n = 2000
     io.show("{n > 1_000}")
@@ -147,6 +153,7 @@ fn string_repeat_produces_n_copies() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     io.show("{"ha".repeat(3)}")
     stop(self)
@@ -169,6 +176,7 @@ fn string_slice_extracts_chars() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     io.show("{"hello world".slice(6, 11)}")
     stop(self)
@@ -191,6 +199,7 @@ fn string_index_of_returns_position_or_none() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     io.show("{"hello world".index_of("world")}")
     io.show("{"hello world".index_of("xyz")}")
@@ -215,6 +224,7 @@ fn string_trim_start_and_trim_end() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     s = "  hi  "
     io.show("{s.trim_start()}")
@@ -240,6 +250,7 @@ fn string_to_int_parses_or_returns_none() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     io.show("{"42".to_int()}")
     io.show("{"bad".to_int()}")
@@ -264,6 +275,7 @@ fn string_to_float_parses_or_returns_none() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     io.show("{"3.14".to_float()}")
     io.show("{"nope".to_float()}")
@@ -292,6 +304,7 @@ fn format_spec_float_precision() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         pi = 3.14159
         io.show("{pi:.2f}")
@@ -316,6 +329,7 @@ fn format_spec_int_as_float() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         n = 42
         io.show("{n:.2f}")
@@ -336,6 +350,7 @@ fn format_spec_right_align() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         n = 7
         io.show("{n:>5}")
@@ -356,6 +371,7 @@ fn format_spec_left_align() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         s = "hi"
         io.show("{s:<6}!")
@@ -376,6 +392,7 @@ fn format_spec_center_align() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         s = "hi"
         io.show("{s:^6}!")
@@ -396,6 +413,7 @@ fn format_spec_combined_align_and_precision() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 3.14159
         io.show("{x:>10.2f}")
@@ -419,6 +437,7 @@ task greet(name: str) -> str {
     "hello {name}"
 }
 agent A {
+    @tools [io]
     @on_start {
         io.show(greet(name: "world"))
     }
@@ -438,6 +457,7 @@ fn format_spec_bare_width_right_aligns() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         n = 5
         io.show("{n:4}")
@@ -466,6 +486,7 @@ impl Stringable for Tag {
     }
 }
 agent A {
+    @tools [io]
     @on_start {
         t: Tag = { value: "ok" }
         io.show("{t}")
@@ -491,6 +512,7 @@ fn format_spec_unknown_type_flag_is_runtime_error() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         pi = 3.14
         io.show("{pi:.2x}")

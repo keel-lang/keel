@@ -47,6 +47,7 @@ test "greet formats a non-null name" {
 }
 
 agent NullableDemo {
+  @tools [ai, env, io]    # ai, env: helper tasks use them — @tools covers transitive effects
   @role "Demonstrates nullable type safety"
   @on_start {
     texts = ["The team shipped a great release today!", "Service is degraded — latency is up 3x.", "Routine maintenance completed successfully."]

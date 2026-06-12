@@ -1,6 +1,7 @@
 use std/io
 
 agent TextPipeline {
+  @tools [io]
   @on_start {
     text = "Invoice #1042 — Total: $3,750.00 due 2026-05-15"
     if text.matches("\\d{4}-\\d{2}-\\d{2}") {

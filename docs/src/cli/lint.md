@@ -45,6 +45,7 @@ Prefix a variable name with `_` to tell the linter the value is intentionally un
 use std/io
 
 agent Processor {
+  @tools [io]
   @on_start {
     _unused = compute_something()   # no warning
     result = compute_other()

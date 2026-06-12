@@ -10,6 +10,7 @@ type Ticket {
 }
 
 agent BillingSpecialist {
+  @tools [ai, io]
   @role "Billing support specialist — resolves payment and invoice queries"
   @rules ["Always acknowledge the charge before explaining it", "Offer a full refund if the charge cannot be justified"]
 
@@ -29,6 +30,7 @@ agent BillingSpecialist {
 }
 
 agent TechSpecialist {
+  @tools [ai, io]
   @role "Technical support engineer — resolves API and integration problems"
   @rules ["Include a minimal code example whenever possible", "Link to the relevant docs section"]
 
@@ -48,6 +50,7 @@ agent TechSpecialist {
 }
 
 agent Router {
+  @tools [ai, io]
   @role "Support router — classify each ticket and send it to the right specialist"
 
   state {

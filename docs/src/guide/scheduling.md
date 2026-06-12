@@ -104,6 +104,7 @@ use std/env
 use std/schedule
 
 agent DailyDigest {
+  @tools [email, env]
   @role "Produce a daily digest of important emails"
 
   @on_start {

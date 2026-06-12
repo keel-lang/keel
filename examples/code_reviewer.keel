@@ -30,6 +30,7 @@ test "review text can be mocked" {
 }
 
 agent CodeReviewer {
+  @tools [io]
   @role "You are a thorough but kind code reviewer"
 
   state {

@@ -12,6 +12,7 @@ use std/ai
 use std/io
 
 agent Hello {
+  @tools [ai, io]
   @role "You are a friendly assistant who greets people warmly"
 
   @on_start {

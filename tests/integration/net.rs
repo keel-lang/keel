@@ -8,6 +8,7 @@ fn http_get_returns_status_body_headers_and_ok_flag() {
 use std/http
 use std/io
 agent A {{
+    @tools [http, io]
     @on_start {{
         resp = http.get("{url}")
         header = resp.headers.get("x-keel-test") ?? "missing"
@@ -37,6 +38,7 @@ fn http_post_sends_json_body_and_reports_success() {
 use std/http
 use std/io
 agent A {{
+    @tools [http, io]
     @on_start {{
         resp = http.post("{url}", json: {{name: "Ada", count: 2}})
         io.show("status={{resp.status}} ok={{resp.is_ok}} body={{resp.body}}")
@@ -64,6 +66,7 @@ fn http_request_accepts_named_args_and_body_string() {
 use std/http
 use std/io
 agent A {{
+    @tools [http, io]
     @on_start {{
         resp = http.request(method: "PATCH", url: "{url}", body: "payload")
         io.show("status={{resp.status}} body={{resp.body}}")
@@ -87,6 +90,7 @@ fn http_request_rejects_unsupported_method_before_network_call() {
     let src = r#"
 use std/http
 agent A {
+    @tools [http]
     @on_start {
         http.request(method: "TRACE", url: "http://127.0.0.1:1")
     }
@@ -106,6 +110,7 @@ fn http_request_requires_url() {
     let src = r#"
 use std/http
 agent A {
+    @tools [http]
     @on_start {
         http.request(method: "GET")
     }
@@ -128,6 +133,7 @@ fn http_request_map_form_accepts_method_and_url() {
 use std/http
 use std/io
 agent A {{
+    @tools [http, io]
     @on_start {{
         resp = http.request({{method: "POST", url: "{url}", body: "map-body"}})
         io.show("status={{resp.status}} body={{resp.body}}")
@@ -151,6 +157,7 @@ fn http_request_map_form_requires_url() {
     let src = r#"
 use std/http
 agent A {
+    @tools [http]
     @on_start {
         http.request({method: "GET"})
     }
@@ -170,6 +177,7 @@ fn http_get_missing_url() {
     let src = r#"
 use std/http
 agent A {
+    @tools [http]
     @on_start {
         http.get()
     }
@@ -189,6 +197,7 @@ fn http_post_missing_url() {
     let src = r#"
 use std/http
 agent A {
+    @tools [http]
     @on_start {
         http.post(body: "hello")
     }
@@ -211,6 +220,7 @@ fn http_post_body_arg_sends_string_body() {
 use std/http
 use std/io
 agent A {{
+    @tools [http, io]
     @on_start {{
         resp = http.post("{url}", body: "string-body")
         io.show("status={{resp.status}} body={{resp.body}}")
@@ -235,6 +245,7 @@ fn email_archive_without_config_is_graceful() {
 use std/email
 use std/io
 agent A {
+    @tools [email, io]
     @on_start {
         msg = {uid: 42, body: "hi", subject: "x", from: "y"}
         email.archive(msg)
@@ -259,6 +270,7 @@ fn email_send_with_config_validates_missing_body_before_transport() {
     let src = r#"
 use std/email
 agent A {
+    @tools [email]
     @on_start {
         email.send(to: "ops@example.com")
     }
@@ -285,6 +297,7 @@ fn email_send_with_config_validates_missing_recipient_before_transport() {
     let src = r#"
 use std/email
 agent A {
+    @tools [email]
     @on_start {
         email.send("hello")
     }
@@ -311,6 +324,7 @@ fn email_archive_with_config_validates_uid_before_transport() {
     let src = r#"
 use std/email
 agent A {
+    @tools [email]
     @on_start {
         email.archive({body: "hello"})
     }

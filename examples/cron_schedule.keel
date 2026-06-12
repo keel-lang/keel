@@ -2,6 +2,7 @@ use std/io
 use std/schedule
 
 agent CronScheduler {
+  @tools [io]
   state {
     run_count: int = 0
   }

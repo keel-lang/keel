@@ -22,6 +22,7 @@ test "describe formats rich enum variants" {
 }
 
 agent Demo {
+  @tools [io]
   @role "Rich enum demo"
 
   @on_start {

@@ -101,16 +101,18 @@ pub struct AgentDef {
 
 /// Precomputed per-turn tool allowlist derived from `@tools` after evaluating
 /// any `when` guards. `None` on `AgentInstance` means no `@tools` attribute
-/// was present — all namespaces are allowed.
+/// was present — std module calls are denied (capabilities are declared,
+/// never implied; `@tools all` is the explicit unrestricted form).
 pub(crate) struct AllowedTools(pub(crate) Vec<(String, Option<String>)>);
 
 impl AllowedTools {
     /// Returns true if `ns.method` is covered by any entry.
-    /// An entry with `method = None` grants the whole namespace.
+    /// An entry with `method = None` grants the whole namespace;
+    /// the `all` wildcard (from `@tools all`) grants everything.
     pub(crate) fn allows(&self, ns: &str, method: &str) -> bool {
         self.0
             .iter()
-            .any(|(n, m)| n == ns && m.as_deref().is_none_or(|m| m == method))
+            .any(|(n, m)| n == "all" || (n == ns && m.as_deref().is_none_or(|m| m == method)))
     }
 }
 

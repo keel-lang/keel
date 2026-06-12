@@ -8,7 +8,7 @@ use std/uuid
 
 agent LedgerAgent {
     @role "Trade ledger — records fills and reports P&L"
-    @tools [db, log, uuid, time]
+    @tools [db]
 
     @on_start {
         db = db.connect("sqlite://:memory:")

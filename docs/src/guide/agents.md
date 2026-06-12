@@ -84,14 +84,26 @@ Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_
 ### `@tools` — capability list
 
 ```keel
-@tools [email, Calendar, http]
+@tools [email, http]      # allowlist
+@tools all                # explicit unrestricted form
 ```
 
 Binds stdlib modules as the agent's declared capabilities. The runtime uses this list to:
-- Allow/deny which stdlib namespaces the agent can use
+- Allow/deny which std module entry points the agent can call
 - Report the agent's capabilities to the LLM (for tool-use style prompting, planned)
 
-> **Status:** capability gating is enforced. If `@tools` is omitted, all namespaces are allowed. If it is present, calls to unlisted namespaces raise `CapabilityError`.
+> **Status:** capability gating is enforced, **deny-by-default**, for **effectful** modules. A capability guards authority over the world outside the process — `ai`, `io`, `http`, `email`, `file`, `shell`, `db`, `search`, `env` — and an agent with no `@tools` attribute may call none of them. Pure-compute and internal modules (`json`, `math`, `time`, `schedule`, …) are never gated; they only need their import. `@tools all` is the explicit, greppable opt-out for trusted agents.
+
+Enforcement is two-layered. Direct std calls in the agent body that `@tools` does not cover are **compile-time errors** that name the fix:
+
+```text
+agent `NoTools` calls `io.show` but @tools does not allow it —
+declare `@tools [io]` on the agent, or use `@tools all`
+```
+
+Calls reached through helper tasks (in this file or imported modules) are checked **at runtime** per turn and raise `CapabilityError` with the same guidance. `@tools` must therefore cover the transitive *effectful* needs of the helpers an agent calls — if your agent calls `validation.load()` and that helper reads files, the agent needs `file` in its list. Helpers that only compute (json, math, strings) never require declarations.
+
+Gating applies to effectful std module entry points inside agent turns only. Pure-compute modules, value methods (`conn.query(...)`), the built-in agent verbs, local module tasks, top-level statements, and `test` blocks are never gated.
 
 #### Conditional guards with `if`
 
@@ -134,6 +146,7 @@ use std/io
 use std/memory
 
 agent Counter {
+  @tools [io]
   @memory session
 
   @on_start {
@@ -232,6 +245,7 @@ Add `readonly` between the colon and the type to make a field **compiler-enforce
 use std/io
 
 agent SessionBot {
+  @tools [io]
   state {
     turns:      int          = 0
     session_id: readonly str = "default-session"
@@ -288,6 +302,7 @@ task triage(email: EmailInfo) -> Urgency {
 
 # Agent stays focused
 agent EmailAssistant {
+  @tools [io]
   @role "Triage and respond"
 
   on message(msg: Message) {

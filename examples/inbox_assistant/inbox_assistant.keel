@@ -55,6 +55,7 @@ task decide_action(urgency: Urgency, sender: str) -> Action {
 }
 
 agent Archiver {
+  @tools [email]
   @role "Email archivist. You record which emails were archived."
   @model "default"
 
@@ -71,6 +72,7 @@ agent Archiver {
 }
 
 agent InboxAssistant {
+  @tools [ai, email, env, http, io]
   @role "Professional inbox triage assistant. You read emails, classify urgency, draft short replies, and escalate critical issues."
   @model "default"
 

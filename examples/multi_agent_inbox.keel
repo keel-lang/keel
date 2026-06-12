@@ -42,7 +42,7 @@ task plan_followup(email: { subject: str }, urgency: Urgency) {
 
 agent InboxManager {
   @role "You coordinate the email handling team"
-  @tools [ai, io, email, schedule]
+  @tools [ai, io, email]
 
   task handle(email: { body: str, from: str, subject: str }) {
     result: TriageResult = triage_email(email) ?? { urgency: Urgency.medium, category: Category.question }

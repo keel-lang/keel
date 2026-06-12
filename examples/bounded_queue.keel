@@ -1,6 +1,7 @@
 use std/io
 
 agent BurstBot {
+  @tools [io]
   state {
     sent: int = 0
     dropped: int = 0

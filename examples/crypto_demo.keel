@@ -2,6 +2,7 @@ use std/crypto
 use std/io
 
 agent CryptoDemo {
+  @tools [io]
   @on_start {
     digest = crypto.sha256("hello")
     wide = crypto.sha384("hello")

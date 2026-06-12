@@ -13,6 +13,7 @@ use std/control
 use std/io
 
 agent Worker {
+  @tools [io]
   @role "Resilient worker — retries flaky calls and bounds long ones"
 
   state {

@@ -37,6 +37,7 @@ In other words: an explicit `dynamic` annotation is always accepted. `--strict` 
 ```bash
 # Passes in normal mode, fails in strict
 agent A {
+  @tools [io]
   @on_start {
     data = json.parse(raw_input)   # unannotated — strict rejects this
     io.show("{data}")

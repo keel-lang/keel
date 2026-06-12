@@ -4,6 +4,7 @@ use std/io
 type Email = { from: str, subject: str, unread: bool }
 
 agent Inbox {
+  @tools [email, io]
   @on_start {
     emails = [{ from: "alice@example.com", subject: "hello", unread: true }, { from: "bob@example.com", subject: "urgent", unread: true }, { from: "carol@example.com", subject: "fyi", unread: false }]
     for email in emails if email.unread {

@@ -25,6 +25,7 @@ use std/io
 # myproject — built with Keel
 
 agent Myproject {
+  @tools [io]
   @role "Describe what this agent does"
 
   @on_start {

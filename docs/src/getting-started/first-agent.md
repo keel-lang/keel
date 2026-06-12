@@ -52,6 +52,7 @@ use std/io
 use std/schedule
 
 agent Prioritizer {
+  @tools [io]
   @role "You help prioritize a task list"
 
   state {

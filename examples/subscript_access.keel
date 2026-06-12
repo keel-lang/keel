@@ -1,6 +1,7 @@
 use std/io
 
 agent Demo {
+  @tools [io]
   @on_start {
     items = ["alpha", "beta", "gamma"]
 

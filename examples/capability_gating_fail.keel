@@ -1,13 +1,22 @@
+# Capability gating — the runtime side.
+#
+# A conditional @tools entry is *declared*, so the program type-checks,
+# but its guard is false when the call runs: the runtime denies it with
+# CapabilityError. (An entry that is missing entirely is caught earlier,
+# at compile time.)
+#
+# Run: keel run examples/capability_gating_fail.keel   (exits non-zero)
+
 use std/http
 use std/io
 
 agent RestrictedAgent {
-    @tools [io, schedule]
+    state { allow_http: bool = false }
+
+    @tools [io, http.get if self.allow_http]
 
     @on_start {
-        io.show("Io namespace is allowed")
-        io.show("Schedule namespace is allowed")
-
+        io.show("io is allowed")
         http.get("https://example.com")
     }
 }

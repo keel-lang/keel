@@ -42,6 +42,7 @@ use std/io
 
 agent {agent_name} {{
   @role "Describe what this agent does"
+  @tools [io]
 
   @on_start {{
     io.show("Hello from {project_name}!")

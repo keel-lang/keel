@@ -28,6 +28,7 @@ test "sla minutes match severity policy" {
 }
 
 agent SLAPlanner {
+  @tools [io]
   @role "SLA compliance monitor — every incident must have a target and a named owner"
   @rules [
     "Never route a critical incident to a ticket queue without a named engineer",

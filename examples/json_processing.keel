@@ -2,6 +2,7 @@ use std/io
 use std/json
 
 agent JsonProcessor {
+  @tools [io]
   @on_start {
     user = { name: "Alice", age: 30, active: true }
     json_output = json.stringify(user)

@@ -67,6 +67,7 @@ fn io_ask_reads_from_stdin_and_returns_trimmed_answer() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     answer = io.ask("Name?")
     io.show("answer={answer}")
@@ -91,6 +92,7 @@ fn io_confirm_accepts_yes_and_rejects_no() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     first = io.confirm("Ship?")
     second = io.confirm("Rollback?")
@@ -116,6 +118,7 @@ fn on_stop_block_fires_before_agent_removed() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_stop {
         io.show("A stopped")
     }
@@ -141,6 +144,7 @@ fn agent_delegate_dispatches_to_handler() {
     let src = r#"
 use std/io
 agent Worker {
+    @tools [io]
     on process(data: str) {
         io.show("processed")
     }
@@ -171,6 +175,7 @@ fn agent_delegate_symbol_form_dispatches_to_handler() {
     let src = r#"
 use std/io
 agent Worker {
+    @tools [io]
     on process(data: str) {
         io.show("symbol-form: {data}")
     }
@@ -202,6 +207,7 @@ fn agent_delegate_symbol_form_forwards_correct_payload() {
     let src = r#"
 use std/io
 agent Printer {
+    @tools [io]
     on print(msg: str) {
         io.show(msg)
     }
@@ -229,6 +235,7 @@ fn agent_broadcast_dispatches_to_team_members() {
     let src = r#"
 use std/io
 agent Alpha {
+    @tools [io]
     @team ["frontline"]
     on alert(msg: str) {
         io.show("Alpha got {msg}")
@@ -236,6 +243,7 @@ agent Alpha {
 }
 
 agent Beta {
+    @tools [io]
     @team ["frontline"]
     on alert(msg: str) {
         io.show("Beta got {msg}")
@@ -243,6 +251,7 @@ agent Beta {
 }
 
 agent Gamma {
+    @tools [io]
     @team ["backoffice"]
     on alert(msg: str) {
         io.show("Gamma got {msg}")
@@ -286,6 +295,7 @@ fn agent_send_returns_runtime_busy_when_queue_full() {
     let src = r#"
 use std/io
 agent BurstBot {
+    @tools [io]
     state {
         sent: int = 0
         caught: int = 0
@@ -327,6 +337,7 @@ fn stop_self_exits_cleanly() {
     let src = r#"
 use std/io
 agent Greeter {
+  @tools [io]
   @on_start {
     io.show("hi")
     stop(self)
@@ -353,6 +364,7 @@ agent A {
   }
 }
 agent B {
+  @tools [io]
   @on_start {
     io.show("B ran")
     stop(self)

@@ -9,7 +9,7 @@ agent SupportBot {
     confirmed: bool = false
     admin: bool = false
   }
-  @tools [email.fetch, email.send if self.confirmed, db.query, db.exec if self.admin, log]
+  @tools [email.fetch, email.send if self.confirmed, db.query, db.exec if self.admin]
 
   on message(msg: str) {
     when msg {

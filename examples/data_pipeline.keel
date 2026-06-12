@@ -76,6 +76,7 @@ test "enrich uses setup and mocked draft sequence" {
 }
 
 agent DataPipeline {
+  @tools [ai, io]
   @role "You process and validate data records"
 
   state {

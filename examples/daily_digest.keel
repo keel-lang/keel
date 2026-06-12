@@ -9,7 +9,7 @@ task shorten(text: str) -> str {
 
 agent DailyDigest {
   @role "You compile a daily digest of important updates"
-  @tools [email, schedule, io]
+  @tools [email, io]
 
   state {
     days_run: int = 0

@@ -41,6 +41,7 @@ use std/io
 type Signal = buy | sell | hold
 
 agent A {
+  @tools [io]
   @on_start {
     s: Signal = Signal.buy
     io.show("{s}")

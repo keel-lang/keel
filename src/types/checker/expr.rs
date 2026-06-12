@@ -621,6 +621,14 @@ impl Checker<'_, '_> {
                             // std member imported unqualified:
                             // `use parse from std/json` then `parse(...)`.
                             if let Some(entry) = self.hir.std_fn_import(name) {
+                                if !self.agent_capability_allows(
+                                    entry.namespace,
+                                    entry.name,
+                                    name,
+                                    spanned.span.clone(),
+                                ) {
+                                    return Ty::Error;
+                                }
                                 return self.catalog_result_ty(entry, args);
                             }
                             // Validate delegate(...) targets at compile time.
@@ -1128,7 +1136,12 @@ impl Checker<'_, '_> {
         };
         match members {
             super::ModuleMembers::Std(ns) => match prelude::catalog_method(&ns, method) {
-                Some(entry) => self.catalog_result_ty(entry, args),
+                Some(entry) => {
+                    if !self.agent_capability_allows(&ns, method, binding, span) {
+                        return Ty::Error;
+                    }
+                    self.catalog_result_ty(entry, args)
+                }
                 None => {
                     self.err_at(format!("`std/{ns}` has no method `{method}`"), span);
                     Ty::Error
@@ -1170,6 +1183,44 @@ impl Checker<'_, '_> {
                 Ty::Error
             }
         }
+    }
+
+    /// Enforce deny-by-default `@tools` at compile time for direct std calls
+    /// inside an agent body. Returns `false` (after emitting the error) when
+    /// the current agent's `@tools` does not cover `ns.method`. Outside an
+    /// agent context, all calls pass — gating is an agent contract.
+    ///
+    /// Only effectful modules are gated; pure-compute modules pass freely
+    /// (see `runtime::namespaces::module_requires_capability`).
+    fn agent_capability_allows(
+        &mut self,
+        ns: &str,
+        method: &str,
+        binding: &str,
+        span: crate::lexer::Span,
+    ) -> bool {
+        if !crate::runtime::namespaces::module_requires_capability(ns) {
+            return true;
+        }
+        let Some(agent_name) = self.current_agent.clone() else {
+            return true;
+        };
+        let Some(info) = self.agents.get(&agent_name) else {
+            return true;
+        };
+        if info.allows_tool(ns, method) {
+            return true;
+        }
+        let hint = if info.tools.is_none() {
+            format!("declare `@tools [{ns}]` on the agent, or use `@tools all`")
+        } else {
+            format!("add `{ns}` to @tools, or use `@tools all`")
+        };
+        self.err_at(
+            format!("agent `{agent_name}` calls `{binding}.{method}` but @tools does not allow it — {hint}"),
+            span,
+        );
+        false
     }
 
     /// Resolve a catalog entry's declared result into a checker type,

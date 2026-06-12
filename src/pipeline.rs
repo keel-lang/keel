@@ -589,6 +589,7 @@ task greet(name: str) -> str { "hi {name}" }
 use std/io
 
 agent A {
+  @tools [io]
   @on_start {
     unused = "hello"
     io.show("done")
@@ -664,6 +665,7 @@ task answer() -> int {
 use std/io
 
 agent A {
+  @tools [io]
   @on_start {
     x: int = "wrong"
     io.show("should not run")
@@ -713,6 +715,7 @@ task greet(name: str) -> str {
 }
 
 agent A {
+  @tools [io]
   @on_start {
     msg = greet("keel")
     io.show(msg)

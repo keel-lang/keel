@@ -2,6 +2,7 @@ use std/io
 use std/memory
 
 agent Counter {
+  @tools [io]
   @memory session
   @on_start {
     prev = memory.recall("count")

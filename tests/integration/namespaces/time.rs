@@ -10,6 +10,7 @@ fn time_epoch_ms_returns_positive_integer() {
 use std/io
 use std/time
 agent EpochTest {
+    @tools [io]
     @on_start {
         ms = time.epoch_ms()
         if ms > 0 {

@@ -9,6 +9,7 @@ fn break_exits_loop_early() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         count = 0
         for i in 1..10 {
@@ -32,6 +33,7 @@ fn continue_skips_current_iteration() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         sum = 0
         for i in 1..6 {
@@ -58,6 +60,7 @@ fn break_inside_if_stmt_in_loop() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         items = [10, 20, 99, 30, 40]
         count = 0
@@ -82,6 +85,7 @@ fn continue_and_break_together() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = 0
         for i in 1..10 {
@@ -109,6 +113,7 @@ fn break_in_nested_loop_only_exits_inner() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         outer = 0
         for i in 1..3 {
@@ -137,6 +142,7 @@ fn while_basic_countdown() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         n = 3
         while n > 0 {
@@ -163,6 +169,7 @@ fn while_break_exits_loop() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         count = 0
         while true {
@@ -186,6 +193,7 @@ fn while_continue_skips_iteration() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 0
         sum = 0
@@ -212,6 +220,7 @@ fn while_nested_in_for() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         total = 0
         for i in 1..3 {

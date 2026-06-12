@@ -2,6 +2,7 @@ use std/file
 use std/io
 
 agent FileProcessor {
+    @tools [file, io]
     @on_start {
         file.write("test.txt", "Hello from Keel!")
         io.show("wrote file")

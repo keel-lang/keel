@@ -64,7 +64,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `@role "..."` | core | [x] | Prepended as `"You are {role}.\n\n..."` to every `ai.*` system prompt |
 | `@on_start { ... }` | stdlib | [x] | Block runs once when the agent starts |
 | `@on_stop { ... }` | stdlib | [x] | Block runs once when the agent stops (v0.1.4) |
-| `@tools [...]` | stdlib | [x] | Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17) |
+| `@tools [...]` | stdlib | [x] | Deny-by-default capability gating for effectful modules (ai, io, http, email, file, shell, db, search, env); pure-compute modules are never gated; `@tools all` is the explicit unrestricted form; uncovered direct calls are compile errors, transitive calls raise `CapabilityError` at runtime; `if` guards re-evaluated per turn |
 | `@memory persistent\|session\|none` | stdlib | [x] | Selects memory scope; enforced at runtime (v0.1.10) |
 | `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `ai.*` call (v0.1.3) |
 | `@limits { ... }` | stdlib | [~] | `timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level |

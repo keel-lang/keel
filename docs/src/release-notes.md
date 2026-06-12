@@ -4,6 +4,18 @@
 
 ## Unreleased
 
+### Deny-by-default `@tools`
+
+Agent capabilities are now declared, never implied. A capability guards
+*effects*: `ai`, `io`, `http`, `email`, `file`, `shell`, `db`, `search`,
+and `env` require a declared `@tools` capability, and an agent without
+`@tools` may call none of them. Pure-compute modules (`json`, `math`,
+`time`, …) are never gated. `@tools all` is the explicit unrestricted
+form. Uncovered direct calls fail at **compile time** with the
+fix spelled out; calls reached through helpers raise `CapabilityError` at
+runtime with the same guidance. See
+[Agents & Attributes](./guide/agents.md#tools--capability-list).
+
 ### Module system: `use std/<name>` and local file imports
 
 Keel programs can now span multiple files, and the standard library is
@@ -88,6 +100,7 @@ use std/file
 use std/io
 
 agent A {
+    @tools [file, io]
     @on_start {
         try {
             data = file.read("config.json")
@@ -1363,6 +1376,7 @@ use std/io
 use std/memory
 
 agent Counter {
+  @tools [io]
   @memory session
 
   @on_start {
@@ -1395,6 +1409,7 @@ See the [Agents guide](./guide/agents.md#memory--agent-memory-scope) for full sy
 use std/io
 
 agent Worker {
+  @tools [io]
   @on_start {
     io.show("Hello from Worker!")
     stop(self)
@@ -1589,6 +1604,7 @@ Extract and enforce resource limits (timeout, max_tokens, max_cost) on a per-age
 use std/ai
 
 agent LimitedAgent {
+  @tools [ai]
   @limits { timeout: 30s, max_tokens: 1000, max_cost: 5.0 }
 
   @on_start {
@@ -1797,6 +1813,7 @@ Agents can now declare a shutdown block that runs before the agent is removed fr
 use std/io
 
 agent Logger {
+  @tools [io]
   @on_stop { io.show("Logger shutting down") }
 }
 ```

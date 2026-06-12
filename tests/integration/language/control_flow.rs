@@ -9,6 +9,7 @@ fn if_expr_on_rhs_of_binding() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         score = 0.9
         label = if score > 0.8 { "high" } else { "low" }
@@ -30,6 +31,7 @@ fn if_expr_else_branch_selected() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         score = 0.3
         label = if score > 0.8 { "high" } else { "low" }
@@ -55,6 +57,7 @@ fn range_basic_for_loop() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     for i in 1..3 {
       io.show("{i}")
@@ -75,6 +78,7 @@ fn range_assigned_to_variable() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     xs = 1..4
     io.show("{xs.count()}")
@@ -110,6 +114,7 @@ fn range_empty() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     xs = 5..3
     io.show("{xs.count()}")
@@ -130,6 +135,7 @@ fn range_single() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     xs = 4..4
     io.show("{xs.count()}")
@@ -154,6 +160,7 @@ fn if_guard_for_filters_elements() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [1, 2, 3, 4, 5]
     for n in nums if n % 2 == 0 {
@@ -183,6 +190,7 @@ fn if_guard_for_range() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     for x in 1..5 if x != 3 {
       io.show("x:{x}")
@@ -209,6 +217,7 @@ fn when_arm_where_guard() {
 use std/io
 type Status = active | inactive
 agent A {
+  @tools [io]
   @on_start {
     s = Status.active
     level = 5
@@ -236,6 +245,7 @@ fn when_arm_where_guard_falls_through() {
 use std/io
 type Status = active | inactive
 agent A {
+  @tools [io]
   @on_start {
     s = Status.active
     level = 1
@@ -322,6 +332,7 @@ task greet(greeting: str, name: str) -> str {
     "{greeting}, {name}!"
 }
 agent A {
+    @tools [io]
     @on_start {
         io.show(greet(name: "Alice", greeting: "Hello"))
         stop(self)
@@ -345,6 +356,7 @@ task add(a: int, b: int, c: int) -> int {
     a + b + c
 }
 agent A {
+    @tools [io]
     @on_start {
         io.show("{add(1, c: 30, b: 20)}")
         stop(self)
@@ -369,6 +381,7 @@ fn if_else_if_chain_statement_form_executes() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 2
         if x == 1 {
@@ -395,6 +408,7 @@ fn if_else_if_chain_three_branches_statement_form() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 3
         if x == 1 {

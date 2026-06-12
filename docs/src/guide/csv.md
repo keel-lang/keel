@@ -10,6 +10,7 @@ use std/file
 use std/log
 
 agent TradeLoader {
+    @tools [file]
     @on_start {
         raw = file.read("trades.csv")
 
@@ -99,6 +100,7 @@ use std/csv
 use std/io
 
 agent CsvRoundtrip {
+    @tools [io]
     @on_start {
         original = "name,score\nAlice,10\nBob,20"
         rows     = csv.parse(original)

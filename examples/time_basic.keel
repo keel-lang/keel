@@ -2,6 +2,7 @@ use std/io
 use std/time
 
 agent Timer {
+  @tools [io]
   @on_start {
     t = time.now()
     io.show("Now: {t}")

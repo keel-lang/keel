@@ -1,6 +1,7 @@
 use std/io
 
 agent BreakContinueDemo {
+  @tools [io]
   @on_start {
     for i in 1..10 {
       if i > 3 {

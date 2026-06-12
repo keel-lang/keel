@@ -13,6 +13,7 @@ task prep_notes(meeting: { title: str, attendees: list[str] }) -> str {
 }
 
 agent MeetingPrep {
+  @tools [ai, io]    # ai: helper tasks call ai.* — @tools covers transitive effects
   @role "You prepare briefing notes before meetings"
 
   state {

@@ -4,6 +4,7 @@ use std/io
 use "./validation.keel"
 
 agent Triage {
+  @tools [io]
   @role "Sorts incoming addresses"
 
   on message(address: str) {

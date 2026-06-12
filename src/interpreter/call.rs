@@ -136,19 +136,31 @@ impl Interpreter {
         args: Vec<CallArgValue>,
     ) -> Result<Value> {
         // Check @tools capability gating if we're in an agent context.
-        // __global is always allowed — it holds agent lifecycle builtins (run, stop).
-        if ns_name != "__global"
+        // Capabilities guard effects: only modules that touch the world
+        // outside the process are gated, deny-by-default. An agent without
+        // `@tools` may not call any effectful module; `@tools all` is the
+        // explicit unrestricted form. Pure-compute modules (json, math, …)
+        // and __global (agent lifecycle builtins) are never gated.
+        if crate::runtime::namespaces::module_requires_capability(ns_name)
             && let Some(agent_mutex) = &self.current_agent
         {
-            let allowed = agent_mutex
-                .lock()
-                .allowed_tools
-                .as_ref()
-                .map(|a| a.allows(ns_name, method));
-            if allowed == Some(false) {
+            let (allowed, agent_name) = {
+                let agent = agent_mutex.lock();
+                (
+                    agent
+                        .allowed_tools
+                        .as_ref()
+                        .is_some_and(|a| a.allows(ns_name, method)),
+                    agent.def.name.clone(),
+                )
+            };
+            if !allowed {
                 return Err(make_typed_report(
                     RuntimeErrorKind::Capability,
-                    format!("`{ns_name}.{method}` is not allowed by @tools"),
+                    format!(
+                        "`{ns_name}.{method}` is not allowed by @tools on {agent_name} — \
+                         add `{ns_name}` to @tools, or use `@tools all`"
+                    ),
                 ));
             }
         }

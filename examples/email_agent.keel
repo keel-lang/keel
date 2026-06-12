@@ -40,7 +40,7 @@ test "compose uses mocked draft" {
 
 agent EmailAssistant {
   @role "\n    You are a professional email assistant.\n    You triage incoming mail, reply to routine messages,\n    and escalate anything important.\n  "
-  @tools [email]
+  @tools [ai, email, io]
   @memory persistent
 
   state {

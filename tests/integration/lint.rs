@@ -9,6 +9,7 @@ fn lint_unused_variable_warns() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     unused = "hello"
     io.show("done")
@@ -29,6 +30,7 @@ fn lint_underscore_prefix_suppresses_unused_warning() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     _ignored = "hello"
     io.show("done")
@@ -51,6 +53,7 @@ task unused_helper() {
   io.show("never")
 }
 agent A {
+  @tools [io]
   @on_start {
     io.show("start")
   }
@@ -93,6 +96,7 @@ task process(text: str) -> str {
   result ?? "none"
 }
 agent A {
+  @tools [io]
   @on_start {
     io.show(process("hi"))
   }
@@ -113,6 +117,7 @@ fn lint_ai_call_inside_agent_no_warning() {
 use std/ai
 use std/io
 agent Assistant {
+  @tools [ai, io]
   @role "helper"
   @model "ollama:llama3.2"
 
@@ -132,6 +137,7 @@ fn lint_state_written_not_read_warns() {
     let src = r#"
 use std/io
 agent Sink {
+  @tools [io]
   state {
     events: int = 0
   }
@@ -155,6 +161,7 @@ fn lint_state_written_and_read_no_warning() {
     let src = r#"
 use std/io
 agent Counter {
+  @tools [io]
   state {
     count: int = 0
   }
@@ -183,6 +190,7 @@ task greet(name: str) -> str {
 }
 
 agent Greeter {
+  @tools [io]
   state {
     call_count: int = 0
   }

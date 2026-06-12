@@ -1,6 +1,7 @@
 use std/io
 
 agent SessionBot {
+  @tools [io]
   @role "Answer questions for the current session"
 
   state {

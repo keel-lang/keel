@@ -11,6 +11,7 @@
 use std/io
 
 agent Alpha {
+  @tools [io]
   @team ["frontline"]
   on alert(msg: str) {
     io.show("Alpha (frontline) handling: {msg}")
@@ -18,6 +19,7 @@ agent Alpha {
 }
 
 agent Beta {
+  @tools [io]
   @team ["frontline"]
   on alert(msg: str) {
     io.show("Beta (frontline) handling: {msg}")
@@ -25,6 +27,7 @@ agent Beta {
 }
 
 agent Gamma {
+  @tools [io]
   @team ["backoffice"]
   on alert(msg: str) {
     io.show("Gamma (backoffice) ignored — wrong team")
@@ -32,6 +35,7 @@ agent Gamma {
 }
 
 agent Coordinator {
+  @tools [io]
   @on_start {
     run(Alpha)
     run(Beta)

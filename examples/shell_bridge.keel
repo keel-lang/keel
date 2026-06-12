@@ -2,7 +2,7 @@ use std/io
 use std/shell
 
 agent ShellDemo {
-  @tools [shell]
+  @tools [io, shell]
   @on_start {
     r = shell.run("echo 'hello from shell'")
     io.show("exit_code={r.exit_code}")

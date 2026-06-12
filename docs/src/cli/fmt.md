@@ -38,6 +38,7 @@ use std/io
 use std/schedule
 
 agent Bot {
+  @tools [io]
   @role "helper"
 
   state {

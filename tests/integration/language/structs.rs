@@ -206,6 +206,7 @@ fn destruct_struct_shorthand() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     val = {name: "alice", age: 30}
     {name, age} = val
@@ -228,6 +229,7 @@ fn destruct_struct_rename() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     val = {urgency: "high", category: "bug"}
     {urgency: u, category: c} = val
@@ -250,6 +252,7 @@ fn destruct_tuple() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     pair = ("alpha", 42)
     (label, count) = pair
@@ -272,6 +275,7 @@ fn destruct_in_for_loop() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     items = [
       {name: "alice", score: 10},
@@ -308,6 +312,8 @@ task show_point({x, y}: Point) {
 }
 
 agent A {
+  # @tools must cover the transitive closure: show_point uses io.
+  @tools [io]
   @on_start {
     show_point({x: 3, y: 7})
     stop(self)
@@ -328,6 +334,7 @@ fn destruct_missing_field_type_error() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     val = {name: "alice"}
     {name, nonexistent} = val
@@ -350,6 +357,7 @@ fn destruct_tuple_arity_mismatch_type_error() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     triple = (1, 2, 3)
     (a, b) = triple
@@ -372,6 +380,7 @@ fn destruct_keyword_field_from() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     email = {from: "alice@example.com", subject: "hello"}
     {from, subject} = email

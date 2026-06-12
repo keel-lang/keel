@@ -10,6 +10,7 @@ fn math_namespace_core_functions() {
 use std/io
 use std/math
 agent MathTest {
+    @tools [io]
     @on_start {
         sq   = math.sqrt(4)
         pw   = math.pow(2, 10)
@@ -45,6 +46,7 @@ fn math_sqrt_rejects_negative() {
 use std/io
 use std/math
 agent MathErr {
+    @tools [io]
     @on_start {
         try {
             math.sqrt(-1)
@@ -70,6 +72,7 @@ fn math_error_is_catchable_by_specific_type() {
 use std/io
 use std/math
 agent MathTyped {
+    @tools [io]
     @on_start {
         try {
             math.sqrt(-4.0)

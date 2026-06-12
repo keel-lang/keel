@@ -10,6 +10,7 @@ fn csv_parse_returns_rows_of_strings() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         rows = csv.parse("name,score\nAlice,10\nBob,20")
         io.show("rows={rows.len()}")
@@ -33,6 +34,7 @@ fn csv_parse_handles_quoted_fields_with_commas() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         rows = csv.parse("\"hello, world\",plain")
         io.show("field={rows[0][0]}")
@@ -55,6 +57,7 @@ fn csv_parse_records_returns_list_of_maps() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         rows = csv.parse_records("symbol,price\nBTC,67000\nETH,3500")
         io.show("count={rows.len()}")
@@ -78,6 +81,7 @@ fn csv_stringify_produces_valid_csv() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         rows = [["symbol", "price"], ["BTC", "67000"], ["ETH", "3500"]]
         text = csv.stringify(rows)
@@ -100,6 +104,7 @@ fn csv_stringify_quotes_fields_with_commas() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         rows = [["a,b", "plain"]]
         text = csv.stringify(rows)
@@ -123,6 +128,7 @@ fn csv_parse_then_stringify_roundtrip() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         raw = "name,score\nAlice,10\nBob,20"
         rows = csv.parse(raw)
@@ -147,6 +153,7 @@ fn csv_stringify_invalid_row_type_raises() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             csv.stringify(["not a row"])
@@ -172,6 +179,7 @@ fn csv_parse_records_duplicate_header_raises() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             csv.parse_records("name,name,score\nAlice,Bob,10")
@@ -197,6 +205,7 @@ fn csv_parse_records_empty_header_name_raises() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             csv.parse_records("name,,score\nAlice,,10")
@@ -222,6 +231,7 @@ fn csv_parse_records_extra_cells_raises() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             csv.parse_records("a,b\n1,2,3")
@@ -247,6 +257,7 @@ fn csv_stringify_non_string_cell_raises() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             rows = [[1, "ok"]]
@@ -273,6 +284,7 @@ fn csv_error_is_catchable_by_specific_type() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             csv.parse_records("name,name\nAlice,Bob")
@@ -303,6 +315,7 @@ fn csv_error_is_also_caught_by_error_fallback() {
 use std/csv
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             csv.stringify(["not a row"])

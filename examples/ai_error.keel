@@ -15,6 +15,7 @@ test "safe classify uses mocked urgency" {
 }
 
 agent ErrorDemo {
+  @tools [ai, io]
   @role "You triage support tickets by urgency"
   @on_start {
     urgency = safe_classify("server is down!")

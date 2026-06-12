@@ -11,6 +11,7 @@ fn memory_session_remember_recall() {
 use std/io
 use std/memory
 agent A {
+  @tools [io]
   @memory session
   @on_start {
     memory.remember("name", "Alice")
@@ -38,6 +39,7 @@ fn memory_session_recall_missing_returns_none() {
 use std/io
 use std/memory
 agent A {
+  @tools [io]
   @memory session
   @on_start {
     val = memory.recall("nonexistent")
@@ -66,6 +68,7 @@ fn memory_session_forget() {
 use std/io
 use std/memory
 agent A {
+  @tools [io]
   @memory session
   @on_start {
     memory.remember("x", "hello")
@@ -117,6 +120,7 @@ fn memory_default_mode_is_session() {
 use std/io
 use std/memory
 agent A {
+  @tools [io]
   @on_start {
     memory.remember("k", "v")
     val = memory.recall("k")
@@ -179,6 +183,7 @@ run(A)
 use std/io
 use std/memory
 agent A {
+  @tools [io]
   @memory persistent
   @on_start {
     val = memory.recall("greeting")
@@ -294,6 +299,7 @@ run(Ctr)
 use std/io
 use std/memory
 agent Ctr {
+  @tools [io]
   @memory persistent
   @on_start {
     val = memory.recall("v")
@@ -415,6 +421,7 @@ run(Sym)
 use std/io
 use std/memory
 agent Sym {
+  @tools [io]
   @memory persistent
   @on_start {
     val = memory.recall("key")
@@ -563,6 +570,7 @@ run(Reader)
 use std/io
 use std/memory
 agent Reader {
+  @tools [io]
   @memory persistent
   @on_start {
     val = memory.recall("msg")

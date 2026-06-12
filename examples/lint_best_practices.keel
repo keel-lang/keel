@@ -6,6 +6,7 @@ task format_greeting(name: str) -> str {
 }
 
 agent Greeter {
+  @tools [io]
   state {
     call_count: int = 0
   }

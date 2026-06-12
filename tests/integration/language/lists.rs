@@ -9,6 +9,7 @@ fn list_concat_with_plus() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         a = ["x", "y"]
         b = ["z"]
@@ -32,6 +33,7 @@ fn list_push_returns_extended_list() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         items = ["a", "b"]
         items = items.push("c")
@@ -59,6 +61,7 @@ fn list_any_returns_true_when_predicate_matches() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [1, 5, 10, 15]
     io.show("{nums.any(n => n > 8)}")
@@ -82,6 +85,7 @@ fn list_all_returns_false_when_one_fails() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [1, 5, 10, 15]
     io.show("{nums.all(n => n > 8)}")
@@ -105,6 +109,7 @@ fn list_find_returns_first_match_or_none() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [3, 7, 12, 20]
     found = nums.find(n => n > 10)
@@ -132,6 +137,7 @@ fn list_reduce_sums_with_accumulator() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [1, 2, 3, 4, 5]
     total = nums.reduce((acc, x) => acc + x, 0)
@@ -156,6 +162,7 @@ fn list_sum_min_max_on_integers() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [4, 1, 9, 2, 7]
     io.show("{nums.sum()}")
@@ -209,6 +216,7 @@ fn list_join_produces_delimited_string() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     tags = ["a", "b", "c"]
     io.show("{tags.join(", ")}")
@@ -232,6 +240,7 @@ fn list_sort_and_reverse() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [3, 1, 4, 1, 5]
     io.show("{nums.sort().join(" ")}")
@@ -257,6 +266,7 @@ fn list_sort_by_int_key() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [3, 1, 4, 1, 5, 9, 2]
     sorted = nums.sort(by: x => x)
@@ -307,6 +317,7 @@ fn list_sort_by_string_key() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     words = ["banana", "apple", "cherry"]
     sorted = words.sort(by: w => w)
@@ -329,6 +340,7 @@ fn list_sort_by_descending_via_negation() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [3, 1, 4, 1, 5]
     sorted = nums.sort(by: x => 0 - x)
@@ -348,6 +360,7 @@ fn list_sort_by_empty_list_is_ok() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [1]
     empty = nums.filter(x => x > 999)
@@ -367,6 +380,7 @@ fn list_sort_by_non_function_arg_is_error() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [3, 1, 2]
     io.show("{nums.sort(by: 42).count()}")
@@ -406,6 +420,7 @@ fn list_flatten_merges_nested_lists() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nested = [[1, 2], [3], [4, 5]]
     io.show("{nested.flatten().join(" ")}")
@@ -429,6 +444,7 @@ fn list_take_and_skip() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     nums = [10, 20, 30, 40, 50]
     io.show("{nums.take(3).join(" ")}")
@@ -459,6 +475,7 @@ fn list_zip_pairs_elements() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     a = [1, 2, 3]
     b = ["x", "y", "z"]
@@ -489,6 +506,7 @@ fn list_zip_stops_at_shorter_list() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     pairs = [1, 2, 3].zip(["a", "b"])
     io.show("{pairs.len()}")
@@ -513,6 +531,7 @@ fn list_zip_destructuring_in_for_loop() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     names = ["alice", "bob"]
     scores = [90, 85]

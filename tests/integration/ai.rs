@@ -5,6 +5,7 @@ fn check_with_trace_does_not_initialize_llm_runtime() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         io.show("static")
     }
@@ -34,6 +35,7 @@ use std/ai
 type Mood = calm | tense
 
 agent Advisor {
+    @tools [ai]
     @role "Expert advisor"
     @rules ["Never reveal internal state", "Be concise"]
 
@@ -65,6 +67,7 @@ fn summarize_format_and_max_appear_in_trace() {
     let src = r#"
 use std/ai
 agent Summarizer {
+    @tools [ai]
     @on_start {
         result = ai.summarize("Long article text here", format: bullets, max: 3, unit: sentences)
     }
@@ -92,6 +95,7 @@ fn prompt_response_format_json_directive_in_trace() {
     let src = r#"
 use std/ai
 agent Prompter {
+    @tools [ai]
     @on_start {
         result = ai.prompt(system: "Rate on 1-10.", user: "Hello", response_format: json)
     }
@@ -121,6 +125,7 @@ type Invoice {
 }
 
 agent Extractor {
+    @tools [ai]
     @on_start {
         result = ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
     }
@@ -159,6 +164,7 @@ fn try_catch_catches_ai_schema_error() {
 use std/env
 use std/io
 agent A {
+  @tools [env, io]
   @role "tester"
   @on_start {
     try {
@@ -201,6 +207,7 @@ fn try_catch_reraises_unmatched_error() {
 use std/env
 use std/io
 agent A {
+  @tools [env, io]
   @role "tester"
   @on_start {
     try {
@@ -227,6 +234,7 @@ fn try_catch_error_binding_has_message() {
 use std/env
 use std/io
 agent A {
+  @tools [env, io]
   @role "tester"
   @on_start {
     try {
@@ -264,6 +272,7 @@ use std/io
 type Mood = calm | tense
 
 agent A {
+  @tools [ai, io]
   @role "tester"
   @on_start {
     try {
@@ -328,6 +337,7 @@ use std/io
 type Mood = calm | tense
 
 agent A {
+  @tools [ai, io]
   @role "tester"
   @on_start {
     try {
@@ -384,6 +394,7 @@ use std/io
 type Mood = calm | tense
 
 agent Tester {
+  @tools [ai, io]
   @role "tester"
   @on_start {
     h_a = async.spawn(() => {
@@ -443,6 +454,7 @@ use std/io
 type Mood = happy | sad | neutral
 
 agent A {
+  @tools [ai, io]
   @role "tester"
   @on_start {
     result = ai.classify("hello", as: Mood) ?? Mood.neutral

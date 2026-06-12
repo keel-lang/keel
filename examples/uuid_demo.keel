@@ -2,6 +2,7 @@ use std/io
 use std/uuid
 
 agent UuidDemo {
+  @tools [io]
   @on_start {
     id: Uuid = uuid.v4()
     trace = uuid.v7()

@@ -27,6 +27,7 @@ fn map_keys_method_inferred_as_list_of_keys() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         m: map[str, int] = {a: 1, b: 2}
         ks: list[str] = m.keys()
@@ -100,6 +101,7 @@ fn map_int_key_literal_parses_and_runs() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         m: map[int, str] = {1: "one", 2: "two"}
         v = m[1]
@@ -118,6 +120,7 @@ fn map_bool_key_literal_parses_and_runs() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         m: map[bool, str] = {true: "on", false: "off"}
         v = m[true]

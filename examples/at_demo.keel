@@ -8,6 +8,7 @@ use std/schedule
 use std/time
 
 agent AtDemo {
+  @tools [io]
   @role "Demonstrates schedule.at"
 
   @on_start {

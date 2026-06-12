@@ -12,6 +12,7 @@ fn scheduling_ticks_at_least_once() {
 use std/io
 use std/schedule
 agent Ticker {
+  @tools [io]
   state { tick: int = 0 }
   @on_start {
     schedule.every(3.seconds, () => {
@@ -35,6 +36,7 @@ fn scheduling_recurs_without_oneshot() {
 use std/io
 use std/schedule
 agent Ticker {
+  @tools [io]
   state { tick: int = 0 }
   @on_start {
     schedule.every(3.seconds, () => {
@@ -85,6 +87,7 @@ fn schedule_cron_accepts_expression() {
 use std/io
 use std/schedule
 agent CronTest {
+    @tools [io]
     @on_start {
         schedule.cron("0 9 * * 1-5", () => {
             io.show("morning")

@@ -10,6 +10,7 @@ fn json_namespace_stringifies_and_parses_maps() {
 use std/io
 use std/json
 agent A {
+    @tools [io]
     @on_start {
         data = {name: "Ada", age: 42, tags: ["ai", "lang"], active: true}
         text = json.stringify(data)
@@ -59,6 +60,7 @@ fn random_namespace_generates_values_in_expected_shapes() {
 use std/io
 use std/random
 agent A {
+    @tools [io]
     @on_start {
         roll = random.int(min: 1, max: 6)
         sample = random.float()
@@ -108,6 +110,7 @@ fn uuid_namespace_generates_parses_and_formats_values() {
 use std/io
 use std/uuid
 agent A {
+    @tools [io]
     @on_start {
         id: Uuid = uuid.v4()
         v4 = id.version()
@@ -144,6 +147,7 @@ fn crypto_namespace_hashes_signs_and_generates_random_values() {
 use std/crypto
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         digest = crypto.sha256("hello")
         wide = crypto.sha384("hello")

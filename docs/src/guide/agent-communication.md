@@ -124,6 +124,7 @@ use std/ai
 use std/io
 
 agent Manager {
+    @tools [io]
     state { done: int = 0 }
 
     @on_start {
@@ -138,6 +139,7 @@ agent Manager {
 }
 
 agent Worker {
+    @tools [ai]
     on process(task: dynamic) {
         output = ai.summarize(task.id, in: 1, unit: sentences)
         send(Manager, output, event: "result")
@@ -171,16 +173,19 @@ name. Agents on other teams stay silent.
 use std/io
 
 agent Alpha {
+    @tools [io]
     @team ["frontline"]
     on alert(msg: str) { io.show("Alpha got {msg}") }
 }
 
 agent Beta {
+    @tools [io]
     @team ["frontline"]
     on alert(msg: str) { io.show("Beta got {msg}") }
 }
 
 agent Gamma {
+    @tools [io]
     @team ["backoffice"]
     on alert(msg: str) { io.show("Gamma got {msg}") }
 }

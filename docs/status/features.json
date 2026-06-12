@@ -46,7 +46,7 @@
       "name": "@tools [...]",
       "tier": "stdlib",
       "status": "shipped",
-      "notes": "Capability gating — unlisted namespaces raise `CapabilityError` (v0.1.7); conditional `when` guards (v0.1.17)"
+      "notes": "Deny-by-default capability gating for effectful modules (ai, io, http, email, file, shell, db, search, env); pure-compute modules are never gated; `@tools all` is the explicit unrestricted form; uncovered direct calls are compile errors, transitive calls raise `CapabilityError` at runtime; `if` guards re-evaluated per turn"
     },
     {
       "name": "@memory persistent\\|session\\|none",
@@ -232,7 +232,7 @@
       "status": "shipped",
       "implemented_ops": "`run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }`",
       "gaps": "—",
-      "purpose": "Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [Shell]`."
+      "purpose": "Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [shell]`."
     }
   ],
   "cli": [

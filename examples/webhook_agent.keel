@@ -2,6 +2,7 @@ use std/http
 use std/io
 
 agent WebhookAgent {
+    @tools [http, io]
     state {
         request_count: int = 0
     }

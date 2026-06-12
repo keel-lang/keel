@@ -38,6 +38,7 @@ task distance(a: Point, b: Point) -> str {
 }
 
 agent Demo {
+  @tools [io]
   @role "Demonstrates Stringable impl blocks"
 
   @on_start {

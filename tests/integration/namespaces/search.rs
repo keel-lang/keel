@@ -5,6 +5,7 @@ fn search_stub_raises_v2_error() {
     let src = r#"
 use std/search
 agent A {
+    @tools [search]
     @on_start {
         search.web("query")
     }

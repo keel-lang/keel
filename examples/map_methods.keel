@@ -13,6 +13,7 @@
 use std/io
 
 agent Inventory {
+  @tools [io]
   @on_start {
     stock: map[str, int] = {apples: 12, pears: 5, plums: 0}
 

@@ -3,6 +3,7 @@ use std/io
 use std/schedule
 
 agent ParallelProcessor {
+  @tools [io]
   @on_start {
     task1 = async.spawn(() => {
       io.show("Task 1 starting")

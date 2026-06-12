@@ -32,6 +32,7 @@ task line_summary(line: OrderLine) -> str {
 }
 
 agent Checkout {
+  @tools [ai, io]    # ai: helper tasks call ai.* — @tools covers transitive effects
   @role "Processes customer orders and prints receipts"
 
   state {

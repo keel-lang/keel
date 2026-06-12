@@ -12,6 +12,7 @@ test "summarise destructures email fields" {
 }
 
 agent Inbox {
+  @tools [io]
   @on_start {
     emails = [{ body: "hello", from: "alice@example.com", subject: "hi" }, { body: "world", from: "bob@example.com", subject: "hey" }]
     for { from, subject } in emails {

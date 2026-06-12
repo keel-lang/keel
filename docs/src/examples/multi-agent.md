@@ -45,6 +45,7 @@ task plan_followup(email: {subject: str}, urgency: Urgency) {
 }
 
 agent InboxManager {
+  @tools [ai, email, io]
   @role "You coordinate the email handling team"
 
   task handle(email: {body: str, from: str, subject: str}) {
@@ -111,6 +112,7 @@ for `broadcast(team, data, event:)`.
 use std/io
 
 agent Classifier {
+  @tools [io]
   @team ["email"]
   on refresh(msg: str) { io.show("Classifier refresh: {msg}") }
 }

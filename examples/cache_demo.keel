@@ -2,6 +2,7 @@ use std/cache
 use std/io
 
 agent CacheDemo {
+    @tools [io]
     @on_start {
         # Basic set and get
         cache.set("greeting", "Hello, Keel!")

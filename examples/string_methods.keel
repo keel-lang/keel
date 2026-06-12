@@ -1,6 +1,7 @@
 use std/io
 
 agent StringMethodsDemo {
+  @tools [io]
   @on_start {
     s = "  Hello, World!  "
     io.show("{s.trim()}")

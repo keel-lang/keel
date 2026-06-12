@@ -332,6 +332,7 @@ send(watchers.Watcher, "ping")
             r#"
 use std/io
 agent Watcher {
+  @tools [io]
   on message(data: str) {
     io.show("got {data}")
     stop(self)
@@ -361,6 +362,7 @@ send(Watcher, "direct")
             r#"
 use std/io
 agent Watcher {
+  @tools [io]
   on message(data: str) {
     io.show("got {data}")
     stop(self)

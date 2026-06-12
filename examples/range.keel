@@ -1,6 +1,7 @@
 use std/io
 
 agent Counter {
+  @tools [io]
   @on_start {
     for i in 1..5 {
       io.notify("{i}")

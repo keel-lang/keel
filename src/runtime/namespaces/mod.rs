@@ -63,6 +63,22 @@ pub(crate) fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
     ALL.iter().flat_map(|s| s.iter())
 }
 
+/// Modules whose entry points exercise authority over the world outside the
+/// process — network, filesystem, subprocesses, external services, ambient
+/// secrets, humans, and LLMs. Only these require an `@tools` capability.
+///
+/// The rule: a capability guards *effects*; pure computation and internal
+/// control flow (json, math, time, schedule, …) are never gated.
+const CAPABILITY_GATED: &[&str] = &[
+    "ai", "io", "http", "email", "file", "shell", "db", "search", "env",
+];
+
+/// Whether calls to `namespace` require an `@tools` capability inside an
+/// agent turn. Consulted by both the type checker and the runtime gate.
+pub(crate) fn module_requires_capability(namespace: &str) -> bool {
+    CAPABILITY_GATED.contains(&namespace)
+}
+
 pub(crate) fn install(host: &mut dyn Host) {
     for namespace in namespaces() {
         host.register_namespace(namespace);

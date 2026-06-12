@@ -10,6 +10,7 @@ fn env_require_returns_set_value_and_errors_when_missing() {
 use std/env
 use std/io
 agent A {
+    @tools [env, io]
     @on_start {
         val = env.require("KEEL_TEST_REQUIRED")
         io.show("required={val}")
@@ -28,6 +29,7 @@ run(A)
     let missing_src = r#"
 use std/env
 agent A {
+    @tools [env]
     @on_start {
         env.require("__KEEL_TEST_REQUIRED_MISSING__")
     }
@@ -48,6 +50,7 @@ fn env_require_missing_is_catchable_as_env_error() {
 use std/env
 use std/io
 agent A {
+    @tools [env, io]
     @on_start {
         try {
             env.require("__KEEL_TEST_MISSING__")
@@ -78,6 +81,7 @@ fn json_parse_error_is_catchable_as_json_error() {
 use std/io
 use std/json
 agent A {
+    @tools [io]
     @on_start {
         try {
             json.parse("not valid json")
@@ -112,6 +116,7 @@ fn log_namespace_level_controls_output() {
 use std/io
 use std/log
 agent A {
+    @tools [io]
     @on_start {
         log.info("visible info")
         log.set_level("error")

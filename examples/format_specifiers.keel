@@ -1,6 +1,7 @@
 use std/io
 
 agent Reporter {
+    @tools [io]
     @on_start {
         pi = 3.14159265
         score = 0.9

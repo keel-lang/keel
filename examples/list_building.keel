@@ -25,6 +25,7 @@ task advisory(name: str, version: str) -> str {
 }
 
 agent DependencyAuditor {
+  @tools [ai, io]    # ai: helper tasks call ai.* — @tools covers transitive effects
   @role "Security engineer — surfaces vulnerable dependencies before they reach production"
   @rules [
     "Never approve a high-risk package without a documented upgrade path",

@@ -12,6 +12,7 @@
 use std/io
 
 agent Greeter {
+  @tools [io]
   @on_start {
     name = "world"
     mood = "cheerful"

@@ -152,6 +152,7 @@ impl Checker<'_, '_> {
         let mut readonly_fields = HashSet::new();
         let mut tasks = HashMap::new();
         let mut handlers = HashMap::new();
+        let mut tools = None;
         for item in &a.items {
             match item {
                 AgentItem::State(fields) => {
@@ -169,7 +170,18 @@ impl Checker<'_, '_> {
                     let param_ty = h.param.as_ref().map(|p| self.resolve_type(&p.ty.kind));
                     handlers.insert(h.event.clone(), param_ty);
                 }
-                AgentItem::Attribute(_) => {}
+                AgentItem::Attribute(attr) => {
+                    if attr.name == "tools"
+                        && let AttributeBody::Tools(entries) = &attr.body
+                    {
+                        tools = Some(
+                            entries
+                                .iter()
+                                .map(|e| (e.namespace.clone(), e.method.clone()))
+                                .collect(),
+                        );
+                    }
+                }
             }
         }
         AgentInfo {
@@ -177,6 +189,7 @@ impl Checker<'_, '_> {
             readonly_fields,
             tasks,
             handlers,
+            tools,
         }
     }
 }

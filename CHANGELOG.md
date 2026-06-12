@@ -8,11 +8,28 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% one module system for everything: `use std/file` for the stdlib, `use "./file.keel"` for your own code — plus built-in test blocks
+%%TAGLINE%% one module system for everything — `use std/file` for the stdlib, `use "./file.keel"` for your own code — with deny-by-default agent capabilities and built-in test blocks
 
 ---
 
 ### Added
+
+- **Deny-by-default `@tools` capability gating.** Capabilities guard *effects*: the modules with authority over the world outside the process — `ai`, `io`, `http`, `email`, `file`, `shell`, `db`, `search`, `env` — now require a declared capability, and an agent with no `@tools` attribute may call none of them. Pure-compute and internal modules (`json`, `math`, `time`, `schedule`, …) are never gated. `@tools all` is the new explicit, greppable unrestricted form. Enforcement is two-layered — direct std calls in an agent body that `@tools` does not cover are now compile-time errors naming the fix, and calls reached through helper tasks raise `CapabilityError` at runtime with the same guidance (`add \`json\` to @tools, or use \`@tools all\``). Conditional entries (`email.send if self.confirmed`) count as declared and keep their per-turn runtime guard. Value methods, agent verbs, local module tasks, top-level statements, and `test` blocks remain ungated. **Breaking:** agents that relied on the old implicit-allow default must declare `@tools [...]` or `@tools all`. Closes [#69](https://github.com/keel-lang/keel/issues/69).
+
+  ```keel
+  use std/http
+  use std/io
+
+  agent Restricted {
+    @tools [io, http.get if self.allow_http]
+    state { allow_http: bool = false }
+
+    @on_start {
+      io.show("declared, not guessed")
+      http.get("https://example.com")   # CapabilityError: guard is false
+    }
+  }
+  ```
 
 - **Module system.** Keel programs can now span multiple files, and the standard library is imported with the same syntax. `use std/file` binds `file`; `use "./validation.keel"` binds `validation` (the file stem); `as` renames either; `use A, B as C from "./m.keel"` (or `from std/json`) pulls symbols unqualified. Every top-level declaration is exported under the module namespace — tasks (`validation.email(...)`), agents (`run(watchers.Watcher)`), and via symbol import, types and interfaces. Imported files are parsed once, resolve relative to the importing file, and may not form cycles (the error spells out the path). Top-level statements are the **implicit main**: they run in order, sharing one scope, only when their file is the entry file — never on import. `keel test file.keel` runs only that file's tests; imported modules contribute declarations (test helpers are plain tasks), never their tests. The REPL pre-imports the whole stdlib. Closes [#66](https://github.com/keel-lang/keel/issues/66).
 

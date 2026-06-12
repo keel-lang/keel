@@ -60,7 +60,7 @@ Status legend: ✅ shipping · 🟡 partial · ⏳ <span class="badge badge-soon
 | `std/uuid` | ✅ | UUID values: `v4`, `v7`, deterministic `v5`, `parse`, `uuid()` alias, and value methods `version`, `format`, `to_str`. |
 | `std/crypto` | ✅ | Cryptographic primitives: fixed safe SHA-2 hash/HMAC methods, `token`, `random_bytes`. |
 | `std/math` | ✅ | Transcendentals: `sqrt`, `pow`, `exp`, `log` (natural), `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`. Constants: `PI()`, `E()`. All return `float`. Domain errors raise. |
-| `std/shell` | ✅ | Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [Shell]`. |
+| `std/shell` | ✅ | Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [shell]`. |
 | `std/csv` | ✅ | CSV serialization: `parse`, `parse_records`, `stringify` — RFC 4180 compliant |
 | `std/testing` | ✅ | Test doubles: `mock(...)` — see [Testing](./testing.md). |
 

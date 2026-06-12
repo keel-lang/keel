@@ -39,7 +39,7 @@ test "respond uses mocked draft" {
 
 agent SupportBot {
   @role "You handle customer support tickets with empathy and precision"
-  @tools [email]
+  @tools [ai, email, io]
 
   state {
     resolved: int = 0

@@ -1,6 +1,7 @@
 use std/io
 
 agent Counter {
+  @tools [io]
   @role "counter"
 
   state {

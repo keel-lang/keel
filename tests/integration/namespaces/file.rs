@@ -12,6 +12,7 @@ fn file_namespace_write_read_exists_and_list() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         file.write("{file}", "hello from keel")
         content = file.read("{file}")
@@ -45,6 +46,7 @@ fn file_namespace_missing_read_reports_file_error() {
         r#"
 use std/file
 agent A {{
+    @tools [file]
     @on_start {{
         file.read("{file}")
     }}
@@ -72,6 +74,7 @@ fn file_error_is_catchable_by_type_name() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         try {{
             file.read("{file}")
@@ -111,6 +114,7 @@ fn file_error_also_caught_by_error_fallback() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         try {{
             file.read("{file}")
@@ -144,6 +148,7 @@ fn file_namespace_mkdir_creates_directory() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         file.mkdir("{dir}")
         exists = file.exists("{dir}")
@@ -170,6 +175,7 @@ fn file_namespace_remove_deletes_file() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         file.remove("{file}")
         exists = file.exists("{file}")
@@ -198,6 +204,7 @@ fn file_namespace_copy_duplicates_file() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         file.copy("{src_f}", "{dst_f}")
         content = file.read("{dst_f}")
@@ -225,6 +232,7 @@ fn file_namespace_glob_returns_matching_paths() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         paths = file.glob("{pattern}")
         io.show("count={{paths}}")
@@ -260,6 +268,7 @@ fn file_namespace_move_renames_file() {
 use std/file
 use std/io
 agent A {{
+    @tools [file, io]
     @on_start {{
         file.move("{src_f}", "{dst_f}")
         src_exists = file.exists("{src_f}")
@@ -283,6 +292,7 @@ fn file_namespace_mktemp_returns_writable_path() {
 use std/file
 use std/io
 agent A {
+    @tools [file, io]
     @on_start {
         path = file.mktemp()
         file.write(path, "temp data")

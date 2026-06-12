@@ -9,6 +9,7 @@ fn null_assert_on_none_raises_runtime_error() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = none
         val = x!
@@ -78,6 +79,7 @@ fn modulo_by_zero_is_runtime_error() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 5 % 0
         io.show(x)
@@ -102,6 +104,7 @@ task classify(n: int) -> str {
     label
 }
 agent A {
+    @tools [io]
     @on_start {
         io.show(classify(5))
         io.show(classify(-1))
@@ -132,6 +135,7 @@ task classify(n: int) -> str {
     label
 }
 agent A {
+    @tools [io]
     @on_start {
         io.show(classify(5))
         io.show(classify(-3))
@@ -164,6 +168,7 @@ task get_early(flag: bool) -> int {
     nums[0]
 }
 agent A {
+    @tools [io]
     @on_start {
         io.show(get_early(true))
         io.show(get_early(false))

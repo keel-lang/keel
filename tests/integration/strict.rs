@@ -11,6 +11,7 @@ fn strict_mode_passes_fully_typed_program() {
     let src = r#"
 use std/io
 agent A {
+  @tools [io]
   @on_start {
     n: int = 42
     s: str = "hello"
@@ -44,6 +45,7 @@ fn strict_mode_rejects_unknown_typed_binding() {
 use std/io
 use std/json
 agent A {
+  @tools [io]
   @on_start {
     data = json.parse("{}")
     io.show("{data}")
@@ -80,6 +82,7 @@ fn normal_check_accepts_json_parse_without_annotation() {
 use std/io
 use std/json
 agent A {
+  @tools [io]
   @on_start {
     data = json.parse("{}")
     io.show("{data}")
@@ -115,6 +118,7 @@ fn strict_mode_accepts_explicit_dynamic_annotation() {
 use std/io
 use std/json
 agent A {
+  @tools [io]
   @on_start {
     data: dynamic = json.parse("{}")
     io.show("{data}")
@@ -206,6 +210,7 @@ fn readonly_state_readable_in_on_start() {
     let src = r#"
 use std/io
 agent Bot {
+  @tools [io]
   state {
     session_id: readonly str = "s42"
   }

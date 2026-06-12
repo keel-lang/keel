@@ -9,6 +9,7 @@ fn aug_assign_plus_eq_local() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 10
         x += 5
@@ -27,6 +28,7 @@ fn aug_assign_minus_eq_local() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 10
         x -= 3
@@ -45,6 +47,7 @@ fn aug_assign_star_eq_local() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 3
         x *= 4
@@ -63,6 +66,7 @@ fn aug_assign_slash_eq_local() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 20
         x /= 4
@@ -81,6 +85,7 @@ fn aug_assign_self_field() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @role "aug"
     state { count: int = 0 }
     @on_start {
@@ -101,6 +106,7 @@ fn aug_assign_percent_eq_local() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         x = 17
         x %= 5
@@ -119,6 +125,7 @@ fn aug_assign_chained_in_loop() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         total = 0
         for i in 1..5 {
@@ -148,6 +155,7 @@ task join_words(...words: str) -> str {
 }
 
 agent A {
+    @tools [io]
     @on_start {
         out = join_words("hello", " ", "world")
         io.show(out)
@@ -174,6 +182,7 @@ task count_args(...items: str) -> int {
 }
 
 agent A {
+    @tools [io]
     @on_start {
         n = count_args()
         io.show("{n}")
@@ -197,6 +206,7 @@ task sum_ints(...nums: int) -> int {
 }
 
 agent A {
+    @tools [io]
     @on_start {
         xs = [1, 2, 3]
         result = sum_ints(...xs, 4)
@@ -221,6 +231,7 @@ task labeled(prefix: str, ...items: str) -> str {
 }
 
 agent A {
+    @tools [io]
     @on_start {
         out = labeled("tags", "rust", "keel", "lang")
         io.show(out)
@@ -243,6 +254,7 @@ fn min_variadic_integers() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = min(3, 1, 4, 1, 5, 9)
         io.show("{result}")
@@ -260,6 +272,7 @@ fn max_variadic_integers() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = max(3, 1, 4, 1, 5, 9)
         io.show("{result}")
@@ -277,6 +290,7 @@ fn min_with_list_spread() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         scores = [7, 2, 9, 4]
         lo = min(scores)
@@ -298,6 +312,7 @@ fn min_empty_returns_none() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = min()
         io.show("{result}")
@@ -315,6 +330,7 @@ fn min_with_by_key_selector() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         people = [
             {name: "Alice", age: 30},
@@ -337,6 +353,7 @@ fn max_with_by_key_selector() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         people = [
             {name: "Alice", age: 30},
@@ -359,6 +376,7 @@ fn min_single_item_returns_it() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         result = min(42)
         io.show("{result}")
@@ -376,6 +394,7 @@ fn min_max_strings() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         lo = min("banana", "apple", "cherry")
         hi = max("banana", "apple", "cherry")
@@ -399,6 +418,7 @@ fn max_spread_plus_extra_scalar() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         scores = [4, 9, 2, 7]
         result = max(...scores, 99)
@@ -417,6 +437,7 @@ fn min_multi_spread() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         a = [4, 9]
         b = [2, 7]

@@ -9,6 +9,7 @@ use std/io
 use std/schedule
 
 agent Hello {
+  @tools [io]
   @role "A friendly greeter"
 
   @on_start {
@@ -71,6 +72,7 @@ task analyze(text: str) -> Mood {
 }
 
 agent MoodBot {
+  @tools [io]
   @role "Analyzes the mood of text"
 
   @on_start {

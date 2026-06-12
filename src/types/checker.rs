@@ -55,6 +55,21 @@ struct AgentInfo {
     /// Value is `None` for parameterless handlers, `Some(ty)` when a typed
     /// parameter was declared. Used to validate `delegate(...)` call sites.
     handlers: HashMap<String, Option<Ty>>,
+    /// `@tools` entries as (namespace, method) pairs; conditional entries
+    /// count as declared (their guard is evaluated per turn at runtime).
+    /// `None` means no `@tools` attribute — std calls are deny-by-default.
+    tools: Option<Vec<(String, Option<String>)>>,
+}
+
+impl AgentInfo {
+    /// Whether the agent's `@tools` declaration covers `ns.method`.
+    fn allows_tool(&self, ns: &str, method: &str) -> bool {
+        self.tools.as_ref().is_some_and(|entries| {
+            entries
+                .iter()
+                .any(|(n, m)| n == "all" || (n == ns && m.as_deref().is_none_or(|m| m == method)))
+        })
+    }
 }
 
 /// What a module-namespace binding exposes, for member checks at
@@ -1147,6 +1162,7 @@ agent Counter {
             r#"
 use std/io
 agent Bot {
+  @tools [io]
   @role "x"
 
   task step() {
@@ -1167,6 +1183,7 @@ agent Bot {
             r#"
 use std/io
 agent Bot {
+  @tools [io]
   @role "x"
 
   task step() {
@@ -1188,6 +1205,7 @@ agent Bot {
             r#"
 use std/io
 agent Worker {
+  @tools [io]
   @role "x"
 
   task run() {
@@ -1778,6 +1796,7 @@ task t() {
             r#"
 use std/io
 agent Bot {
+  @tools [io]
   state {
     turns: int = 0
     session_id: readonly str = "default"
@@ -2961,6 +2980,7 @@ task use_db() {
             r#"
 use std/io
 agent Worker {
+    @tools [io]
     on process(data: str) {
         io.show(data)
     }
@@ -2982,6 +3002,7 @@ run(Boss)
             r#"
 use std/io
 agent Worker {
+    @tools [io]
     on process(data: str) {
         io.show(data)
     }
@@ -3002,6 +3023,7 @@ run(Boss)
             r#"
 use std/io
 agent Worker {
+    @tools [io]
     on process(data: str) {
         io.show(data)
     }
@@ -3023,6 +3045,7 @@ run(Boss)
             r#"
 use std/io
 agent Worker {
+    @tools [io]
     on process(data: str) {
         io.show(data)
     }

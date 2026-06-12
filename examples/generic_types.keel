@@ -23,6 +23,7 @@ task summarise_page(page: Paginated[str]) -> str {
 }
 
 agent Demo {
+  @tools [io]
   @role "Demonstrates generic types"
   @on_start {
     page: Paginated[str] = { items: ["alpha", "beta", "gamma"], page: 1, has_more: false }

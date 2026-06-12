@@ -17,6 +17,7 @@ type Incident {
 }
 
 agent Responder {
+  @tools [ai, io]
   @role "Senior on-call engineer — handles critical and high production incidents"
   @rules ["Open every response with a one-line impact statement", "Always include an estimated time-to-resolve"]
 
@@ -61,6 +62,7 @@ test "choose action maps severities" {
 }
 
 agent OnCall {
+  @tools [ai, io]
   @role "On-call coordinator — triage every alert, never drop a critical one"
   @rules ["Escalate anything that affects revenue or user data immediately", "Log every decision with the severity and chosen action"]
 

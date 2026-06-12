@@ -650,18 +650,30 @@ Attributes are identifier-prefixed metadata clauses inside an agent body. The co
 
 Everything else (`@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, custom attributes) is **stdlib-defined**: libraries register attribute handlers at startup, and the runtime invokes them during agent initialization to wire up capabilities.
 
-**`@tools` — capability gating**
+**`@tools` — capability gating (deny-by-default)**
 
-`@tools` restricts which namespace methods the agent may call. Each entry is one of:
+`@tools` declares which **effectful** std modules the agent may call. Capabilities are **declared, never implied**: an agent with no `@tools` attribute may not call any effectful module. The developer reads the declaration and knows — there is nothing to guess.
+
+A capability guards authority over the world outside the process; pure computation is never gated. The gated modules are `ai`, `io`, `http`, `email`, `file`, `shell`, `db`, `search`, and `env` (ambient secrets). Everything else — `json`, `csv`, `math`, `random`, `uuid`, `crypto`, `time`, `log`, `cache`, `memory`, `schedule`, `async`, `control`, `testing` — is pure computation or internal control flow and needs only its `use std/<name>` import.
 
 ```
-Ns                          # whole namespace, always allowed
-Ns.method                   # specific method, always allowed
-Ns if expr                  # whole namespace, allowed when expr is true
-Ns.method if expr           # specific method, allowed when expr is true
+@tools all                  # explicit unrestricted form (greppable)
+@tools [entries]            # allowlist; each entry is one of:
+
+mod                         # whole module, always allowed
+mod.method                  # specific method, always allowed
+mod if expr                 # whole module, allowed when expr is true
+mod.method if expr          # specific method, allowed when expr is true
 ```
 
-`expr` is any boolean expression evaluated at the start of each handler turn. `self.*` state, `self.task(...)`, and top-level task calls returning `bool` are valid. Calling a blocked method raises `CapabilityError`.
+`expr` is any boolean expression evaluated at the start of each handler turn. `self.*` state, `self.task(...)`, and top-level task calls returning `bool` are valid.
+
+Enforcement is two-layered:
+
+- **Compile time:** a direct std call in the agent body that `@tools` does not cover is a type error naming the fix (`declare \`@tools [io]\` on the agent, or use \`@tools all\``). Conditional entries count as declared.
+- **Runtime:** every effectful entry-point call during an agent turn — including calls reached through helper tasks in any module — is checked against the turn's evaluated allowlist. A blocked call raises `CapabilityError` naming the missing module. `@tools` must therefore cover the transitive effectful needs of the helpers an agent calls.
+
+Gating applies to effectful std module entry points only, inside agent turns. Pure-compute modules, value methods (`conn.query(...)`), built-in agent verbs, local module tasks, top-level statements, and `test` blocks are not gated.
 
 ```keel
 @tools [
@@ -669,7 +681,7 @@ Ns.method if expr           # specific method, allowed when expr is true
   email.send if self.confirmed,      # send only after confirmation
   db.query,
   db.exec   if self.admin,
-  http,                             # whole namespace, always
+  http,                             # whole module, always
 ]
 ```
 

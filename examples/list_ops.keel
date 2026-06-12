@@ -9,6 +9,7 @@
 use std/io
 
 agent ListOpsDemo {
+  @tools [io]
   @on_start {
     scores = [42, 17, 95, 8, 73, 61]
 

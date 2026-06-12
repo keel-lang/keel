@@ -9,6 +9,7 @@ fn str_matches_true() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         result = "hello world".matches("\\w+")
         if result {
@@ -31,6 +32,7 @@ fn str_matches_false() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         result = "hello world".matches("^\\d+$")
         if result {
@@ -55,6 +57,7 @@ fn str_extract() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         v = "Total: $99.99".extract("\\$(\\S+)")
         io.show("amount={v}")
@@ -72,6 +75,7 @@ fn str_truncate() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         v = "hello world".truncate(5)
         io.show("short={v}")
@@ -92,6 +96,7 @@ fn str_pad() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         v = "42".pad(5)
         io.show("padded={v}")
@@ -109,6 +114,7 @@ fn str_find_all() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         matches = "one 1 two 2 three 3".find_all("\\d+")
         io.show("count={matches.count}")
@@ -134,6 +140,7 @@ fn str_sub() {
     let src = r#"
 use std/io
 agent StrTest {
+    @tools [io]
     @on_start {
         v = "hello world hello".sub("hello", "hi")
         io.show("result={v}")
@@ -154,6 +161,7 @@ fn string_regex_methods_reject_non_string_patterns() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             "hello".matches(42)
@@ -196,6 +204,7 @@ fn string_contains_rejects_missing_argument() {
     let src = r#"
 use std/io
 agent A {
+    @tools [io]
     @on_start {
         try {
             "hello".contains()

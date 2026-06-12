@@ -6,7 +6,7 @@ fn db_connect_query_exec_roundtrip() {
 use std/db
 use std/log
 agent A {
-    @tools [db, log]
+    @tools [db]
     @on_start {
         db = db.connect("sqlite://:memory:")
         db.exec("CREATE TABLE kv (key TEXT, val TEXT)")
