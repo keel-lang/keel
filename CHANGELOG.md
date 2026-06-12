@@ -8,7 +8,13 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% one module system for everything — `use std/file` for the stdlib, `use "./file.keel"` for your own code — with deny-by-default agent capabilities and built-in test blocks
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.2.0] — 2026-06-12
+
+one module system for everything — `use std/file` for the stdlib, `use "./file.keel"` for your own code — with deny-by-default agent capabilities and built-in test blocks
 
 ---
 

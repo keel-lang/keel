@@ -4,7 +4,7 @@
 
 # The Keel Language
 
-> **Latest: [%%VERSION%%](./release-notes.md)** — All stdlib errors are now typed — distinguish causes in try/catch blocks.
+> **Latest: [0.2.0](./release-notes.md)** — one module system for everything — `use std/file` for the stdlib, `use "./file.keel"` for your own code — with deny-by-default agent capabilities and built-in test blocks
 
 > **Alpha.** Breaking changes expected between 0.x releases. See [versioning](#versioning-and-breaking-changes).
 

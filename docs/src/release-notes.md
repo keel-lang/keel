@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.2.0 — 2026-06-12
+
 ### Deny-by-default `@tools`
 
 Agent capabilities are now declared, never implied. A capability guards
