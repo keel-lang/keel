@@ -1,7 +1,5 @@
 # Csv — CSV serialization
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 The `Csv` namespace parses and produces RFC 4180–compliant CSV text. No `@tools` annotation is required.
 
 ```keel

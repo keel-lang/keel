@@ -1,7 +1,5 @@
 # Example: Email Assistant
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 A complete email agent that triages, auto-replies, and escalates.
 
 ```keel
@@ -10,11 +8,12 @@ use std/email
 use std/io
 use std/memory
 use std/schedule
+use std/time
 
 type Urgency = low | medium | high | critical
 
-task triage(email: {body: str, from: str, subject: str}) -> Urgency {
-  ai.classify(email.body,
+task triage(msg: {body: str, from: str, subject: str}) -> Urgency {
+  ai.classify(msg.body,
     as: Urgency,
     considering: {
       "from a known VIP or executive":   Urgency.critical,
@@ -26,66 +25,65 @@ task triage(email: {body: str, from: str, subject: str}) -> Urgency {
   ) ?? Urgency.medium
 }
 
-task brief(email: {body: str}) -> str {
-  ai.summarize(email.body,
-    in: 1, unit: sentence,
+task brief(msg: {body: str}) -> str {
+  ai.summarize(msg.body,
+    in: 1, unit: sentences,
     using: "fast"
   ) ?? "(no summary)"
 }
 
-task compose(email: {body: str, from: str}, guidance: str? = none) -> str {
+task compose(msg: {body: str, from: str}, guidance: str? = none) -> str {
   if guidance != none {
-    ai.draft("response to {email.body}", tone: "professional", guidance: guidance)
+    ai.draft("response to {msg.body}", tone: "professional", guidance: guidance)
   } else {
-    ai.draft("response to {email.body}", tone: "friendly", max_length: 150)
+    ai.draft("response to {msg.body}", tone: "friendly", max_length: 150)
   } ?? "(draft failed)"
 }
 
 agent EmailAssistant {
   @role "You are a professional email assistant"
-  @tools [email]
+  @tools [ai, io, email]
   @memory persistent
 
   state {
     handled_count: int = 0
   }
 
-  task handle(email: {body: str, from: str, subject: str}) {
-    urgency = triage(email)
-    summary = brief(email)
+  task handle(msg: {body: str, from: str, subject: str}) {
+    urgency = triage(msg)
+    summary = brief(msg)
 
     when urgency {
       low => {
-        io.notify("Archived: {email.subject} [{urgency}]")
-        email.archive(email)
+        io.notify("Archived: {msg.subject} [{urgency}]")
+        email.archive(msg)
       }
       medium => {
-        reply = compose(email)
-        if io.confirm("Auto-reply to '{email.subject}':\n\n{reply}") {
-          email.send(reply, to: email.from)
+        reply = compose(msg)
+        if io.confirm("Auto-reply to '{msg.subject}':\n\n{reply}") {
+          email.send(reply, to: msg.from)
         }
       }
       high, critical => {
-        io.notify("{urgency} email from {email.from}")
+        io.notify("{urgency} email from {msg.from}")
         io.show({
-          from:    email.from,
-          subject: email.subject,
+          from:    msg.from,
+          subject: msg.subject,
           summary: summary,
           urgency: urgency
         })
         guidance = io.ask("How should I respond?")
-        reply = compose(email, guidance)
+        reply = compose(msg, guidance)
         if io.confirm(reply) {
-          email.send(reply, to: email.from)
+          email.send(reply, to: msg.from)
         }
       }
     }
 
-    memory.remember({
-      contact:    email.from,
-      subject:    email.subject,
+    memory.remember(msg.from, {
+      subject:    msg.subject,
       urgency:    urgency,
-      handled_at: now
+      handled_at: time.now()
     })
 
     self.handled_count = self.handled_count + 1
@@ -93,10 +91,10 @@ agent EmailAssistant {
 
   @on_start {
     schedule.every(5.minutes, () => {
-      emails = email.fetch(unread: true)
-      io.notify("{emails.count} new emails")
-      for email in emails {
-        self.handle(email)
+      inbox = email.fetch(unread: true)
+      io.notify("{inbox.count()} new emails")
+      for msg in inbox {
+        self.handle(msg)
       }
     })
   }
@@ -125,4 +123,4 @@ keel run email_agent.keel
 5. `high`/`critical` → show a summary, ask for guidance, draft with it, confirm.
 6. Each interaction is remembered for future context.
 
-Zero imports. `Ai`, `Io`, `Email`, `Schedule`, and `Memory` are all auto-imported via the [prelude](../guide/stdlib.md).
+Six imports declare everything this program touches, and `@tools [ai, io, email]` grants the agent its effectful capabilities — including the `ai.*` calls reached through the helper tasks. See [The Standard Library](../guide/stdlib.md).

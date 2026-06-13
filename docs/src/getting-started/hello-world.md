@@ -1,7 +1,5 @@
 # Hello World
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Create a file called `hello.keel`:
 
 ```keel
@@ -48,15 +46,16 @@ Press `Ctrl+C` to stop.
 
 ## What just happened?
 
-1. **`agent Hello`** — declares an agent.
-2. **`@role "..."`** — an attribute describing what the agent does. Bound to the LLM provider for any `ai.*` calls.
-3. **`@model "..."`** — which model to use.
-4. **`@on_start { ... }`** — a lifecycle hook that runs when the agent starts.
-5. **`schedule.every(5.seconds, () => { ... })`** — schedules a recurring block. `Schedule` is a stdlib namespace, always in scope.
-6. **`io.notify(...)`** — prints to the terminal. `Io` is also stdlib.
-7. **`run(Hello)`** — starts the agent.
+1. **`use std/io`, `use std/schedule`** — imports the stdlib modules this file uses. Each import binds a lowercase module name (`io`, `schedule`).
+2. **`agent Hello`** — declares an agent.
+3. **`@tools [io]`** — grants the agent access to the effectful `io` module. Capabilities are deny-by-default inside agents.
+4. **`@role "..."`** — an attribute describing what the agent does. Bound to the LLM provider for any `ai.*` calls.
+5. **`@on_start { ... }`** — a lifecycle hook that runs when the agent starts.
+6. **`schedule.every(5.seconds, () => { ... })`** — schedules a recurring block. `schedule` is a stdlib module, not a keyword.
+7. **`io.notify(...)`** — prints to the terminal.
+8. **`run(Hello)`** — starts the agent. `run` is a built-in free function — no import needed.
 
-No imports. The `Schedule`, `Io`, `Ai` namespaces are in scope from the start — that's the [prelude](../guide/stdlib.md).
+Two imports declare everything this program touches — see [The Standard Library](../guide/stdlib.md).
 
 ## Using AI
 

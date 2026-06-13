@@ -1,7 +1,5 @@
 # keel run
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Execute a Keel program.
 
 ```bash

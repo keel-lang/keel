@@ -1,10 +1,8 @@
-# Stdlib: `Schedule`
+# Stdlib: `schedule`
 
-> **Alpha (v0.1).** Breaking changes expected.
+The `schedule` module (`use std/schedule`) provides recurring, delayed, and one-shot scheduling. It's a library, not a keyword — which means you can use dynamic intervals, cron expressions, and user-defined event sources without language changes.
 
-The `Schedule` namespace provides recurring, delayed, and one-shot scheduling. It's a library, not a keyword — which means you can use dynamic intervals, cron expressions, and user-defined event sources without language changes.
-
-Under the hood, `Schedule` sits on top of the runtime's timer primitives (`__runtime.sleep`, `__runtime.deadline`) and the agent mailbox, and emits events into whichever agent registered the schedule.
+Under the hood, `schedule` sits on top of the runtime's timer primitives and the agent mailbox, and emits events into whichever agent registered the schedule.
 
 ## `schedule.every` — recurring execution
 
@@ -25,19 +23,7 @@ interval = if load_is_high() { 10.minutes } else { 5.minutes }
 schedule.every(interval, () => { heartbeat() })
 ```
 
-## `schedule.every` with calendar alignment <span class="badge badge-soon">Coming soon</span>
-
-```keel
-schedule.every(1.day, at: @9am, () => {
-  send_weekly_report()
-})
-
-schedule.every(monday, at: @9am, () => {
-  start_of_week_checklist()
-})
-```
-
-> **Status:** the `at:` alignment argument is parsed but ignored in v0.1 — intervals fire relative to when the schedule is registered, not anchored to a clock time.
+Intervals fire relative to when the schedule is registered. To anchor recurring work to a clock time (every weekday at 9am, say), use [`schedule.cron`](#schedulecron--cron-expressions).
 
 ## `schedule.after` — delayed one-shot
 
@@ -53,8 +39,10 @@ schedule.after(2.hours, () => {
 
 ## `schedule.at` — absolute time
 
+`schedule.at` takes an RFC 3339 / ISO 8601 datetime string. A naive datetime (no offset) is treated as UTC; a target already in the past fires immediately.
+
 ```keel
-schedule.at(@2026-04-20_10am, () => {
+schedule.at("2026-04-20T10:00:00Z", () => {
   launch_campaign()
 })
 ```
@@ -108,7 +96,7 @@ agent DailyDigest {
   @role "Produce a daily digest of important emails"
 
   @on_start {
-    schedule.every(1.day, at: @8am, () => {
+    schedule.cron("0 8 * * *", () => {
       summary = produce_digest()
       email.send(summary, to: env.require("DIGEST_TO"))
     })
@@ -116,25 +104,16 @@ agent DailyDigest {
 }
 ```
 
-## Cancelling a schedule <span class="badge badge-soon">Coming soon</span>
-
-`schedule.every`, `after`, `at`, and `cron` return a handle you can cancel:
-
-```keel
-heartbeat = schedule.every(30.seconds, () => { ping() })
-
-# Later
-heartbeat.cancel()
-```
-
-> **Status:** v0.1 scheduling calls return `none` — cancellation handles are not yet plumbed through. Schedules live for the lifetime of the enclosing agent.
+Scheduling calls return `none` — there is no cancellation handle. A schedule lives for the lifetime of the enclosing agent; stopping the agent tears its schedules down.
 
 ## Duration literals
 
 Durations use the `.unit` suffix and are arithmetic-compatible:
 
 ```keel
-5.seconds    30.minutes    2.hours    1.day    7.days
+short    = 5.seconds
+pause    = 30.minutes
+week     = 7.days
 extended = 30.seconds * 2     # 60 seconds
 timeout  = 5.minutes + 30.seconds
 ```
@@ -151,4 +130,4 @@ Scheduled closures are delivered through the interpreter's bounded event queue (
 
 ## Why a library, not keywords
 
-`schedule.every`, `schedule.after`, and `schedule.at` are prelude functions rather than hard-coded keywords. This matters because common patterns — dynamic intervals like `every N.minutes` where `N` depends on state, cron expressions, pause/resume logic, user-defined event sources (webhooks, subscriptions) — all fight fixed keyword syntax. Keeping `schedule.*` a library sidesteps every one of them. See [The Prelude & Interfaces](./stdlib.md).
+`schedule.every`, `schedule.after`, and `schedule.at` are ordinary stdlib functions (imported with `use std/schedule`) rather than hard-coded keywords. This matters because common patterns — dynamic intervals like `every N.minutes` where `N` depends on state, cron expressions, pause/resume logic, user-defined event sources (webhooks, subscriptions) — all fight fixed keyword syntax. Keeping `schedule.*` a library sidesteps every one of them. See [The Standard Library](./stdlib.md).

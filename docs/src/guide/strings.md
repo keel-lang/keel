@@ -1,24 +1,22 @@
 # String Interpolation
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Keel strings support `{expr}` interpolation — variables and expressions inside strings are evaluated at runtime.
 
 ## Basic interpolation
 
 ```keel
 name = "Keel"
-notify user "Hello, {name}!"           # "Hello, Keel!"
-notify user "Count: {items.count}"     # "Count: 3"
-notify user "Sum: {a + b}"            # expression evaluation
+io.notify("Hello, {name}!")            # "Hello, Keel!"
+io.notify("Count: {items.count()}")    # "Count: 3"
+io.notify("Sum: {a + b}")              # expression evaluation
 ```
 
 ## Dotted paths
 
 ```keel
-notify user "From: {email.from}"
-notify user "Status: {self.count}"
-notify user "Key: {env.API_KEY}"
+io.notify("From: {msg.from}")
+io.notify("Status: {self.count}")
+io.notify("Key: {env.get("API_KEY")}")
 ```
 
 ## Nested string literals
@@ -55,8 +53,8 @@ opening a nested string.
 | `\}` | Literal `}` |
 
 ```keel
-notify user "Line 1\nLine 2"
-notify user "Price: \{not interpolated\}"
+io.notify("Line 1\nLine 2")
+io.notify("Price: \{not interpolated\}")
 ```
 
 ## String methods

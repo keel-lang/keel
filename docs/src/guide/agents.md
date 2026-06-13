@@ -1,7 +1,5 @@
 # Agents & Attributes
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 An agent is the one concurrency primitive Keel provides — a serial-handler mailbox with isolated mutable state accessible only via `self`. Everything else a program does (AI calls, scheduling, I/O, HTTP) is a library function; the agent is the only truly language-level construct.
 
 ## Minimal agent
@@ -59,7 +57,7 @@ agent EmailBot {
 
   # --- Lifecycle hooks ---
   @on_start {
-    schedule.every(1.day, at: @9am, () => {
+    schedule.cron("0 9 * * *", () => {
       io.notify("Processed {self.processed} messages yesterday")
     })
   }
@@ -74,16 +72,18 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 | Attribute | Core? | Status | Purpose |
 |---|---|---|---|
-| `@role` | Yes | ✅ | The agent's identity string. In v0.1 it's prepended as `"You are {role}.\n\n..."` to every `ai.*` system prompt, so the LLM sees the agent's directive on every call |
+| `@role` | Yes | ✅ | The agent's identity string. Currently it's prepended as `"You are {role}.\n\n..."` to every `ai.*` system prompt, so the LLM sees the agent's directive on every call |
 | `@model` | Yes | ✅ | The model name string; overrides the global default for this agent |
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-> As of v0.1.10, `@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@limits` (timeout) are fully wired. `@team` is used by `broadcast` routing. `@provider` is parsed but has no runtime effect yet — <span class="badge badge-soon">Coming soon</span>. Individual sections note the status explicitly.
+`@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@team` are fully wired; `@team` is used by `broadcast` routing. `@provider` is parsed but has no runtime effect yet — Ollama is the only backend.
 
 ### `@tools` — capability list
 
-```keel
+Inside an agent body:
+
+```text
 @tools [email, http]      # allowlist
 @tools all                # explicit unrestricted form
 ```
@@ -133,7 +133,9 @@ Calling a blocked method raises a `CapabilityError` at runtime. The guard is re-
 
 ### `@memory` — agent memory scope
 
-```keel
+Inside an agent body:
+
+```text
 @memory persistent    # | session | none
 ```
 
@@ -171,51 +173,29 @@ The `Memory` namespace provides three operations:
 
 ### `@rules` — natural-language guardrails
 
-```keel
+Inside an agent body:
+
+```text
 @rules [
   "Never reveal internal pricing logic",
   "Escalate if the user expresses frustration 3+ times"
 ]
 ```
 
-Rules are injected into every LLM prompt this agent makes as a bullet list under a `Rules:` heading, placed between the role preamble and the operation-specific instructions. They are **LLM-interpreted** — compliance is best-effort. For deterministic constraints, use `@limits`.
-
-> **Status:** fully wired as of v0.1.3. Every `ai.*` call inside an agent with `@rules` forwards the rules to the system prompt.
-
-### `@limits` — deterministic constraints <span class="badge badge-soon">Coming soon</span>
-
-```keel
-@limits {
-  max_cost_per_request: 0.50
-  max_tokens_per_request: 4096
-  timeout: 30.seconds
-  require_confirmation: [email.send, db.exec]
-}
-```
-
-Enforced by the runtime with deterministic logic. Violations raise errors; they don't just ask the LLM nicely.
-
-> **Status:** `timeout` is enforced via `control.with_timeout`. Cost, token, and confirmation gates are parsed but not enforced at the Ollama level yet.
+Rules are injected into every LLM prompt this agent makes as a bullet list under a `Rules:` heading. They are **LLM-interpreted** — compliance is best-effort.
 
 ### `@on_start` / `@on_stop` — lifecycle hooks
 
 ```keel
-@on_start { schedule.every(5.minutes, () => { heartbeat() }) }
-@on_stop  { flush_queue() }
+use std/schedule
+
+agent Worker {
+  @on_start { schedule.every(5.minutes, () => { heartbeat() }) }
+  @on_stop  { flush_queue() }
+}
 ```
 
-Run when the agent starts and stops.
-
-> **Status:** Both `@on_start` and `@on_stop` are fully wired as of v0.1.4.
-
-### Custom attributes
-
-Any library can register a handler for a custom attribute. In your program:
-
-```keel
-@tracing "full"      # handler installed by keel/observability
-@retry_policy { ... } # handler installed by a resilience library
-```
+Both hooks are fully wired.
 
 ## State
 
@@ -265,26 +245,24 @@ Use readonly fields for runtime-provided context (session IDs, request metadata)
 
 ```keel
 run(MyAgent)                      # start
-run(MyAgent, background: true)    # background: Coming soon
+run(MyAgent)                      # background mode uses the event loop
 stop(MyAgent)                     # graceful shutdown
 stop(self)                        # self-stop from inside the agent
 ```
 
-`run` and `stop` are prelude functions re-exported at the top level. Inside an agent body, bare `self` resolves to the current agent reference, so `stop(self)` is equivalent to `stop(MyAgent)` without hard-coding the name.
+`run` and `stop` are built-in agent verbs — always in scope, no import needed. Inside an agent body, bare `self` resolves to the current agent reference, so `stop(self)` is equivalent to `stop(MyAgent)` without hard-coding the name.
 
-The `Agent` namespace exposes the same operations with an explicit prefix:
+The full set of built-in agent verbs:
 
-| Function | Equivalent | Notes |
-|---|---|---|
-| `run(name)` | `run(name)` | Start a named agent |
-| `stop(name)` | `stop(name)` | Gracefully stop a running agent |
-| `send(name, data)` | — | Post a message to an agent's mailbox |
-| `delegate(symbol, data)` | — | Invoke a typed handler and await the result |
-| `broadcast(team, data)` | — | Fan out an event to all agents on a team |
+| Function | Notes |
+|---|---|
+| `run(name)` | Start a named agent |
+| `stop(name)` | Gracefully stop a running agent |
+| `send(name, data)` | Post a message to an agent's mailbox |
+| `delegate(symbol, data)` | Post a named handler event to an agent's mailbox |
+| `broadcast(team, data)` | Fan out an event to all agents on a team |
 
-Use the `Agent.*` form when you need to start or stop agents whose names are only known at runtime (e.g., dynamically spawned workers).
-
-> **Status:** `run(Agent)` and `stop(Agent)` are wired. `run(Agent, background: true)` <span class="badge badge-soon">Coming soon</span> — v0.1 treats every `run` as foreground and uses the event loop for non-blocking behavior.
+`run` and `stop` are always available without an import.
 
 ## Composition over monoliths
 
@@ -315,4 +293,4 @@ agent EmailAssistant {
 Tasks defined *inside* an agent are scoped to that agent and can access `self`. Use them only when you genuinely need agent state access.
 Invoke them as `self.task(...)`; bare `task(...)` remains a lexical/top-level call.
 `MyAgent.task(...)` is not the cross-agent composition model — use
-`Agent.send`, `Agent.delegate`, or `Agent.broadcast` instead.
+`send`, `delegate`, or `broadcast` instead.

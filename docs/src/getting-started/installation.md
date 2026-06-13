@@ -1,6 +1,6 @@
 # Installation
 
-> **Alpha (v0.1).** Three install paths below; pick whichever you prefer.
+Three install paths below — pick whichever you prefer.
 
 ## One-liner
 
@@ -62,7 +62,7 @@ Commands:
 
 ## LLM setup
 
-Keel's `ai.*` functions call a local Ollama instance. In v0.1 it is the only supported backend.
+Keel's `ai.*` functions call a local Ollama instance. It is currently the only supported backend.
 
 ```bash
 # Install Ollama from https://ollama.com

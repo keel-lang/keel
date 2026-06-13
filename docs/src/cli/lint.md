@@ -1,7 +1,5 @@
 # keel lint
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Check a Keel program for style and best-practice issues beyond what `keel check` covers.
 
 ```bash

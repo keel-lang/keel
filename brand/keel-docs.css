@@ -11,8 +11,11 @@
  * Then register the theme in theme/index.hbs if you want the toggle.
  * ============================================================ */
 
-/* ---------- Fonts ------------------------------------------------ */
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+/* ---------- Fonts ------------------------------------------------
+ * Self-hosted in the docs build — see docs/theme/fonts.css, loaded via
+ * additional-css before this file. No third-party / render-blocking
+ * @import. Embedders outside the docs build must provide the three
+ * families (Fraunces, Inter, JetBrains Mono) themselves. */
 
 /* ---------- Palette & tokens ------------------------------------ */
 :root {
@@ -36,6 +39,7 @@
 .keel,
 .navy,            /* alias mdbook's navy to keel */
 .ayu,
+.coal,            /* coal too, so no built-in theme is ever unstyled */
 html.keel body,
 html.navy body {
   --bg:                var(--keel-onyx);
@@ -158,6 +162,9 @@ body { font-family: var(--keel-font-body); line-height: 1.6; }
   border: none;
 }
 .sidebar .chapter li a:hover { color: var(--sidebar-active); }
+.sidebar .chapter li.chapter-item:has(> a.active) {
+  background: var(--theme-hover);
+}
 .sidebar .chapter li a.active {
   color: var(--sidebar-active);
   font-weight: 600;
@@ -229,23 +236,46 @@ pre {
 }
 pre > code { background: transparent !important; padding: 0; color: var(--fg); }
 
-/* Syntax highlighting — keel-flavored */
+/* Syntax highlighting — keel-flavored (dark)
+   Amber keywords anchor the brand; strings sit in a warm gold, numbers in
+   mint, and types/functions take vibrant blue/violet that hold up on the
+   onyx code background. Attributes (@role, @tools) use a coral that reads
+   far better than the muddy brand burnt did on dark. */
 .hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: var(--keel-amber); font-weight: 500; }
 .hljs-string, .hljs-attr, .hljs-symbol, .hljs-bullet { color: #E8C078; }
-.hljs-number, .hljs-literal { color: #9CD8C3; }
-.hljs-comment, .hljs-quote { color: var(--keel-fog); font-style: italic; }
-.hljs-title, .hljs-section, .hljs-function { color: #CBB8FF; }
-.hljs-variable, .hljs-name, .hljs-type { color: #A6D6FF; }
-.hljs-meta, .hljs-tag { color: var(--keel-burnt); }
+.hljs-number, .hljs-literal { color: #8FE0C0; }
+.hljs-comment, .hljs-quote { color: #7E8794; font-style: italic; }
+.hljs-title, .hljs-section, .hljs-function { color: #C792EA; }
+.hljs-variable, .hljs-name, .hljs-type { color: #82AAFF; }
+.hljs-meta, .hljs-tag { color: #F78C6C; }
 .keel-light .hljs-keyword, .light .hljs-keyword, .rust .hljs-keyword { color: var(--keel-burnt); }
 .keel-light .hljs-string, .light .hljs-string, .rust .hljs-string { color: #8B5A1F; }
 .keel-light .hljs-number, .light .hljs-number, .rust .hljs-number { color: #2F7D5B; }
 .keel-light .hljs-comment, .light .hljs-comment, .rust .hljs-comment { color: var(--keel-ash); }
+/* Dark-saturated counterparts of the pastel function/type colors — the dark
+   defaults (#CBB8FF, #A6D6FF, #E8C078) wash out on the ivory code background. */
+.keel-light .hljs-title, .light .hljs-title, .rust .hljs-title,
+.keel-light .hljs-section, .light .hljs-section, .rust .hljs-section,
+.keel-light .hljs-function, .light .hljs-function, .rust .hljs-function { color: #7C3AED; }
+.keel-light .hljs-variable, .light .hljs-variable, .rust .hljs-variable,
+.keel-light .hljs-name, .light .hljs-name, .rust .hljs-name,
+.keel-light .hljs-type, .light .hljs-type, .rust .hljs-type { color: #1D4ED8; }
+.keel-light .hljs-attr, .light .hljs-attr, .rust .hljs-attr,
+.keel-light .hljs-symbol, .light .hljs-symbol, .rust .hljs-symbol,
+.keel-light .hljs-bullet, .light .hljs-bullet, .rust .hljs-bullet { color: #9A5B14; }
 
-/* ---------- Blockquotes / callouts ------------------------------ */
+/* ---------- Blockquotes / callouts ------------------------------
+   Each callout carries a single `--callout` accent that drives the left
+   border, the tinted background, and the label colour. keel-callouts.js adds
+   `callout-info` / `callout-tip` / `callout-warn` based on the leading bold
+   word; unrecognised labels keep the neutral amber default below. The faint
+   accent-tinted background also sets callouts apart from code blocks, which
+   share the amber left border but stay on the flat `--quote-bg`. */
 blockquote {
-  background: var(--quote-bg);
-  border-left: 3px solid var(--keel-amber);
+  --callout: var(--keel-amber);
+  --callout-tint: rgba(255, 184, 74, 0.07);
+  background: var(--callout-tint);
+  border-left: 3px solid var(--callout);
   border-radius: 0 6px 6px 0;
   padding: 14px 20px;
   margin: 1.5em 0;
@@ -253,13 +283,17 @@ blockquote {
 }
 blockquote p:last-child { margin-bottom: 0; }
 
+blockquote.callout-info { --callout: #6FB6FF; --callout-tint: rgba(111, 182, 255, 0.08); }
+blockquote.callout-tip  { --callout: #5FC9A3; --callout-tint: rgba(95, 201, 163, 0.08); }
+blockquote.callout-warn { --callout: var(--keel-burnt); --callout-tint: rgba(210, 105, 26, 0.09); }
+
 /* Admonition-style callouts — use `> **Note:**`, `> **Warning:**` etc. */
 blockquote p:first-child strong:first-child {
   font-family: var(--keel-font-mono);
   font-size: 0.75em;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--keel-amber);
+  color: var(--callout);
   display: block;
   margin-bottom: 0.4em;
 }
@@ -295,23 +329,29 @@ blockquote p:first-child strong:first-child {
   border: 1px solid rgba(155, 163, 174, 0.35);
 }
 
-/* ---------- Tables --------------------------------------------- */
+/* ---------- Tables ---------------------------------------------
+   Horizontal rules only — no vertical gridlines — for a lighter, more
+   modern feel. A heavier rule under the header anchors the columns. */
 table {
   border-collapse: collapse;
   margin: 1.5em 0;
   font-size: 0.95em;
+  width: 100%;
 }
-table thead tr { background: var(--table-header-bg); }
+table thead tr { background: transparent; }
 table th, table td {
-  border: 1px solid var(--table-border-color);
-  padding: 8px 14px;
+  border: none;
+  border-bottom: 1px solid var(--table-border-color);
+  padding: 9px 14px 9px 0;
 }
 table th {
   font-family: var(--keel-font-display);
   font-weight: 600;
   text-align: left;
+  border-bottom: 2px solid var(--table-border-color);
 }
-table tr:nth-child(even) td { background: var(--table-alternate-bg); }
+table tr:last-child td { border-bottom: none; }
+table tbody tr:hover td { background: var(--table-alternate-bg); }
 
 /* ---------- Search --------------------------------------------- */
 #searchbar {
@@ -355,6 +395,56 @@ mark { background: var(--search-mark-bg); color: var(--keel-onyx); padding: 0 2p
 /* ---------- Content width -------------------------------------- */
 .content main { max-width: 780px; padding: 0 20px 80px; }
 
+/* ---------- "On this page" right-rail TOC ----------------------- */
+/* Injected by keel-pagetoc.js as the last child of <main>. Pulled out of
+   flow and pinned to the right gutter; only shown when the viewport is wide
+   enough that it clears the centered 780px body. */
+.keel-pagetoc { display: none; }
+
+@media (min-width: 1500px) {
+  .keel-pagetoc {
+    display: block;
+    position: fixed;
+    top: var(--menu-bar-height, 50px);
+    margin-top: 2.5rem;
+    right: max(1.5rem, calc((100vw - var(--sidebar-width, 300px) - 780px) / 2 - 220px));
+    width: 200px;
+    max-height: calc(100vh - var(--menu-bar-height, 50px) - 5rem);
+    overflow-y: auto;
+    font-family: var(--keel-font-body);
+    font-size: 0.82em;
+    line-height: 1.4;
+  }
+  .keel-pagetoc-title {
+    font-family: var(--keel-font-mono);
+    font-size: 0.86em;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--keel-fog);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--table-border-color);
+  }
+  .keel-pagetoc ul { list-style: none; margin: 0; padding: 0; }
+  .keel-pagetoc li { margin: 0; padding: 0; }
+  .keel-pagetoc-h3 { padding-left: 0.85rem; }
+  .keel-pagetoc a {
+    display: block;
+    padding: 3px 0 3px 10px;
+    color: var(--sidebar-fg);
+    border: none;
+    border-left: 2px solid transparent;
+    transition: color 120ms, border-color 120ms;
+  }
+  .keel-pagetoc a:hover { color: var(--sidebar-active); border-bottom: none; }
+  .keel-pagetoc a.active {
+    color: var(--sidebar-active);
+    border-left-color: var(--sidebar-active);
+    font-weight: 600;
+  }
+}
+
 /* ---------- Horizontal rules ----------------------------------- */
 hr {
   border: 0;
@@ -373,6 +463,149 @@ hr::after {
   padding: 0 1em;
   color: var(--keel-amber);
   font-size: 0.7em;
+}
+
+/* ---------- Landing hero --------------------------------------- */
+.keel-hero {
+  text-align: center;
+  padding: 1.5rem 1rem 2.5rem;
+  margin: -1rem 0 0;
+  position: relative;
+  isolation: isolate;
+}
+/* Soft amber glow behind the logo. */
+.keel-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 90%);
+  height: 320px;
+  background: radial-gradient(closest-side, rgba(255, 184, 74, 0.16), transparent 75%);
+  pointer-events: none;
+}
+.keel-hero-logo {
+  width: 92px;
+  height: 92px;
+  margin: 0 auto 1rem;
+  display: block;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35));
+}
+.keel-version-pill {
+  display: inline-block;
+  font-family: var(--keel-font-mono);
+  font-size: 0.72em;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--keel-amber);
+  background: rgba(255, 184, 74, 0.12);
+  border: 1px solid rgba(255, 184, 74, 0.35);
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin-bottom: 1rem;
+  text-decoration: none;
+  transition: background 140ms;
+}
+.keel-version-pill:hover { background: rgba(255, 184, 74, 0.2); border-bottom: 1px solid rgba(255, 184, 74, 0.35); }
+.keel-light .keel-version-pill, .light .keel-version-pill, .rust .keel-version-pill {
+  color: var(--keel-burnt);
+  background: rgba(210, 105, 26, 0.1);
+  border-color: rgba(210, 105, 26, 0.3);
+}
+.content .keel-hero-title {
+  font-family: var(--keel-font-display);
+  font-size: clamp(2.6em, 6vw, 3.6em);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0.2em 0 0.15em;
+  padding: 0 0 0.08em;
+  border: none;
+  background: linear-gradient(135deg, var(--keel-amber), var(--keel-burnt));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.keel-hero-tagline {
+  font-size: 1.2em;
+  color: var(--keel-fog);
+  max-width: 34ch;
+  margin: 0 auto 1.6rem;
+  line-height: 1.6;
+}
+.keel-hero-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.keel-btn {
+  display: inline-block;
+  font-family: var(--keel-font-body);
+  font-size: 0.95em;
+  font-weight: 600;
+  padding: 0.6em 1.3em;
+  border-radius: 8px;
+  border: 1px solid var(--table-border-color);
+  color: var(--fg);
+  background: var(--quote-bg);
+  text-decoration: none;
+  transition: transform 120ms, border-color 120ms, background 120ms, box-shadow 120ms;
+}
+.keel-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--keel-amber);
+  border-bottom: 1px solid var(--keel-amber);
+}
+.keel-btn-primary {
+  background: linear-gradient(135deg, var(--keel-amber), var(--keel-burnt));
+  color: var(--keel-onyx);
+  border-color: transparent;
+}
+.keel-btn-primary:hover {
+  border-bottom-color: transparent;
+  box-shadow: 0 8px 22px rgba(255, 184, 74, 0.28);
+  color: var(--keel-onyx);
+}
+
+/* ---------- Feature cards -------------------------------------- */
+.keel-features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0 3rem;
+}
+.keel-feature {
+  border: 1px solid var(--table-border-color);
+  border-radius: 12px;
+  padding: 1.3rem 1.4rem;
+  background: var(--quote-bg);
+  transition: transform 140ms, border-color 140ms;
+}
+.keel-feature:hover { transform: translateY(-2px); border-color: var(--keel-amber); }
+.keel-feature-icon {
+  width: 30px;
+  height: 30px;
+  color: var(--keel-amber);
+  margin-bottom: 0.7rem;
+}
+.keel-light .keel-feature-icon, .light .keel-feature-icon, .rust .keel-feature-icon { color: var(--keel-burnt); }
+.content .keel-feature h3 {
+  font-size: 1.08em;
+  margin: 0 0 0.4rem;
+}
+.keel-feature p {
+  font-size: 0.92em;
+  color: var(--keel-fog);
+  margin: 0;
+  line-height: 1.55;
+}
+.keel-feature code {
+  background: var(--bg);
+  color: var(--inline-code-color);
 }
 
 /* ---------- Keyboard keys -------------------------------------- */

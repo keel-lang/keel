@@ -1,7 +1,5 @@
 # keel fmt
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Auto-format a Keel file with consistent style.
 
 ```bash

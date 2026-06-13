@@ -1,7 +1,5 @@
 # Shell — subprocess bridge
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 The `Shell` namespace lets agents invoke external commands and capture their output. It must be declared in `@tools` before use — an agent that calls `shell.run` without listing `Shell` in `@tools` raises `CapabilityError` at runtime.
 
 ```keel
@@ -66,7 +64,7 @@ All other variables — including secrets, API keys, database URLs, and any othe
 
 `@tools` restricts an agent to the listed namespaces. An agent that declares `@tools [io]` but not `Shell` will get a `CapabilityError` on any `shell.run` call. An agent with no `@tools` declaration is unrestricted.
 
-In v0.1 this is process-level gating only — there is no OS-level sandbox.
+Currently this is process-level gating only — there is no OS-level sandbox.
 
 ## Security note
 

@@ -1,7 +1,5 @@
 # Types
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Keel is **statically typed with full inference as the design target**. In the current alpha, the checker catches core mismatches before your code runs. Where the type cannot be determined statically, the checker uses one of three internal fall-back markers — `Unknown(InferenceLimitation)`, `Unknown(ExternalDynamic)`, or `Unknown(UnsupportedFeature)` — which are distinct from the programmer-written `dynamic` annotation and are surfaced by `keel check --strict`; see the [ROADMAP](../../ROADMAP.md) for current checker coverage.
 
 ## Primitive types
@@ -117,11 +115,11 @@ task t(p: Pair[str, int]) {
 Each declared struct type has a unique identity. Two types with the same fields
 are distinct types and are not interchangeable:
 
-```keel
+```text
 type Point  { x: int, y: int }
 type Offset { x: int, y: int }
 
-task move(p: Point) -> Point { ... }
+task move(p: Point) -> Point { p }
 
 o: Offset = { x: 1, y: 2 }
 move(o)                         # error — Offset is not assignable to Point
@@ -143,8 +141,8 @@ type EmailInfo {
 }
 
 # Inline struct types in parameters
-task triage(email: {body: str, from: str}) -> Urgency {
-  classify email.body as Urgency
+task triage(msg: {body: str, from: str}) -> Urgency {
+  ai.classify(msg.body, as: Urgency) ?? Urgency.low
 }
 ```
 
@@ -221,15 +219,20 @@ prod = { ...dev, host: "api.example.com", debug: false }
 
 Types are **non-nullable by default**. Append `?` to allow `none`:
 
+```text
+name: str       # field cannot be none
+alias: str?     # field can be none
+```
+
 ```keel
-name: str       # cannot be none
-alias: str?     # can be none
+type Email { subject: str, from: str }
+task t(email: Email?) {
+  # Null-safe access
+  subject = email?.subject           # str? — none if email is none
 
-# Null-safe access
-subject = email?.subject           # str? — none if email is none
-
-# Null coalescing
-subject = email?.subject ?? "(no subject)"   # str — guaranteed non-none
+  # Null coalescing
+  subject = email?.subject ?? "(no subject)"   # str — guaranteed non-none
+}
 ```
 
 The checker enforces the `?` boundary at every assignment, return, and
@@ -250,17 +253,13 @@ task t() {
 Call sites are also checked — a nullable argument where a non-nullable
 parameter is declared is a type error:
 
-```keel
-use std/env
+```text
+task process(text: str) { ... }  # expects non-nullable str
 
-task process(text: str) { ... }
-
-task t() {
-  val: str? = env.get("PROMPT")
-  process(val)          # error: task `process` arg `text`: expected str, got str?
-  process(val!)         # ok
-  process(val ?? "")    # ok
-}
+val: str? = env.get("PROMPT")
+process(val)          # error: task `process` arg `text`: expected str, got str?
+process(val!)         # ok — null-assertion (raises if none)
+process(val ?? "")    # ok — null coalescing
 ```
 
 AI operations return nullable types when they can fail:
@@ -319,13 +318,14 @@ Function types describe callable values. Write the parameter types in parenthese
 ```keel
 type Handler      = (str) -> bool
 type Reducer      = (str, int) -> str
-type Thunk        = () -> none
 type Predicate[T] = (T) -> bool   # generic function type
 
 task t(pred: Predicate[str]) {
   ok: bool = pred("hello")
 }
 ```
+
+> `() -> none` is not valid syntax — a function type's return must be a named type. Omit the return annotation on tasks to indicate "returns nothing".
 
 Tuples and function types share the `(...)` syntax — if `->` follows the closing paren it is a function type; otherwise it is a tuple.
 
@@ -365,10 +365,16 @@ count.abs()           # 5    — int stays int
 ## Duration literals
 
 ```keel
-5.seconds    30.minutes    2.hours    1.day    7.days
+a = 5.seconds
+b = 30.minutes
+c = 2.hours
+d = 1.day
+e = 7.days
 
-# Short forms
-30.sec       1.min         2.hr       1.d
+# Short forms also work
+f = 30.sec
+g = 1.min
+h = 2.hr
 ```
 
 ## Type coercions — `as T`
@@ -402,7 +408,7 @@ none as int         # raises: cannot cast none to int
 
 ## `typeof(x)`
 
-The prelude function `typeof(x)` returns the runtime type name as a `str`. For struct and enum values it returns the declared type name, not the generic `"struct"` or `"enum"` tag.
+The built-in function `typeof(x)` — always in scope, no import needed — returns the runtime type name as a `str`. For struct and enum values it returns the declared type name, not the generic `"struct"` or `"enum"` tag.
 
 ```keel
 typeof(42)          # "int"

@@ -1,7 +1,5 @@
 # keel init
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Scaffold a new Keel project.
 
 ```bash

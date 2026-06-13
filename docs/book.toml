@@ -18,6 +18,11 @@ command = "mdbook-keel-catalog"
 default-theme = "navy"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/keel-lang/keel"
+edit-url-template = "https://github.com/keel-lang/keel/edit/main/docs/{path}"
 site-url = "https://keel-lang.dev/"
 additional-css = ["theme/keel-docs.css"]
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
+additional-js = ["mermaid-init.js", "theme/keel-theme-picker.js", "theme/keel-pagetoc.js", "theme/keel-callouts.js"]
+
+[output.html.fold]
+enable = true
+level = 1

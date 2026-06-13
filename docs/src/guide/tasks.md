@@ -1,7 +1,5 @@
 # Tasks
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Tasks are Keel's functions. They're named, reusable, and the last expression in the body is the return value.
 
 ## Basic tasks
@@ -22,7 +20,6 @@ msg = greet("World")   # "Hello, World!"
 
 ```keel
 use std/ai
-use std/email
 
 # Typed parameters
 task add(a: int, b: int) -> int {
@@ -30,13 +27,13 @@ task add(a: int, b: int) -> int {
 }
 
 # Default values
-task compose(email: str, tone: str = "friendly") -> str {
-  draft "response to {email}" { tone: tone }
+task compose(body: str, tone: str = "friendly") -> str {
+  ai.draft("response to {body}", tone: tone) ?? "(draft failed)"
 }
 
 # Struct parameters (inline type)
-task triage(email: {body: str, from: str}) -> Urgency {
-  ai.classify(email.body, as: Urgency) ?? Urgency.medium
+task triage(msg: {body: str, from: str}) -> Urgency {
+  ai.classify(msg.body, as: Urgency) ?? Urgency.medium
 }
 ```
 
@@ -53,13 +50,13 @@ task double(x: int) -> int {
 Use `return` for early exits:
 
 ```keel
-use std/email
+use std/ai
 
-task handle(email: {body: str, from: str}) -> str {
-  if email.from.contains("noreply") {
+task handle(msg: {body: str, from: str}) -> str {
+  if msg.from.contains("noreply") {
     return "Skipped automated email"
   }
-  draft "response to {email}" { tone: "professional" } ?? "(draft failed)"
+  ai.draft("response to {msg.body}", tone: "professional") ?? "(draft failed)"
 }
 ```
 
@@ -165,11 +162,15 @@ labeled("tags", "rust", "keel", "lang")  # "tags: rust keel lang"
 **Important:** passing `list[T]` without `...` is a **type error** — the variadic expects `T`, not `list[T]`:
 
 ```keel
-task add(...nums: int) -> int { ... }
+task sum(...nums: int) -> int {
+  total = 0
+  for n in nums { total += n }
+  total
+}
 
 scores = [1, 2, 3]
-add(scores)     # ERROR: variadic arg `nums`: expected int, got list[int]
-add(...scores)  # OK: expands list into slots
+sum(scores)     # ERROR: variadic arg `nums`: expected int, got list[int]
+sum(...scores)  # OK: expands list into slots
 ```
 
 Inside the body the variadic parameter binds as `list[T]`, so all list methods work on it.

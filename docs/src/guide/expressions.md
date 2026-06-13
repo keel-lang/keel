@@ -1,7 +1,5 @@
 # Variables & Expressions
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 ## Variables
 
 Variables are **immutable by default**. Once bound, they can't be reassigned — but you can shadow them:
@@ -58,7 +56,7 @@ true or false        # true
 not true             # false
 
 if x > 0 and x < 100 {
-  notify user "in range"
+  io.notify("in range")
 }
 ```
 
@@ -93,8 +91,8 @@ The `??` operator provides a default when the left side is `none`:
 
 ```keel
 name = user_input ?? "anonymous"
-port = env.PORT.to_int() ?? 3000
-result = classify text as Mood ?? neutral
+port = env.get("PORT")?.to_int() ?? 3000
+mood = ai.classify(text, as: Mood) ?? Mood.neutral
 ```
 
 ## Pipeline operator
@@ -114,14 +112,11 @@ email |> triage |> respond(tone: "friendly") |> log("email_responses")
 ## Field access
 
 ```keel
-use std/email
-use std/env
+msg.subject                    # field access
+msg?.subject                   # null-safe — returns none if msg is none
+msg!.subject                   # null assertion — throws if msg is none
 
-email.subject                  # field access
-email?.subject                 # null-safe — returns none if email is none
-email!.subject                 # null assertion — throws if email is none
-
-env.API_KEY                    # environment variable
+env.get("API_KEY")             # environment variable (use std/env)
 self.count                     # agent state field
 ```
 

@@ -1,7 +1,5 @@
 # The Standard Library
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Keel's standard library is a set of modules imported with `use std/<name>`:
 
 ```keel
@@ -277,7 +275,7 @@ current = log.level()   # "debug"
 
 {{#catalog search}}
 
-> **Status:** `Search` is registered in v0.1 and raises a clear "planned for v0.2" error at runtime. <span class="badge badge-soon">Coming soon</span>
+> `std/search` is registered but raises a "not yet implemented" error at runtime. Wire a custom backend via the `SearchProvider` interface when it lands.
 
 ## Async
 
@@ -304,56 +302,44 @@ winner = async.select([task1, task2])
 
 An **interface** declares a set of method signatures. Any type with matching methods structurally satisfies the interface — no explicit `implements`.
 
-```keel
+```text
 interface LlmProvider {
   task complete(messages: list[Message], opts: LlmOpts) -> LlmResponse?
   task embed(text: str) -> list[float]?
 }
 
 interface VectorStore {
-  task put(key: str, value: map[str, str], embedding: list[float]) -> none
-  task query(embedding: list[float], limit: int) -> list[Memory]
+  task put(key: str, value: map[str, str], embedding: list[float])
+  task query(embedding: list[float], limit: int) -> list[str]
 }
 
 interface Tracer {
-  task on_event(event: TraceEvent) -> none
+  task on_event(event: str)
 }
 ```
 
-Every prelude namespace dispatches through one or more interfaces:
+Every effectful stdlib module dispatches through one or more interfaces:
 
-| Namespace | Interface(s) |
+| Module | Interface(s) |
 |---|---|
-| `Ai` | `LlmProvider` |
-| `Memory` | `VectorStore`, `Embedder` |
-| `Http` | `HttpClient` |
-| `Email` | `EmailTransport` |
-| `Search` | `SearchProvider` |
-| `Log` | `Tracer` |
+| `std/ai` | `LlmProvider` |
+| `std/memory` | `VectorStore`, `Embedder` |
+| `std/http` | `HttpClient` |
+| `std/email` | `EmailTransport` |
+| `std/search` | `SearchProvider` |
+| `std/log` | `Tracer` |
 
 ## Swapping Implementations
 
-The planned custom-provider flow looks like this:
+Per-call model selection works today via the `using:` keyword:
 
 ```keel
 use std/ai
 
-# Use a custom LLM provider for the whole program
-ai.install(MyCustomProvider)                 # Coming soon
-
-# Or per-agent, via a stdlib attribute
-agent Specialist {
-  @provider MyFinetunedProvider              # Coming soon
-  @role "..."
-}
-
-# Or per-call
 urgency = ai.classify(body, as: Urgency, using: "smart")
 ```
 
-The language doesn't know what an LLM is. The design dispatches through `LlmProvider`; once provider installation is wired, any value with `complete` and `embed` methods of the right shape can satisfy it.
-
-> **Status:** `using:` is wired in v0.1 (resolves via `KEEL_MODEL_*` env vars and Ollama tags). `ai.install(...)` and `@provider` <span class="badge badge-soon">Coming soon</span> — v0.1 ships with Ollama only.
+`using:` resolves via `KEEL_MODEL_<ALIAS>` env vars and Ollama tags. Ollama is the only wired backend; `ai.install(...)` and `@provider` are reserved and have no runtime effect yet.
 
 ## Shadowing Module Bindings
 

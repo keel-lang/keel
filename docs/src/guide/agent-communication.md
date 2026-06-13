@@ -21,7 +21,7 @@ sequenceDiagram
 
 ## Event Routing
 
-The `event:` parameter in `Agent.send` determines which `on` handler runs on the receiver.
+The `event:` parameter in `send` determines which `on` handler runs on the receiver.
 
 ```mermaid
 flowchart LR
@@ -59,9 +59,11 @@ sequenceDiagram
     B->>B: on greeting runs
 ```
 
-## Agent.delegate vs Agent.send
+## `delegate` vs `send`
 
-`Agent.delegate` posts a **named handler event** to another agent's mailbox.
+`delegate`, `send`, and `broadcast` are built-in agent verbs — always in
+scope, no import needed. `delegate` posts a **named handler event** to
+another agent's mailbox.
 
 ### Symbol form (preferred)
 
@@ -86,7 +88,7 @@ The handler name is a string literal. The type checker validates it when the
 literal is plain (no interpolation). Both forms are accepted; prefer the symbol
 form for new code — handler renames update the symbol reference automatically.
 
-### Agent.send
+### `send`
 
 `send(target, data, event: "...")` posts a **data event** with explicit routing:
 
@@ -103,7 +105,7 @@ Direct cross-agent calls such as `Worker.process(...)` are not part of the
 agent model. Inside an agent, call agent-owned helpers as `self.task(...)`.
 Across agents, use mailbox APIs so delivery remains explicit and asynchronous.
 
-## Agent.send vs ai.*
+## `send` vs `ai.*`
 
 These are two completely separate communication paths.
 
@@ -114,7 +116,7 @@ flowchart LR
     code -->|"ai.classify / ai.prompt / ..."| llm["LLM\n→ returns a value"]
 ```
 
-`Agent.send` is agent-to-agent messaging — no LLM involved.
+`send` is agent-to-agent messaging — no LLM involved.
 `ai.*` calls send a prompt to the LLM and return its response.
 
 ## Example: Bi-directional Communication
@@ -140,8 +142,8 @@ agent Manager {
 
 agent Worker {
     @tools [ai]
-    on process(task: dynamic) {
-        output = ai.summarize(task.id, in: 1, unit: sentences)
+    on process(work: dynamic) {
+        output = ai.summarize(work, in: 1, unit: sentences)
         send(Manager, output, event: "result")
     }
 }
@@ -206,7 +208,7 @@ own mailbox in its own time.
 ## Backpressure: RuntimeBusy
 
 The interpreter event queue is bounded (default 1024; tunable via `KEEL_EVENT_QUEUE_CAPACITY`).
-If the queue is full when `Agent.send`, `Agent.delegate`, or `Agent.broadcast` is called,
+If the queue is full when `send`, `delegate`, or `broadcast` is called,
 the call raises a `RuntimeBusy` error instead of blocking.
 
 Catch it to apply your own backpressure strategy:
@@ -232,7 +234,7 @@ while producers are sending faster than the loop can drain. Strategies:
 
 | Property | Behaviour |
 |----------|-----------|
-| **Routing** | `event:` string in `Agent.send` matches the name in `on <event>` |
+| **Routing** | `event:` string in `send` matches the name in `on <event>` |
 | **Default event** | Omitting `event:` routes to `on message` |
 | **No match** | Unhandled events are silently dropped |
 | **Send** | Non-blocking — sender continues immediately |

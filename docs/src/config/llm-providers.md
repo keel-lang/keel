@@ -1,6 +1,6 @@
 # LLM Providers
 
-> **Alpha (v0.1).** Ollama is the only supported backend. Additional providers implementing the `LlmProvider` interface ([stdlib.md](../guide/stdlib.md)) will land in a future release.
+> **Note:** Ollama is the only supported backend. Additional providers implementing the `LlmProvider` interface ([stdlib.md](../guide/stdlib.md)) will land in a future release.
 
 Keel's `ai.*` operations call a local Ollama instance.
 

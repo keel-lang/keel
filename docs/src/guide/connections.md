@@ -1,10 +1,8 @@
-# Stdlib: `Email` & `Http`
+# Stdlib: `email` & `http`
 
-> **Alpha (v0.1).** Breaking changes expected.
+External connections live in stdlib modules: `use std/email` for IMAP/SMTP, `use std/http` for HTTP. (See also [`std/db` for SQLite access](./database.md).) The interface boundary is planned so these backends can become swappable; the default `email` and `http` transports are the only ones wired today.
 
-External connections live in stdlib namespaces. `Email` handles IMAP/SMTP. `Http` handles HTTP. (See also [`Db` for SQLite access](./database.md).) The interface boundary is planned so these backends can become swappable; v0.1 wires the default `Email` and `Http` transports only.
-
-## `Email`
+## `email`
 
 Default implementation uses `imap` (fetch) + `lettre` (send). v0.1 reads credentials from environment variables:
 
@@ -29,7 +27,7 @@ The `uid` is the IMAP UID of the message and is required by `email.archive`.
 ### Send messages
 
 ```keel
-email.send(reply, to: email.from)
+email.send(reply, to: msg.from)
 email.send(reply, to: address, subject: "Re: hello")
 ```
 
@@ -38,10 +36,14 @@ Positional body can be a `str` or a `map` with `body` (and optional `subject`). 
 ### Archive
 
 ```keel
-for email in email.fetch(unread: true) {
-  email.archive(email)
+for msg in email.fetch(unread: true) {
+  email.archive(msg)
 }
 ```
+
+> Don't name the loop variable `email` — it would shadow the `email`
+> module binding, and `email.archive(...)` inside the body would then
+> resolve against the message instead of the module.
 
 `email.archive` performs an IMAP UID MOVE on the message, falling back
 to COPY + `\Deleted` + EXPUNGE for servers without the MOVE extension.
@@ -56,7 +58,7 @@ The argument must be a message map with a positive `uid` field — the
 shape returned by `email.fetch`. If credentials are not configured the
 call is a silent no-op so programs keep running.
 
-## `Http`
+## `http`
 
 Default implementation wraps `reqwest`.
 
@@ -90,7 +92,7 @@ response = http.request(
     Authorization: "Bearer {env.require("API_KEY")}",
     "Content-Type": "application/json"
   },
-  body: {text: email.body},
+  body: {text: msg.body},
   timeout: 10.seconds
 )
 ```
@@ -134,53 +136,42 @@ http.serve(8080, (request) => {
 >   (`KEEL_OLLAMA_MODEL`) with a bare system prompt. Results are still
 >   returned, just without the agent's identity layered in.
 >
-> To use agent state or an agent's `@role` / `@model` from a handler,
-> route the request into a live agent:
->
-> ```keel
-> http.serve(8080, (request) => {
->   send(Triage, request, event: "http_request")
->   { status: 202, body: "accepted" }
-> })
-> ```
->
-> The matching `on http_request(req) { ... }` handler on `Triage`
-> runs *with* `self.`, `@role`, `@rules`, and `@model` all wired up.
-
-## `Db`
-
-`db.connect` opens a SQLite database and returns a `DbConnection` value. All SQL is
-executed through that value. Requires `@tools [db]`.
+> To use agent state or an agent's `@role` from a handler, route the
+> request into a live agent. The matching `on http_request(req) { ... }`
+> handler on `Triage` runs with `self.` and `@role` all wired up.
 
 ```keel
-db = db.connect("sqlite://interactions.db")
+http.serve(8080, (request) => {
+  send(Triage, request, event: "http_request")
+  { status: 202, body: "accepted" }
+})
+```
 
-rows = db.query(
+## `db`
+
+`db.connect` opens a SQLite database and returns a `DbConnection` value. All SQL is
+executed through that value. Requires `@tools [db]` inside agents.
+
+```keel
+use std/db
+use std/time
+
+conn = db.connect("sqlite://interactions.db")
+cutoff = time.now() - 30.days
+
+rows = conn.query(
   "SELECT * FROM interactions WHERE contact = ? AND created_at > ?",
-  [email.from, 30.days.ago]
+  [msg.from, cutoff]
 )
 # rows: list[map[str, dynamic]]
 
-db.exec("UPDATE status SET seen = true WHERE id = ?", [ticket.id])
+conn.exec("UPDATE status SET seen = true WHERE id = ?", [ticket.id])
 # returns int — number of rows affected
 ```
 
-> **v0.1 scope.** SQLite only (`sqlite://path`, `sqlite:///abs/path`, `sqlite://:memory:`).
-> Postgres and MySQL support are planned for v0.2.
+> **Scope.** SQLite only (`sqlite://path`, `sqlite:///abs/path`, `sqlite://:memory:`).
 
-## Swapping the backend <span class="badge badge-soon">Coming soon</span>
-
-The planned interface flow for custom transports is:
-
-```keel
-# In your startup
-email.install(MyProprietaryEmailTransport)
-http.install(MyRateLimitedClient)
-```
-
-> **Status:** `email.install` / `http.install` are reserved but not registered in v0.1 — the default transports are the only ones wired.
-
-See [The Prelude & Interfaces](./stdlib.md) for how interface dispatch works.
+See [The Standard Library](./stdlib.md) for how interface dispatch works.
 
 ## Why a library, not `connect` + `fetch` keywords
 

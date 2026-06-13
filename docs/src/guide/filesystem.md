@@ -1,7 +1,5 @@
 # Filesystem — `File`
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 The `File` namespace gives agents access to the local filesystem. It is auto-imported — no `use` required.
 
 ## Reading and writing

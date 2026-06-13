@@ -1,8 +1,6 @@
 # Ollama Setup
 
-> **Alpha (v0.1).** Breaking changes expected.
-
-[Ollama](https://ollama.com) runs LLMs locally. No API key, fully offline. In v0.1 it is the only supported backend for `ai.*`.
+[Ollama](https://ollama.com) runs LLMs locally. No API key, fully offline. It is currently the only supported backend for `ai.*`.
 
 ## Install Ollama
 

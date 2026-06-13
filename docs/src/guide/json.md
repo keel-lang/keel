@@ -1,7 +1,5 @@
 # Json
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 The `Json` namespace serializes and deserializes JSON. No `@tools` annotation required.
 
 ```keel

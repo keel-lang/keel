@@ -1,7 +1,5 @@
 # Modules & Imports
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Keel has one source file type: `.keel`. Every file is both **runnable** (an
 entrypoint when you `keel run` or `keel test` it directly) and **importable**
 (a module when another file `use`s it). Stdlib modules and your own files are
@@ -110,7 +108,7 @@ test "urgent subjects rank higher" {
 The full version lives in
 [`examples/inbox_modules/`](https://github.com/keel-lang/keel/tree/main/examples/inbox_modules).
 
-## One global namespace (v0.1)
+## One global namespace
 
 The runtime registers every module's declarations in one flat global table,
 so a name must mean the same thing across the whole program:

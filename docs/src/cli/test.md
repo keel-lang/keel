@@ -1,7 +1,5 @@
 # keel test
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Run the `test` blocks in a Keel program or directory.
 
 ```bash

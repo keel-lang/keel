@@ -1,7 +1,5 @@
 # Control Flow
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 ## if / else
 
 `if/else` is an **expression** — it produces a value.
@@ -20,10 +18,10 @@ if urgency == high {
 }
 
 # Expression form — else is required
-reply = if has_guidance {
-  draft "response" { guidance: guidance }
+reply = if guidance != none {
+  ai.draft("response", guidance: guidance)
 } else {
-  draft "response" { tone: "friendly" }
+  ai.draft("response", tone: "friendly")
 } ?? "(draft failed)"
 ```
 
@@ -174,7 +172,7 @@ while x < 10 {
 }
 ```
 
-Both keywords affect only the **innermost** loop. There are no labeled jumps in v0.1.
+Both keywords affect only the **innermost** loop. There are no labeled jumps yet.
 
 ```keel
 # break inside a nested loop only exits the inner one

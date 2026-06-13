@@ -1,7 +1,5 @@
 # Interfaces
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 An `interface` declares a set of required methods. Any struct type can satisfy an interface by providing an `impl` block. The compiler validates that every required method is present, that arities match, and that return types match.
 
 ## Declaring an interface

@@ -1,7 +1,5 @@
 # Error Handling
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 ## The two-tier failure model
 
 Keel separates *absence* from *failure*:

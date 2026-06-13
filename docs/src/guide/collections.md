@@ -1,7 +1,5 @@
 # Collections & Lambdas
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 ## Range operator `..`
 
 `start..end` produces an **inclusive** `list[int]` containing every integer from `start` to `end`.

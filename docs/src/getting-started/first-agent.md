@@ -1,7 +1,5 @@
 # Your First Agent
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Let's build a task prioritizer that classifies items and reports them by urgency.
 
 ## 1. Scaffold
@@ -127,6 +125,6 @@ Forget a `when` variant and the compiler stops you:
 | `io.notify(...)` | Terminal notification from the stdlib |
 | `run(MyAgent)` | Starts the agent |
 
-No imports. Every namespace (`Ai`, `Io`, `Schedule`) is in scope via the [prelude](../guide/stdlib.md).
+Three imports — `use std/ai`, `use std/io`, `use std/schedule` — declare everything this program touches. A file's imports are its capability surface. See [The Standard Library](../guide/stdlib.md).
 
 ## Next: [Language Guide →](../guide/types.md)

@@ -1,7 +1,5 @@
 # Stdlib: `Io`
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 The `Io` namespace provides human-in-the-loop interaction. All four functions route through a channel (terminal by default; Slack, email, or custom via interface).
 
 ## `io.ask` — blocking input
@@ -61,4 +59,4 @@ io.notify("Deploy started", via: slack)
 
 ## Why a library, not keywords
 
-`io.ask`, `io.confirm`, `io.notify`, and `io.show` are prelude functions rather than reserved words. Treating them as regular functions keeps the grammar small and lets them compose with the rest of the language: they work inside pipelines, accept lambdas for formatting, and can be wrapped by user code without fighting the parser. See [The Prelude & Interfaces](./stdlib.md).
+`io.ask`, `io.confirm`, `io.notify`, and `io.show` are ordinary stdlib functions (imported with `use std/io`) rather than reserved words. Treating them as regular functions keeps the grammar small and lets them compose with the rest of the language: they work inside pipelines, accept lambdas for formatting, and can be wrapped by user code without fighting the parser. See [The Standard Library](./stdlib.md).

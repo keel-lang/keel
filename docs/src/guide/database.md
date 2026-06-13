@@ -1,8 +1,6 @@
-# Db — SQLite database
+# Stdlib: `db` — SQLite database
 
-> **Alpha (v0.1).** Breaking changes expected.
-
-The `Db` namespace provides access to SQLite databases via `db.connect()`. Each connection can execute queries and commands. No `@tools` annotation is required.
+`use std/db` to connect to SQLite databases via `db.connect()`. Requires `@tools [db]` inside agents.
 
 ```keel
 use std/db
@@ -11,17 +9,17 @@ use std/log
 agent DataPipeline {
     @tools [db]
     @on_start {
-        db = db.connect("sqlite://trades.db")
+        conn = db.connect("sqlite://trades.db")
 
-        db.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL)")
-        db.exec("INSERT INTO trades VALUES (?, ?, ?)", ["t1", "BTCUSDT", 67000.0])
+        conn.exec("CREATE TABLE IF NOT EXISTS trades (id TEXT, symbol TEXT, price REAL)")
+        conn.exec("INSERT INTO trades VALUES (?, ?, ?)", ["t1", "BTCUSDT", 67000.0])
 
-        rows = db.query("SELECT symbol, price FROM trades WHERE symbol = ?", ["BTCUSDT"])
+        rows = conn.query("SELECT symbol, price FROM trades WHERE symbol = ?", ["BTCUSDT"])
         for row in rows {
-            log.info("{row["symbol"]} @ {row["price"] as float:.2f}")
+            log.info("{row["symbol"]} @ {row["price"] as float}")
         }
 
-        count = db.exec("DELETE FROM trades WHERE symbol = ?", ["BTCUSDT"])
+        count = conn.exec("DELETE FROM trades WHERE symbol = ?", ["BTCUSDT"])
         log.info("Deleted {count} row(s)")
 
         stop(self)
@@ -47,24 +45,24 @@ SQLite is bundled into the Keel binary — no system library required. Other sch
 Open or create a SQLite database. Returns a connection value with `.query()` and `.exec()` methods.
 
 ```keel
-db = db.connect("sqlite://data/app.db")
+conn = db.connect("sqlite://data/app.db")
 ```
 
 ---
 
 ### `DbConnection.query(sql: str, params?: list[dynamic]) -> list[map[str, dynamic]]`
 
-Execute a SELECT query and return all matching rows. Each row is a `map[str, dynamic]` — field names are column names (lowercased or as-is per the query), values are their dynamic types.
+Execute a SELECT query and return all matching rows. Each row is a `map[str, dynamic]` — field names are column names, values are their dynamic types.
 
 ```keel
-rows = db.query("SELECT name, score FROM users")
+rows = conn.query("SELECT name, score FROM users")
 for row in rows {
     log.info("{row["name"]}: {row["score"]}")
 }
 
 # Parameterized query — use ? placeholders
 age = 21
-results = db.query("SELECT * FROM users WHERE age > ?", [age])
+results = conn.query("SELECT * FROM users WHERE age > ?", [age])
 ```
 
 Column values are returned as:
@@ -83,16 +81,16 @@ Execute an INSERT, UPDATE, or DELETE statement. Returns the number of rows affec
 
 ```keel
 # Create table
-db.exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, age INT)")
+conn.exec("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, age INT)")
 
 # Insert
-count = db.exec("INSERT INTO users VALUES (?, ?, ?)", ["u1", "Alice", 30])
+count = conn.exec("INSERT INTO users VALUES (?, ?, ?)", ["u1", "Alice", 30])
 
 # Update
-count = db.exec("UPDATE users SET age = ? WHERE name = ?", [31, "Alice"])
+count = conn.exec("UPDATE users SET age = ? WHERE name = ?", [31, "Alice"])
 
 # Delete
-count = db.exec("DELETE FROM users WHERE age < ?", [18])
+count = conn.exec("DELETE FROM users WHERE age < ?", [18])
 log.info("Deleted {count} user(s)")
 ```
 
@@ -104,16 +102,16 @@ Always use parameterized queries (`?` placeholders) when inserting user-provided
 
 ```keel
 # Safe — value is parameterized
-db.exec("INSERT INTO users (name, email) VALUES (?, ?)", [user_input_name, user_input_email])
+conn.exec("INSERT INTO users (name, email) VALUES (?, ?)", [user_input_name, user_input_email])
 
 # Unsafe — string interpolation allows injection
-# db.exec("INSERT INTO users (name) VALUES ('{user_input}')")  # DON'T DO THIS
+# conn.exec("INSERT INTO users (name) VALUES ('{user_input}')")  # DON'T DO THIS
 ```
 
 The `params` list is optional; omit it for queries with no placeholders:
 
 ```keel
-db.query("SELECT COUNT(*) as count FROM users")
+conn.query("SELECT COUNT(*) as count FROM users")
 ```
 
 ## Transactions and error handling
@@ -121,14 +119,13 @@ db.query("SELECT COUNT(*) as count FROM users")
 SQLite operates in autocommit mode by default — each `exec()` is its own transaction. Use `BEGIN` and `COMMIT` for multi-statement transactions:
 
 ```keel
-db.exec("BEGIN")
+conn.exec("BEGIN")
 try {
-    db.exec("INSERT INTO accounts (user, balance) VALUES (?, ?)", [user_id, 100.0])
-    db.exec("UPDATE ledger SET total = total + ? WHERE id = ?", [100.0, ledger_id])
-    db.exec("COMMIT")
-}
-catch e {
-    db.exec("ROLLBACK")
+    conn.exec("INSERT INTO accounts (user, balance) VALUES (?, ?)", [user_id, 100.0])
+    conn.exec("UPDATE ledger SET total = total + ? WHERE id = ?", [100.0, ledger_id])
+    conn.exec("COMMIT")
+} catch e: RuntimeError {
+    conn.exec("ROLLBACK")
     raise "Transaction failed: {e}"
 }
 ```
@@ -162,11 +159,11 @@ run(Scratchpad)
 - Each `.query()` and `.exec()` call is a separate SQLite statement execution. For bulk inserts, use a transaction:
 
   ```keel
-  db.exec("BEGIN")
+  conn.exec("BEGIN")
   for item in items {
-      db.exec("INSERT INTO data VALUES (?)", [item])
+      conn.exec("INSERT INTO data VALUES (?)", [item])
   }
-  db.exec("COMMIT")
+  conn.exec("COMMIT")
   ```
 
-- SQLite is single-writer; concurrent writes from multiple agents may timeout. For production workloads, consider Postgres (planned for v0.2).
+- SQLite is single-writer; concurrent writes from multiple agents may timeout.

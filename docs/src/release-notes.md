@@ -1,6 +1,6 @@
 # Release Notes
 
-> **Alpha.** Keel is v0.1. Breaking changes are expected between 0.x releases.
+> **Alpha.** Keel is pre-1.0. Breaking changes are expected between 0.x releases.
 
 ## Unreleased
 

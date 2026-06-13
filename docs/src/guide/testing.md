@@ -1,7 +1,5 @@
 # Testing
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Keel test blocks make agent-facing code deterministic without replacing your production program.
 
 ```keel
@@ -116,7 +114,7 @@ test "summary" {
 
 ## Mocks
 
-Mocks replace prelude namespace methods inside one test:
+Mocks replace stdlib module methods inside one test:
 
 ```keel
 use std/ai

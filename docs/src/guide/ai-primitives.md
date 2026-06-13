@@ -1,8 +1,6 @@
-# Stdlib: `Ai`
+# Stdlib: `ai`
 
-> **Alpha (v0.1).** Breaking changes expected.
-
-The `Ai` namespace bundles LLM-backed operations. It's auto-imported — no `use` required. Under the hood, every call dispatches through the `LlmProvider` interface; the default provider is selected from `@model` (on the agent) or the global configuration.
+`use std/ai` to access LLM-backed operations. Under the hood, every call dispatches through the `LlmProvider` interface; the default provider is selected from `@model` (on the agent) or `KEEL_OLLAMA_MODEL`.
 
 ## `ai.classify` — categorize into an enum
 
@@ -12,7 +10,7 @@ urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
 sentiment = ai.classify(review, as: Sentiment)   # returns Sentiment? (nullable)
 ```
 
-With hints: <span class="badge badge-soon">Coming soon</span>
+With hints:
 
 ```keel
 urgency = ai.classify(email.body,
@@ -24,7 +22,7 @@ urgency = ai.classify(email.body,
 ) ?? Urgency.medium
 ```
 
-`considering:` is a **map from hint string to enum variant**. The LLM gets the hints as classification nudges; typos or extra keys are caught by the type checker. *In v0.1 the argument is accepted but not forwarded to the LLM — tracked in [ROADMAP](../../ROADMAP.md).*
+`considering:` is a **map from hint string to enum variant**. The LLM gets the hints as classification nudges.
 
 **Returns:** `T?` (where `T` is the enum). Use `?? T.variant` to supply a default inline.
 
@@ -96,16 +94,15 @@ multi  = ai.translate(ui_strings, to: [spanish, german, japanese])
 
 ```keel
 action = ai.decide(email,
-  options: [reply, forward, archive, escalate],
-  based_on: [urgency, sender, content]     # `based_on:` Coming soon
+  options: [reply, forward, archive, escalate]
 )
-# action: Decision[Action]?
+# action: map with keys choice, reason, confidence
 # action.choice — one of the enum options
 # action.reason — LLM's explanation
 # action.confidence — 0.0..1.0
 ```
 
-> **Status:** v0.1 returns a plain map `{choice, reason, confidence: 1.0}` instead of a true `Decision[T]` type. The `based_on:` argument <span class="badge badge-soon">Coming soon</span> is parsed but not yet used. Full `Decision[T]` typing is tracked in [ROADMAP](../../ROADMAP.md).
+**Returns:** a map `{choice, reason, confidence: 1.0}`. The `choice` value is the selected option; `reason` is the LLM's explanation.
 
 ## `ai.prompt` — raw LLM access (escape hatch)
 
@@ -135,25 +132,8 @@ reply   = ai.draft("response to {email}", using: "smart")
 
 `using:` accepts a model alias that resolves via `KEEL_MODEL_<ALIAS>` environment variables, or a literal Ollama tag (`"ollama:gemma4"` or just `"gemma4"` if a single default is set). See [LLM Providers](../config/llm-providers.md).
 
-## Swapping the provider <span class="badge badge-soon">Coming soon</span>
-
-```keel
-use std/ai
-
-# Globally
-ai.install(MyCustomProvider)
-
-# Per-agent
-agent Specialist {
-  @provider MyFinetunedProvider
-  @role "..."
-}
-```
-
-Every `ai.*` call goes through `LlmProvider.complete`. Any type with a matching `complete` method structurally satisfies the interface.
-
-> **Status:** v0.1 ships with Ollama only. `ai.install(...)` and `@provider` are reserved in the grammar but not registered in the runtime — tracked in [ROADMAP](../../ROADMAP.md).
+Every `ai.*` call goes through the `LlmProvider` interface. Ollama is the only wired backend; `@provider` and `ai.install(...)` are reserved for a future release.
 
 ## Why functions, not keywords
 
-`ai.classify`, `ai.draft`, `ai.extract`, and friends are ordinary prelude functions rather than built-in grammar. That keeps the parser, type checker, and LSP free of LLM-specific special cases: you still write `ai.classify(...)` with the same ergonomics, but the implementation lives in a normal stdlib module. Swap the LLM, add a new `ai.*` operation in a library, or shadow `Ai` with your own namespace — the core language is unchanged. See [The Prelude & Interfaces](./stdlib.md).
+`ai.classify`, `ai.draft`, `ai.extract`, and friends are ordinary stdlib functions (imported with `use std/ai`) rather than built-in grammar. That keeps the parser, type checker, and LSP free of LLM-specific special cases: you still write `ai.classify(...)` with the same ergonomics, but the implementation lives in a normal stdlib module. Swap the LLM, add a new `ai.*` operation in a library, or shadow the `ai` binding with your own module — the core language is unchanged. See [The Standard Library](./stdlib.md).

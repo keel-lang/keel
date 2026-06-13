@@ -1,10 +1,8 @@
 # Example: Multi-Agent Email System
 
-> **Alpha (v0.1).** Breaking changes expected. `Agent.delegate` is wired as of v0.1.4. `Agent.broadcast` and `@team` routing are wired as of v0.1.6.
-
 This first runnable workflow keeps synchronous return-value helpers as top-level
-tasks. For mailbox-specific coordination between live agents, use
-`Agent.delegate`, `Agent.send`, and `Agent.broadcast` as described in
+tasks. For mailbox-specific coordination between live agents, use the built-in
+`delegate`, `send`, and `broadcast` verbs as described in
 [Agent Communication](../guide/agent-communication.md).
 
 ```keel
@@ -21,25 +19,25 @@ type TriageResult {
   category: Category
 }
 
-task triage_email(email: {body: str}) -> TriageResult {
-  urgency  = ai.classify(email.body, as: Urgency)  ?? Urgency.medium
-  category = ai.classify(email.body, as: Category) ?? Category.question
+task triage_email(msg: {body: str}) -> TriageResult {
+  urgency  = ai.classify(msg.body, as: Urgency)  ?? Urgency.medium
+  category = ai.classify(msg.body, as: Category) ?? Category.question
   {urgency: urgency, category: category}
 }
 
-task draft_reply(email: {body: str, from: str}, guidance: str? = none) -> str {
-  ai.draft("response to {email.body}",
+task draft_reply(msg: {body: str, from: str}, guidance: str? = none) -> str {
+  ai.draft("response to {msg.body}",
     tone: "professional",
     guidance: guidance,
     max_length: 200
   ) ?? "(draft failed)"
 }
 
-task plan_followup(email: {subject: str}, urgency: Urgency) {
+task plan_followup(msg: {subject: str}, urgency: Urgency) {
   when urgency {
-    critical => schedule.after(2.hours, () => { io.notify("Follow up on: {email.subject}") })
-    high     => schedule.after(24.hours, () => { io.notify("Check status: {email.subject}") })
-    medium   => schedule.after(3.days, () => { io.notify("Pending reply: {email.subject}") })
+    critical => schedule.after(2.hours, () => { io.notify("Follow up on: {msg.subject}") })
+    high     => schedule.after(24.hours, () => { io.notify("Check status: {msg.subject}") })
+    medium   => schedule.after(3.days, () => { io.notify("Pending reply: {msg.subject}") })
     low      => { }
   }
 }
@@ -48,43 +46,40 @@ agent InboxManager {
   @tools [ai, email, io]
   @role "You coordinate the email handling team"
 
-  task handle(email: {body: str, from: str, subject: str}) {
-    result = triage_email(email) ?? {
-      urgency: Urgency.medium,
-      category: Category.question
-    }
+  task handle(msg: {body: str, from: str, subject: str}) {
+    result = triage_email(msg)
 
     when result.urgency {
       low => {
         when result.category {
-          spam, info => email.archive(email)
+          spam, info => email.archive(msg)
           _ => {
-            reply = draft_reply(email) ?? "(could not draft)"
-            if io.confirm(reply) { email.send(reply, to: email.from) }
+            reply = draft_reply(msg)
+            if io.confirm(reply) { email.send(reply, to: msg.from) }
           }
         }
       }
       medium => {
-        reply = draft_reply(email) ?? "(could not draft)"
-        if io.confirm(reply) { email.send(reply, to: email.from) }
-        plan_followup(email, result.urgency)
+        reply = draft_reply(msg)
+        if io.confirm(reply) { email.send(reply, to: msg.from) }
+        plan_followup(msg, result.urgency)
       }
       high, critical => {
-        summary = ai.summarize(email.body, in: 2, unit: sentences) ?? "(no summary)"
-        io.notify("{result.urgency} {result.category} from {email.from}")
+        summary = ai.summarize(msg.body, in: 2, unit: sentences) ?? "(no summary)"
+        io.notify("{result.urgency} {result.category} from {msg.from}")
         io.show(summary)
         guidance = io.ask("How should I respond?")
-        reply = draft_reply(email, guidance) ?? "(could not draft)"
-        if io.confirm(reply) { email.send(reply, to: email.from) }
-        plan_followup(email, result.urgency)
+        reply = draft_reply(msg, guidance)
+        if io.confirm(reply) { email.send(reply, to: msg.from) }
+        plan_followup(msg, result.urgency)
       }
     }
   }
 
   @on_start {
     schedule.every(5.minutes, () => {
-      for email in email.fetch(unread: true) {
-        self.handle(email)
+      for msg in email.fetch(unread: true) {
+        self.handle(msg)
       }
     })
   }
@@ -127,4 +122,4 @@ agent Coordinator {
 
 ## Status
 
-Multi-agent collaboration is available in v0.1 with in-process mailboxes. `Agent.delegate`, `Agent.send`, `Agent.broadcast`, and `@team` routing are wired. Current limits: delivery is in-process only, broadcast is non-blocking, and agents without a matching handler silently ignore the event.
+Multi-agent collaboration is available with in-process mailboxes. `Agent.delegate`, `Agent.send`, `Agent.broadcast`, and `@team` routing are wired. Current limits: delivery is in-process only, broadcast is non-blocking, and agents without a matching handler silently ignore the event.

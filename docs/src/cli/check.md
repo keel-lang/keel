@@ -1,7 +1,5 @@
 # keel check
 
-> **Alpha (v0.1).** Breaking changes expected.
-
 Type-check a Keel program without executing it.
 
 ```bash
