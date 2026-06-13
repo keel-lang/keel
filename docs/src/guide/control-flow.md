@@ -101,6 +101,41 @@ when status {
 }
 ```
 
+### Struct patterns
+
+Bind named fields from a struct value directly in `when` arms using `{ field1, field2 }` syntax:
+
+```keel
+type Signal { price: float, volume: float, rsi: float }
+
+task classify(s: Signal) -> str {
+  when s {
+    { price, volume } where price > 1000.0 and volume > 0.0 => "active"
+    { price }         where price > 1000.0                  => "thin"
+    _                                                        => "quiet"
+  }
+}
+```
+
+The bound fields are available in both the `where` guard and the arm body.
+
+An **unguarded** struct arm matches any value of that struct type and satisfies exhaustiveness — no `_` is needed:
+
+```keel
+when order {
+  { quantity, price } => {
+    total = quantity * price
+    io.show("total: {total}")
+  }
+}
+```
+
+A **guarded** struct arm is not total; add a `_` fallback if no other arm covers the remaining cases.
+
+The subject must be a struct, and every field you name must exist on it. Matching a struct pattern against an enum or other non-struct value, or naming a field the struct does not declare, is a compile-time error — a mistyped field never silently binds `none`. An unguarded arm is only total against a **non-nullable** struct; for a nullable subject like `Signal?`, the `none` case still needs its own arm (or a `_`).
+
+Struct patterns work in both statement and expression `when` forms.
+
 ## for loops
 
 ```keel

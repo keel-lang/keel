@@ -95,6 +95,11 @@ pub(crate) struct Checker<'hir, 'ast> {
     hir: &'hir Hir<'ast>,
     errors: Vec<TypeDiagnostic>,
     enum_variants: HashMap<String, Vec<String>>,
+    /// Declared field names for rich-enum variants, keyed
+    /// `enum_name → variant_name → field names`. Data-less variants map to an
+    /// empty list. Used to reject `variant { typo }` patterns that name a
+    /// field the variant does not declare.
+    enum_variant_fields: HashMap<String, HashMap<String, Vec<String>>>,
     structs: HashMap<String, Vec<(String, Ty)>>,
     aliases: HashMap<String, Ty>,
     /// Known interfaces: interface_name → required method signatures.
@@ -609,6 +614,7 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             hir,
             errors: Vec::new(),
             enum_variants: HashMap::new(),
+            enum_variant_fields: HashMap::new(),
             structs: HashMap::new(),
             aliases: HashMap::new(),
             interfaces: builtin_interfaces(),

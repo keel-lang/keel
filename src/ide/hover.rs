@@ -271,14 +271,12 @@ fn visit_stmt_bindings<F: FnMut(&Binding, &Span, Ty)>(
             // their type is not inferrable without subject-type analysis.
             for arm in arms {
                 for pattern in &arm.patterns {
-                    if let Pattern::Variant { bindings, .. } = pattern {
-                        for name in bindings {
-                            visitor(
-                                &Binding::Ident(name.clone()),
-                                &(0..0),
-                                Ty::Unknown(UnknownReason::InferenceLimitation),
-                            );
-                        }
+                    for name in pattern.destructured_names() {
+                        visitor(
+                            &Binding::Ident(name.to_string()),
+                            &(0..0),
+                            Ty::Unknown(UnknownReason::InferenceLimitation),
+                        );
                     }
                 }
                 recurse_body(&arm.body, c, visitor);

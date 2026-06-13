@@ -665,6 +665,10 @@ impl Checker<'_, '_> {
     ) {
         let mut has_wildcard = false;
         let mut covered: HashSet<String> = HashSet::new();
+        // An unguarded struct arm is only total when the subject is a
+        // *non-nullable* struct: a struct pattern never matches an enum
+        // variant or a `none`, so it must not stand in for `_` otherwise.
+        let subject_is_plain_struct = matches!(subject_ty, Ty::Struct { .. });
         for arm in arms {
             for p in &arm.patterns {
                 match p {
@@ -672,23 +676,33 @@ impl Checker<'_, '_> {
                     Pattern::Ident(name) | Pattern::Variant { name, .. } => {
                         covered.insert(name.clone());
                     }
-                    Pattern::Literal(_) => {}
+                    Pattern::Struct { .. } if arm.guard.is_none() && subject_is_plain_struct => {
+                        has_wildcard = true;
+                    }
+                    Pattern::Literal(_) | Pattern::Struct { .. } => {}
                 }
             }
             scope.push();
             for p in &arm.patterns {
-                if let Pattern::Variant {
-                    name: variant_name,
-                    bindings,
-                } = p
-                {
-                    for (idx, b) in bindings.iter().enumerate() {
-                        if b == "_" {
-                            continue;
+                match p {
+                    Pattern::Variant {
+                        name: variant_name,
+                        bindings,
+                    } => {
+                        self.check_variant_pattern_fields(subject_ty, variant_name, bindings);
+                        for (idx, b) in bindings.iter().enumerate() {
+                            if b == "_" {
+                                continue;
+                            }
+                            let field_ty =
+                                self.resolve_variant_field(subject_ty, variant_name, b, idx);
+                            scope.define(b.clone(), field_ty);
                         }
-                        let field_ty = self.resolve_variant_field(subject_ty, variant_name, b, idx);
-                        scope.define(b.clone(), field_ty);
                     }
+                    Pattern::Struct { fields } => {
+                        self.bind_struct_pattern_fields(subject_ty, fields, scope);
+                    }
+                    _ => {}
                 }
             }
             if let Some(g) = &arm.guard {
@@ -735,6 +749,99 @@ impl Checker<'_, '_> {
                         "`when` on non-enum type `{}` requires a `_` wildcard arm",
                         describe_ty(subject_ty)
                     ));
+                }
+            }
+        }
+    }
+
+    /// Validate the field names a `variant { … }` pattern destructures.
+    ///
+    /// When the subject is a known rich enum and the variant's declared field
+    /// set is known, a binding that names a field the variant does not declare
+    /// is a hard error rather than a silent `none` binding. Every other case
+    /// (non-enum subject, unknown enum/variant) is left to the lenient
+    /// type-resolution path — shallow inference may not have the field set.
+    fn check_variant_pattern_fields(
+        &mut self,
+        subject_ty: &Ty,
+        variant_name: &str,
+        bindings: &[String],
+    ) {
+        let Ty::Enum(enum_name, _) = subject_ty.strip_nullable() else {
+            return;
+        };
+        let Some(variant_fields) = self
+            .enum_variant_fields
+            .get(enum_name)
+            .and_then(|variants| variants.get(variant_name))
+        else {
+            return;
+        };
+        let unknown: Vec<String> = bindings
+            .iter()
+            .filter(|b| *b != "_" && !variant_fields.iter().any(|f| f == *b))
+            .cloned()
+            .collect();
+        for b in unknown {
+            self.err(format!(
+                "variant pattern field `{b}` does not exist on `{enum_name}.{variant_name}`"
+            ));
+        }
+    }
+
+    /// Bind the fields named by a `{ … }` struct pattern into `scope`,
+    /// validating them against the subject type.
+    ///
+    /// A struct pattern only makes sense against a struct subject; the field
+    /// names must exist on that struct. Either violation is a hard error
+    /// rather than a silent `none` binding — a mistyped field should not pass
+    /// the checker. For opaque subjects (shallow inference couldn't resolve a
+    /// concrete type) we bind without validation to avoid false positives.
+    fn bind_struct_pattern_fields(
+        &mut self,
+        subject_ty: &Ty,
+        fields: &[String],
+        scope: &mut Scope,
+    ) {
+        match subject_ty.strip_nullable() {
+            Ty::Struct {
+                fields: struct_fields,
+                ..
+            } => {
+                for f in fields {
+                    if f == "_" {
+                        continue;
+                    }
+                    match struct_fields.iter().find(|(n, _)| n == f) {
+                        Some((_, ty)) => scope.define(f.clone(), ty.clone()),
+                        None => {
+                            self.err(format!(
+                                "struct pattern field `{f}` does not exist on `{}`",
+                                describe_ty(subject_ty)
+                            ));
+                            scope.define(f.clone(), Ty::Error);
+                        }
+                    }
+                }
+            }
+            other if other.is_opaque() => {
+                for f in fields {
+                    if f == "_" {
+                        continue;
+                    }
+                    scope.define(f.clone(), self.resolve_struct_field(subject_ty, f));
+                }
+            }
+            _ => {
+                self.err(format!(
+                    "struct pattern `{{ … }}` requires a struct subject, but `when` subject has type `{}`",
+                    describe_ty(subject_ty)
+                ));
+                for f in fields {
+                    if f == "_" {
+                        continue;
+                    }
+                    scope.define(f.clone(), Ty::Error);
                 }
             }
         }

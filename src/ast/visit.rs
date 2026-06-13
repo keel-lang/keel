@@ -292,7 +292,10 @@ pub fn walk_expr<V: Visitor + ?Sized>(v: &mut V, expr: &SpannedExpr) {
 /// Walks expressions inside a pattern.
 pub fn walk_pattern<V: Visitor + ?Sized>(v: &mut V, pattern: &Pattern) {
     match pattern {
-        Pattern::Ident(_) | Pattern::Wildcard | Pattern::Variant { .. } => {}
+        Pattern::Ident(_)
+        | Pattern::Wildcard
+        | Pattern::Variant { .. }
+        | Pattern::Struct { .. } => {}
         Pattern::Literal(expr) => v.visit_expr(expr),
     }
 }

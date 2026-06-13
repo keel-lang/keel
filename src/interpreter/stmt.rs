@@ -421,6 +421,21 @@ impl Interpreter {
                 }
                 None
             }
+            Pattern::Struct { fields } => {
+                if let Value::Struct(_, field_map) = value {
+                    let mut out = Vec::with_capacity(fields.len());
+                    for f in fields {
+                        if f == "_" {
+                            continue;
+                        }
+                        let v = field_map.get(f).cloned().unwrap_or(Value::None);
+                        out.push((f.clone(), v));
+                    }
+                    Some(out)
+                } else {
+                    None
+                }
+            }
         }
     }
 }

@@ -194,27 +194,12 @@ impl Checker<'_, '_> {
                     }
                 }
                 let obj_ty = self.infer_expr(obj, scope);
-                match obj_ty.strip_nullable() {
-                    Ty::Struct { fields, .. } => fields
-                        .iter()
-                        .find(|(n, _)| n == field)
-                        .map(|(_, t)| t.clone())
-                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
-                    _ => Ty::Unknown(UnknownReason::InferenceLimitation),
-                }
+                self.resolve_struct_field(&obj_ty, field)
             }
 
             Expr::NullFieldAccess(obj, field) => {
                 let obj_ty = self.infer_expr(obj, scope);
-                let field_ty = match obj_ty.strip_nullable() {
-                    Ty::Struct { fields, .. } => fields
-                        .iter()
-                        .find(|(n, _)| n == field)
-                        .map(|(_, t)| t.clone())
-                        .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
-                    _ => Ty::Unknown(UnknownReason::InferenceLimitation),
-                };
-                Ty::Nullable(Box::new(field_ty))
+                Ty::Nullable(Box::new(self.resolve_struct_field(&obj_ty, field)))
             }
 
             Expr::NullAssert(e) => {
@@ -974,19 +959,34 @@ impl Checker<'_, '_> {
                 for arm in arms {
                     scope.push();
                     for p in &arm.patterns {
-                        if let Pattern::Variant {
-                            name: variant_name,
-                            bindings,
-                        } = p
-                        {
-                            for (idx, b) in bindings.iter().enumerate() {
-                                if b == "_" {
-                                    continue;
+                        match p {
+                            Pattern::Variant {
+                                name: variant_name,
+                                bindings,
+                            } => {
+                                for (idx, b) in bindings.iter().enumerate() {
+                                    if b == "_" {
+                                        continue;
+                                    }
+                                    let field_ty = self.resolve_variant_field(
+                                        &subject_ty,
+                                        variant_name,
+                                        b,
+                                        idx,
+                                    );
+                                    scope.define(b.clone(), field_ty);
                                 }
-                                let field_ty =
-                                    self.resolve_variant_field(&subject_ty, variant_name, b, idx);
-                                scope.define(b.clone(), field_ty);
                             }
+                            Pattern::Struct { fields } => {
+                                for f in fields {
+                                    if f == "_" {
+                                        continue;
+                                    }
+                                    let field_ty = self.resolve_struct_field(&subject_ty, f);
+                                    scope.define(f.clone(), field_ty);
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     let arm_ty = self.block_type(&arm.body, scope);

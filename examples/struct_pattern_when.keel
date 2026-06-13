@@ -1,0 +1,54 @@
+use std/io
+
+# Struct pattern matching in `when`
+# Syntax: { field1, field2 } — binds named fields into the arm scope.
+# Add a `where` guard to route on field values.
+
+type Signal {
+  symbol: str
+  price:  float
+  volume: float
+  rsi:    float
+}
+
+task classify(s: Signal) -> str {
+  when s {
+    { price, volume, rsi } where rsi > 70.0 and volume > 0.0 => "overbought-active"
+    { rsi } where rsi > 70.0                                  => "overbought-thin"
+    { rsi } where rsi < 30.0                                  => "oversold"
+    { price, volume } where price > 0.0 and volume > 0.0      => "neutral-active"
+    _                                                          => "quiet"
+  }
+}
+
+type Box { value: int }
+
+task unwrap(b: Box) -> int {
+  # Unguarded struct arm is total — no `_` required.
+  when b {
+    { value } => value
+  }
+}
+
+agent Demo {
+  @tools [io]
+  @on_start {
+    signals: list[Signal] = [
+      { symbol: "BTC", price: 45000.0, volume: 120.0, rsi: 75.0 },
+      { symbol: "ETH", price: 2800.0,  volume: 0.0,   rsi: 75.0 },
+      { symbol: "SOL", price: 150.0,   volume: 80.0,  rsi: 25.0 },
+      { symbol: "BNB", price: 320.0,   volume: 50.0,  rsi: 55.0 },
+      { symbol: "XRP", price: 0.5,     volume: 0.0,   rsi: 50.0 },
+    ]
+    for s in signals {
+      label = classify(s)
+      io.show("{s.symbol}: {label}")
+    }
+
+    b: Box = { value: 99 }
+    io.show("unwrapped: {unwrap(b)}")
+    stop(self)
+  }
+}
+
+run(Demo)

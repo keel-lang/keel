@@ -223,6 +223,10 @@ pub(super) fn when_pattern() -> P<Pattern> {
                 Some(b) => Pattern::Variant { name, bindings: b },
                 None => Pattern::Ident(name),
             }))
+        .or(just(Token::LBrace)
+            .ignore_then(ident().separated_by(just(Token::Comma)).allow_trailing())
+            .then_ignore(just(Token::RBrace))
+            .map(|fields| Pattern::Struct { fields }))
         .or(plain_string().map_with_span(|s, span| {
             Pattern::Literal(Node::new(
                 Expr::StringLit(vec![StringPart::Literal(s)]),

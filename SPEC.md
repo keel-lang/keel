@@ -259,7 +259,7 @@ type Action =
 
 **Construction:** `Action.reply { to: "x", tone: "y" }`. Data-less variants: `Action.archive`.
 
-**Pattern matching** is exhaustive (see §8.2). Rich variant fields are destructured in `when` arms, not accessed via dot.
+**Pattern matching** is exhaustive (see §8.2). Rich variant fields are destructured in `when` arms, not accessed via dot. A destructured name must be a field the variant declares; naming an unknown field (e.g. a typo) is a compile-time error rather than a silent `none` binding.
 
 **Generic enums:**
 
@@ -1162,11 +1162,25 @@ when action {
 }
 ```
 
-**Tuple and struct patterns, `where` guards** — see §24 grammar for the full form.
+**Struct patterns** — bind named fields from a struct value into the arm scope:
+
+```keel
+when signal {
+  { price, volume } where price > 1000.0 and volume > 0.0 => "active"
+  { price }         where price > 1000.0                  => "thin"
+  _                                                        => "quiet"
+}
+```
+
+- `{ field1, field2 }` binds those fields; they are available in the `where` guard and arm body.
+- Use `_` as a field name to skip a field without binding it.
+- The subject **must be a struct type**, and every named field **must exist** on it. A struct pattern against a non-struct subject, or naming a field the struct does not declare, is a compile-time type error.
+- An **unguarded** struct arm is total only when the subject is a **non-nullable** struct (matches any value of that struct) — no separate `_` arm is required. Against a nullable struct (`Signal?`) the `none` case is still uncovered, so a `_` or `none` arm is required.
+- A **guarded** struct arm is not total; add a `_` fallback or another unguarded arm to satisfy exhaustiveness.
 
 **Non-enum matching (primitives, strings):** wildcard `_` is **required** (the compiler can't prove exhaustiveness on unbounded types).
 
-**Exhaustiveness:** All enum variants must be covered (or `_` present) in both statement and expression forms.
+**Exhaustiveness:** All enum variants must be covered (or `_` present) in both statement and expression forms. For non-nullable struct subjects, an unguarded `{ ... }` arm satisfies exhaustiveness. A struct arm never satisfies exhaustiveness for an enum or other non-struct subject — it cannot match those values.
 
 ### 8.3 `for` loops
 
@@ -2305,8 +2319,9 @@ Lambda      <- IDENT "=>" (Expr / Block)
 
 IfExpr      <- "if" Expr Block ("else" (IfExpr / Block))?
 WhenArm     <- Pattern ("," Pattern)* ("where" Expr)? "=>" (Expr / Block)
-# Note: `when` as an expression form is reserved for post-v0.1; today only the statement form is supported.
-Pattern     <- VariantPat / StructPat / TuplePat / IDENT / "_" / Literal
+Pattern     <- VariantPat / StructPat / IDENT / "_" / Literal
+VariantPat  <- IDENT ("{" IDENT ("," IDENT)* ","? "}")?   # enum variant; optional field bindings
+StructPat   <- "{" IDENT ("," IDENT)* ","? "}"            # struct field bindings (no leading ident)
 
 # --- Statements ---
 Stmt        <- ReturnStmt / RaiseStmt / AssertStmt / AugAssignStmt / AugSelfAssign / AssignStmt / SelfAssign / ForStmt / TryStmt / ExprStmt

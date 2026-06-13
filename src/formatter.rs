@@ -638,6 +638,9 @@ impl Fmt {
                     format!("{} {{ {} }}", name, bindings.join(", "))
                 }
             }
+            Pattern::Struct { fields } => {
+                format!("{{ {} }}", fields.join(", "))
+            }
         }
     }
 

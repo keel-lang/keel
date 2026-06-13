@@ -110,6 +110,10 @@ task t(p: Pair[str, int]) {
 }
 ```
 
+Each destructured name must be a field the variant declares. Naming a field the
+variant does not have (a typo, say) is a compile-time error rather than a silent
+`none` binding.
+
 ## Structs
 
 Each declared struct type has a unique identity. Two types with the same fields

@@ -727,16 +727,11 @@ impl<'ast> Lowerer<'ast> {
         for arm in arms {
             self.push_scope();
             for pattern in &arm.patterns {
-                match pattern {
-                    Pattern::Literal(expr) => self.lower_expr(expr, None),
-                    Pattern::Variant { bindings, .. } => {
-                        for binding in bindings {
-                            if binding != "_" {
-                                self.define_local(binding, exprless_span());
-                            }
-                        }
-                    }
-                    Pattern::Ident(_) | Pattern::Wildcard => {}
+                if let Pattern::Literal(expr) = pattern {
+                    self.lower_expr(expr, None);
+                }
+                for name in pattern.destructured_names() {
+                    self.define_local(name, exprless_span());
                 }
             }
             if let Some(guard) = &arm.guard {

@@ -10,6 +10,24 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Added
+
+- **Struct pattern matching in `when`** — bind named fields from a struct value directly in `when` arms using `{ field1, field2 }` syntax. Combine with a `where` guard to route on field values:
+
+```keel
+when signal {
+  { price, volume } where price > 1000.0 and volume > 0.0 => "active"
+  { price }         where price > 1000.0                  => "thin"
+  _                                                        => "quiet"
+}
+```
+
+  An unguarded struct arm is total when the subject is a non-nullable struct — it matches any value of that struct type and satisfies exhaustiveness without requiring a separate `_` arm. Against an enum or other non-struct subject a struct arm never matches, so it does not satisfy exhaustiveness (a missing-variant or missing-`_` error is still reported); against a nullable struct the `none` case must still be covered. Field names are validated against the subject struct — a name the struct does not declare is a compile-time error, not a silent `none` binding. Struct patterns work in both statement and expression `when` forms. Field bindings are in scope for the `where` guard and the arm body.
+
+### Fixed
+
+- **Enum variant patterns now reject unknown field names.** Destructuring a field a variant does not declare — e.g. `reply { to, tpo }` where the variant has `tone`, or naming any field on a data-less variant like `low { x }` — previously type-checked and silently bound the misspelled name to `none`. It is now a compile-time error that names the offending field and variant.
+
 ---
 
 ## [0.2.0] — 2026-06-12

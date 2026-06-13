@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+### Struct pattern matching in `when`
+
+Bind named fields from a struct value directly in `when` arms:
+
+```keel
+when signal {
+  { price, volume } where price > 1000.0 and volume > 0.0 => "active"
+  { price }         where price > 1000.0                  => "thin"
+  _                                                        => "quiet"
+}
+```
+
+An unguarded struct arm is total against a non-nullable struct — it matches any value of that struct type, so no separate `_` arm is required. The subject must be a struct and every named field must exist on it; a struct arm against an enum or a mistyped field name is a compile-time error rather than a silent `none` binding. See [Control Flow](./guide/control-flow.md#struct-patterns).
+
 ---
 
 ## v0.2.0 — 2026-06-12

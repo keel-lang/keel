@@ -322,6 +322,21 @@ impl Checker<'_, '_> {
             .collect();
         self.resolve_type_with_env(&field.ty.kind, &env)
     }
+
+    /// Look up a named field's type from a struct subject type.
+    /// Returns `Ty::Unknown(InferenceLimitation)` for opaque subjects or
+    /// unknown fields rather than emitting an error — callers that want
+    /// a hard diagnostic should do so themselves.
+    pub(crate) fn resolve_struct_field(&self, subject_ty: &Ty, field: &str) -> Ty {
+        match subject_ty.strip_nullable() {
+            Ty::Struct { fields, .. } => fields
+                .iter()
+                .find(|(n, _)| n == field)
+                .map(|(_, t)| t.clone())
+                .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
+            _ => Ty::Unknown(UnknownReason::InferenceLimitation),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -77,27 +77,14 @@ impl Checker<'_, '_> {
         if !t.type_params.is_empty() {
             // Generic type — defer body resolution until instantiation.
             // For enum types, still register variant names for exhaustiveness checking.
-            match &t.def {
-                TypeDef::SimpleEnum(vs) => {
-                    self.enum_variants.insert(t.name.clone(), vs.clone());
-                }
-                TypeDef::RichEnum(vs) => {
-                    self.enum_variants
-                        .insert(t.name.clone(), vs.iter().map(|v| v.name.clone()).collect());
-                }
-                _ => {}
-            }
+            self.collect_enum_variants(&t.name, &t.def);
             self.generic_decls
                 .insert(t.name.clone(), (t.type_params.clone(), t.def.clone()));
             return;
         }
         match &t.def {
-            TypeDef::SimpleEnum(vs) => {
-                self.enum_variants.insert(t.name.clone(), vs.clone());
-            }
-            TypeDef::RichEnum(vs) => {
-                self.enum_variants
-                    .insert(t.name.clone(), vs.iter().map(|v| v.name.clone()).collect());
+            TypeDef::SimpleEnum(_) | TypeDef::RichEnum(_) => {
+                self.collect_enum_variants(&t.name, &t.def);
             }
             TypeDef::Struct(fields) => {
                 let mut f = Vec::with_capacity(fields.len());
@@ -112,6 +99,53 @@ impl Checker<'_, '_> {
                 self.aliases.insert(t.name.clone(), resolved);
             }
         }
+    }
+
+    /// Register an enum declaration's variant names (for exhaustiveness) and
+    /// per-variant field names (for pattern validation). A no-op for non-enum
+    /// definitions, so it can be called unconditionally on any `TypeDef`.
+    fn collect_enum_variants(&mut self, enum_name: &str, def: &TypeDef) {
+        match def {
+            TypeDef::SimpleEnum(vs) => {
+                self.enum_variants.insert(enum_name.to_string(), vs.clone());
+                self.collect_simple_variant_fields(enum_name, vs);
+            }
+            TypeDef::RichEnum(vs) => {
+                self.enum_variants.insert(
+                    enum_name.to_string(),
+                    vs.iter().map(|v| v.name.clone()).collect(),
+                );
+                self.collect_variant_fields(enum_name, vs);
+            }
+            _ => {}
+        }
+    }
+
+    /// Register the variants of a simple (data-less) enum with empty field
+    /// lists, so that naming any field on them in a pattern is an error.
+    fn collect_simple_variant_fields(&mut self, enum_name: &str, variants: &[String]) {
+        let by_variant = variants.iter().map(|v| (v.clone(), Vec::new())).collect();
+        self.enum_variant_fields
+            .insert(enum_name.to_string(), by_variant);
+    }
+
+    /// Record each rich-enum variant's declared field names so that
+    /// `variant { field }` patterns can be validated. Data-less variants map
+    /// to an empty list, which makes naming any field on them an error.
+    fn collect_variant_fields(&mut self, enum_name: &str, variants: &[EnumVariant]) {
+        let by_variant = variants
+            .iter()
+            .map(|v| {
+                let fields = v
+                    .fields
+                    .as_ref()
+                    .map(|fs| fs.iter().map(|f| f.name.clone()).collect())
+                    .unwrap_or_default();
+                (v.name.clone(), fields)
+            })
+            .collect();
+        self.enum_variant_fields
+            .insert(enum_name.to_string(), by_variant);
     }
 
     /// Build the [`TaskSig`] for a task declaration.

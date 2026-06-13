@@ -431,3 +431,233 @@ run(A)
         "expected 'three' branch for x == 3, stdout:\n{stdout}"
     );
 }
+
+// ── Struct pattern matching in `when` ────────────────────────────────────────
+
+#[test]
+fn when_struct_pattern_binds_fields() {
+    let src = r#"
+use std/io
+type Point { x: int, y: int }
+task describe(p: Point) -> str {
+  when p {
+    { x, y } => "{x},{y}"
+  }
+}
+agent A {
+  @tools [io]
+  @on_start {
+    io.show(describe({ x: 3, y: 4 }))
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("3,4"), "fields should be bound: {stdout}");
+}
+
+#[test]
+fn when_struct_pattern_with_guard_routes_on_field_value() {
+    let src = r#"
+use std/io
+type Signal { price: float, volume: float }
+task classify(s: Signal) -> str {
+  when s {
+    { price, volume } where price > 1000.0 and volume > 0.0 => "active"
+    { price } where price > 1000.0 => "thin"
+    _ => "quiet"
+  }
+}
+agent A {
+  @tools [io]
+  @on_start {
+    io.show(classify({ price: 1500.0, volume: 10.0 }))
+    io.show(classify({ price: 1500.0, volume: 0.0 }))
+    io.show(classify({ price: 50.0,   volume: 5.0 }))
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("active"), "high price+volume arm: {stdout}");
+    assert!(
+        stdout.contains("thin"),
+        "high price, no volume arm: {stdout}"
+    );
+    assert!(stdout.contains("quiet"), "default arm: {stdout}");
+}
+
+#[test]
+fn when_struct_pattern_unguarded_is_exhaustive() {
+    // An unguarded struct arm is total — no `_` required; checker must not error.
+    let src = r#"
+use std/io
+type Box { value: int }
+agent A {
+  @tools [io]
+  @on_start {
+    b: Box = { value: 42 }
+    when b {
+      { value } => io.show("{value}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "checker should accept unguarded struct arm as exhaustive\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("42"),
+        "field value should be printed: {stdout}"
+    );
+}
+
+#[test]
+fn when_struct_pattern_as_expression() {
+    let src = r#"
+use std/io
+type Metric { name: str, value: float }
+agent A {
+  @tools [io]
+  @on_start {
+    m: Metric = { name: "rsi", value: 72.5 }
+    label = when m {
+      { value } where value > 70.0 => "overbought"
+      { value } where value < 30.0 => "oversold"
+      _ => "neutral"
+    }
+    io.show(label)
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("overbought"),
+        "guard on float field: {stdout}"
+    );
+}
+
+#[test]
+fn when_struct_arm_does_not_make_enum_match_exhaustive() {
+    // A struct pattern can never match an enum variant, so an unguarded
+    // struct arm must NOT stand in for `_`. The enum match below is missing
+    // `medium` and `high` and must be reported as non-exhaustive.
+    let src = r#"
+type Severity = low | medium | high
+task sla(s: Severity) -> int {
+  when s {
+    low => 1
+    { x } => 99
+  }
+}
+agent A { @on_start { stop(self) } }
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "struct arm must not satisfy enum exhaustiveness");
+    assert!(
+        stderr.contains("non-exhaustive") || stderr.contains("missing"),
+        "should report missing enum variants:\n{stderr}"
+    );
+}
+
+#[test]
+fn when_struct_pattern_unknown_field_is_error() {
+    // A field name that does not exist on the subject struct must be a hard
+    // error, not a silent `none` binding.
+    let src = r#"
+type Signal { price: float }
+task f(s: Signal) -> str {
+  when s {
+    { pice } => "{pice}"
+  }
+}
+agent A { @on_start { stop(self) } }
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "unknown struct-pattern field must error");
+    assert!(
+        stderr.contains("pice") && stderr.contains("does not exist"),
+        "should name the unknown field:\n{stderr}"
+    );
+}
+
+#[test]
+fn when_variant_pattern_unknown_field_is_error() {
+    // A rich-enum variant pattern that names a field the variant does not
+    // declare must error, not silently bind `none`.
+    let src = r#"
+type Action = | reply { to: str, tone: str } | archive
+task describe(a: Action) -> str {
+  when a {
+    reply { to, tpo } => "{to} {tpo}"
+    archive => "archive"
+  }
+}
+agent A { @on_start { stop(self) } }
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "unknown variant-pattern field must error");
+    assert!(
+        stderr.contains("tpo") && stderr.contains("does not exist"),
+        "should name the unknown variant field:\n{stderr}"
+    );
+}
+
+#[test]
+fn when_simple_enum_variant_field_is_error() {
+    // A data-less (simple) enum variant declares no fields, so naming any
+    // field on it in a pattern must error rather than silently bind `none`.
+    let src = r#"
+type Severity = low | medium | high
+task f(s: Severity) -> str {
+  when s {
+    low { x } => "{x}"
+    _ => "other"
+  }
+}
+agent A { @on_start { stop(self) } }
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "field on a data-less variant must error");
+    assert!(
+        stderr.contains('x') && stderr.contains("does not exist"),
+        "should reject the field on the simple-enum variant:\n{stderr}"
+    );
+}
+
+#[test]
+fn when_nullable_struct_unguarded_arm_requires_wildcard() {
+    // An unguarded struct arm is NOT total against a nullable struct — the
+    // `none` case is still uncovered, so a `_` arm is required.
+    let src = r#"
+type Signal { price: float }
+task f(s: Signal?) -> str {
+  when s {
+    { price } => "{price}"
+  }
+}
+agent A { @on_start { stop(self) } }
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "nullable struct subject still needs a `_` arm");
+    assert!(
+        stderr.contains("wildcard") || stderr.contains('_'),
+        "should require a wildcard arm:\n{stderr}"
+    );
+}

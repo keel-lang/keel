@@ -112,6 +112,25 @@ pub enum Pattern {
     Literal(SpannedExpr),
     /// Rich enum variant destructure: `reply { to, tone }`.
     Variant { name: String, bindings: Vec<String> },
+    /// Struct field binding: `{ price, volume }`.
+    /// Binds named fields from a struct value into the arm scope.
+    /// An unguarded struct arm is total (matches any struct of that type).
+    Struct { fields: Vec<String> },
+}
+
+impl Pattern {
+    /// Names this pattern destructures into the arm scope, excluding `_`
+    /// discards. `Ident` is omitted on purpose: it is context-dependent
+    /// (a variant match by name *or* a variable bind) and cannot be resolved
+    /// syntactically, so callers that need it handle it separately.
+    pub fn destructured_names(&self) -> impl Iterator<Item = &str> {
+        let names: &[String] = match self {
+            Pattern::Variant { bindings, .. } => bindings,
+            Pattern::Struct { fields } => fields,
+            Pattern::Ident(_) | Pattern::Wildcard | Pattern::Literal(_) => &[],
+        };
+        names.iter().map(String::as_str).filter(|n| *n != "_")
+    }
 }
 
 #[derive(Debug, Clone)]
