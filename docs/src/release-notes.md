@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.2.1 — 2026-06-13
+
 ### Struct pattern matching in `when`
 
 Bind named fields from a struct value directly in `when` arms:

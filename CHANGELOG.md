@@ -10,6 +10,12 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+---
+
+## [0.2.1] — 2026-06-13
+
+Struct pattern matching in `when`, and stricter validation of struct and enum pattern field names.
+
 ### Added
 
 - **Struct pattern matching in `when`** — bind named fields from a struct value directly in `when` arms using `{ field1, field2 }` syntax. Combine with a `where` guard to route on field values:
