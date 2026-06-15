@@ -68,62 +68,50 @@ fn namespaces() -> [Namespace; 23] {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     use super::*;
 
-    /// Every method name declared in a namespace's SPEC must be installed by
-    /// its `namespace()` function, and every installed method must appear in
-    /// SPEC. This catches additions to one side without the other.
+    /// Every method name declared in the catalog's SPEC for a namespace must be
+    /// installed by that namespace's `namespace()` function, and every installed
+    /// method must appear in the catalog. Driven off the production
+    /// `namespaces()` array and `keel_catalog::catalog()` so adding a namespace
+    /// or a method on either side without the other fails here.
     #[test]
     fn spec_matches_installed_methods_for_all_namespaces() {
-        let pairs: &[(&[keel_catalog::builtins::BuiltinMethod], Namespace)] = &[
-            (keel_catalog::specs::ai::SPEC, ai::namespace()),
-            (
-                keel_catalog::specs::asynchronous::SPEC,
-                asynchronous::namespace(),
-            ),
-            (keel_catalog::specs::cache::SPEC, cache::namespace()),
-            (keel_catalog::specs::control::SPEC, control::namespace()),
-            (keel_catalog::specs::crypto::SPEC, crypto::namespace()),
-            (keel_catalog::specs::csv::SPEC, csv::namespace()),
-            (keel_catalog::specs::db::SPEC, db::namespace()),
-            (keel_catalog::specs::email::SPEC, email::namespace()),
-            (keel_catalog::specs::env::SPEC, env::namespace()),
-            (keel_catalog::specs::file::SPEC, file::namespace()),
-            (keel_catalog::specs::http::SPEC, http::namespace()),
-            (keel_catalog::specs::io::SPEC, io::namespace()),
-            (keel_catalog::specs::json::SPEC, json::namespace()),
-            (keel_catalog::specs::log::SPEC, log::namespace()),
-            (keel_catalog::specs::math::SPEC, math::namespace()),
-            (keel_catalog::specs::memory::SPEC, memory::namespace()),
-            (keel_catalog::specs::random::SPEC, random::namespace()),
-            (keel_catalog::specs::schedule::SPEC, schedule::namespace()),
-            (keel_catalog::specs::search::SPEC, search::namespace()),
-            (keel_catalog::specs::shell::SPEC, shell::namespace()),
-            (keel_catalog::specs::testing::SPEC, testing::namespace()),
-            (keel_catalog::specs::time::SPEC, time::namespace()),
-            (keel_catalog::specs::uuid::SPEC, uuid::namespace()),
-        ];
+        let mut spec_by_ns: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for m in keel_catalog::catalog() {
+            spec_by_ns.entry(m.namespace).or_default().insert(m.name);
+        }
 
-        for (spec, ns) in pairs {
-            let ns_name = spec.first().map_or("?", |m| m.namespace);
-            let spec_names: HashSet<&str> = spec.iter().map(|m| m.name).collect();
+        let installed = namespaces();
+        let installed_ns_names: HashSet<&str> =
+            installed.iter().map(|ns| ns.name.as_str()).collect();
+        let spec_ns_names: HashSet<&str> = spec_by_ns.keys().copied().collect();
+        assert_eq!(
+            installed_ns_names, spec_ns_names,
+            "installed namespaces and catalog namespaces disagree"
+        );
+
+        for ns in &installed {
+            let spec_names = &spec_by_ns[ns.name.as_str()];
             let installed_names: HashSet<&str> = ns.methods.keys().map(|s| s.as_str()).collect();
 
             let in_spec_not_installed: Vec<&str> =
                 spec_names.difference(&installed_names).copied().collect();
             assert!(
                 in_spec_not_installed.is_empty(),
-                "{ns_name}: SPEC declares {:?} but namespace() does not install them",
+                "{}: SPEC declares {:?} but namespace() does not install them",
+                ns.name,
                 in_spec_not_installed
             );
 
             let installed_not_in_spec: Vec<&str> =
-                installed_names.difference(&spec_names).copied().collect();
+                installed_names.difference(spec_names).copied().collect();
             assert!(
                 installed_not_in_spec.is_empty(),
-                "{ns_name}: namespace() installs {:?} but SPEC does not declare them",
+                "{}: namespace() installs {:?} but SPEC does not declare them",
+                ns.name,
                 installed_not_in_spec
             );
         }

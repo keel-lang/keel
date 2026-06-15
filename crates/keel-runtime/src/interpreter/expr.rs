@@ -287,7 +287,7 @@ impl Interpreter {
                         };
                     }
                     if let Expr::Ident(namespace) = &obj.as_ref().kind
-                        && crate::types::prelude::catalog_method(namespace, field).is_some()
+                        && keel_catalog::catalog_method(namespace, field).is_some()
                     {
                         return Ok(ExprFlow::Value(Value::MockTarget {
                             namespace: namespace.clone(),
@@ -343,7 +343,7 @@ impl Interpreter {
                             }
                             // Aliased std binding (`use std/file as f`) used as a
                             // mock target: resolve through the canonical name.
-                            if crate::types::prelude::catalog_method(ns_name, field).is_some() {
+                            if keel_catalog::catalog_method(ns_name, field).is_some() {
                                 return Ok(ExprFlow::Value(Value::MockTarget {
                                     namespace: ns_name.clone(),
                                     method: field.clone(),

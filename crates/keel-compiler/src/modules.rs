@@ -15,19 +15,10 @@ use std::path::{Path, PathBuf};
 
 use miette::{LabeledSpan, NamedSource, Result};
 
+use keel_syntax::parse_source;
+
 use crate::ast::{Decl, Program, UseDecl, UseKind, UseSource};
 use crate::lexer::Span;
-
-/// Lex and parse a single module's source into a [`Program`].
-///
-/// The compiler crate parses directly via the syntax layer rather than going
-/// through the top-level `session` API, which lives above it.
-fn parse_source(src: &str, name: &str) -> Result<(Program, NamedSource<String>)> {
-    let named = NamedSource::new(name, src.to_string());
-    let tokens = crate::lexer::lex(src, &named)?;
-    let program = crate::parser::parse(tokens, src.len(), &named)?;
-    Ok((program, named))
-}
 
 /// What a `use` declaration resolved to.
 #[derive(Debug, Clone, PartialEq, Eq)]

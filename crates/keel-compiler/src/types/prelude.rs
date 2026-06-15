@@ -74,9 +74,11 @@ pub fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
 
 /// Look up a built-in method by namespace and name.
 ///
-/// Returns `None` if the pair is not registered in the catalog.
-pub fn catalog_method(namespace: &str, name: &str) -> Option<&'static BuiltinMethod> {
-    keel_catalog::catalog().find(|m| m.namespace == namespace && m.name == name)
+/// Returns `None` if the pair is not registered in the catalog. Thin
+/// convenience wrapper around [`keel_catalog::catalog_method`] for the
+/// checker's call sites.
+pub(crate) fn catalog_method(namespace: &str, name: &str) -> Option<&'static BuiltinMethod> {
+    keel_catalog::catalog_method(namespace, name)
 }
 
 // ---------------------------------------------------------------------------

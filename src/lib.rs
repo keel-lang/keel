@@ -11,11 +11,6 @@
 //! - [`ast`] — AST node types
 //! - [`session`] — `parse_source`, `check_source`, `run_source`, `fmt_source`, `lint_source`
 //! - [`diagnostics`] — [`diagnostics::TypeDiagnostic`], [`diagnostics::LintWarning`], [`diagnostics::Ty`]
-#![deny(clippy::correctness)]
-#![warn(clippy::suspicious)]
-#![warn(clippy::perf)]
-#![warn(clippy::style)]
-#![warn(clippy::complexity)]
 
 // ── Syntax layer (extracted into the `keel-syntax` crate) ────────────────────
 // Re-exported under their original paths so internal modules keep using

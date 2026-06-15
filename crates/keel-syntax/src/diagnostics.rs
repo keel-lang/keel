@@ -1,6 +1,6 @@
 //! Syntax-level diagnostic types.
 
-pub use crate::lexer::Span;
+use crate::lexer::Span;
 
 /// A linter warning emitted by `session::lint_source` or `keel lint`.
 #[derive(Debug)]

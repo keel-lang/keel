@@ -1,9 +1,12 @@
 [package]
 name = "keel-catalog"
-version = "0.2.1"
-edition = "2024"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "Keel stdlib namespace catalog: neutral method descriptors and capability metadata."
 publish = false
+
+[lints]
+workspace = true
 
 [dependencies]

@@ -15,7 +15,7 @@ use crate::diagnostics::LintWarning;
 use crate::interpreter::TestOutcome;
 use crate::runtime::context::RuntimeContext;
 use crate::types::diagnostics::TypeDiagnostic;
-use crate::{formatter, interpreter, lexer, lint, parser, types};
+use crate::{formatter, interpreter, lint, types};
 
 /// A program that has been parsed and type-checked.
 ///
@@ -153,10 +153,7 @@ pub fn graph_test_names(checked: &CheckedGraph, filter: Option<&str>) -> Vec<Str
 ///
 /// Returns an error if the source cannot be lexed or parsed.
 pub fn parse_source(src: &str, name: &str) -> Result<(Program, NamedSource<String>)> {
-    let named = NamedSource::new(name, src.to_string());
-    let tokens = lexer::lex(src, &named)?;
-    let program = parser::parse(tokens, src.len(), &named)?;
-    Ok((program, named))
+    keel_syntax::parse_source(src, name)
 }
 
 /// HIR-lower and type-check a parsed program.

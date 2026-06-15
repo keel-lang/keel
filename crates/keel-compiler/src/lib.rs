@@ -3,11 +3,6 @@
 //! Depends only on the syntax layer (`keel-syntax`) and the neutral stdlib
 //! catalog (`keel-catalog`). It has no dependency on the interpreter or the
 //! runtime — the type checker reads the stdlib surface from `keel-catalog`.
-#![deny(clippy::correctness)]
-#![warn(clippy::suspicious)]
-#![warn(clippy::perf)]
-#![warn(clippy::style)]
-#![warn(clippy::complexity)]
 
 // Re-export the syntax and catalog layers under their original paths so the
 // modules below keep using `crate::ast`, `crate::lexer`, `crate::parser`, and
