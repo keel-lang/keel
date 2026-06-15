@@ -28,37 +28,27 @@ keel-catalog = { path = "crates/keel-catalog" }
 keel-compiler = { path = "crates/keel-compiler" }
 keel-runtime = { path = "crates/keel-runtime" }
 keel-syntax = { path = "crates/keel-syntax" }
+# The heavy I/O dependencies (reqwest, rusqlite, axum, lettre, imap, native-tls,
+# …) now live in keel-runtime; keel-lang links them transitively and only
+# declares what its own facade/binary code (CLI, REPL, LSP, session) uses.
 logos = { workspace = true }
-chumsky = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 miette = { workspace = true }
-thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 colored = "2"
 rustyline = "15"
 tower-lsp = "0.20"
-lettre = { version = "0.11", features = ["tokio1-native-tls"] }
-imap = "2"
-native-tls = "0.2"
-chrono = "0.4"
-chrono-tz = "0.10"
-regex = "1"
-glob = "0.3"
-axum = "0.8"
-sha2 = "0.10"
-fs2 = "0.4"
 parking_lot = "0.12"
-fastrand = "2.4"
-getrandom = "0.2"
-rusqlite = { version = "0.32", features = ["bundled"] }
-csv = "1"
-
 
 [dev-dependencies]
 tempfile = "3"
+# Used only by the integration tests that exercise the email/csv/search namespaces.
+imap = "2"
+regex = "1"
+glob = "0.3"
+csv = "1"
 
 [profile.release]
 opt-level = 3
