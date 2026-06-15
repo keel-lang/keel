@@ -24,6 +24,7 @@ name = "keel"
 path = "src/main.rs"
 
 [dependencies]
+keel-catalog = { path = "crates/keel-catalog" }
 keel-syntax = { path = "crates/keel-syntax" }
 logos = { workspace = true }
 chumsky = { workspace = true }

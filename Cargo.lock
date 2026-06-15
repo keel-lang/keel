@@ -1176,6 +1176,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "keel-catalog"
+version = "0.2.1"
+
+[[package]]
 name = "keel-lang"
 version = "0.2.1"
 dependencies = [
@@ -1191,6 +1195,7 @@ dependencies = [
  "getrandom 0.2.17",
  "glob",
  "imap",
+ "keel-catalog",
  "keel-syntax",
  "lettre",
  "logos",
