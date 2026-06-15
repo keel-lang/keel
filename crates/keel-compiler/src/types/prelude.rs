@@ -64,10 +64,10 @@ pub(crate) fn ty_from_spec(spec: TySpec) -> Ty {
 
 /// Return an iterator over the complete built-in namespace method catalog.
 ///
-/// Delegates to `runtime::namespaces::catalog()`, which aggregates the
-/// per-module `SPEC` constants co-located with each namespace implementation.
-/// The checker, the LSP completion provider, and the docs generator must all
-/// derive their method lists from this function.
+/// Delegates to `keel_catalog::catalog()`, which aggregates the per-namespace
+/// `SPEC` descriptor tables in the neutral catalog crate. The checker, the LSP
+/// completion provider, and the docs generator must all derive their method
+/// lists from this function.
 pub fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
     keel_catalog::catalog()
 }

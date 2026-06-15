@@ -1191,7 +1191,7 @@ impl Checker<'_, '_> {
     /// agent context, all calls pass — gating is an agent contract.
     ///
     /// Only effectful modules are gated; pure-compute modules pass freely
-    /// (see `runtime::namespaces::module_requires_capability`).
+    /// (see `keel_catalog::module_requires_capability`).
     fn agent_capability_allows(
         &mut self,
         ns: &str,
