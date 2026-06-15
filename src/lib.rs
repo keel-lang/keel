@@ -23,27 +23,25 @@
 pub use keel_syntax::ast;
 pub(crate) use keel_syntax::{formatter, lexer, lint, parser};
 
-// Neutral stdlib catalog (descriptors + capability metadata), extracted into
-// the `keel-catalog` crate. Re-exported so internal modules keep using
-// `crate::builtins` unchanged.
-pub(crate) use keel_catalog::builtins;
+// Compiler middle-end (HIR, type checker, module graph, IDE queries),
+// extracted into the `keel-compiler` crate. Re-exported under their original
+// paths so internal modules keep using `crate::types`, `crate::hir`,
+// `crate::ide`, and `crate::modules` unchanged.
+pub use keel_compiler::modules;
+pub(crate) use keel_compiler::{hir, ide, types};
 
 // ── Public embedding API ─────────────────────────────────────────────────────
 pub mod catalog;
 pub mod diagnostics;
-pub mod modules;
 pub mod session;
 
 // ── Internal implementation modules ─────────────────────────────────────────
 pub(crate) mod cli;
-pub(crate) mod hir;
-pub(crate) mod ide;
 pub(crate) mod interpreter;
 pub(crate) mod lsp;
 pub(crate) mod pipeline;
 pub(crate) mod repl;
 pub(crate) mod runtime;
-pub(crate) mod types;
 pub(crate) mod vm;
 
 /// Entry point for the `keel` CLI binary.

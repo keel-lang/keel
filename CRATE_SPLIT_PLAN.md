@@ -62,8 +62,14 @@ Shared dep versions via `[workspace.dependencies]`.
    `spec_matches_installed_methods` test stays in runtime (checks SPEC vs `namespace()` impls);
    `catalog_has_no_duplicate_entries` moved to keel-catalog with the data.
    Note: typed-error helpers (`make_typed_report`) were **not** in the cycle and stayed in runtime.
-3. **keel-compiler** — hir, types, modules, diagnostics. Now unblocked (types depends only on
-   keel-syntax + keel-catalog). This is the phase where the broken cycle is *compiler-enforced*.
+3. **[done]** **keel-compiler** — hir + types (checker + diagnostics) + `ide` + `modules`, moved
+   as one atomic unit (the four are mutually cyclic; the cycles are intra-crate, which is fine).
+   Cut the lone `modules → session` edge by inlining `parse_source` via keel-syntax. Re-export
+   trick kept all 107 internal `crate::ast`/`crate::builtins` refs unchanged; only 8 `pub(crate)`
+   items needed widening to `pub` (one E0446 cascade: `ModuleMembers`). **Gate met:** keel-compiler
+   builds standalone depending only on keel-syntax + keel-catalog + miette + logos — so the
+   types→runtime decoupling is now *compiler-enforced*. Editing the type checker rebuilds in
+   ~1.1s and recompiles **zero** heavy deps.
 4. **keel-runtime** — interpreter, runtime, pipeline. Highest risk (Value/RuntimeContext/events).
 5. **re-measure**, then optionally peel `keel-stdlib-io`, `keel-lsp`, `keel-cli`.
 

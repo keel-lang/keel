@@ -126,7 +126,7 @@ impl Ty {
 ///
 /// Centralises the list so `type_at`, `build_semantic_index`, and any future
 /// consumer share one authoritative source.
-pub(crate) const PRIMITIVE_TYPE_LABELS: &[(&str, &str)] = &[
+pub const PRIMITIVE_TYPE_LABELS: &[(&str, &str)] = &[
     ("int", "type `int`"),
     ("float", "type `float`"),
     ("str", "type `str`"),
@@ -142,7 +142,7 @@ pub(crate) const PRIMITIVE_TYPE_LABELS: &[(&str, &str)] = &[
 ];
 
 /// Return the hover label for a primitive type name, or `None` if not a primitive.
-pub(crate) fn prelude_label_for(name: &str) -> Option<&'static str> {
+pub fn prelude_label_for(name: &str) -> Option<&'static str> {
     PRIMITIVE_TYPE_LABELS
         .iter()
         .find(|(n, _)| *n == name)

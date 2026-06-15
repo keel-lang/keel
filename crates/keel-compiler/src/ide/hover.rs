@@ -53,7 +53,7 @@ pub fn type_at(text: &str, offset: usize) -> Option<String> {
 ///   sites in the semantic index fast path).
 /// - `name_types`: name → type-description (scope-unaware fallback for
 ///   declaration sites where the HIR has no reference entry).
-pub(crate) fn build_types(
+pub fn build_types(
     program: &Program,
     hir: &Hir<'_>,
 ) -> (HashMap<SymbolId, String>, HashMap<String, String>) {

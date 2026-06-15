@@ -75,7 +75,7 @@ pub fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
 /// Look up a built-in method by namespace and name.
 ///
 /// Returns `None` if the pair is not registered in the catalog.
-pub(crate) fn catalog_method(namespace: &str, name: &str) -> Option<&'static BuiltinMethod> {
+pub fn catalog_method(namespace: &str, name: &str) -> Option<&'static BuiltinMethod> {
     keel_catalog::catalog().find(|m| m.namespace == namespace && m.name == name)
 }
 
@@ -204,7 +204,7 @@ static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
 /// identifiers like `text` or `session` are not misclassified as modules.
 ///
 /// Result is computed once and cached for the lifetime of the process.
-pub(crate) fn namespace_names() -> &'static HashSet<String> {
+pub fn namespace_names() -> &'static HashSet<String> {
     &NAMESPACE_NAMES
 }
 
@@ -342,7 +342,8 @@ mod tests {
         use std::collections::HashSet;
         use std::path::Path;
 
-        let docs_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/src");
+        // CARGO_MANIFEST_DIR is crates/keel-compiler; docs/ lives at the repo root.
+        let docs_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/src");
         let mut docs = String::new();
         fn collect(dir: &Path, out: &mut String) {
             if let Ok(entries) = std::fs::read_dir(dir) {

@@ -75,7 +75,7 @@ impl AgentInfo {
 /// What a module-namespace binding exposes, for member checks at
 /// `binding.member` sites.
 #[derive(Debug, Clone)]
-pub(crate) enum ModuleMembers {
+pub enum ModuleMembers {
     /// std module — canonical catalog namespace name.
     Std(String),
     /// Local module — its top-level declaration names by kind.
@@ -158,7 +158,7 @@ pub fn check_program(program: &Program, strict: bool) -> Vec<TypeDiagnostic> {
 /// Returns the HIR (for IDE consumers that need references and symbols),
 /// any import-resolution diagnostics, and the module-member table for
 /// [`check_lowered`].
-pub(crate) fn lower_single(
+pub fn lower_single(
     program: &Program,
 ) -> (Hir<'_>, Vec<TypeDiagnostic>, HashMap<String, ModuleMembers>) {
     let mut diagnostics = Vec::new();
@@ -169,7 +169,7 @@ pub(crate) fn lower_single(
 
 /// Check a program already lowered by [`lower_single`].
 #[must_use]
-pub(crate) fn check_lowered(
+pub fn check_lowered(
     hir: &Hir<'_>,
     members: HashMap<String, ModuleMembers>,
     strict: bool,

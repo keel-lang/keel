@@ -1180,6 +1180,17 @@ name = "keel-catalog"
 version = "0.2.1"
 
 [[package]]
+name = "keel-compiler"
+version = "0.2.1"
+dependencies = [
+ "keel-catalog",
+ "keel-syntax",
+ "logos",
+ "miette",
+ "tempfile",
+]
+
+[[package]]
 name = "keel-lang"
 version = "0.2.1"
 dependencies = [
@@ -1196,6 +1207,7 @@ dependencies = [
  "glob",
  "imap",
  "keel-catalog",
+ "keel-compiler",
  "keel-syntax",
  "lettre",
  "logos",

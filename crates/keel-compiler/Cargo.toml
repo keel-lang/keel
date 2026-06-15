@@ -1,0 +1,16 @@
+[package]
+name = "keel-compiler"
+version = "0.2.1"
+edition = "2024"
+license = "MIT"
+description = "Keel compiler middle-end: HIR, type checker, module graph, and IDE queries."
+publish = false
+
+[dependencies]
+keel-syntax = { path = "../keel-syntax" }
+keel-catalog = { path = "../keel-catalog" }
+miette = { workspace = true }
+logos = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

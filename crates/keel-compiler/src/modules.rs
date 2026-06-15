@@ -17,7 +17,17 @@ use miette::{LabeledSpan, NamedSource, Result};
 
 use crate::ast::{Decl, Program, UseDecl, UseKind, UseSource};
 use crate::lexer::Span;
-use crate::session;
+
+/// Lex and parse a single module's source into a [`Program`].
+///
+/// The compiler crate parses directly via the syntax layer rather than going
+/// through the top-level `session` API, which lives above it.
+fn parse_source(src: &str, name: &str) -> Result<(Program, NamedSource<String>)> {
+    let named = NamedSource::new(name, src.to_string());
+    let tokens = crate::lexer::lex(src, &named)?;
+    let program = crate::parser::parse(tokens, src.len(), &named)?;
+    Ok((program, named))
+}
 
 /// What a `use` declaration resolved to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,7 +120,7 @@ pub fn load_graph(
     entry_name: &str,
     entry_path: Option<&Path>,
 ) -> Result<ModuleGraph> {
-    let (program, source) = session::parse_source(entry_src, entry_name)?;
+    let (program, source) = parse_source(entry_src, entry_name)?;
     let mut loader = Loader {
         modules: Vec::new(),
         by_path: HashMap::new(),
@@ -310,7 +320,7 @@ impl Loader {
             )
         })?;
         let display = canonical.to_string_lossy().to_string();
-        let (program, module_source) = session::parse_source(&text, &display)?;
+        let (program, module_source) = parse_source(&text, &display)?;
         let name = module_name_for(Some(&canonical), &display);
         require_ident(&name, source, span)?;
         let index = self.load_unit(program, module_source, Some(canonical), name)?;
