@@ -17,8 +17,13 @@
 #![warn(clippy::style)]
 #![warn(clippy::complexity)]
 
+// ── Syntax layer (extracted into the `keel-syntax` crate) ────────────────────
+// Re-exported under their original paths so internal modules keep using
+// `crate::ast`, `crate::lexer`, `crate::parser`, etc. unchanged.
+pub use keel_syntax::ast;
+pub(crate) use keel_syntax::{formatter, lexer, lint, parser};
+
 // ── Public embedding API ─────────────────────────────────────────────────────
-pub mod ast;
 pub mod catalog;
 pub mod diagnostics;
 pub mod modules;
@@ -27,14 +32,10 @@ pub mod session;
 // ── Internal implementation modules ─────────────────────────────────────────
 pub(crate) mod builtins;
 pub(crate) mod cli;
-pub(crate) mod formatter;
 pub(crate) mod hir;
 pub(crate) mod ide;
 pub(crate) mod interpreter;
-pub(crate) mod lexer;
-pub(crate) mod lint;
 pub(crate) mod lsp;
-pub(crate) mod parser;
 pub(crate) mod pipeline;
 pub(crate) mod repl;
 pub(crate) mod runtime;

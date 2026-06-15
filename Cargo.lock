@@ -1191,6 +1191,7 @@ dependencies = [
  "getrandom 0.2.17",
  "glob",
  "imap",
+ "keel-syntax",
  "lettre",
  "logos",
  "miette",
@@ -1207,6 +1208,15 @@ dependencies = [
  "thiserror",
  "tokio",
  "tower-lsp",
+]
+
+[[package]]
+name = "keel-syntax"
+version = "0.2.1"
+dependencies = [
+ "chumsky",
+ "logos",
+ "miette",
 ]
 
 [[package]]

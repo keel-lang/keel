@@ -1222,7 +1222,11 @@ mod tests {
     use std::path::PathBuf;
 
     fn project_root() -> PathBuf {
+        // CARGO_MANIFEST_DIR is crates/keel-syntax; the repo root (with examples/)
+        // is two levels up.
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
     }
 
     fn format_source(src: &str) -> String {
