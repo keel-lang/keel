@@ -13,3 +13,6 @@
 #![warn(clippy::complexity)]
 
 pub mod builtins;
+pub mod specs;
+
+pub use specs::{catalog, module_requires_capability};

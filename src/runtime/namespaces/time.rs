@@ -1,36 +1,7 @@
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::args::{expect_str, expect_str_named};
 use crate::runtime::namespace::ns;
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[
-    BuiltinMethod {
-        namespace: "time",
-        name: "now",
-        params: &[],
-        result: BuiltinResult::Fixed(TySpec::Datetime),
-        doc: "Return the current UTC datetime.",
-    },
-    BuiltinMethod {
-        namespace: "time",
-        name: "epoch_ms",
-        params: &[],
-        result: BuiltinResult::Fixed(TySpec::Int),
-        doc: "Return the current Unix timestamp in milliseconds.",
-    },
-    BuiltinMethod {
-        namespace: "time",
-        name: "parse",
-        params: &[BuiltinParam {
-            name: "s",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::NullableDatetime),
-        doc: "Parse a datetime string, returning none on failure.",
-    },
-];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("time", {

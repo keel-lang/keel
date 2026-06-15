@@ -53,9 +53,17 @@ Shared dep versions via `[workspace.dependencies]`.
    All keel-lang tests green (666 + 455 + 147 + …). One fix needed: the formatter idempotency
    test's `project_root()` now ascends two levels to reach repo-root `examples/`. The 7
    `mdbook-keel-catalog` failures are pre-existing (fail identically on clean HEAD), unrelated.
-2. **keel-catalog** — extract namespace descriptor/signature metadata + typed-error helpers.
-   Architectural cleanup; breaks the `prelude -> runtime catalog` cycle.
-3. **keel-compiler** — hir, types, modules, diagnostics.
+2. **[done]** **keel-catalog** — moved the descriptor types (`builtins`), the 23 per-namespace
+   `SPEC` tables, `catalog()`, and the `@tools` capability metadata into a zero-dep leaf crate.
+   Done in two commits: 2a scaffold (move `builtins`, re-export), 2b bulk (SPEC tables +
+   rewire the 4 edges: `types::prelude` ×2, `types::checker::expr`, `interpreter::call`).
+   **Gate met:** `rg 'crate::(runtime|interpreter)' src/types` is empty — the `types → runtime`
+   cycle is broken — and `keel-catalog` builds standalone with no path-deps. The
+   `spec_matches_installed_methods` test stays in runtime (checks SPEC vs `namespace()` impls);
+   `catalog_has_no_duplicate_entries` moved to keel-catalog with the data.
+   Note: typed-error helpers (`make_typed_report`) were **not** in the cycle and stayed in runtime.
+3. **keel-compiler** — hir, types, modules, diagnostics. Now unblocked (types depends only on
+   keel-syntax + keel-catalog). This is the phase where the broken cycle is *compiler-enforced*.
 4. **keel-runtime** — interpreter, runtime, pipeline. Highest risk (Value/RuntimeContext/events).
 5. **re-measure**, then optionally peel `keel-stdlib-io`, `keel-lsp`, `keel-cli`.
 

@@ -1199,7 +1199,7 @@ impl Checker<'_, '_> {
         binding: &str,
         span: crate::lexer::Span,
     ) -> bool {
-        if !crate::runtime::namespaces::module_requires_capability(ns) {
+        if !keel_catalog::module_requires_capability(ns) {
             return true;
         }
         let Some(agent_name) = self.current_agent.clone() else {

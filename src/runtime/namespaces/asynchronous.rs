@@ -3,54 +3,10 @@ use std::future::{Future, poll_fn};
 use std::pin::Pin;
 use std::task::Poll;
 
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{CallArgValue, Namespace};
 use crate::runtime::args::expect_duration;
 use crate::runtime::namespace::{ns, positional};
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[
-    BuiltinMethod {
-        namespace: "async",
-        name: "spawn",
-        params: &[],
-        result: BuiltinResult::Unknown,
-        doc: "Spawn a concurrent task and return a handle.",
-    },
-    BuiltinMethod {
-        namespace: "async",
-        name: "join_all",
-        params: &[BuiltinParam {
-            name: "handles",
-            ty: TySpec::Dynamic,
-            optional: false,
-        }],
-        result: BuiltinResult::Unknown,
-        doc: "Wait for all async task handles to complete.",
-    },
-    BuiltinMethod {
-        namespace: "async",
-        name: "select",
-        params: &[BuiltinParam {
-            name: "handles",
-            ty: TySpec::Dynamic,
-            optional: false,
-        }],
-        result: BuiltinResult::Unknown,
-        doc: "Return the result of the first completed task handle.",
-    },
-    BuiltinMethod {
-        namespace: "async",
-        name: "sleep",
-        params: &[BuiltinParam {
-            name: "duration",
-            ty: TySpec::Duration,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Pause execution for the given duration.",
-    },
-];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("async", {

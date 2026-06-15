@@ -1,15 +1,6 @@
-use crate::builtins::{BuiltinMethod, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::namespace::{ns, positional};
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
-    namespace: "testing",
-    name: "mock",
-    params: &[],
-    result: BuiltinResult::Fixed(TySpec::Unknown),
-    doc: "Create a test-local mock handle for a namespace method.",
-}];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("testing", {

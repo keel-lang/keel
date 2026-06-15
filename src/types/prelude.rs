@@ -4,16 +4,13 @@
 //! # Namespace method catalog
 //!
 //! [`catalog()`] and [`catalog_method()`] delegate to
-//! `runtime::namespaces::catalog()`, which aggregates the per-module
-//! `SPEC` constants co-located with each namespace implementation.
-//! Every surface that needs to know about stdlib methods — the checker,
-//! the LSP, and the docs generator — must derive that knowledge from
-//! [`catalog()`] rather than maintaining its own independent list.
+//! `keel_catalog::catalog()`, which aggregates the per-namespace `SPEC`
+//! descriptor tables. Every surface that needs to know about stdlib methods —
+//! the checker, the LSP, and the docs generator — must derive that knowledge
+//! from [`catalog()`] rather than maintaining its own independent list.
 //!
-//! NOTE: this module depends on `runtime::namespaces`, creating a
-//! `types → runtime` dependency. Within a single crate this compiles
-//! cleanly. A future crate split would require extracting `BuiltinMethod`
-//! to a neutral leaf crate first.
+//! The catalog lives in the neutral `keel-catalog` leaf crate, so the checker
+//! reads the stdlib surface without depending on the runtime.
 //!
 //! To convert a [`TySpec`] into the runtime [`Ty`] used by the checker,
 //! call [`ty_from_spec`].
@@ -72,14 +69,14 @@ pub(crate) fn ty_from_spec(spec: TySpec) -> Ty {
 /// The checker, the LSP completion provider, and the docs generator must all
 /// derive their method lists from this function.
 pub fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
-    crate::runtime::namespaces::catalog()
+    keel_catalog::catalog()
 }
 
 /// Look up a built-in method by namespace and name.
 ///
 /// Returns `None` if the pair is not registered in the catalog.
 pub(crate) fn catalog_method(namespace: &str, name: &str) -> Option<&'static BuiltinMethod> {
-    crate::runtime::namespaces::catalog().find(|m| m.namespace == namespace && m.name == name)
+    keel_catalog::catalog().find(|m| m.namespace == namespace && m.name == name)
 }
 
 // ---------------------------------------------------------------------------

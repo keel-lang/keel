@@ -141,7 +141,7 @@ impl Interpreter {
         // `@tools` may not call any effectful module; `@tools all` is the
         // explicit unrestricted form. Pure-compute modules (json, math, …)
         // and __global (agent lifecycle builtins) are never gated.
-        if crate::runtime::namespaces::module_requires_capability(ns_name)
+        if keel_catalog::module_requires_capability(ns_name)
             && let Some(agent_mutex) = &self.current_agent
         {
             let (allowed, agent_name) = {

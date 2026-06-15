@@ -1,55 +1,7 @@
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::Namespace;
 use crate::interpreter::value::Value;
 use crate::runtime::human;
 use crate::runtime::namespace::{ns, positional};
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[
-    BuiltinMethod {
-        namespace: "io",
-        name: "ask",
-        params: &[BuiltinParam {
-            name: "prompt",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::Str),
-        doc: "Ask the user a question and return the response as a string.",
-    },
-    BuiltinMethod {
-        namespace: "io",
-        name: "confirm",
-        params: &[BuiltinParam {
-            name: "prompt",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::Bool),
-        doc: "Ask the user to confirm a choice and return true or false.",
-    },
-    BuiltinMethod {
-        namespace: "io",
-        name: "notify",
-        params: &[BuiltinParam {
-            name: "message",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Show a notification to the user.",
-    },
-    BuiltinMethod {
-        namespace: "io",
-        name: "show",
-        params: &[BuiltinParam {
-            name: "value",
-            ty: TySpec::Dynamic,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Display a value to the user.",
-    },
-];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("io", {

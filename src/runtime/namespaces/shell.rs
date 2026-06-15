@@ -3,23 +3,10 @@ use std::collections::HashMap;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_str, expect_str_named};
 use crate::runtime::namespace::{make_typed_report, ns};
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
-    namespace: "shell",
-    name: "run",
-    params: &[BuiltinParam {
-        name: "cmd",
-        ty: TySpec::Str,
-        optional: false,
-    }],
-    result: BuiltinResult::Fixed(TySpec::Str),
-    doc: "Run a shell command and return its combined stdout.",
-}];
 
 pub(crate) fn namespace() -> Namespace {
     ns!("shell", {

@@ -1,44 +1,7 @@
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_list, expect_str};
 use crate::runtime::namespace::{make_typed_report, ns};
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[
-    BuiltinMethod {
-        namespace: "csv",
-        name: "parse",
-        params: &[BuiltinParam {
-            name: "s",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::ListOfListOfStr),
-        doc: "Parse a CSV string into a list of rows, each row a list of strings.",
-    },
-    BuiltinMethod {
-        namespace: "csv",
-        name: "parse_records",
-        params: &[BuiltinParam {
-            name: "s",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::ListOfMapStrStr),
-        doc: "Parse a CSV string into a list of named-column records.",
-    },
-    BuiltinMethod {
-        namespace: "csv",
-        name: "stringify",
-        params: &[BuiltinParam {
-            name: "rows",
-            ty: TySpec::Dynamic,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::Str),
-        doc: "Serialize a list of rows into a CSV string.",
-    },
-];
 
 fn parse_csv(text: &str) -> miette::Result<Vec<Vec<String>>> {
     let mut rdr = csv::ReaderBuilder::new()

@@ -3,7 +3,7 @@
 //!
 //! The two phases that verify `impl Interface for Type` declarations — the
 //! static checker in [`crate::types::checker`] and the runtime registration
-//! pass in [`crate::interpreter::decl`] — used to maintain separate string-
+//! pass in the interpreter's `decl` module — used to maintain separate string-
 //! serialisation helpers that had already diverged (different `Map` formats,
 //! different wildcard handling for `Struct`/`Generic` return types).  This
 //! module replaces both with a single typed path:

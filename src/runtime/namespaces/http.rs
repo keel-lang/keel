@@ -1,73 +1,11 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{Namespace, RuntimeErrorKind};
 use crate::runtime::args::{expect_int, expect_str, expect_str_value};
 use crate::runtime::convert::value_to_json;
 use crate::runtime::namespace::{find_arg, make_typed_report, ns, positional};
-
-pub(crate) const SPEC: &[BuiltinMethod] = &[
-    BuiltinMethod {
-        namespace: "http",
-        name: "get",
-        params: &[BuiltinParam {
-            name: "url",
-            ty: TySpec::Str,
-            optional: false,
-        }],
-        result: BuiltinResult::Unknown,
-        doc: "Make an HTTP GET request and return an HttpResponse.",
-    },
-    BuiltinMethod {
-        namespace: "http",
-        name: "post",
-        params: &[
-            BuiltinParam {
-                name: "url",
-                ty: TySpec::Str,
-                optional: false,
-            },
-            BuiltinParam {
-                name: "body",
-                ty: TySpec::Str,
-                optional: true,
-            },
-        ],
-        result: BuiltinResult::Unknown,
-        doc: "Make an HTTP POST request and return an HttpResponse.",
-    },
-    BuiltinMethod {
-        namespace: "http",
-        name: "request",
-        params: &[
-            BuiltinParam {
-                name: "method",
-                ty: TySpec::Str,
-                optional: false,
-            },
-            BuiltinParam {
-                name: "url",
-                ty: TySpec::Str,
-                optional: false,
-            },
-        ],
-        result: BuiltinResult::Unknown,
-        doc: "Make an HTTP request with full control and return an HttpResponse.",
-    },
-    BuiltinMethod {
-        namespace: "http",
-        name: "serve",
-        params: &[BuiltinParam {
-            name: "port",
-            ty: TySpec::Int,
-            optional: false,
-        }],
-        result: BuiltinResult::Fixed(TySpec::None_),
-        doc: "Start an HTTP server on the given port.",
-    },
-];
 
 static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 

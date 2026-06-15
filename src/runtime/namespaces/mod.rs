@@ -1,4 +1,3 @@
-use crate::builtins::BuiltinMethod;
 use crate::interpreter::{Host, Namespace};
 
 pub(crate) mod agent;
@@ -26,58 +25,12 @@ mod testing;
 mod time;
 pub(crate) mod uuid;
 
-/// Return an iterator over every [`BuiltinMethod`] declared across all
-/// runtime namespaces. This is the authoritative runtime catalog — the
-/// checker's `types::prelude::catalog()` delegates here.
-///
-/// NOTE: `types::prelude` depends on this function, creating a
-/// `types → runtime` dependency. Within a single crate this compiles
-/// cleanly. A future crate split would require extracting `BuiltinMethod`
-/// to a neutral leaf crate first.
-pub(crate) fn catalog() -> impl Iterator<Item = &'static BuiltinMethod> {
-    const ALL: &[&[BuiltinMethod]] = &[
-        ai::SPEC,
-        asynchronous::SPEC,
-        cache::SPEC,
-        control::SPEC,
-        crypto::SPEC,
-        csv::SPEC,
-        db::SPEC,
-        email::SPEC,
-        env::SPEC,
-        file::SPEC,
-        http::SPEC,
-        io::SPEC,
-        json::SPEC,
-        log::SPEC,
-        math::SPEC,
-        memory::SPEC,
-        random::SPEC,
-        schedule::SPEC,
-        search::SPEC,
-        shell::SPEC,
-        testing::SPEC,
-        time::SPEC,
-        uuid::SPEC,
-    ];
-    ALL.iter().flat_map(|s| s.iter())
-}
-
-/// Modules whose entry points exercise authority over the world outside the
-/// process — network, filesystem, subprocesses, external services, ambient
-/// secrets, humans, and LLMs. Only these require an `@tools` capability.
-///
-/// The rule: a capability guards *effects*; pure computation and internal
-/// control flow (json, math, time, schedule, …) are never gated.
-const CAPABILITY_GATED: &[&str] = &[
-    "ai", "io", "http", "email", "file", "shell", "db", "search", "env",
-];
-
-/// Whether calls to `namespace` require an `@tools` capability inside an
-/// agent turn. Consulted by both the type checker and the runtime gate.
-pub(crate) fn module_requires_capability(namespace: &str) -> bool {
-    CAPABILITY_GATED.contains(&namespace)
-}
+// The authoritative stdlib catalog and the `@tools` capability metadata live
+// in the neutral `keel-catalog` crate (`keel_catalog::catalog()` and
+// `keel_catalog::module_requires_capability()`) so the type checker can read
+// the stdlib surface without depending on the runtime. The per-namespace SPEC
+// tables moved there too; `namespace()` installs the matching executable
+// implementations below, cross-checked against the catalog in tests.
 
 pub(crate) fn install(host: &mut dyn Host) {
     for namespace in namespaces() {
@@ -124,30 +77,33 @@ mod tests {
     /// SPEC. This catches additions to one side without the other.
     #[test]
     fn spec_matches_installed_methods_for_all_namespaces() {
-        let pairs: &[(&[crate::builtins::BuiltinMethod], Namespace)] = &[
-            (ai::SPEC, ai::namespace()),
-            (asynchronous::SPEC, asynchronous::namespace()),
-            (cache::SPEC, cache::namespace()),
-            (control::SPEC, control::namespace()),
-            (crypto::SPEC, crypto::namespace()),
-            (csv::SPEC, csv::namespace()),
-            (db::SPEC, db::namespace()),
-            (email::SPEC, email::namespace()),
-            (env::SPEC, env::namespace()),
-            (file::SPEC, file::namespace()),
-            (http::SPEC, http::namespace()),
-            (io::SPEC, io::namespace()),
-            (json::SPEC, json::namespace()),
-            (log::SPEC, log::namespace()),
-            (math::SPEC, math::namespace()),
-            (memory::SPEC, memory::namespace()),
-            (random::SPEC, random::namespace()),
-            (schedule::SPEC, schedule::namespace()),
-            (search::SPEC, search::namespace()),
-            (shell::SPEC, shell::namespace()),
-            (testing::SPEC, testing::namespace()),
-            (time::SPEC, time::namespace()),
-            (uuid::SPEC, uuid::namespace()),
+        let pairs: &[(&[keel_catalog::builtins::BuiltinMethod], Namespace)] = &[
+            (keel_catalog::specs::ai::SPEC, ai::namespace()),
+            (
+                keel_catalog::specs::asynchronous::SPEC,
+                asynchronous::namespace(),
+            ),
+            (keel_catalog::specs::cache::SPEC, cache::namespace()),
+            (keel_catalog::specs::control::SPEC, control::namespace()),
+            (keel_catalog::specs::crypto::SPEC, crypto::namespace()),
+            (keel_catalog::specs::csv::SPEC, csv::namespace()),
+            (keel_catalog::specs::db::SPEC, db::namespace()),
+            (keel_catalog::specs::email::SPEC, email::namespace()),
+            (keel_catalog::specs::env::SPEC, env::namespace()),
+            (keel_catalog::specs::file::SPEC, file::namespace()),
+            (keel_catalog::specs::http::SPEC, http::namespace()),
+            (keel_catalog::specs::io::SPEC, io::namespace()),
+            (keel_catalog::specs::json::SPEC, json::namespace()),
+            (keel_catalog::specs::log::SPEC, log::namespace()),
+            (keel_catalog::specs::math::SPEC, math::namespace()),
+            (keel_catalog::specs::memory::SPEC, memory::namespace()),
+            (keel_catalog::specs::random::SPEC, random::namespace()),
+            (keel_catalog::specs::schedule::SPEC, schedule::namespace()),
+            (keel_catalog::specs::search::SPEC, search::namespace()),
+            (keel_catalog::specs::shell::SPEC, shell::namespace()),
+            (keel_catalog::specs::testing::SPEC, testing::namespace()),
+            (keel_catalog::specs::time::SPEC, time::namespace()),
+            (keel_catalog::specs::uuid::SPEC, uuid::namespace()),
         ];
 
         for (spec, ns) in pairs {
@@ -169,20 +125,6 @@ mod tests {
                 installed_not_in_spec.is_empty(),
                 "{ns_name}: namespace() installs {:?} but SPEC does not declare them",
                 installed_not_in_spec
-            );
-        }
-    }
-
-    #[test]
-    fn catalog_has_no_duplicate_entries() {
-        let mut seen = HashSet::new();
-        for entry in catalog() {
-            let key = format!("{}.{}", entry.namespace, entry.name);
-            assert!(
-                seen.insert(key),
-                "duplicate catalog entry: {}.{}",
-                entry.namespace,
-                entry.name
             );
         }
     }
