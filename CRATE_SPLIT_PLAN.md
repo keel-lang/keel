@@ -70,8 +70,34 @@ Shared dep versions via `[workspace.dependencies]`.
    builds standalone depending only on keel-syntax + keel-catalog + miette + logos — so the
    types→runtime decoupling is now *compiler-enforced*. Editing the type checker rebuilds in
    ~1.1s and recompiles **zero** heavy deps.
-4. **keel-runtime** — interpreter, runtime, pipeline. Highest risk (Value/RuntimeContext/events).
-5. **re-measure**, then optionally peel `keel-stdlib-io`, `keel-lsp`, `keel-cli`.
+4. **[done]** **keel-runtime** — interpreter + runtime moved as one unit (deeply mutually coupled);
+   owns all heavy I/O deps (tokio, reqwest, rusqlite, axum, lettre, imap, native-tls). Only 4
+   consumers (session, pipeline, repl, cli) and **zero** outward edges → **zero visibility
+   widening** (the engine's public surface was already `pub`). Re-export stays `pub(crate)`, so the
+   external embedding API is byte-for-byte unchanged. Gate met: builds standalone; full suite green;
+   `keel run` smoke test interprets correctly across the boundary.
+5. **[done]** **re-measured** (see below). Optional future work: peel `keel-stdlib-io`,
+   `keel-lsp`, `keel-cli` — deferred until timings justify.
+
+## Final crate graph
+
+```
+keel-syntax → keel-catalog → keel-compiler → keel-runtime → keel-lang (facade + binary)
+```
+
+Each arrow is compiler-enforced. keel-catalog is a zero-dep leaf; all heavy I/O deps live only in
+keel-runtime.
+
+## Results vs baseline
+
+| iteration loop | baseline | after split |
+|---|---|---|
+| edit parser → its test build | inside the 6.9s monolith | **0.78s** |
+| edit type checker → its test build | 6.9s (heavy relink) | **1.21s** |
+| heavy deps (rusqlite/reqwest/axum) rebuilt on a parser edit | always (monolith) | **0** |
+
+The single 15.6s `keel-lang` compile unit is gone, replaced by five units that build in parallel and
+recompile independently. Front-end and middle-end iteration is insulated from the heavy runtime deps.
 
 Independent cheap wins (any time, no refactor): feature-gate `rusqlite` `bundled`; `reqwest` -> `rustls`.
 

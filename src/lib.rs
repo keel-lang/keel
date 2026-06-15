@@ -30,6 +30,12 @@ pub(crate) use keel_syntax::{formatter, lexer, lint, parser};
 pub use keel_compiler::modules;
 pub(crate) use keel_compiler::{hir, ide, types};
 
+// Execution engine (interpreter + runtime), extracted into the `keel-runtime`
+// crate. Re-exported as crate-private so `session`, `pipeline`, the REPL, and
+// the CLI keep using `crate::interpreter` and `crate::runtime` unchanged — and
+// so the external embedding API is unchanged (these stay non-public).
+pub(crate) use keel_runtime::{interpreter, runtime};
+
 // ── Public embedding API ─────────────────────────────────────────────────────
 pub mod catalog;
 pub mod diagnostics;
@@ -37,11 +43,9 @@ pub mod session;
 
 // ── Internal implementation modules ─────────────────────────────────────────
 pub(crate) mod cli;
-pub(crate) mod interpreter;
 pub(crate) mod lsp;
 pub(crate) mod pipeline;
 pub(crate) mod repl;
-pub(crate) mod runtime;
 pub(crate) mod vm;
 
 /// Entry point for the `keel` CLI binary.
