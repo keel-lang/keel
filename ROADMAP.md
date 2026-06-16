@@ -156,6 +156,8 @@ v0.2 and later milestones are **deliberately un-planned** until v0.1 ships.
 
 Known technical debt to address post-v0.1:
 
+- ~~**Split `keel-lang` into a layered workspace.**~~ Shipped (#71). The single ~41.6k-LOC crate — the heaviest compile unit in the graph — is now five crates: `keel-syntax` → `keel-catalog` → `keel-compiler` → `keel-runtime` → `keel-lang` (facade + binary). Moving the stdlib catalog into the neutral `keel-catalog` leaf breaks the old `types → runtime` cycle, and the acyclic layering is now compiler-enforced. The embedding API is unchanged — `keel-lang` re-exports `ast`/`modules`/`catalog`/`diagnostics`/`session` under their original paths. Incremental/test-loop build times drop sharply (parser-edit test build ~6.9s → ~0.8s); clean full-build and `lto="fat"` release builds are unchanged by design.
+
 - ~~**Type-tagged struct values.**~~ Shipped alongside v0.1.28. `Value::Struct(TypeName, fields)` is now a distinct variant; impl dispatch is O(1) via direct type-name lookup. Field-set fallback retained for untagged map literals. Ambiguous dispatch between types sharing field names is eliminated.
 
 - ~~**Nominal struct type identity.**~~ Shipped. `Ty::Struct` now carries `name: Option<String>`. Named struct types are nominally distinct in the checker — `type A { x: int }` and `type B { x: int }` are no longer interchangeable. Anonymous struct literals remain structurally compatible with any named type that has the required fields. `impl` dispatch no longer falls back to field-set subset matching for untagged maps; list elements are promoted to their declared struct type at typed assignment boundaries. `describe_ty` now returns the declared name (e.g. `Score`) for named structs in error messages.

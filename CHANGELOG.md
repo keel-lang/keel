@@ -8,7 +8,16 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Container casts (`as list[T]`, `as map[K, V]`, `as (T, …)`) now work at runtime, so parsed JSON narrows cleanly.
+%%TAGLINE%% Container casts narrow parsed JSON at runtime, and the compiler splits into a layered crate workspace.
+
+### Added
+
+- **`examples/trading_bot` — a typed, tested, AI-augmented paper-trading bot.** A multi-file example (indicators, strategy, risk, execution, synthetic + best-effort live market data) showing agents, `@tools` capabilities, cross-module types, `keel test` blocks, and `ai.decide` as a first-class primitive that degrades to a deterministic rule when no model is configured. Run it with `KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/trading_bot/main.keel` (or `KEEL_BOT_LIVE=1` to pull live Binance klines).
+
+### Changed
+
+- **`keel-lang` split into a layered crate workspace.** The single ~41.6k-LOC crate — the heaviest compile unit in the dependency graph, rebuilt on every change — is now five crates that build in parallel and recompile independently: `keel-syntax` (lexer/AST/parser/formatter/linter) → `keel-catalog` (stdlib method descriptors + capability metadata, a zero-dependency leaf) → `keel-compiler` (HIR/type checker/modules/IDE queries) → `keel-runtime` (interpreter + stdlib namespaces, owns the heavy I/O deps) → `keel-lang` (published facade + `keel` binary). Moving the stdlib catalog into the neutral `keel-catalog` leaf also breaks the old `types → runtime` dependency cycle. The embedding API is unchanged: `keel-lang` re-exports `ast`, `modules`, `catalog`, `diagnostics`, and `session` under their original paths, so external consumers need no changes. Editing the parser now rebuilds its tests in ~0.8s instead of inside the ~6.9s monolith, and parser edits no longer rebuild `rusqlite`/`reqwest`/`axum`.
+- **Workspace-level metadata, lints, and dependencies.** Package `version`/`edition`/`license`, the clippy lint policy, and shared dependencies are hoisted to `[workspace.package]`, `[workspace.lints]`, and `[workspace.dependencies]` so they live in one place; `parse_source` and the stdlib `catalog_method` lookup are deduplicated into their owning crates.
 
 ### Fixed
 
@@ -30,6 +39,14 @@ json.parse("42") as list[dynamic]   # raises: cannot cast int to list
 ```
 
   A `dynamic` element/value type (`list[dynamic]`, `map[str, dynamic]`) is a pass-through that only asserts the top-level shape. Map keys pass through unchanged (v0.1 does not coerce keys). Tuples are written with parentheses — `(int, int)`, not `tuple[...]`. `set[T]` remains unwritable as a cast target (`set` is a reserved keyword). This is what made the `examples/trading_bot` live market-data feed fall back to synthetic on every run; it now parses live klines.
+
+### Build
+
+- **CI cancels superseded runs.** The CI workflow now uses a `concurrency` group keyed by workflow and branch (PR `head_ref`, otherwise `ref`) with `cancel-in-progress`, so pushing a newer commit cancels the in-flight run for that branch or PR instead of queueing a duplicate.
+
+### Documentation
+
+- Fixed a broken rustdoc intra-doc link in `keel_lang::run` (`std::process::exit(130)` was not a resolvable item path).
 
 ---
 
