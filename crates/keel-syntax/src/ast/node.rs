@@ -8,7 +8,7 @@
 //! - `.span`  — the source byte range, suitable for diagnostics and IDE hover
 //!
 //! The lexer keeps its own `Spanned<Token> = (Token, Span)` tuple because
-//! chumsky 0.9's stream API consumes that exact shape; the AST layer does not.
+//! chumsky's stream API consumes that exact shape; the AST layer does not.
 //!
 //! # Migration note
 //!

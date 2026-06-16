@@ -6,6 +6,8 @@
 
 use chumsky::prelude::*;
 
+use super::common::KeelExt;
+
 use crate::ast::*;
 use crate::lexer::Token;
 
@@ -26,7 +28,7 @@ pub(super) fn stmt_parser() -> P<Node<Stmt>> {
 /// Used internally by `expr_parser` to break mutual parser-construction
 /// recursion when building trailing-block / lambda-block support.
 pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
-    recursive(|stmt: Recursive<Token, Node<Stmt>, Simple<Token>>| {
+    recursive(|stmt| {
         let block = block_with(stmt.clone().boxed());
 
         // Matches one augmented-assignment operator and returns its BinOp.
@@ -200,24 +202,22 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
         // can only fire once at the outermost level.  If `if_stmt_rec` also
         // parsed `??`, an `else if y {} ?? val` branch would greedily consume
         // the `??` before the outer combinator could see it.
-        let if_chain: P<(SpannedExpr, Block, Option<Block>)> = recursive(
-            |if_chain_rec: Recursive<Token, (SpannedExpr, Block, Option<Block>), Simple<Token>>| {
-                let else_arm = if_chain_rec
-                    .map_with_span(|(cond, then_body, else_body), span| {
-                        vec![Node::new(
-                            Stmt::If {
-                                cond,
-                                then_body,
-                                else_body,
-                            },
-                            span,
-                        )]
-                    })
-                    .or(block.clone())
-                    .boxed();
-                if_body(expr.clone(), block.clone(), else_arm)
-            },
-        )
+        let if_chain: P<(SpannedExpr, Block, Option<Block>)> = recursive(|if_chain_rec| {
+            let else_arm = if_chain_rec
+                .map_with_span(|(cond, then_body, else_body), span| {
+                    vec![Node::new(
+                        Stmt::If {
+                            cond,
+                            then_body,
+                            else_body,
+                        },
+                        span,
+                    )]
+                })
+                .or(block.clone())
+                .boxed();
+            if_body(expr.clone(), block.clone(), else_arm)
+        })
         .boxed();
 
         let if_stmt: P<Stmt> = if_chain
@@ -269,7 +269,7 @@ pub(super) fn stmt_parser_with(expr: P<SpannedExpr>) -> P<Node<Stmt>> {
 
         let try_catch = just(Token::Try)
             .ignore_then(block)
-            .then(catch_clause.repeated().at_least(1))
+            .then(catch_clause.repeated().at_least(1).collect::<Vec<_>>())
             .map(|(body, catches)| Stmt::TryCatch { body, catches })
             .boxed();
 

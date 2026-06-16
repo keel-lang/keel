@@ -3,12 +3,56 @@
 //! All grammar sub-modules import from here rather than duplicating these
 //! building blocks.
 
+use chumsky::input::{Input, MapExtra, MappedInput, Stream};
 use chumsky::prelude::*;
 
 use crate::ast::{Block, Expr, MapLitKey, Node, Pattern, SpannedExpr, Stmt, StringPart, WhenArm};
 use crate::lexer::{Span, Token};
 
-pub(super) type P<T> = BoxedParser<'static, Token, T, Simple<Token>>;
+/// Parser extra: rich errors over the spanned token stream.
+pub(super) type Extra = extra::Err<Rich<'static, Token, SimpleSpan>>;
+/// fn-pointer that splits each `(Token, SimpleSpan)` item into token + span.
+pub(super) type Mapper = fn((Token, SimpleSpan)) -> (Token, SimpleSpan);
+/// Concrete, `'static` token-stream input, kept nameable so every sub-parser can
+/// return a boxed [`P`]. Boxing avoids the macOS linker crash on deeply nested
+/// chumsky types.
+pub(super) type In = MappedInput<
+    'static,
+    Token,
+    SimpleSpan,
+    Stream<std::vec::IntoIter<(Token, SimpleSpan)>>,
+    Mapper,
+>;
+pub(super) type P<T> = Boxed<'static, 'static, In, T, Extra>;
+
+/// Compatibility shim reproducing chumsky 0.9's `map_with_span(|value, span|)`
+/// — where `span` is a `crate::lexer::Span` (`Range<usize>`) — on top of 0.13's
+/// `map_with`. Keeps the grammar's span-arithmetic closures unchanged.
+pub(super) trait KeelExt<T: 'static>:
+    Parser<'static, In, T, Extra> + Sized + 'static
+{
+    fn map_with_span<U: 'static, F>(self, f: F) -> P<U>
+    where
+        F: Fn(T, Span) -> U + 'static,
+    {
+        self.map_with(move |v, e: &mut MapExtra<'static, '_, In, Extra>| {
+            f(v, e.span().into_range())
+        })
+        .boxed()
+    }
+}
+impl<T: 'static, Pa> KeelExt<T> for Pa where Pa: Parser<'static, In, T, Extra> + Sized + 'static {}
+
+/// Build the chumsky input from pre-lexed, spanned tokens. The lexer's
+/// `Range<usize>` spans are converted to chumsky's `SimpleSpan`; `source_len`
+/// supplies the end-of-input span.
+pub(super) fn token_stream(tokens: Vec<(Token, Span)>, source_len: usize) -> In {
+    let eoi: SimpleSpan = (source_len..source_len + 1).into();
+    let mapper: Mapper = |(t, s)| (t, s);
+    let spanned: Vec<(Token, SimpleSpan)> =
+        tokens.into_iter().map(|(t, s)| (t, s.into())).collect();
+    Stream::from_iter(spanned).map(eoi, mapper)
+}
 
 // ---------------------------------------------------------------------------
 // Whitespace / separators
@@ -89,7 +133,7 @@ pub(super) fn map_lit_key() -> P<MapLitKey> {
     let int_key = select! { Token::Integer(s) => s }.try_map(|s, span| {
         s.parse::<i64>()
             .map(MapLitKey::Int)
-            .map_err(|_| Simple::custom(span, format!("integer key `{s}` overflows i64")))
+            .map_err(|_| Rich::custom(span, format!("integer key `{s}` overflows i64")))
     });
     let bool_key = just(Token::True)
         .to(MapLitKey::Bool(true))
@@ -116,7 +160,12 @@ pub(super) fn struct_destruct_pat() -> P<Vec<(String, String)>> {
 
     just(Token::LBrace)
         .ignore_then(newlines())
-        .ignore_then(entry.separated_by(field_sep()).allow_trailing())
+        .ignore_then(
+            entry
+                .separated_by(field_sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .boxed()
@@ -131,7 +180,8 @@ pub(super) fn tuple_destruct_pat() -> P<Vec<String>> {
             ident()
                 .separated_by(just(Token::Comma).then_ignore(newlines()))
                 .at_least(2)
-                .allow_trailing(),
+                .allow_trailing()
+                .collect::<Vec<_>>(),
         )
         .then_ignore(newlines())
         .then_ignore(just(Token::RParen))
@@ -199,7 +249,7 @@ pub(super) fn integer_lit() -> P<i64> {
     select! { Token::Integer(s) => s }
         .try_map(|s, span| {
             s.parse::<i64>()
-                .map_err(|_| Simple::custom(span, format!("integer literal `{s}` overflows i64")))
+                .map_err(|_| Rich::custom(span, format!("integer literal `{s}` overflows i64")))
         })
         .boxed()
 }
@@ -215,7 +265,12 @@ pub(super) fn when_pattern() -> P<Pattern> {
         .or(ident()
             .then(
                 just(Token::LBrace)
-                    .ignore_then(ident().separated_by(just(Token::Comma)).allow_trailing())
+                    .ignore_then(
+                        ident()
+                            .separated_by(just(Token::Comma))
+                            .allow_trailing()
+                            .collect::<Vec<_>>(),
+                    )
                     .then_ignore(just(Token::RBrace))
                     .or_not(),
             )
@@ -224,7 +279,12 @@ pub(super) fn when_pattern() -> P<Pattern> {
                 None => Pattern::Ident(name),
             }))
         .or(just(Token::LBrace)
-            .ignore_then(ident().separated_by(just(Token::Comma)).allow_trailing())
+            .ignore_then(
+                ident()
+                    .separated_by(just(Token::Comma))
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
+            )
             .then_ignore(just(Token::RBrace))
             .map(|fields| Pattern::Struct { fields }))
         .or(plain_string().map_with_span(|s, span| {
@@ -245,7 +305,11 @@ pub(super) fn when_pattern() -> P<Pattern> {
 pub(super) fn block_with(stmt: P<Node<Stmt>>) -> P<Block> {
     just(Token::LBrace)
         .ignore_then(newlines())
-        .ignore_then(stmt.separated_by(sep()).allow_trailing())
+        .ignore_then(
+            stmt.separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .boxed()
@@ -264,6 +328,7 @@ pub(super) fn when_arm(expr: P<SpannedExpr>, block: P<Block>) -> P<WhenArm> {
     when_pattern()
         .separated_by(just(Token::Comma))
         .at_least(1)
+        .collect::<Vec<_>>()
         .then(just(Token::Where).ignore_then(expr).or_not())
         .then_ignore(just(Token::FatArrow))
         .then(arm_body)
@@ -281,7 +346,11 @@ pub(super) fn when_body(expr: P<SpannedExpr>, arm: P<WhenArm>) -> P<(SpannedExpr
         .ignore_then(expr)
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
-        .then(arm.separated_by(newlines()).allow_trailing())
+        .then(
+            arm.separated_by(newlines())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .boxed()

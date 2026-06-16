@@ -5,6 +5,8 @@
 
 use chumsky::prelude::*;
 
+use super::common::KeelExt;
+
 use crate::ast::{Field, Node, TypeExpr};
 use crate::lexer::Token;
 
@@ -20,7 +22,7 @@ pub(super) fn spanned_type_expr() -> P<Node<TypeExpr>> {
 }
 
 pub(super) fn type_expr() -> P<TypeExpr> {
-    recursive(|ty: Recursive<Token, TypeExpr, Simple<Token>>| {
+    recursive(|ty| {
         let named = ident().map(TypeExpr::Named);
 
         let dynamic_ty = just(Token::Ident("dynamic".to_string())).to(TypeExpr::Dynamic);
@@ -33,7 +35,8 @@ pub(super) fn type_expr() -> P<TypeExpr> {
                     .then(ty.clone().map_with_span(Node::new))
                     .map(|(n, t)| Field { name: n, ty: t })
                     .separated_by(field_sep())
-                    .allow_trailing(),
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
@@ -43,7 +46,11 @@ pub(super) fn type_expr() -> P<TypeExpr> {
         // Parsed as a single branch to avoid backtracking: consume the param
         // list once, then branch on whether `->` follows.
         let paren_ty = just(Token::LParen)
-            .ignore_then(ty.clone().separated_by(just(Token::Comma)))
+            .ignore_then(
+                ty.clone()
+                    .separated_by(just(Token::Comma))
+                    .collect::<Vec<_>>(),
+            )
             .then_ignore(just(Token::RParen))
             .then(just(Token::Arrow).ignore_then(ty.clone()).or_not())
             .map(|(params, ret)| match ret {
@@ -54,7 +61,11 @@ pub(super) fn type_expr() -> P<TypeExpr> {
         choice((dynamic_ty, named, struct_ty, paren_ty))
             .then(
                 just(Token::LBracket)
-                    .ignore_then(ty.separated_by(just(Token::Comma)).at_least(1))
+                    .ignore_then(
+                        ty.separated_by(just(Token::Comma))
+                            .at_least(1)
+                            .collect::<Vec<_>>(),
+                    )
                     .then_ignore(just(Token::RBracket))
                     .or_not(),
             )

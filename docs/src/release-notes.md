@@ -25,6 +25,13 @@ paths. The win is build locality: editing the parser rebuilds its tests in
 ~0.8s instead of inside the ~6.9s monolith, and no longer rebuilds
 `rusqlite`/`reqwest`/`axum`. Clean full builds and release builds are unchanged.
 
+### Parser upgraded to chumsky 0.13
+
+`keel-syntax` moved from chumsky 0.9 to the current stable 0.13 parser API. This
+is purely internal: the parser's public entry points, the grammar it accepts,
+and its error and recovery diagnostics are all unchanged. If you embed
+`keel-lang`, nothing changes.
+
 ### Container casts work at runtime
 
 `as list[T]`, `as map[K, V]`, and tuple casts `as (T1, T2, …)` now execute. The
