@@ -6,6 +6,13 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Cancel an in-progress run when a newer commit is pushed to the same branch
+# (or PR). `head_ref` is the source branch on pull_request events; on push it
+# is empty, so we fall back to `ref` (e.g. refs/heads/main).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
