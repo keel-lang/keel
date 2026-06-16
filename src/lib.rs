@@ -52,8 +52,8 @@ pub(crate) mod vm;
 ///
 /// # Process exit
 ///
-/// Spawns a background task that calls [`std::process::exit(130)`] when
-/// Ctrl-C is received. This is intentional for the interactive CLI but
+/// Spawns a background task that calls [`std::process::exit`] with status
+/// `130` when Ctrl-C is received. This is intentional for the interactive CLI but
 /// means this function should **not** be called from a host binary that
 /// needs to manage its own SIGINT lifecycle.
 pub async fn run() -> miette::Result<()> {
