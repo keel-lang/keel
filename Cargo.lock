@@ -1176,14 +1176,52 @@ dependencies = [
 ]
 
 [[package]]
+name = "keel-catalog"
+version = "0.2.1"
+
+[[package]]
+name = "keel-compiler"
+version = "0.2.1"
+dependencies = [
+ "keel-catalog",
+ "keel-syntax",
+ "logos",
+ "miette",
+ "tempfile",
+]
+
+[[package]]
 name = "keel-lang"
+version = "0.2.1"
+dependencies = [
+ "clap",
+ "colored",
+ "csv",
+ "glob",
+ "imap",
+ "keel-catalog",
+ "keel-compiler",
+ "keel-runtime",
+ "keel-syntax",
+ "logos",
+ "miette",
+ "parking_lot",
+ "regex",
+ "rustyline",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower-lsp",
+]
+
+[[package]]
+name = "keel-runtime"
 version = "0.2.1"
 dependencies = [
  "axum",
  "chrono",
  "chrono-tz",
- "chumsky",
- "clap",
  "colored",
  "csv",
  "fastrand",
@@ -1191,22 +1229,31 @@ dependencies = [
  "getrandom 0.2.17",
  "glob",
  "imap",
+ "keel-catalog",
+ "keel-compiler",
+ "keel-syntax",
  "lettre",
- "logos",
  "miette",
  "native-tls",
  "parking_lot",
  "regex",
  "reqwest",
  "rusqlite",
- "rustyline",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
  "thiserror",
  "tokio",
- "tower-lsp",
+]
+
+[[package]]
+name = "keel-syntax"
+version = "0.2.1"
+dependencies = [
+ "chumsky",
+ "logos",
+ "miette",
 ]
 
 [[package]]

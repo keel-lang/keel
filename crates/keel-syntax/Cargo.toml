@@ -1,0 +1,15 @@
+[package]
+name = "keel-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Keel front-end: lexer, AST, parser, formatter, and linter."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+logos = { workspace = true }
+chumsky = { workspace = true }
+miette = { workspace = true }

@@ -1,0 +1,64 @@
+# Execution (SIMULATED — no real order ever leaves this process) and the
+# functional portfolio accounting that follows each fill.
+
+use std/crypto
+use std/time
+use std/uuid
+use OrderSide, TradeRecord, TradingDecision, Portfolio from "./types.keel"
+
+task sign_payload(side: OrderSide, qty: float, price: float) -> str {
+  payload = "side={side}&qty={qty:.8f}&price={price:.2f}&ts={time.epoch_ms()}"
+  crypto.hmac_sha256(payload, key: "paper-trading-secret")
+}
+
+task simulate_fill(decision: TradingDecision, side: OrderSide, qty: float, price: float) -> TradeRecord {
+  base: TradeRecord = {
+    id:          "{uuid.v4()}",
+    side:        side,
+    quantity:    qty,
+    price:       price,
+    signature:   "",
+    executed_at: "{time.now()}",
+    rationale:   decision.rationale,
+  }
+  # Model a touch of slippage: buys fill a hair high, sells a hair low.
+  slip = if side == OrderSide.buy { 1.0005 } else { 0.9995 }
+  fill = price * slip
+  # Struct spread update: enrich the record without restating every field.
+  { ...base, price: fill, signature: sign_payload(side, qty, fill) }
+}
+
+# Pure, functional portfolio accounting. Each fill yields a NEW snapshot.
+task apply_fill(pf: Portfolio, rec: TradeRecord, mark: float) -> Portfolio {
+  updated = when rec.side {
+    buy => {
+      cost = rec.quantity * rec.price
+      { ...pf, cash: pf.cash - cost, position: pf.position + rec.quantity, entry_price: rec.price }
+    }
+    sell => {
+      proceeds = rec.quantity * rec.price
+      pnl = (rec.price - pf.entry_price) * rec.quantity
+      { ...pf, cash: pf.cash + proceeds, position: pf.position - rec.quantity,
+               realized_pnl: pf.realized_pnl + pnl }
+    }
+  }
+  equity = updated.cash + updated.position * mark
+  if equity > updated.peak_equity { { ...updated, peak_equity: equity } } else { updated }
+}
+
+test "fills update the portfolio functionally" {
+  start: Portfolio = { cash: 10000.0, position: 0.0, entry_price: 0.0, realized_pnl: 0.0, peak_equity: 10000.0 }
+  buy: TradeRecord = { id: "t1", side: OrderSide.buy, quantity: 10.0, price: 100.0,
+                       signature: "x", executed_at: "", rationale: "" }
+  after_buy = apply_fill(start, buy, 100.0)
+  assert after_buy.cash == 9000.0
+  assert after_buy.position == 10.0
+  assert after_buy.entry_price == 100.0
+
+  sell: TradeRecord = { id: "t2", side: OrderSide.sell, quantity: 10.0, price: 110.0,
+                        signature: "x", executed_at: "", rationale: "" }
+  after_sell = apply_fill(after_buy, sell, 110.0)
+  assert after_sell.position == 0.0
+  assert after_sell.realized_pnl == 100.0   # (110 - 100) * 10
+  assert after_sell.cash == 10100.0
+}

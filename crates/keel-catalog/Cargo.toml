@@ -1,0 +1,12 @@
+[package]
+name = "keel-catalog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Keel stdlib namespace catalog: neutral method descriptors and capability metadata."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]

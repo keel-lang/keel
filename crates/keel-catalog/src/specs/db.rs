@@ -1,0 +1,15 @@
+//! `db` namespace method descriptors.
+
+use crate::builtins::*;
+
+pub const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
+    namespace: "db",
+    name: "connect",
+    params: &[BuiltinParam {
+        name: "url",
+        ty: TySpec::Str,
+        optional: false,
+    }],
+    result: BuiltinResult::Fixed(TySpec::DbConnection),
+    doc: "Open a database connection and return a DbConnection.",
+}];

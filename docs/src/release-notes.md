@@ -4,6 +4,53 @@
 
 ## Unreleased
 
+### `keel-lang` is now a layered crate workspace
+
+The compiler is split from one ~41.6k-LOC crate into five that build in parallel
+and recompile independently:
+
+```
+keel-syntax → keel-catalog → keel-compiler → keel-runtime → keel-lang
+```
+
+`keel-syntax` holds the lexer/AST/parser/formatter/linter; `keel-catalog` is a
+zero-dependency leaf of stdlib method descriptors and `@tools` capability
+metadata; `keel-compiler` holds HIR, the type checker, modules, and IDE queries;
+`keel-runtime` is the interpreter plus stdlib namespaces (and owns the heavy I/O
+dependencies); `keel-lang` is the published facade and `keel` binary.
+
+**If you embed `keel-lang` as a library, nothing changes** — it re-exports
+`ast`, `modules`, `catalog`, `diagnostics`, and `session` under their original
+paths. The win is build locality: editing the parser rebuilds its tests in
+~0.8s instead of inside the ~6.9s monolith, and no longer rebuilds
+`rusqlite`/`reqwest`/`axum`. Clean full builds and release builds are unchanged.
+
+### Container casts work at runtime
+
+`as list[T]`, `as map[K, V]`, and tuple casts `as (T1, T2, …)` now execute. The
+type checker already accepted them, but the interpreter only implemented scalar
+conversions and raised `cannot cast to List(...)` for any container — so the
+common `json.parse(body) as list[dynamic]` narrowing always failed at runtime.
+
+```keel
+use std/json
+
+rows = json.parse(body) as list[dynamic]   # array → list
+for row in rows {
+  cells = row as list[dynamic]             # nested array → list
+  close = (cells[4] as str).to_float() ?? 0.0
+}
+
+cfg   = json.parse(text) as map[str, dynamic]   # object → map
+point = json.parse("[1,2]") as (int, int)       # array → tuple
+```
+
+A container cast asserts the runtime shape and recurses element-wise, raising on
+a shape or element mismatch — `json.parse("42") as list[dynamic]` raises rather
+than silently passing wrong-shaped data. A `dynamic` element/value type only
+asserts the top-level shape. Tuples use parentheses (`(int, int)`), not
+`tuple[...]`. See [Types → `as T`](./guide/types.md#type-coercions--as-t).
+
 ---
 
 ## v0.2.1 — 2026-06-13

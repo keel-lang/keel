@@ -1,0 +1,40 @@
+[package]
+name = "keel-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Keel execution engine: tree-walking interpreter and stdlib runtime."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+keel-syntax = { path = "../keel-syntax" }
+keel-catalog = { path = "../keel-catalog" }
+keel-compiler = { path = "../keel-compiler" }
+miette = { workspace = true }
+thiserror = "2"
+tokio = { workspace = true }
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+colored = { workspace = true }
+lettre = { version = "0.11", features = ["tokio1-native-tls"] }
+imap = { workspace = true }
+native-tls = "0.2"
+chrono = "0.4"
+chrono-tz = "0.10"
+regex = { workspace = true }
+glob = { workspace = true }
+axum = "0.8"
+sha2 = "0.10"
+fs2 = "0.4"
+parking_lot = { workspace = true }
+fastrand = "2.4"
+getrandom = "0.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+csv = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "keel-compiler"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Keel compiler middle-end: HIR, type checker, module graph, and IDE queries."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+keel-syntax = { path = "../keel-syntax" }
+keel-catalog = { path = "../keel-catalog" }
+miette = { workspace = true }
+logos = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

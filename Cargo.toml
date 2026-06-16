@@ -1,12 +1,39 @@
 [workspace]
-members = ["tools/mdbook-keel-catalog"]
+members = ["crates/*", "tools/mdbook-keel-catalog"]
+
+[workspace.package]
+version = "0.2.1"
+edition = "2024"
+license = "MIT"
+
+[workspace.dependencies]
+logos = "0.14"
+chumsky = "0.9"
+miette = { version = "7", features = ["fancy"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+colored = "2"
+parking_lot = "0.12"
+tempfile = "3"
+imap = "2"
+regex = "1"
+glob = "0.3"
+csv = "1"
+
+[workspace.lints.clippy]
+correctness = "deny"
+suspicious = "warn"
+perf = "warn"
+style = "warn"
+complexity = "warn"
 
 [package]
 name = "keel-lang"
-version = "0.2.1"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 description = "Keel — a programming language where AI agents are first-class citizens"
-license = "MIT"
 repository = "https://github.com/keel-lang/keel"
 homepage = "https://github.com/keel-lang/keel"
 readme = "README.md"
@@ -19,37 +46,34 @@ name = "keel"
 path = "src/main.rs"
 
 [dependencies]
-logos = "0.14"
-chumsky = "0.9"
+keel-catalog = { path = "crates/keel-catalog" }
+keel-compiler = { path = "crates/keel-compiler" }
+keel-runtime = { path = "crates/keel-runtime" }
+keel-syntax = { path = "crates/keel-syntax" }
+# The heavy I/O dependencies (reqwest, rusqlite, axum, lettre, imap, native-tls,
+# …) now live in keel-runtime; keel-lang links them transitively and only
+# declares what its own facade/binary code (CLI, REPL, LSP, session) uses.
+logos = { workspace = true }
 clap = { version = "4", features = ["derive"] }
-miette = { version = "7", features = ["fancy"] }
-thiserror = "2"
-tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-colored = "2"
+miette = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+colored = { workspace = true }
 rustyline = "15"
 tower-lsp = "0.20"
-lettre = { version = "0.11", features = ["tokio1-native-tls"] }
-imap = "2"
-native-tls = "0.2"
-chrono = "0.4"
-chrono-tz = "0.10"
-regex = "1"
-glob = "0.3"
-axum = "0.8"
-sha2 = "0.10"
-fs2 = "0.4"
-parking_lot = "0.12"
-fastrand = "2.4"
-getrandom = "0.2"
-rusqlite = { version = "0.32", features = ["bundled"] }
-csv = "1"
-
+parking_lot = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
+# Used only by the integration tests that exercise the email/csv/search namespaces.
+imap = { workspace = true }
+regex = { workspace = true }
+glob = { workspace = true }
+csv = { workspace = true }
+
+[lints]
+workspace = true
 
 [profile.release]
 opt-level = 3

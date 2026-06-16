@@ -1,0 +1,63 @@
+# Market data: a deterministic synthetic series for the offline demo and tests,
+# plus a best-effort live feed (Binance public klines) that falls back to
+# synthetic on any error.
+
+use std/math
+use std/http
+use std/json
+use std/log
+use std/env
+
+# A deterministic synthetic market that OSCILLATES around a gentle uptrend, so
+# the strategy makes real buy-low / sell-high round trips (and the occasional
+# drawdown). Generated with math so the demo and tests are reproducible offline.
+task synthetic_closes(n: int) -> list[float] {
+  closes: list[float] = []
+  i = 0
+  while i < n {
+    t = i as float
+    cycle = 14.0 * math.sin(t / 6.0)   # ~38-candle period, ±14 amplitude
+    drift = t * 0.12                   # gentle upward bias
+    closes += [120.0 + drift + cycle]
+    i += 1
+  }
+  closes
+}
+
+# Live public market data — Binance hourly klines. Read-only, no API key. The
+# kline payload is a JSON array of arrays; index 4 is the close, sent as a
+# string, which we narrow with `as str` before parsing to float.
+task fetch_live_closes(symbol: str) -> list[float] {
+  url = "https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit=80"
+  body = http.get(url)?.body ?? ""
+  if body == "" { return [] }
+  klines = json.parse(body) as list[dynamic]
+  closes: list[float] = []
+  for row in klines {
+    cells = row as list[dynamic]
+    closes += [(cells[4] as str).to_float() ?? 0.0]
+  }
+  closes
+}
+
+# Choose the data source. `KEEL_BOT_LIVE=1` opts into live data and falls back
+# to synthetic on any network/parse error — the bot never hangs on a bad feed.
+task load_closes(symbol: str) -> list[float] {
+  if (env.get("KEEL_BOT_LIVE") ?? "") == "" {
+    return synthetic_closes(200)
+  }
+  try {
+    live = fetch_live_closes(symbol)
+    if live.len() >= 50 { return live }
+    log.warn("[Data] live feed returned {live.len()} closes (<50) — using synthetic")
+    return synthetic_closes(200)
+  } catch e: Error {
+    log.warn("[Data] live fetch failed: {e.message} — using synthetic")
+    return synthetic_closes(200)
+  }
+}
+
+test "synthetic market is reproducible" {
+  assert synthetic_closes(80).len() == 80
+  assert synthetic_closes(80)[0] == 120.0    # t=0: drift 0, sin 0
+}
