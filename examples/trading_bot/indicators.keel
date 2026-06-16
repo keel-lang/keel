@@ -1,0 +1,115 @@
+# Technical indicators — pure, unit-tested functions over a closing-price series.
+
+use std/math
+use Indicators from "./types.keel"
+
+task sma(prices: list[float], period: int) -> float {
+  n = prices.len()
+  if n < period { return 0.0 }
+  window = prices.skip(n - period)
+  window.sum() / (period as float)
+}
+
+task ema(prices: list[float], period: int) -> float {
+  n = prices.len()
+  if n < period { return 0.0 }
+  k = 2.0 / ((period + 1) as float)
+  # Seed with the SMA of the first `period` samples, then walk forward.
+  value = prices.take(period).sum() / (period as float)
+  for price in prices.skip(period) {
+    value += (price - value) * k     # augmented assignment updates `value`
+  }
+  value
+}
+
+# Wilder-style RSI over the closing series.
+task rsi(prices: list[float], period: int) -> float {
+  n = prices.len()
+  if n < period + 1 { return 50.0 }
+  changes: list[float] = []
+  i = 1
+  while i < n {
+    changes += [prices[i] - prices[i - 1]]
+    i += 1
+  }
+  window = changes.skip(changes.len() - period)
+  gains  = window.filter(c => c > 0.0)
+  losses = window.filter(c => c < 0.0).map(c => c.abs())
+  avg_gain = if gains.is_empty()  { 0.0 } else { gains.sum()  / (gains.len()  as float) }
+  avg_loss = if losses.is_empty() { 0.0 } else { losses.sum() / (losses.len() as float) }
+  if avg_loss == 0.0 { return 100.0 }
+  rs = avg_gain / avg_loss
+  100.0 - (100.0 / (1.0 + rs))
+}
+
+# Rolling standard deviation of simple returns — a volatility proxy that
+# exercises math.sqrt.
+task volatility(prices: list[float], period: int) -> float {
+  n = prices.len()
+  if n < period + 1 { return 0.0 }
+  rets: list[float] = []
+  i = n - period
+  while i < n {
+    prev = prices[i - 1]
+    if prev != 0.0 {
+      rets += [(prices[i] - prev) / prev]
+    }
+    i += 1
+  }
+  if rets.is_empty() { return 0.0 }
+  mean = rets.sum() / (rets.len() as float)
+  acc = 0.0
+  for r in rets {
+    acc += (r - mean) * (r - mean)
+  }
+  math.sqrt(acc / (rets.len() as float))
+}
+
+task trend_label(sma_20: float, sma_50: float) -> str {
+  if sma_20 > sma_50 { "up" }
+  else if sma_20 < sma_50 { "down" }
+  else { "sideways" }
+}
+
+task compute_indicators(closes: list[float]) -> Indicators {
+  ema_12_v = ema(closes, 12)
+  ema_26_v = ema(closes, 26)
+  sma_20_v = sma(closes, 20)
+  sma_50_v = sma(closes, 50)
+  price    = if closes.is_empty() { 0.0 } else { closes[closes.len() - 1] }
+  {
+    price:  price,
+    sma_20: sma_20_v,
+    sma_50: sma_50_v,
+    ema_12: ema_12_v,
+    ema_26: ema_26_v,
+    macd:   ema_12_v - ema_26_v,
+    rsi_14: rsi(closes, 14),
+    vol:    volatility(closes, 14),
+    trend:  trend_label(sma_20_v, sma_50_v),
+  }
+}
+
+test "sma averages the trailing window" {
+  assert sma([2.0, 4.0, 6.0, 8.0], 2) == 7.0
+  assert sma([1.0, 2.0, 3.0], 5) == 0.0       # not enough data → 0.0
+}
+
+test "ema is seeded by sma and tracks the series" {
+  assert ema([5.0, 5.0, 5.0, 5.0], 2) == 5.0  # flat series → EMA equals the level
+}
+
+test "rsi is 100 on a pure uptrend and 50 with no data" {
+  assert rsi([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3) == 100.0
+  assert rsi([1.0, 2.0], 14) == 50.0
+}
+
+test "volatility of a flat series is zero" {
+  assert volatility([4.0, 4.0, 4.0, 4.0, 4.0], 3) == 0.0
+}
+
+test "trend label compares the two moving averages" {
+  assert trend_label(10.0, 5.0) == "up"
+  assert trend_label(5.0, 10.0) == "down"
+  assert trend_label(5.0, 5.0) == "sideways"
+}

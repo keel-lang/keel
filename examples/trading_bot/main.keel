@@ -1,0 +1,245 @@
+# ============================================================================
+# KEEL TRADING BOT — a typed, tested, AI-augmented crypto strategy (modular)
+# ============================================================================
+#
+# A paper-trading backtester. It NEVER places real orders or moves real money:
+# execution is simulated against an in-memory portfolio and a SQLite ledger.
+# The point is to show what a trading bot looks like when the *language* takes
+# agents, capabilities, types, and tests seriously — not to trade live.
+#
+# This is the multi-file version. The program is split into modules, each
+# imported with the same `use` syntax as the stdlib:
+#
+#   types.keel ......... domain types + impl Stringable for Money
+#   indicators.keel .... sma / ema / rsi / volatility / compute_indicators
+#   strategy.keel ...... regime classification, rule engine, ai second opinion
+#   risk.keel .......... position sizing + the RiskVerdict accessors
+#   execution.keel ..... order signing, simulated fills, portfolio accounting
+#   data.keel .......... synthetic + live (best-effort) market data
+#   main.keel .......... this file: the agents and the backtest loop
+#
+#   Run the demo (offline, deterministic synthetic market):
+#     KEEL_LLM=mock KEEL_ONESHOT=1 keel run examples/trading_bot/main.keel
+#
+#   Run the whole test suite (every module's own test blocks):
+#     keel test examples/trading_bot/
+#
+#   Opt into live public market data — best-effort, falls back to synthetic:
+#     KEEL_BOT_LIVE=1 keel run examples/trading_bot/main.keel
+#
+# Why this beats the typical Python (ccxt + pandas + langchain) bot:
+#   • Agents are a language construct — @role/@rules/@tools/state/@memory, not a
+#     framework bolted on. Capabilities are DENY-BY-DEFAULT: an agent touches
+#     the network or LLM only if its @tools list grants it.
+#   • The whole strategy is statically typed end-to-end, across module
+#     boundaries — no `df['close']` stringly-typed columns, no runtime KeyErrors.
+#   • The strategy math is UNIT-TESTED next to the code (`keel test`). Most
+#     Python bots ship with zero tests on the indicators that decide trades.
+#   • AI is a first-class primitive (`ai.decide`) with a typed result, and it
+#     degrades gracefully to a deterministic rule when no model is present.
+
+use std/io
+use std/log
+use std/db
+use std/cache
+use std/memory
+use std/csv
+use std/env
+use std/ai
+
+use "./indicators.keel"
+use "./strategy.keel"
+use "./risk.keel"
+use "./execution.keel"
+use "./data.keel"
+use Portfolio, TradeSignal, OrderSide, Money from "./types.keel"
+
+# ── Agents ──────────────────────────────────────────────────────────────────
+
+type Alert { headline: str, detail: str }
+
+# Async, fire-and-forget alerter. Reacting to a trade event is order-independent
+# work — exactly what agent messaging is for. It has its own role, rules, and
+# (deny-by-default) authority: it may call the LLM, nothing else. Under the mock
+# LLM, `ai.draft` returns none and the `?? alert.detail` fallback prints a plain
+# line, so the agent-to-agent path is visible offline too.
+agent AlertAgent {
+  @role "Trade alerter — turn a portfolio event into one calm, human sentence"
+  @rules [
+    "Be concise — at most two sentences",
+    "Lead with the single most important number"
+  ]
+  @tools [ai]
+
+  state {
+    seen: int = 0
+  }
+
+  on notify(alert: Alert) {
+    self.seen = self.seen + 1
+    # `ai.draft` raises when no model is configured; fall back to the raw detail.
+    try {
+      note = ai.draft("Trading alert — {alert.headline}: {alert.detail}", tone: "urgent but calm")
+             ?? alert.detail
+      log.warn("[ALERT] {alert.headline} — {note}")
+    } catch e: Error {
+      log.warn("[ALERT] {alert.headline} — {alert.detail}")
+    }
+  }
+
+  # Sent once the backtest is done. Arrives after every queued alert (mailboxes
+  # are FIFO), so the agent drains its alerts, then stops — and with no agents
+  # left live, the program exits cleanly even without KEEL_ONESHOT.
+  on shutdown(reason: str) {
+    stop(self)
+  }
+}
+
+# The orchestrator. A backtest must process candles in order to keep P&L
+# correct, so the hot loop is sequential; the order-independent alerting is
+# delegated to AlertAgent. Capabilities are explicit and minimal.
+agent TradingBot {
+  @role "Backtest orchestrator — run the strategy over a price series and report P&L"
+  @tools [io, http, db, ai, env]
+  @memory persistent
+
+  state {
+    symbol:      str       = "BTCUSDT"
+    portfolio:   Portfolio = { cash: 10000.0, position: 0.0, entry_price: 0.0,
+                               realized_pnl: 0.0, peak_equity: 10000.0 }
+    trade_count: int       = 0
+  }
+
+  @on_start {
+    run(AlertAgent)
+    cache.set("bot:halted", "false")
+
+    sym = env.get("KEEL_BOT_SYMBOL") ?? self.symbol
+    closes = data.load_closes(sym)
+    log.info("[Bot] {sym}: {closes.len()} candles — paper-trading from $10,000.00")
+
+    conn = db.connect("sqlite://:memory:")
+    conn.exec("CREATE TABLE trades (
+        id          TEXT PRIMARY KEY,
+        side        TEXT NOT NULL,
+        quantity    REAL NOT NULL,
+        price       REAL NOT NULL,
+        signature   TEXT NOT NULL,
+        executed_at TEXT NOT NULL,
+        rationale   TEXT NOT NULL
+    )")
+
+    n = closes.len()
+    # Walk forward: at step i the strategy sees only candles up to i.
+    for i in 50..n {
+      window = closes.take(i)
+      ind = indicators.compute_indicators(window)
+      price = ind.price
+      cache.set("bot:last_price", "{price}")
+
+      decision = strategy.ai_opinion(ind, strategy.baseline_signal(ind))
+      halted = ((cache.get("bot:halted") ?? "false") as str) == "true"
+      verdict = risk.assess_risk(decision, self.portfolio, price, ind.vol, halted)
+
+      if risk.is_approved(verdict) {
+        side = if decision.signal == TradeSignal.buy { OrderSide.buy } else { OrderSide.sell }
+        qty  = risk.verdict_quantity(verdict)
+        rec  = execution.simulate_fill(decision, side, qty, price)
+
+        conn.exec(
+          "INSERT INTO trades VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [rec.id, "{rec.side}", rec.quantity, rec.price, rec.signature, rec.executed_at, rec.rationale]
+        )
+        prev_realized    = self.portfolio.realized_pnl
+        self.portfolio   = execution.apply_fill(self.portfolio, rec, price)
+        self.trade_count = self.trade_count + 1
+        log.info("[Fill] {rec.side} {rec.quantity:.4f} @ {rec.price:.2f}  ({decision.source}: {decision.rationale})")
+
+        # Hand off the order-independent alerting to AlertAgent. Closing a
+        # position realizes P&L — worth a human-readable note every time.
+        if side == OrderSide.sell {
+          gain = self.portfolio.realized_pnl - prev_realized
+          delegate(AlertAgent.notify, {
+            headline: "Closed position",
+            detail: "Sold {rec.quantity:.4f} @ ${rec.price:.2f} — realized ${gain:.2f}"
+          })
+        }
+
+        equity   = self.portfolio.cash + self.portfolio.position * price
+        drawdown = (self.portfolio.peak_equity - equity) / self.portfolio.peak_equity
+        if drawdown > 0.15 and not halted {
+          cache.set("bot:halted", "true")
+          delegate(AlertAgent.notify, {
+            headline: "Max drawdown breached",
+            detail: "Equity ${equity:.2f}, {drawdown * 100.0:.1f}% off the peak — trading halted."
+          })
+        }
+      }
+    }
+
+    # ── Report ────────────────────────────────────────────────────────────
+    final_price = if n == 0 { 0.0 } else { closes[n - 1] }
+    equity  = self.portfolio.cash + self.portfolio.position * final_price
+    ret_pct = (equity - 10000.0) / 10000.0 * 100.0
+    cash_m: Money = { amount: self.portfolio.cash }
+    eq_m:   Money = { amount: equity }
+    pnl_m:  Money = { amount: self.portfolio.realized_pnl }
+
+    io.show("")
+    io.show("═════════════ BACKTEST REPORT ═════════════")
+    io.show("{"Symbol":<16}{sym}")
+    io.show("{"Candles":<16}{n}")
+    io.show("{"Trades":<16}{self.trade_count}")
+    io.show("{"Cash":<16}{cash_m}")
+    io.show("{"Position":<16}{self.portfolio.position:.4f}")
+    io.show("{"Realized P&L":<16}{pnl_m}")
+    io.show("{"Equity":<16}{eq_m}  ({ret_pct:.2f}%)")
+
+    io.show("───────────── ledger summary ──────────────")
+    summary = conn.query("
+      SELECT side, COUNT(*) AS n, SUM(quantity * price) AS notional
+      FROM trades GROUP BY side ORDER BY side
+    ")
+    for r in summary {
+      s   = r["side"]     as str
+      cnt = r["n"]        as int
+      val = r["notional"] as float
+      io.show("  {s:<6} count={cnt}  notional=${val:.2f}")
+    }
+
+    io.show("───────────── largest fills ───────────────")
+    hist = conn.query("SELECT side, quantity, price, executed_at FROM trades ORDER BY executed_at")
+    # sort_by on real ledger rows: rank by notional, biggest first (negate key).
+    ranked = hist.sort(by: r => 0.0 - (r["quantity"] as float) * (r["price"] as float))
+    for r in ranked.take(3) {
+      s = r["side"]     as str
+      q = r["quantity"] as float
+      p = r["price"]    as float
+      io.show("  {s:<6} {q:.4f} @ ${p:.2f}  = ${q * p:.2f}")
+    }
+
+    io.show("───────────── trades.csv ──────────────────")
+    table: list[list[str]] = [["side", "quantity", "price", "executed_at"]]
+    for r in hist {
+      table += [["{r["side"]}", "{r["quantity"]}", "{r["price"]}", "{r["executed_at"]}"]]
+    }
+    io.show(csv.stringify(table))
+
+    # Agent memory: remember the lifetime track record across runs.
+    prior_pnl = memory.recall("lifetime_pnl")
+    lifetime  = (if prior_pnl == none { 0.0 } else { prior_pnl.to_float() ?? 0.0 }) + self.portfolio.realized_pnl
+    memory.remember("lifetime_pnl", "{lifetime}")
+    prior_runs = memory.recall("runs")
+    runs = (if prior_runs == none { 0 } else { prior_runs.to_int() ?? 0 }) + 1
+    memory.remember("runs", "{runs}")
+    io.show("────────────────────────────────────────────")
+    io.show("Lifetime realized P&L over {runs} run(s): ${lifetime:.2f}")
+
+    # Tell the alerter to drain and stop, then stop ourselves. With no agents
+    # left live, the program exits on its own — no KEEL_ONESHOT needed.
+    delegate(AlertAgent.shutdown, "backtest complete")
+    stop(self)
+  }
+}
+
+run(TradingBot)

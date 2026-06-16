@@ -1,0 +1,64 @@
+# Domain types shared across the bot. Importers pull what they need by name,
+# e.g. `use Indicators, Portfolio from "./types.keel"`. Importing `Money` also
+# activates its `impl Stringable` program-wide.
+
+type TradeSignal = buy | sell | hold
+type OrderSide   = buy | sell
+
+type Indicators {
+  price:  float
+  sma_20: float
+  sma_50: float
+  ema_12: float
+  ema_26: float
+  macd:   float
+  rsi_14: float
+  vol:    float    # rolling stddev of returns — a volatility proxy
+  trend:  str      # "up" | "down" | "sideways"
+}
+
+type TradingDecision {
+  signal:     TradeSignal
+  confidence: float
+  rationale:  str
+  source:     str   # "ai" when a live model decided, else "rules"
+}
+
+# Rich enum: an approval carries the sized order; a rejection carries the reason.
+type RiskVerdict =
+  | approved { quantity: float, value_usd: float }
+  | rejected { reason: str }
+
+type TradeRecord {
+  id:          str
+  side:        OrderSide
+  quantity:    float
+  price:       float
+  signature:   str
+  executed_at: str
+  rationale:   str
+}
+
+# Immutable portfolio snapshot. Every fill produces a NEW snapshot via spread
+# update — the accounting is purely functional and trivial to reason about.
+type Portfolio {
+  cash:         float
+  position:     float   # units of the asset held
+  entry_price:  float
+  realized_pnl: float
+  peak_equity:  float
+}
+
+# A money value object that formats itself.
+type Money { amount: float }
+
+impl Stringable for Money {
+  task to_str(self) -> str {
+    "${self.amount:.2f}"
+  }
+}
+
+test "money formats itself through Stringable" {
+  m: Money = { amount: 1234.5 }
+  assert "{m}" == "$1234.50"
+}

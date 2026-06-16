@@ -992,7 +992,23 @@ fn apply_cast(val: Value, ty: &TypeExpr) -> Result<Value> {
         TypeExpr::Nullable(inner) => {
             return apply_cast(val, inner);
         }
-        _ => {
+        // Container casts assert the runtime shape and recurse element-wise.
+        // A `dynamic` element/value type short-circuits to pass-through so the
+        // common `json.parse(x) as list[dynamic]` path does no per-element work.
+        TypeExpr::List(inner) => return cast_list(val, inner),
+        TypeExpr::Map(_k, v_inner) => return cast_map(val, v_inner),
+        TypeExpr::Tuple(items) => return cast_tuple(val, items),
+        // `set[T]` is not writable as a cast target in v0.1 (`set` is a reserved
+        // keyword, so the type parser never produces a `Set` here); it joins the
+        // unsupported targets below. Inline struct literals, function types,
+        // generic applications, and the synthetic `SelfType` are likewise never
+        // `as` targets — raise per the SPEC default ("unsupported conversions
+        // raise").
+        TypeExpr::Set(_)
+        | TypeExpr::Struct(_)
+        | TypeExpr::Func(_, _)
+        | TypeExpr::Generic(_, _)
+        | TypeExpr::SelfType => {
             return Err(runtime_error(format!("cannot cast to {ty:?}")));
         }
     };
@@ -1051,6 +1067,70 @@ fn apply_cast(val: Value, ty: &TypeExpr) -> Result<Value> {
         (val, target) => Err(runtime_error(format!(
             "cannot cast {} to {target}",
             val.type_name()
+        ))),
+    }
+}
+
+/// Cast a value to `list[inner]` (sets share the list repr in v0.1, but `set`
+/// is not writable as a cast target, so this is reached only for `list[T]`).
+/// Asserts the value is a list, then recurses the element cast to `inner`.
+fn cast_list(val: Value, inner: &TypeExpr) -> Result<Value> {
+    match val {
+        // `list[dynamic]` is a pass-through — keep the original allocation.
+        Value::List(items) if matches!(inner, TypeExpr::Dynamic) => Ok(Value::List(items)),
+        Value::List(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(apply_cast(item, inner)?);
+            }
+            Ok(Value::List(out))
+        }
+        other => Err(runtime_error(format!(
+            "cannot cast {} to list",
+            other.type_name()
+        ))),
+    }
+}
+
+/// Cast a value to `map[_, v_inner]`. Asserts the value is a map, then recurses
+/// the value cast to `v_inner`. Keys pass through unchanged — v0.1 does not
+/// coerce or re-validate map keys (the JSON case always has string keys).
+fn cast_map(val: Value, v_inner: &TypeExpr) -> Result<Value> {
+    match val {
+        Value::Map(m) if matches!(v_inner, TypeExpr::Dynamic) => Ok(Value::Map(m)),
+        Value::Map(m) => {
+            let mut out = HashMap::with_capacity(m.len());
+            for (k, v) in m {
+                out.insert(k, apply_cast(v, v_inner)?);
+            }
+            Ok(Value::Map(out))
+        }
+        other => Err(runtime_error(format!(
+            "cannot cast {} to map",
+            other.type_name()
+        ))),
+    }
+}
+
+/// Cast a value to `tuple[items...]`. Tuples share the list repr in v0.1, so
+/// the value must be a list of the same arity; each element is cast position-wise.
+fn cast_tuple(val: Value, items: &[TypeExpr]) -> Result<Value> {
+    match val {
+        Value::List(elems) if elems.len() == items.len() => {
+            let mut out = Vec::with_capacity(elems.len());
+            for (elem, ty) in elems.into_iter().zip(items) {
+                out.push(apply_cast(elem, ty)?);
+            }
+            Ok(Value::List(out))
+        }
+        Value::List(elems) => Err(runtime_error(format!(
+            "cannot cast list of {} element(s) to tuple of {}",
+            elems.len(),
+            items.len()
+        ))),
+        other => Err(runtime_error(format!(
+            "cannot cast {} to tuple",
+            other.type_name()
         ))),
     }
 }

@@ -395,8 +395,16 @@ h = 2.hr
 | `str` | `bool` | `"true"` → `true`, `"false"` → `false`; raises otherwise |
 | `Uuid` | `str` | Hyphenated string: `"f47ac10b-..."` |
 | `str` | `Uuid` | Validates UUID format; raises if invalid |
-| `dynamic` | any | Pass-through — used with `ai.prompt(...) as T` and `json.parse` |
+| `list` | `list[T]` | Asserts the value is a list, then recurses the element cast to `T`; raises on a non-list or any element that cannot cast |
+| `map` | `map[K, V]` | Asserts the value is a map, then recurses the value cast to `V`; keys pass through unchanged; raises on a non-map |
+| `list` | `(T1, T2, …)` | Tuple target: asserts a list of the same arity, then casts each element position-wise; raises on a non-list, arity mismatch, or any element that cannot cast |
+| `dynamic` | any | Narrowed at runtime by the rules above — the value must fit, else it raises. This is how `ai.prompt(...) as T` and `json.parse(...) as list[dynamic]` results are narrowed |
 | `none` | any | Raises |
+
+A `dynamic` element/value type (`list[dynamic]`, `map[str, dynamic]`) is a
+pass-through — the inner elements are not re-checked — so a container cast only
+asserts the **top-level** shape. The shape is always checked:
+`json.parse("42") as list[dynamic]` raises because the value is an integer.
 
 ```keel
 1 as float          # 1.0
@@ -406,9 +414,19 @@ h = 2.hr
 "3.14" as float     # 3.14
 "99" as int         # 99
 
+json.parse("[1,2,3]")     as list[dynamic]     # [1, 2, 3]
+json.parse("[1,2,3]")     as list[int]         # recurses each element
+json.parse("{\"a\":1}")   as map[str, dynamic] # {a: 1}
+json.parse("[1,2]")       as (int, int)        # tuple (1, 2)
+
 "abc" as int        # raises: cannot cast "abc" to int
 none as int         # raises: cannot cast none to int
+json.parse("42") as list[dynamic]   # raises: cannot cast int to list
 ```
+
+> A tuple type is written with parentheses — `(int, int)`. There is no
+> `tuple[...]` bracket form: `as tuple[int, int]` (or a wrong-arity `list[int,
+> int]`) parses as a generic type and is not a valid cast target.
 
 ## `typeof(x)`
 

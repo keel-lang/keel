@@ -2143,9 +2143,18 @@ planned.
 | `Uuid` | `str` | Hyphenated string: `"f47ac10b-..."` |
 | `str` | `Uuid` | Validates UUID format; raises if invalid |
 | same type | same type | Identity |
-| `dynamic` | any | Pass-through (runtime narrowing for `ai.prompt`, `json.parse`) |
+| `list` | `list[T]` | Validates the value is a list, then recurses the element cast to `T`; raises on a non-list value or any element that cannot cast |
+| `map` | `map[K, V]` | Validates the value is a map, then recurses the value cast to `V`; keys pass through unchanged (v0.1 does not coerce or re-validate keys); raises on a non-map value |
+| `list` | `(T1, T2, …)` | Tuple target: validates the value is a list of the same arity, then recurses each element cast position-wise; raises on a non-list, an arity mismatch, or any element that cannot cast |
+| `dynamic` | any | Narrowed at runtime by the rules above — the runtime value must fit the target, otherwise it raises. This is how `json.parse` and `ai.prompt` results are narrowed, e.g. `json.parse(body) as list[dynamic]`. |
 | `none` | any | Raises |
 | anything else | | Raises |
+
+A `dynamic` element or value type (`list[dynamic]`, `map[str, dynamic]`) is a
+pass-through — the elements are not re-checked — so narrowing a parsed JSON
+payload to `list[dynamic]` only asserts the top-level shape. Container casts
+always assert the runtime shape: `json.parse("42") as list[dynamic]` raises
+because the value is an integer, not a list.
 
 ```keel
 1 as float          # ok — float
@@ -2154,6 +2163,12 @@ planned.
 "3.14" as float     # ok — 3.14
 "abc" as int        # raises: cannot cast "abc" to int
 none as int         # raises: cannot cast none to int
+
+json.parse("[1,2,3]") as list[dynamic]    # ok — [1, 2, 3]
+json.parse("[1,2,3]") as list[int]        # ok — recurses each element
+json.parse("{\"a\":1}") as map[str, dynamic]  # ok — {a: 1}
+json.parse("[1,2]") as (int, int)        # ok — tuple (1, 2)
+json.parse("42") as list[dynamic]         # raises: cannot cast int to list
 ```
 
 ---

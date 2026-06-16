@@ -8,7 +8,28 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% Container casts (`as list[T]`, `as map[K, V]`, `as (T, …)`) now work at runtime, so parsed JSON narrows cleanly.
+
+### Fixed
+
+- **`as list[T]` / `as map[K, V]` / tuple casts now work at runtime.** The type checker accepted these casts but the interpreter only implemented scalar conversions (`int`/`float`/`str`/`bool`/`Uuid`) and raised `cannot cast to List(...)` for any container target. Narrowing a dynamic value — the common `json.parse(body) as list[dynamic]` path — therefore always failed at runtime. Container casts now assert the runtime shape and recurse element-wise, raising on a shape or element mismatch (never silently passing wrong-shaped data):
+
+```keel
+use std/json
+
+rows = json.parse(body) as list[dynamic]   # array → list
+for row in rows {
+  cells = row as list[dynamic]             # nested array → list
+  close = (cells[4] as str).to_float() ?? 0.0
+}
+
+cfg   = json.parse(text) as map[str, dynamic]   # object → map
+point = json.parse("[1,2]") as (int, int)       # array → tuple
+
+json.parse("42") as list[dynamic]   # raises: cannot cast int to list
+```
+
+  A `dynamic` element/value type (`list[dynamic]`, `map[str, dynamic]`) is a pass-through that only asserts the top-level shape. Map keys pass through unchanged (v0.1 does not coerce keys). Tuples are written with parentheses — `(int, int)`, not `tuple[...]`. `set[T]` remains unwritable as a cast target (`set` is a reserved keyword). This is what made the `examples/trading_bot` live market-data feed fall back to synthetic on every run; it now parses live klines.
 
 ---
 

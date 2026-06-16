@@ -1,0 +1,92 @@
+# Risk management: gate a decision and size the order. Returns a RiskVerdict
+# rich enum — `approved` carries the sized order, `rejected` carries the reason.
+
+use TradingDecision, Portfolio, RiskVerdict, TradeSignal from "./types.keel"
+
+task assess_risk(decision: TradingDecision, pf: Portfolio, price: float, vol: float, halted: bool) -> RiskVerdict {
+  if halted {
+    return RiskVerdict.rejected { reason: "trading halted by drawdown limit" }
+  }
+  if decision.signal == TradeSignal.hold {
+    return RiskVerdict.rejected { reason: "hold — no action" }
+  }
+  if decision.confidence < 0.55 {
+    return RiskVerdict.rejected { reason: "confidence {decision.confidence:.2f} below 0.55 floor" }
+  }
+  equity = pf.cash + pf.position * price
+  if decision.signal == TradeSignal.sell {
+    if pf.position <= 0.0 {
+      return RiskVerdict.rejected { reason: "no position to sell" }
+    }
+    return RiskVerdict.approved { quantity: pf.position, value_usd: pf.position * price }
+  }
+  # Buy sizing: 20% of equity, halved when the market is choppy (high realized
+  # volatility), and never more than available cash.
+  size_pct = if vol > 0.04 { 0.10 } else { 0.20 }
+  budget = equity * size_pct
+  if budget > pf.cash { budget = pf.cash }
+  qty = budget / price
+  if qty <= 0.0 {
+    return RiskVerdict.rejected { reason: "insufficient cash to open a position" }
+  }
+  RiskVerdict.approved { quantity: qty, value_usd: qty * price }
+}
+
+# Accessors over the RiskVerdict rich enum — used by the orchestrator to act on
+# a verdict, and by the tests to inspect one. (Match by bare name when the
+# payload is not needed; destructure with `{ … }` when it is.)
+task is_approved(v: RiskVerdict) -> bool {
+  when v {
+    approved => true
+    rejected => false
+  }
+}
+
+task verdict_quantity(v: RiskVerdict) -> float {
+  when v {
+    approved { quantity, value_usd } => quantity
+    rejected { reason } => 0.0
+  }
+}
+
+task verdict_value(v: RiskVerdict) -> float {
+  when v {
+    approved { quantity, value_usd } => value_usd
+    rejected { reason } => 0.0
+  }
+}
+
+task verdict_reason(v: RiskVerdict) -> str {
+  when v {
+    approved { quantity, value_usd } => ""
+    rejected { reason } => reason
+  }
+}
+
+test "risk rejects holds, low confidence, and naked sells" {
+  flat: Portfolio = { cash: 10000.0, position: 0.0, entry_price: 0.0, realized_pnl: 0.0, peak_equity: 10000.0 }
+  hold_dec: TradingDecision = { signal: TradeSignal.hold, confidence: 0.9, rationale: "", source: "rules" }
+  assert verdict_reason(assess_risk(hold_dec, flat, 100.0, 0.01, false)) == "hold — no action"
+
+  weak: TradingDecision = { signal: TradeSignal.buy, confidence: 0.4, rationale: "", source: "rules" }
+  assert not is_approved(assess_risk(weak, flat, 100.0, 0.01, false))
+
+  sell_dec: TradingDecision = { signal: TradeSignal.sell, confidence: 0.9, rationale: "", source: "rules" }
+  assert verdict_reason(assess_risk(sell_dec, flat, 100.0, 0.01, false)) == "no position to sell"
+}
+
+test "risk sizes a buy by equity and volatility" {
+  flat: Portfolio = { cash: 10000.0, position: 0.0, entry_price: 0.0, realized_pnl: 0.0, peak_equity: 10000.0 }
+  buy_dec: TradingDecision = { signal: TradeSignal.buy, confidence: 0.8, rationale: "", source: "rules" }
+  calm = assess_risk(buy_dec, flat, 100.0, 0.01, false)
+  assert verdict_value(calm) == 2000.0       # 20% of 10k equity in a calm market
+  assert verdict_quantity(calm) == 20.0      # 2000 / 100
+  choppy = assess_risk(buy_dec, flat, 100.0, 0.09, false)
+  assert verdict_value(choppy) == 1000.0     # halved to 10% when volatile
+}
+
+test "risk halts when the drawdown flag is set" {
+  flat: Portfolio = { cash: 10000.0, position: 0.0, entry_price: 0.0, realized_pnl: 0.0, peak_equity: 10000.0 }
+  buy_dec: TradingDecision = { signal: TradeSignal.buy, confidence: 0.8, rationale: "", source: "rules" }
+  assert verdict_reason(assess_risk(buy_dec, flat, 100.0, 0.01, true)) == "trading halted by drawdown limit"
+}

@@ -4,6 +4,32 @@
 
 ## Unreleased
 
+### Container casts work at runtime
+
+`as list[T]`, `as map[K, V]`, and tuple casts `as (T1, T2, …)` now execute. The
+type checker already accepted them, but the interpreter only implemented scalar
+conversions and raised `cannot cast to List(...)` for any container — so the
+common `json.parse(body) as list[dynamic]` narrowing always failed at runtime.
+
+```keel
+use std/json
+
+rows = json.parse(body) as list[dynamic]   # array → list
+for row in rows {
+  cells = row as list[dynamic]             # nested array → list
+  close = (cells[4] as str).to_float() ?? 0.0
+}
+
+cfg   = json.parse(text) as map[str, dynamic]   # object → map
+point = json.parse("[1,2]") as (int, int)       # array → tuple
+```
+
+A container cast asserts the runtime shape and recurses element-wise, raising on
+a shape or element mismatch — `json.parse("42") as list[dynamic]` raises rather
+than silently passing wrong-shaped data. A `dynamic` element/value type only
+asserts the top-level shape. Tuples use parentheses (`(int, int)`), not
+`tuple[...]`. See [Types → `as T`](./guide/types.md#type-coercions--as-t).
+
 ---
 
 ## v0.2.1 — 2026-06-13

@@ -1,0 +1,80 @@
+# Strategy: turn indicators into a trading decision. A deterministic
+# mean-reversion rule engine, optionally augmented by an LLM second opinion.
+
+use std/ai
+use Indicators, TradingDecision, TradeSignal from "./types.keel"
+
+# Route on the indicator *shape* with struct patterns + `where` guards.
+task classify_regime(ind: Indicators) -> str {
+  when ind {
+    { rsi_14 } where rsi_14 > 70.0                          => "overbought"
+    { rsi_14 } where rsi_14 < 30.0                          => "oversold"
+    { macd, trend } where macd > 0.0 and trend == "up"      => "bullish"
+    { macd, trend } where macd < 0.0 and trend == "down"    => "bearish"
+    _                                                       => "neutral"
+  }
+}
+
+# Deterministic rule engine — a mean-reversion strategy that fades RSI extremes
+# and stands aside in the middle. This is the testable baseline that runs with
+# no LLM; `ai_opinion` layers a model on top when one is available.
+task baseline_signal(ind: Indicators) -> TradingDecision {
+  regime = classify_regime(ind)
+  if ind.rsi_14 < 35.0 {
+    conf = if ind.rsi_14 < 25.0 { 0.80 } else { 0.65 }
+    return { signal: TradeSignal.buy, confidence: conf,
+             rationale: "RSI {ind.rsi_14:.0f} oversold ({regime}) — mean-reversion long", source: "rules" }
+  }
+  if ind.rsi_14 > 65.0 {
+    conf = if ind.rsi_14 > 75.0 { 0.80 } else { 0.65 }
+    return { signal: TradeSignal.sell, confidence: conf,
+             rationale: "RSI {ind.rsi_14:.0f} overbought ({regime}) — take profit", source: "rules" }
+  }
+  { signal: TradeSignal.hold, confidence: 0.40,
+    rationale: "RSI {ind.rsi_14:.0f} neutral ({regime}) — stand aside", source: "rules" }
+}
+
+# Optional AI second opinion. `ai.decide` returns a dynamic {choice, reason,
+# confidence}. If no model is configured or the LLM is unreachable it raises
+# (Keel never silently fakes a model), so we catch and keep the rule-engine
+# decision — that's the graceful-degradation path the offline demo runs.
+task ai_opinion(ind: Indicators, baseline: TradingDecision) -> TradingDecision {
+  # Only consult the model when we're actually contemplating a trade — no point
+  # spending an LLM round-trip to confirm "do nothing".
+  if baseline.signal == TradeSignal.hold { return baseline }
+  try {
+    verdict = ai.decide(
+      "Crypto TA — price {ind.price:.2f}, RSI {ind.rsi_14:.0f}, MACD {ind.macd:.2f}, trend {ind.trend}. Decide.",
+      options: ["buy", "sell", "hold"]
+    )
+    if verdict == none { return baseline }
+    choice = "{verdict!.choice}"
+    signal = if choice == "buy" { TradeSignal.buy }
+             else if choice == "sell" { TradeSignal.sell }
+             else { TradeSignal.hold }
+    return { signal: signal, confidence: 0.75, rationale: "{verdict!.reason}", source: "ai" }
+  } catch e: Error {
+    return baseline
+  }
+}
+
+# Test helper: build an Indicators with only the fields the strategy reads.
+task mock_ind(rsi: float, macd: float, trend: str) -> Indicators {
+  { price: 100.0, sma_20: 95.0, sma_50: 90.0, ema_12: 0.0, ema_26: 0.0,
+    macd: macd, rsi_14: rsi, vol: 0.01, trend: trend }
+}
+
+test "regime routes on indicator fields" {
+  assert classify_regime(mock_ind(80.0,  1.0, "up"))   == "overbought"
+  assert classify_regime(mock_ind(20.0, -1.0, "down")) == "oversold"
+  assert classify_regime(mock_ind(55.0,  1.0, "up"))   == "bullish"
+  assert classify_regime(mock_ind(45.0, -1.0, "down")) == "bearish"
+  assert classify_regime(mock_ind(50.0,  0.0, "sideways")) == "neutral"
+}
+
+test "baseline fades RSI extremes and holds the middle" {
+  assert baseline_signal(mock_ind(80.0, 1.0, "up")).signal    == TradeSignal.sell   # overbought
+  assert baseline_signal(mock_ind(20.0, -1.0, "down")).signal == TradeSignal.buy    # oversold
+  assert baseline_signal(mock_ind(55.0, 1.0, "up")).signal    == TradeSignal.hold   # neutral middle
+  assert baseline_signal(mock_ind(50.0, 0.0, "sideways")).signal == TradeSignal.hold
+}

@@ -478,3 +478,215 @@ run(A)
     assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
     assert!(stdout.contains("present"), "stdout:\n{stdout}");
 }
+
+// ---------------------------------------------------------------------------
+// Container casts: list / map / tuple narrowing of dynamic (json.parse) values
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cast_list_dynamic_narrows_and_nests() {
+    // The json.parse → `as list[dynamic]` → per-row `as list[dynamic]` path:
+    // the same shape the trading-bot live feed parses.
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    rows = json.parse("[[1,\"63865.44\"],[2,\"100.0\"]]") as list[dynamic]
+    io.show("rows={rows.len()}")
+    for row in rows {
+      cells = row as list[dynamic]
+      io.show("close={(cells[1] as str).to_float() ?? 0.0}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("rows=2"), "got: {stdout}");
+    assert!(stdout.contains("close=63865.44"), "got: {stdout}");
+    assert!(stdout.contains("close=100"), "got: {stdout}");
+}
+
+#[test]
+fn cast_list_recurses_element_casts() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    nums = json.parse("[1, 2, 3]") as list[int]
+    io.show("n={nums.len()} first={nums[0]}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("n=3 first=1"), "got: {stdout}");
+}
+
+#[test]
+fn cast_list_empty_narrows() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    xs = json.parse("[]") as list[dynamic]
+    io.show("len={xs.len()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("len=0"), "got: {stdout}");
+}
+
+#[test]
+fn cast_non_list_to_list_raises() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    x = json.parse("42") as list[dynamic]
+    io.show("{x.len()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, true);
+    assert!(!ok, "expected runtime error");
+    assert!(stderr.contains("cannot cast int to list"), "got: {stderr}");
+}
+
+#[test]
+fn cast_list_element_mismatch_raises() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    x = json.parse("[\"a\", \"b\"]") as list[int]
+    io.show("{x.len()}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, true);
+    assert!(!ok, "expected runtime error");
+    assert!(stderr.contains("cannot cast"), "got: {stderr}");
+}
+
+#[test]
+fn cast_map_str_dynamic_narrows() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    m = json.parse("\{\"sym\": \"BTC\", \"qty\": 10\}") as map[str, dynamic]
+    io.show("sym={m["sym"]}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("sym=BTC"), "got: {stdout}");
+}
+
+#[test]
+fn cast_non_map_to_map_raises() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    x = json.parse("[1, 2]") as map[str, dynamic]
+    io.show("{x}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, true);
+    assert!(!ok, "expected runtime error");
+    assert!(stderr.contains("cannot cast list to map"), "got: {stderr}");
+}
+
+#[test]
+fn cast_map_value_mismatch_raises() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    x = json.parse("\{\"a\": \"notnum\"\}") as map[str, int]
+    io.show("{x}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, true);
+    assert!(!ok, "expected runtime error");
+    assert!(stderr.contains("cannot cast"), "got: {stderr}");
+}
+
+#[test]
+fn cast_tuple_from_list_narrows() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    t = json.parse("[1, 2]") as (int, int)
+    io.show("t={t}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, true);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("[1, 2]"), "got: {stdout}");
+}
+
+#[test]
+fn cast_tuple_arity_mismatch_raises() {
+    let src = r#"
+use std/io
+use std/json
+agent A {
+  @tools [io]
+  @on_start {
+    t = json.parse("[1, 2, 3]") as (int, int)
+    io.show("{t}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, true);
+    assert!(!ok, "expected runtime error");
+    assert!(stderr.contains("tuple"), "got: {stderr}");
+}
