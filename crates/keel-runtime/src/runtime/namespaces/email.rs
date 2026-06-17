@@ -13,10 +13,9 @@ pub(crate) fn namespace() -> Namespace {
                 eprintln!("  ⚠ Email.fetch: IMAP_HOST/EMAIL_USER/EMAIL_PASS not set — returning empty list");
                 return Ok(Value::List(vec![]));
             };
-            match tokio::task::spawn_blocking(move || email::fetch_emails(&conn)).await {
-                Ok(Ok(emails)) => Ok(Value::List(emails)),
-                Ok(Err(msg)) => Err(email_err("email.fetch", msg)),
-                Err(e) => Err(miette::miette!("email fetch task join error: {e}")),
+            match email::fetch_emails(&conn).await {
+                Ok(emails) => Ok(Value::List(emails)),
+                Err(msg) => Err(email_err("email.fetch", msg)),
             }
         }),
         "send" => |host, args| Box::pin(async move {
@@ -76,10 +75,9 @@ pub(crate) fn namespace() -> Namespace {
             let folder = host.runtime().env.var("IMAP_ARCHIVE_FOLDER")
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| "Archive".to_string());
-            match tokio::task::spawn_blocking(move || email::archive_email(&conn, uid, &folder)).await {
-                Ok(Ok(())) => Ok(Value::None),
-                Ok(Err(msg)) => Err(email_err("email.archive", msg)),
-                Err(e) => Err(miette::miette!("email archive task join error: {e}")),
+            match email::archive_email(&conn, uid, &folder).await {
+                Ok(()) => Ok(Value::None),
+                Err(msg) => Err(email_err("email.archive", msg)),
             }
         }),
     })

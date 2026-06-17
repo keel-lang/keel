@@ -21,8 +21,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 colored = { workspace = true }
 lettre = { version = "0.11", features = ["tokio1-native-tls"] }
-imap = { workspace = true }
-native-tls = "0.2"
+async-imap = { workspace = true }
+async-native-tls = { workspace = true }
+futures = { workspace = true }
 chrono = "0.4"
 chrono-tz = "0.10"
 regex = { workspace = true }

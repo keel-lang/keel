@@ -16,7 +16,9 @@ serde_json = "1"
 colored = "2"
 parking_lot = "0.12"
 tempfile = "3"
-imap = "2"
+async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
+async-native-tls = { version = "0.5", default-features = false, features = ["runtime-tokio"] }
+futures = "0.3"
 regex = "1"
 glob = "0.3"
 csv = "1"
@@ -67,7 +69,6 @@ parking_lot = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 # Used only by the integration tests that exercise the email/csv/search namespaces.
-imap = { workspace = true }
 regex = { workspace = true }
 glob = { workspace = true }
 csv = { workspace = true }

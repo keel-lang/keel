@@ -59,31 +59,49 @@ fn config_str<'a>(value: &'a Value, field: &str) -> Result<&'a str, String> {
     }
 }
 
-/// Fetch unread emails via IMAP. Returns a list of email maps.
-pub fn fetch_emails(conn: &EmailConnection) -> Result<Vec<Value>, String> {
-    let tls = native_tls::TlsConnector::builder()
-        .build()
-        .map_err(|e| format!("TLS error: {e}"))?;
-
-    let client = imap::connect((&conn.imap_host as &str, 993), &conn.imap_host, &tls)
+/// Open an authenticated IMAP session over TLS and `SELECT INBOX`.
+async fn open_inbox(conn: &EmailConnection) -> Result<ImapSession, String> {
+    let tcp = tokio::net::TcpStream::connect((conn.imap_host.as_str(), 993))
+        .await
         .map_err(|e| format!("IMAP connect failed ({}): {}", conn.imap_host, e))?;
+
+    let tls_stream = async_native_tls::TlsConnector::new()
+        .connect(conn.imap_host.as_str(), tcp)
+        .await
+        .map_err(|e| format!("IMAP TLS failed ({}): {}", conn.imap_host, e))?;
+
+    let client = async_imap::Client::new(tls_stream);
 
     let mut session = client
         .login(&conn.user, &conn.pass)
-        .map_err(|e| format!("IMAP login failed: {}", e.0))?;
+        .await
+        .map_err(|(e, _client)| format!("IMAP login failed: {e}"))?;
 
     session
         .select("INBOX")
+        .await
         .map_err(|e| format!("IMAP select INBOX: {e}"))?;
+
+    Ok(session)
+}
+
+type ImapSession = async_imap::Session<async_native_tls::TlsStream<tokio::net::TcpStream>>;
+
+/// Fetch unread emails via IMAP. Returns a list of email maps.
+pub async fn fetch_emails(conn: &EmailConnection) -> Result<Vec<Value>, String> {
+    use futures::StreamExt;
+
+    let mut session = open_inbox(conn).await?;
 
     let unseen = session
         .uid_search("UNSEEN")
+        .await
         .map_err(|e| format!("IMAP search: {e}"))?;
 
     let mut emails = Vec::new();
 
     if unseen.is_empty() {
-        session.logout().ok();
+        session.logout().await.ok();
         return Ok(emails);
     }
 
@@ -98,18 +116,23 @@ pub fn fetch_emails(conn: &EmailConnection) -> Result<Vec<Value>, String> {
         .collect::<Vec<_>>()
         .join(",");
 
-    let messages = session
-        .uid_fetch(&fetch_range, "(UID RFC822)")
-        .map_err(|e| format!("IMAP fetch: {e}"))?;
+    // The fetch stream borrows `session`; drain it inside a scope so the
+    // borrow is released before we log out.
+    {
+        let mut messages = session
+            .uid_fetch(&fetch_range, "(UID RFC822)")
+            .await
+            .map_err(|e| format!("IMAP fetch: {e}"))?;
 
-    for msg in messages.iter() {
-        if let Some(body) = msg.body() {
-            let parsed = parse_email(body, msg.uid);
-            emails.push(parsed);
+        while let Some(msg) = messages.next().await {
+            let msg = msg.map_err(|e| format!("IMAP fetch: {e}"))?;
+            if let Some(body) = msg.body() {
+                emails.push(parse_email(body, msg.uid));
+            }
         }
     }
 
-    session.logout().ok();
+    session.logout().await.ok();
 
     println!(
         "  {} Fetched {} email(s) via IMAP",
@@ -124,37 +147,44 @@ pub fn fetch_emails(conn: &EmailConnection) -> Result<Vec<Value>, String> {
 /// is read from `IMAP_ARCHIVE_FOLDER` (default `Archive`). If the server
 /// supports the IMAP MOVE extension we use it; otherwise we fall back to
 /// COPY + STORE (\\Deleted) + EXPUNGE.
-pub fn archive_email(conn: &EmailConnection, uid: u32, folder: &str) -> Result<(), String> {
-    let tls = native_tls::TlsConnector::builder()
-        .build()
-        .map_err(|e| format!("TLS error: {e}"))?;
+pub async fn archive_email(conn: &EmailConnection, uid: u32, folder: &str) -> Result<(), String> {
+    use futures::StreamExt;
 
-    let client = imap::connect((&conn.imap_host as &str, 993), &conn.imap_host, &tls)
-        .map_err(|e| format!("IMAP connect failed ({}): {}", conn.imap_host, e))?;
-
-    let mut session = client
-        .login(&conn.user, &conn.pass)
-        .map_err(|e| format!("IMAP login failed: {}", e.0))?;
-
-    session
-        .select("INBOX")
-        .map_err(|e| format!("IMAP select INBOX: {e}"))?;
+    let mut session = open_inbox(conn).await?;
 
     let uid_str = uid.to_string();
-    if session.uid_mv(&uid_str, folder).is_err() {
+    if session.uid_mv(&uid_str, folder).await.is_err() {
         // Fallback for servers without MOVE support.
         session
             .uid_copy(&uid_str, folder)
+            .await
             .map_err(|e| format!("IMAP UID COPY to `{folder}`: {e}"))?;
-        session
-            .uid_store(&uid_str, "+FLAGS (\\Deleted)")
-            .map_err(|e| format!("IMAP UID STORE: {e}"))?;
-        session
-            .expunge()
-            .map_err(|e| format!("IMAP EXPUNGE: {e}"))?;
+
+        // `uid_store` and `expunge` return response streams that are not
+        // `Unpin`; pin and drain them so the commands run to completion.
+        {
+            let store = session
+                .uid_store(&uid_str, "+FLAGS (\\Deleted)")
+                .await
+                .map_err(|e| format!("IMAP UID STORE: {e}"))?;
+            futures::pin_mut!(store);
+            while let Some(item) = store.next().await {
+                item.map_err(|e| format!("IMAP UID STORE: {e}"))?;
+            }
+        }
+        {
+            let expunge = session
+                .expunge()
+                .await
+                .map_err(|e| format!("IMAP EXPUNGE: {e}"))?;
+            futures::pin_mut!(expunge);
+            while let Some(item) = expunge.next().await {
+                item.map_err(|e| format!("IMAP EXPUNGE: {e}"))?;
+            }
+        }
     }
 
-    session.logout().ok();
+    session.logout().await.ok();
 
     println!(
         "  {} Archived email UID {} → {}",
