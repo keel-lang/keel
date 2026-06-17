@@ -5,7 +5,6 @@
 //! literals and escape sequences are handled so inner `{` / `}` do
 //! not prematurely close the outer slot.
 
-use chumsky::Stream;
 use chumsky::prelude::*;
 use logos::Logos;
 
@@ -316,8 +315,7 @@ fn parse_interp_expr(text: &str, source_start: usize) -> Result<SpannedExpr, ()>
         .collect::<Vec<_>>();
 
     let tokens = normalize_newlines(raw);
-    let eoi = source_start + text.len()..source_start + text.len() + 1;
-    let stream = Stream::from_iter(eoi, tokens.into_iter());
+    let stream = super::common::token_stream(tokens, source_start + text.len());
 
     // Require the entire slot to be consumed so that a trailing stray
     // token (e.g. `1 +` — missing right operand) is reported as a parse
@@ -325,5 +323,6 @@ fn parse_interp_expr(text: &str, source_start: usize) -> Result<SpannedExpr, ()>
     expr_parser()
         .then_ignore(end())
         .parse(stream)
+        .into_result()
         .map_err(|_| ())
 }

@@ -9,7 +9,7 @@
 //!
 //! AST nodes use [`Node<T>`] (`.kind` + `.span`) rather than the old
 //! `(T, Span)` tuple.  The lexer continues to expose `Spanned<Token>` tuples
-//! because chumsky 0.9's stream API expects that shape.
+//! because chumsky's stream API expects that shape.
 
 pub mod decl;
 pub mod expr;

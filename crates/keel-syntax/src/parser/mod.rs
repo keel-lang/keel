@@ -1,7 +1,8 @@
 //! Parser for the Keel language.
 //!
-//! Built on [`chumsky`] 0.9. All sub-parsers return [`BoxedParser`] to avoid
-//! the macOS linker crash caused by deeply nested chumsky type parameters.
+//! Built on [`chumsky`] 0.13. All sub-parsers are `.boxed()` (the `P<T>` alias)
+//! to avoid the macOS linker crash caused by deeply nested chumsky type
+//! parameters.
 //! Newlines serve as statement separators — the grammar is newline-sensitive
 //! rather than semicolon-delimited.
 #![allow(clippy::result_large_err)]
@@ -14,7 +15,6 @@ mod stmt;
 mod strings;
 mod types;
 
-use chumsky::Stream;
 use chumsky::prelude::*;
 use miette::NamedSource;
 
@@ -38,11 +38,11 @@ pub fn parse(
     source_len: usize,
     named_src: &NamedSource<String>,
 ) -> miette::Result<Program> {
-    let eoi = source_len..source_len + 1;
-    let stream = Stream::from_iter(eoi, tokens.into_iter());
+    let stream = common::token_stream(tokens, source_len);
 
     decl::program_parser()
         .parse(stream)
+        .into_result()
         .map_err(|errors| error::into_miette(errors, named_src))
 }
 
@@ -56,16 +56,21 @@ pub fn parse_stmts(
     source_len: usize,
     named_src: &NamedSource<String>,
 ) -> miette::Result<Vec<Node<Stmt>>> {
-    let eoi = source_len..source_len + 1;
-    let stream = Stream::from_iter(eoi, tokens.into_iter());
+    let stream = common::token_stream(tokens, source_len);
 
     let parser = newlines()
-        .ignore_then(stmt::stmt_parser().separated_by(sep()).allow_trailing())
+        .ignore_then(
+            stmt::stmt_parser()
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(end());
 
     parser
         .parse(stream)
+        .into_result()
         .map_err(|errors| error::into_miette(errors, named_src))
 }
 
@@ -907,6 +912,22 @@ task t() {
         assert!(
             label_count >= 2,
             "expected ≥2 error labels for two broken tasks, got {label_count}"
+        );
+    }
+
+    #[test]
+    fn parse_recovery_does_not_swallow_following_valid_decl() {
+        // Recovering from a broken decl must stop at the next decl boundary and
+        // leave the following valid decl parseable — so a single broken decl
+        // yields exactly one error, not a cascade from eating the good one.
+        let src = "task a() {\n  x =\n}\ntask b() -> str {\n  \"ok\"\n}\n";
+        let named = miette::NamedSource::new("test.keel", src.to_string());
+        let tokens = lex(src, &named).expect("lex ok");
+        let report = super::parse(tokens, src.len(), &named).unwrap_err();
+        let label_count = report.labels().map(|ls| ls.count()).unwrap_or(0);
+        assert_eq!(
+            label_count, 1,
+            "one broken decl followed by a valid one should yield exactly 1 error, got {label_count}"
         );
     }
 

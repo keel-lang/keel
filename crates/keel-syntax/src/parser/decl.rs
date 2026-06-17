@@ -5,6 +5,8 @@
 
 use chumsky::prelude::*;
 
+use super::common::KeelExt;
+
 use crate::ast::*;
 use crate::lexer::{Span, Token};
 
@@ -28,7 +30,13 @@ pub(super) fn type_decl() -> P<Decl> {
         .then(
             just(Token::LBrace)
                 .ignore_then(newlines())
-                .ignore_then(field_def.clone().separated_by(field_sep()).allow_trailing())
+                .ignore_then(
+                    field_def
+                        .clone()
+                        .separated_by(field_sep())
+                        .allow_trailing()
+                        .collect::<Vec<_>>(),
+                )
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RBrace))
                 .or_not(),
@@ -51,7 +59,8 @@ pub(super) fn type_decl() -> P<Decl> {
                                         .then(spanned_type_expr())
                                         .map(|(n, t)| Field { name: n, ty: t })
                                         .separated_by(field_sep())
-                                        .allow_trailing(),
+                                        .allow_trailing()
+                                        .collect::<Vec<_>>(),
                                 )
                                 .then_ignore(newlines())
                                 .then_ignore(just(Token::RBrace))
@@ -59,7 +68,8 @@ pub(super) fn type_decl() -> P<Decl> {
                         )
                         .map(|(name, fields)| EnumVariant { name, fields }),
                 )
-                .repeated(),
+                .repeated()
+                .collect::<Vec<_>>(),
         )
         .map(|(first, rest)| {
             let mut variants = vec![first];
@@ -68,7 +78,12 @@ pub(super) fn type_decl() -> P<Decl> {
         });
 
     let simple_enum = ident()
-        .then(just(Token::Bar).ignore_then(ident()).repeated())
+        .then(
+            just(Token::Bar)
+                .ignore_then(ident())
+                .repeated()
+                .collect::<Vec<_>>(),
+        )
         .map(|(first, rest)| {
             let mut names = vec![first];
             names.extend(rest);
@@ -76,7 +91,7 @@ pub(super) fn type_decl() -> P<Decl> {
         })
         .try_map(|names, span| {
             if names.len() < 2 {
-                Err(Simple::custom(span, "enum needs at least two variants"))
+                Err(Rich::custom(span, "enum needs at least two variants"))
             } else {
                 Ok(TypeDef::SimpleEnum(names))
             }
@@ -90,7 +105,8 @@ pub(super) fn type_decl() -> P<Decl> {
                 .then(spanned_type_expr())
                 .map(|(n, t)| Field { name: n, ty: t })
                 .separated_by(field_sep())
-                .allow_trailing(),
+                .allow_trailing()
+                .collect::<Vec<_>>(),
         )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
@@ -101,7 +117,12 @@ pub(super) fn type_decl() -> P<Decl> {
     let after_eq = choice((rich_enum, simple_enum, alias));
 
     let type_params = just(Token::LBracket)
-        .ignore_then(ident().separated_by(just(Token::Comma)).at_least(1))
+        .ignore_then(
+            ident()
+                .separated_by(just(Token::Comma))
+                .at_least(1)
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(just(Token::RBracket))
         .or_not()
         .map(|p| p.unwrap_or_default());
@@ -150,7 +171,12 @@ pub(super) fn interface_decl() -> P<Decl> {
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
-                .ignore_then(any_param.separated_by(field_sep()).allow_trailing())
+                .ignore_then(
+                    any_param
+                        .separated_by(field_sep())
+                        .allow_trailing()
+                        .collect::<Vec<_>>(),
+                )
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RParen)),
         )
@@ -166,7 +192,12 @@ pub(super) fn interface_decl() -> P<Decl> {
         .ignore_then(spanned_ident())
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
-        .then(task_sig.separated_by(sep()).allow_trailing())
+        .then(
+            task_sig
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .map(|((name, name_span), methods)| {
@@ -201,7 +232,12 @@ pub(super) fn extern_decl() -> P<Decl> {
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
-                .ignore_then(param.separated_by(field_sep()).allow_trailing())
+                .ignore_then(
+                    param
+                        .separated_by(field_sep())
+                        .allow_trailing()
+                        .collect::<Vec<_>>(),
+                )
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RParen)),
         )
@@ -231,7 +267,8 @@ pub(super) fn use_decl() -> P<Decl> {
             just(Token::Slash)
                 .ignore_then(ident())
                 .repeated()
-                .at_least(1),
+                .at_least(1)
+                .collect::<Vec<_>>(),
         )
         .map(|(first, rest)| {
             let mut segments = vec![first];
@@ -255,6 +292,7 @@ pub(super) fn use_decl() -> P<Decl> {
     let symbols = import_item
         .separated_by(just(Token::Comma))
         .at_least(1)
+        .collect::<Vec<_>>()
         .then_ignore(just(Token::From))
         .then(source.clone())
         .map(|(items, source)| UseKind::Symbols { items, source });
@@ -314,7 +352,12 @@ pub(super) fn task_decl() -> P<TaskDecl> {
     let any_param = choice((variadic_param, regular_param)).boxed();
     let param_list = just(Token::LParen)
         .ignore_then(newlines())
-        .ignore_then(any_param.separated_by(field_sep()).allow_trailing())
+        .ignore_then(
+            any_param
+                .separated_by(field_sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RParen))
         .try_map(|params: Vec<Param>, span| {
@@ -328,7 +371,7 @@ pub(super) fn task_decl() -> P<TaskDecl> {
                     Binding::Ident(s) => s.clone(),
                     _ => "?".into(),
                 };
-                Err(Simple::custom(
+                Err(Rich::custom(
                     span,
                     format!("variadic parameter `...{name}` must be the last parameter"),
                 ))
@@ -338,7 +381,12 @@ pub(super) fn task_decl() -> P<TaskDecl> {
         });
 
     let type_params = just(Token::LBracket)
-        .ignore_then(ident().separated_by(just(Token::Comma)).at_least(1))
+        .ignore_then(
+            ident()
+                .separated_by(just(Token::Comma))
+                .at_least(1)
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(just(Token::RBracket))
         .or_not()
         .map(|p| p.unwrap_or_default());
@@ -403,7 +451,7 @@ pub(super) fn test_decl() -> P<Decl> {
         .then(param)
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
-        .then(body_item.separated_by(sep()).allow_trailing())
+        .then(body_item.separated_by(sep()).allow_trailing().collect::<Vec<_>>())
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .try_map(|(((name, name_span), param), items), span| {
@@ -414,7 +462,7 @@ pub(super) fn test_decl() -> P<Decl> {
                 match item {
                     TestItem::Setup(block) if !seen_stmt => setup.extend(block),
                     TestItem::Setup(_) => {
-                        return Err(Simple::custom(
+                        return Err(Rich::custom(
                             span,
                             "`setup` blocks must appear before assertions and other test statements",
                         ));
@@ -447,7 +495,7 @@ fn agent_item() -> P<AgentItem> {
             if BLOCK_BODY_ATTRIBUTES.contains(&name.as_str()) {
                 Ok(name)
             } else {
-                Err(Simple::custom(
+                Err(Rich::custom(
                     span,
                     format!("'{}' is not a block attribute", name),
                 ))
@@ -478,7 +526,12 @@ fn agent_item() -> P<AgentItem> {
 
     let tools_list = just(Token::LBracket)
         .ignore_then(newlines())
-        .ignore_then(tool_entry.separated_by(field_sep()).allow_trailing())
+        .ignore_then(
+            tool_entry
+                .separated_by(field_sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBracket));
 
@@ -537,7 +590,8 @@ fn agent_item() -> P<AgentItem> {
                     },
                 )
                 .separated_by(sep())
-                .allow_trailing(),
+                .allow_trailing()
+                .collect::<Vec<_>>(),
         )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
@@ -583,7 +637,12 @@ pub(super) fn agent_decl() -> P<Decl> {
         .ignore_then(spanned_ident())
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
-        .then(agent_item().separated_by(sep()).allow_trailing())
+        .then(
+            agent_item()
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .map(|((name, name_span), items)| {
@@ -629,7 +688,12 @@ pub(super) fn impl_decl() -> P<Decl> {
         .then(
             just(Token::LParen)
                 .ignore_then(newlines())
-                .ignore_then(any_param.separated_by(field_sep()).allow_trailing())
+                .ignore_then(
+                    any_param
+                        .separated_by(field_sep())
+                        .allow_trailing()
+                        .collect::<Vec<_>>(),
+                )
                 .then_ignore(newlines())
                 .then_ignore(just(Token::RParen)),
         )
@@ -653,7 +717,12 @@ pub(super) fn impl_decl() -> P<Decl> {
         .then(ident())
         .then_ignore(just(Token::LBrace))
         .then_ignore(newlines())
-        .then(impl_task.separated_by(sep()).allow_trailing())
+        .then(
+            impl_task
+                .separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<_>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(just(Token::RBrace))
         .map(|((interface_name, type_name), methods)| {
@@ -674,6 +743,21 @@ pub(super) fn program_parser() -> P<Program> {
     // `stmt_parser()` produces `Node<Stmt>`; wrapping it in `Decl::Stmt` gives `Decl`.
     let stmt_decl = super::stmt::stmt_parser().map(Decl::Stmt);
 
+    // Tokens that begin a top-level declaration. Used to find the next decl
+    // boundary when recovering from a broken declaration.
+    let decl_start = || {
+        one_of([
+            Token::Task,
+            Token::Ident("test".to_string()),
+            Token::Agent,
+            Token::Interface,
+            Token::Impl,
+            Token::Type,
+            Token::Extern,
+            Token::Use,
+        ])
+    };
+
     let decl = choice((
         type_decl(),
         interface_decl(),
@@ -686,22 +770,30 @@ pub(super) fn program_parser() -> P<Program> {
         stmt_decl,
     ))
     .map_with_span(Node::new)
-    .recover_with(skip_then_retry_until([
-        Token::Task,
-        Token::Ident("test".to_string()),
-        Token::Agent,
-        Token::Interface,
-        Token::Impl,
-        Token::Type,
-        Token::Extern,
-        Token::Use,
-    ]))
+    .map(Some)
+    // On failure, consume the broken declaration's tokens up to (but not
+    // including) the `newline + keyword` boundary that starts the next
+    // declaration, emit the error, and yield `None` so the list resumes.
+    .recover_with(via_parser(
+        any()
+            .and_is(sep().ignore_then(decl_start()).not())
+            .repeated()
+            .at_least(1)
+            .ignored()
+            .map(|_| None),
+    ))
     .boxed();
 
     newlines()
-        .ignore_then(decl.separated_by(sep()).allow_trailing())
+        .ignore_then(
+            decl.separated_by(sep())
+                .allow_trailing()
+                .collect::<Vec<Option<Node<Decl>>>>(),
+        )
         .then_ignore(newlines())
         .then_ignore(end())
-        .map(|declarations| Program { declarations })
+        .map(|declarations| Program {
+            declarations: declarations.into_iter().flatten().collect(),
+        })
         .boxed()
 }

@@ -6,6 +6,8 @@
 
 use chumsky::prelude::*;
 
+use super::common::KeelExt;
+
 use crate::ast::*;
 use crate::lexer::Token;
 
@@ -33,6 +35,21 @@ enum PostfixOp {
     Index(SpannedExpr),
 }
 
+/// Build a left-associative `BinaryOp` node spanning operands `l`..`r`.
+/// Shared by every binary-precedence `foldl` level (`* / %`, `+ -`,
+/// comparisons, `and`, `or`).
+fn binop(l: SpannedExpr, (op, r): (BinOp, SpannedExpr)) -> SpannedExpr {
+    let span = l.span.start..r.span.end;
+    Node::new(
+        Expr::BinaryOp {
+            left: Box::new(l),
+            op,
+            right: Box::new(r),
+        },
+        span,
+    )
+}
+
 fn parse_duration_unit(s: &str) -> Option<DurationUnit> {
     match s {
         "milliseconds" | "millisecond" | "millis" | "ms" => Some(DurationUnit::Milliseconds),
@@ -50,7 +67,7 @@ fn parse_duration_unit(s: &str) -> Option<DurationUnit> {
 // ---------------------------------------------------------------------------
 
 pub(super) fn expr_parser() -> P<SpannedExpr> {
-    recursive(|expr: Recursive<Token, SpannedExpr, Simple<Token>>| {
+    recursive(|expr| {
         // ── Inner block parser for trailing-block calls ──────────
         //
         // Blocks inside expressions need full statements, which in turn
@@ -63,9 +80,9 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // ── Literals ─────────────────────────────────────────────
         let int_lit = select! { Token::Integer(s) => s }
             .try_map(|s, span| {
-                s.parse::<i64>().map(Expr::Integer).map_err(|_| {
-                    Simple::custom(span, format!("integer literal `{s}` overflows i64"))
-                })
+                s.parse::<i64>()
+                    .map(Expr::Integer)
+                    .map_err(|_| Rich::custom(span, format!("integer literal `{s}` overflows i64")))
             })
             .map_with_span(Node::new);
         let float_lit = select! {
@@ -112,7 +129,8 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                 ident()
                     .map(|name| LambdaParam { name, ty: None })
                     .separated_by(just(Token::Comma))
-                    .allow_trailing(),
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
             )
             .then_ignore(just(Token::RParen))
             .then_ignore(just(Token::FatArrow))
@@ -138,7 +156,12 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         let set_lit = just(Token::Set)
             .ignore_then(just(Token::LBracket))
             .ignore_then(newlines())
-            .ignore_then(expr.clone().separated_by(field_sep()).allow_trailing())
+            .ignore_then(
+                expr.clone()
+                    .separated_by(field_sep())
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
+            )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBracket))
             .map_with_span(|items, span| Node::new(Expr::SetLit(items), span));
@@ -146,7 +169,12 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // ── List ─────────────────────────────────────────────────
         let list_lit = just(Token::LBracket)
             .ignore_then(newlines())
-            .ignore_then(expr.clone().separated_by(field_sep()).allow_trailing())
+            .ignore_then(
+                expr.clone()
+                    .separated_by(field_sep())
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
+            )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBracket))
             .map_with_span(|items, span| Node::new(Expr::ListLit(items), span));
@@ -167,7 +195,8 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                             .then_ignore(newlines())
                             .then(expr.clone())
                             .separated_by(field_sep())
-                            .allow_trailing(),
+                            .allow_trailing()
+                            .collect::<Vec<_>>(),
                     )
                     .or_not()
                     .map(|o| o.unwrap_or_default()),
@@ -197,7 +226,8 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                     .then(expr.clone())
                     .separated_by(field_sep())
                     .at_least(1)
-                    .allow_trailing(),
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
@@ -212,7 +242,8 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                 just(Token::Comma)
                     .ignore_then(newlines())
                     .ignore_then(expr.clone())
-                    .repeated(),
+                    .repeated()
+                    .collect::<Vec<_>>(),
             )
             .then_ignore(just(Token::Comma).or_not())
             .then_ignore(newlines())
@@ -247,7 +278,8 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                     .then(expr.clone())
                     .separated_by(field_sep())
                     .at_least(1)
-                    .allow_trailing(),
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
             )
             .then_ignore(newlines())
             .then_ignore(just(Token::RBrace))
@@ -267,7 +299,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // Recursive so that `else if` chains work.  The else-block passed to
         // `if_body` either recurses into another `if_expr` (wrapped as a
         // single-statement block) or falls back to a plain `inner_block`.
-        let if_expr = recursive(|if_expr: Recursive<Token, SpannedExpr, Simple<Token>>| {
+        let if_expr = recursive(|if_expr| {
             let else_arm = if_expr
                 .map_with_span(|e, span| vec![Node::new(Stmt::Expr(e), span)])
                 .or(inner_block.clone())
@@ -361,7 +393,12 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
 
         let call_args = just(Token::LParen)
             .ignore_then(newlines())
-            .ignore_then(call_arg_parser.separated_by(field_sep()).allow_trailing())
+            .ignore_then(
+                call_arg_parser
+                    .separated_by(field_sep())
+                    .allow_trailing()
+                    .collect::<Vec<_>>(),
+            )
             .then_ignore(newlines())
             .then_ignore(just(Token::RParen))
             .boxed();
@@ -402,8 +439,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         .boxed();
 
         let postfix = primary
-            .then(postfix_op.repeated())
-            .foldl(|lhs_spanned, (op, op_span)| {
+            .foldl(postfix_op.repeated(), |lhs_spanned, (op, op_span)| {
                 let full_span = lhs_spanned.span.start..op_span.end;
                 match op {
                     PostfixOp::DotAccess {
@@ -477,8 +513,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
             .or(just(Token::Minus).to(UnOp::Neg))
             .map_with_span(|op, s| (op, s))
             .repeated()
-            .then(postfix)
-            .foldr(|(op, op_span), inner_spanned| {
+            .foldr(postfix, |(op, op_span), inner_spanned| {
                 let span = op_span.start..inner_spanned.span.end;
                 Node::new(
                     Expr::UnaryOp {
@@ -493,48 +528,28 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // ── * / % ────────────────────────────────────────────────
         let product = unary
             .clone()
-            .then(
+            .foldl(
                 just(Token::Star)
                     .to(BinOp::Mul)
                     .or(just(Token::Slash).to(BinOp::Div))
                     .or(just(Token::Percent).to(BinOp::Mod))
                     .then(unary)
                     .repeated(),
+                binop,
             )
-            .foldl(|l, (op, r)| {
-                let span = l.span.start..r.span.end;
-                Node::new(
-                    Expr::BinaryOp {
-                        left: Box::new(l),
-                        op,
-                        right: Box::new(r),
-                    },
-                    span,
-                )
-            })
             .boxed();
 
         // ── + - ──────────────────────────────────────────────────
         let sum = product
             .clone()
-            .then(
+            .foldl(
                 just(Token::Plus)
                     .to(BinOp::Add)
                     .or(just(Token::Minus).to(BinOp::Sub))
                     .then(product)
                     .repeated(),
+                binop,
             )
-            .foldl(|l, (op, r)| {
-                let span = l.span.start..r.span.end;
-                Node::new(
-                    Expr::BinaryOp {
-                        left: Box::new(l),
-                        op,
-                        right: Box::new(r),
-                    },
-                    span,
-                )
-            })
             .boxed();
 
         // ── .. ───────────────────────────────────────────────────
@@ -554,7 +569,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // ── == != < > <= >= ──────────────────────────────────────
         let cmp = range
             .clone()
-            .then(
+            .foldl(
                 choice((
                     just(Token::EqEq).to(BinOp::Eq),
                     just(Token::Neq).to(BinOp::Neq),
@@ -565,60 +580,27 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                 ))
                 .then(range)
                 .repeated(),
+                binop,
             )
-            .foldl(|l, (op, r)| {
-                let span = l.span.start..r.span.end;
-                Node::new(
-                    Expr::BinaryOp {
-                        left: Box::new(l),
-                        op,
-                        right: Box::new(r),
-                    },
-                    span,
-                )
-            })
             .boxed();
 
         // ── and ──────────────────────────────────────────────────
         let land = cmp
             .clone()
-            .then(just(Token::And).to(BinOp::And).then(cmp).repeated())
-            .foldl(|l, (op, r)| {
-                let span = l.span.start..r.span.end;
-                Node::new(
-                    Expr::BinaryOp {
-                        left: Box::new(l),
-                        op,
-                        right: Box::new(r),
-                    },
-                    span,
-                )
-            })
+            .foldl(just(Token::And).to(BinOp::And).then(cmp).repeated(), binop)
             .boxed();
 
         // ── or ───────────────────────────────────────────────────
         let lor = land
             .clone()
-            .then(just(Token::Or).to(BinOp::Or).then(land).repeated())
-            .foldl(|l, (op, r)| {
-                let span = l.span.start..r.span.end;
-                Node::new(
-                    Expr::BinaryOp {
-                        left: Box::new(l),
-                        op,
-                        right: Box::new(r),
-                    },
-                    span,
-                )
-            })
+            .foldl(just(Token::Or).to(BinOp::Or).then(land).repeated(), binop)
             .boxed();
 
         // ── |> ───────────────────────────────────────────────────
         // Pipeline has lower precedence than `??` — SPEC §18.
         let pipeline = lor
             .clone()
-            .then(just(Token::Pipe).ignore_then(lor).repeated())
-            .foldl(|l, r| {
+            .foldl(just(Token::Pipe).ignore_then(lor).repeated(), |l, r| {
                 let span = l.span.start..r.span.end;
                 Node::new(Expr::Pipeline(Box::new(l), Box::new(r)), span)
             })
@@ -626,13 +608,13 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
 
         // ── ?? ───────────────────────────────────────────────────
         // Null-coalesce is the top of the expression chain.
-        pipeline
-            .clone()
-            .then(just(Token::NullCoalesce).ignore_then(pipeline).repeated())
-            .foldl(|l, r| {
+        pipeline.clone().foldl(
+            just(Token::NullCoalesce).ignore_then(pipeline).repeated(),
+            |l, r| {
                 let span = l.span.start..r.span.end;
                 Node::new(Expr::NullCoalesce(Box::new(l), Box::new(r)), span)
-            })
+            },
+        )
     })
     .boxed()
 }
