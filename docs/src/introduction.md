@@ -1,6 +1,6 @@
 <section class="keel-hero">
   <img class="keel-hero-logo" src="keel-logo.svg" alt="Keel" />
-  <a class="keel-version-pill" href="release-notes.html">v0.2.1 — latest release</a>
+  <a class="keel-version-pill" href="release-notes.html">v0.2.2 — latest release</a>
   <h1 class="keel-hero-title">The Keel Language</h1>
   <p class="keel-hero-tagline">A small, statically-typed language where AI agents are first-class citizens.</p>
   <div class="keel-hero-actions">

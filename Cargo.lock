@@ -1182,11 +1182,11 @@ dependencies = [
 
 [[package]]
 name = "keel-catalog"
-version = "0.2.1"
+version = "0.2.2"
 
 [[package]]
 name = "keel-compiler"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "keel-catalog",
  "keel-syntax",
@@ -1197,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "keel-lang"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "clap",
  "colored",
@@ -1222,7 +1222,7 @@ dependencies = [
 
 [[package]]
 name = "keel-runtime"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "axum",
  "chrono",
@@ -1254,7 +1254,7 @@ dependencies = [
 
 [[package]]
 name = "keel-syntax"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chumsky",
  "logos",

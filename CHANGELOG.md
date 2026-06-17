@@ -8,7 +8,12 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Container casts narrow parsed JSON at runtime, and the compiler splits into a layered crate workspace.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.2.2] — 2026-06-17
+
 
 ### Added
 

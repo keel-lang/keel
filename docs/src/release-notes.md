@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.2.2 — 2026-06-17
+
 ### `keel-lang` is now a layered crate workspace
 
 The compiler is split from one ~41.6k-LOC crate into five that build in parallel
