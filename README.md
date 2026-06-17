@@ -28,35 +28,52 @@ If you're here, you're either curious or contributing. Both are welcome. Neither
 
 ## The Idea
 
-Building an AI agent today means stitching together frameworks on top of languages that were never designed for autonomous systems. Keel is a small language where the actor model is the only concurrency primitive, and everything else — AI, scheduling, HTTP, email, memory, human I/O — lives in a **standard library that is auto-imported**. You never write `use keel/ai`. You just write `Ai.classify(...)` and it works.
+Building an AI agent today means stitching together frameworks on top of languages that were never designed for autonomous systems. Keel is a small language where the actor model is the only concurrency primitive, and everything else — AI, scheduling, HTTP, email, memory, human I/O — lives in a **standard library**. Import what you need with `use std/ai`, `use std/email`, … and call it directly — `ai.classify(...)`, `ai.draft(...)`.
 
 ```keel
+use std/ai
+use std/email
+use std/io
+use std/schedule
+
 type Urgency = low | medium | high | critical
 
+task triage(email: { body: str, from: str, subject: str }) -> Urgency {
+  # `??` covers a `none` result (model unavailable). A real model can return
+  # text that matches no variant, which raises AiSchemaError — caught here so
+  # one bad email can't abort the batch. `??` alone does not catch it.
+  try {
+    ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  } catch err: AiSchemaError {
+    Urgency.medium
+  }
+}
+
 agent EmailBot {
+  @tools [ai, email, io]
   @role "Professional email triage"
 
-  on message(msg: Message) {
-    urgency = Ai.classify(msg.body, as: Urgency, fallback: Urgency.medium)
-
+  task handle(email: { body: str, from: str, subject: str }) {
+    urgency = triage(email)
     when urgency {
       low, medium => {
-        reply = Ai.draft("response to {msg.body}", tone: "friendly")
-        if Io.confirm(reply) { Email.send(reply, to: msg.from) }
+        reply = ai.draft("response to {email.body}", tone: "friendly") ?? "(draft failed)"
+        if io.confirm(reply) { email.send(reply, to: email.from) }
       }
       high, critical => {
-        Io.notify("{urgency}: {msg.subject}")
-        guidance = Io.ask("How should I respond?")
-        reply = Ai.draft("response to {msg.body}", guidance: guidance)
-        if Io.confirm(reply) { Email.send(reply, to: msg.from) }
+        io.notify("{urgency}: {email.subject}")
+        guidance = io.ask("How should I respond?")
+        reply = ai.draft("response to {email.body}", guidance: guidance) ?? "(draft failed)"
+        if io.confirm(reply) { email.send(reply, to: email.from) }
       }
     }
   }
 
   @on_start {
-    Schedule.every(5.minutes, () => {
-      for email in Email.fetch(unread: true) {
-        Agent.send(self, email.as_message())
+    schedule.every(5.minutes, () => {
+      emails = email.fetch(unread: true)
+      for email in emails {
+        self.handle(email)
       }
     })
   }

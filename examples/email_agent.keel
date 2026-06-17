@@ -10,7 +10,15 @@ use std/testing
 type Urgency = low | medium | high | critical
 
 task triage(email: { body: str, from: str, subject: str }) -> Urgency {
-  ai.classify(email.body, as: Urgency, considering: { "from a known VIP or executive": Urgency.critical, "mentions a deadline within 24h": Urgency.high, "asks a direct question": Urgency.medium, "newsletter or automated message": Urgency.low }) ?? Urgency.medium
+  # `??` only rescues a `none` result (model unavailable / mock mode). A real
+  # model can emit output that matches no `Urgency` variant, which raises
+  # `AiSchemaError` — caught here so one HTML-heavy newsletter can't abort the
+  # whole batch. `??` alone would let that error propagate and kill the run.
+  try {
+    ai.classify(email.body, as: Urgency, considering: { "from a known VIP or executive": Urgency.critical, "mentions a deadline within 24h": Urgency.high, "asks a direct question": Urgency.medium, "newsletter or automated message": Urgency.low }) ?? Urgency.medium
+  } catch err: AiSchemaError {
+    Urgency.medium
+  }
 }
 
 task brief(email: { body: str }) -> str {
