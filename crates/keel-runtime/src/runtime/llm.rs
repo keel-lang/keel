@@ -19,7 +19,9 @@ enum Provider {
     Ollama {
         base_url: String,
     },
-    /// No-op provider for tests. Every call returns `CallFailed`.
+    /// No-op provider for tests. Every primitive returns `Ok(None)` —
+    /// deterministic *absence*, not failure — so `??` defaults fire in mock
+    /// mode while real provider failures (network/config) still throw `AiError`.
     Mock,
 }
 
@@ -194,7 +196,7 @@ impl LlmClient {
         system: &str,
         user: &str,
         model: &str,
-    ) -> LlmResult {
+    ) -> Result<Option<String>, LlmError> {
         let mut full_system = match role {
             Some(r) if !r.is_empty() => format!("You are {r}.\n\n"),
             _ => String::new(),
@@ -220,10 +222,14 @@ impl LlmClient {
         }
 
         match &self.provider {
-            Provider::Ollama { base_url } => {
-                self.call_ollama(base_url, &full_system, user, model).await
-            }
-            Provider::Mock => Err(LlmError::CallFailed("mock mode".into())),
+            Provider::Ollama { base_url } => self
+                .call_ollama(base_url, &full_system, user, model)
+                .await
+                .map(Some),
+            // Mock yields deterministic *absence* (not failure): the prompt is
+            // still built and traced above, but no provider is called, so `??`
+            // and `when` handle the `none` in tests.
+            Provider::Mock => Ok(None),
         }
     }
 
@@ -310,7 +316,7 @@ impl LlmClient {
         }
 
         match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 let cleaned = response.trim().to_lowercase();
                 for variant in variants {
                     let lv = variant.to_lowercase();
@@ -334,6 +340,7 @@ impl LlmClient {
                     got: response.trim().to_string(),
                 })
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -388,12 +395,13 @@ impl LlmClient {
             system.push_str(&format!(" Use at most {n} {unit_str}."));
         }
         match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Summary ready", "✓".bright_green());
                 }
                 Ok(Some(response.trim().to_string()))
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -436,12 +444,13 @@ impl LlmClient {
         }
 
         match self.call(role, rules, &system, description, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Draft ready", "✓".bright_green());
                 }
                 Ok(Some(response.trim().to_string()))
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -471,12 +480,13 @@ impl LlmClient {
             fields_desc.join("\n  ")
         );
         match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Extracted", "✓".bright_green());
                 }
                 Ok(Some(response.trim().to_string()))
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -512,7 +522,7 @@ impl LlmClient {
             )
         };
         match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 let trimmed = response.trim().to_string();
                 if self.trace.load(Ordering::Relaxed) {
                     println!("  {} Translated", "✓".bright_green());
@@ -530,6 +540,7 @@ impl LlmClient {
                     Ok(Some(map))
                 }
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -560,7 +571,7 @@ impl LlmClient {
             options.join(", ")
         );
         match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 let trimmed = response.trim();
                 let mut choice = String::new();
                 let mut reason = String::new();
@@ -583,6 +594,7 @@ impl LlmClient {
                 }
                 Ok(Some((choice, reason)))
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }
@@ -616,7 +628,7 @@ impl LlmClient {
             full_sys.push_str("\n\nRespond with valid JSON only. No prose, no markdown fences.");
         }
         match self.call(role, rules, &full_sys, user, model).await {
-            Ok(response) => {
+            Ok(Some(response)) => {
                 let trimmed = response.trim().to_string();
                 if response_format.as_deref() == Some("json")
                     && serde_json::from_str::<serde_json::Value>(&trimmed).is_err()
@@ -628,6 +640,7 @@ impl LlmClient {
                 }
                 Ok(Some(trimmed))
             }
+            Ok(None) => Ok(None),
             Err(e) => Err(e),
         }
     }

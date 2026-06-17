@@ -44,7 +44,7 @@ The lookup order when a call wants model `X`:
 export KEEL_LLM=mock
 ```
 
-All `ai.*` calls return `none` (or throw `AiSchemaError` for schema mismatches). Absence is handled by `??` at the call site. Used by the integration test suite.
+Every `ai.*` call returns `none` in mock mode — deterministic *absence*, never a failure — so `??` defaults fire predictably. Absence is handled by `??` at the call site. Used by the integration test suite. (Real provider failures throw `AiError`; mock mode does not simulate them.)
 
 ## Troubleshooting
 

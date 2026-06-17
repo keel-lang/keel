@@ -412,7 +412,7 @@ type Error =
   | ShellError { message: str }
   | JsonError { message: str }
   | EnvError { message: str }
-  | AiError { message: str }
+  | AiError { message: str, reason: str }   # reason: "unavailable" | "provider"
   | AiSchemaError { message: str, got: str }
   # Cross-namespace — catch these for general conditions
   | CapabilityError { message: str }   # @tools restriction
@@ -1458,13 +1458,20 @@ Duration units (`seconds`, `minutes`, `hours`, `days`, `weeks`) are **identifier
 
 `Error` is the catch-all type. All error values carry `message: str` implicitly. Catch clauses match by type name.
 
-The two-tier model:
+The model — **absence is a value, failure is an error**:
 
-| Failure | Result | Handle with |
+| Condition | Result | Handle with |
 |---|---|---|
-| Network failure / mock mode / timeout | Returns `none` | `??` or `when` |
+| Model returned no answer / no model configured / mock mode | Returns `none` | `??` or `when` |
+| Provider unreachable, network failure | Throws `AiError` (`reason: "unavailable"`) | `try/catch` |
+| Model not mapped / provider misconfiguration | Throws `AiError` (`reason: "provider"`) | `try/catch` |
+| LLM call exceeded its time budget | Throws `TimeoutError` | `try/catch` (set via `@limits timeout` / `control.with_timeout`) |
 | LLM output didn't match the expected schema | Throws `AiSchemaError` | `try/catch` |
 | Event queue full (`send` / `delegate` / `broadcast`) | Throws `RuntimeBusy` | `try/catch` |
+
+A real provider failure **throws** rather than returning `none`, so an outage is never silently masked by a `??` default — `ai.classify(...) ?? Urgency.medium` yields `medium` only when the model genuinely had no answer, not when the model was down.
+
+`AiError` carries `message: str` and `reason: str` — `"unavailable"` (network / provider unreachable) or `"provider"` (model not mapped / configuration fault). It is caught by `catch err: AiError` or the catch-all `catch err: Error`.
 
 `AiSchemaError` carries `message: str` and `got: str` (the raw LLM output that failed to match). It is caught by `catch err: AiSchemaError` or the catch-all `catch err: Error`.
 
@@ -1472,7 +1479,7 @@ The two-tier model:
 
 ### 11.2 Nullable-aware stdlib
 
-`ai.*` calls return `T?` for genuine absence (e.g. the model returned nothing parseable). Use `??` or `when` for the simple fallback case:
+`ai.*` calls return `T?` for genuine **absence** — the model returned no answer, no model is configured, or mock mode is active. A provider **failure** (network, unreachable, misconfiguration) instead *throws* `AiError`, so a `??` default never silently hides an outage. Use `??` or `when` for the absence case:
 
 ```keel
 # Simple default via ??

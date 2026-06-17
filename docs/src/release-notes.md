@@ -4,6 +4,34 @@
 
 ## Unreleased
 
+### AI provider failures throw `AiError` instead of silently returning `none`
+
+`ai.*` now separates *absence* from *failure*. `none` means the model genuinely
+had no answer, no model is configured, or mock mode is active — handle it with
+`??` or `when`. A real provider **failure** (Ollama unreachable, network error, or
+a model that isn't mapped) now **throws** a typed `AiError` carrying a
+machine-readable `reason`:
+
+```keel
+try {
+  urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
+} catch err: AiError {
+  io.notify("classifier {err.reason}: {err.message}")  # reason: "unavailable" | "provider"
+  urgency = Urgency.medium
+}
+```
+
+Previously these failures degraded to `none`, so `ai.classify(...) ?? Urgency.medium`
+quietly produced `medium` whether the model had no answer **or the model was
+down** — an outage was indistinguishable from a real classification. Now the `??`
+default applies only to genuine absence; an outage surfaces with a reason you can
+catch and act on.
+
+`KEEL_LLM=mock` is unchanged in observable behavior — every `ai.*` call still
+returns `none`, so existing `?? default` tests and examples keep working; mock now
+models deterministic *absence* rather than a simulated failure. `AiSchemaError`
+(unparseable output, with its `got` field) is unchanged.
+
 ---
 
 ## v0.2.2 — 2026-06-17

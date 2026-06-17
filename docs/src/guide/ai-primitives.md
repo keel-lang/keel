@@ -26,12 +26,14 @@ urgency = ai.classify(email.body,
 
 **Returns:** `T?` (where `T` is the enum). Use `?? T.variant` to supply a default inline.
 
-> **`??` does not catch schema mismatch.** `??` only fires on a `none` result —
-> model unavailable, mock mode, or a timeout. If the model returns text that
-> matches **no** variant of `T`, `ai.classify` *raises* `AiSchemaError`, which
-> `??` does **not** rescue. HTML-heavy or chatty inputs trigger this against real
-> models. In production, wrap the call in `try/catch AiSchemaError` so one bad
-> input can't abort a batch:
+> **`??` only catches absence, not failure.** `??` fires on a `none` result —
+> the model returned no answer, no model is configured, or mock mode is active.
+> It does **not** rescue thrown failures: if the provider is unreachable
+> `ai.classify` raises `AiError` (`reason: "unavailable"`), and if the model
+> returns text matching **no** variant of `T` it raises `AiSchemaError`. HTML-heavy
+> or chatty inputs trigger the schema case against real models. In production,
+> wrap the call in `try/catch` so one bad input — or a brief outage — can't abort
+> a batch:
 >
 > ```keel
 > try {
@@ -65,7 +67,7 @@ Both forms are fully wired as of v0.1.3:
 
 > Like `ai.classify`, `ai.extract` **raises `AiSchemaError`** when the model's
 > output can't be coerced to the requested shape — `??` only covers the `none`
-> (model-unavailable) case. Wrap it in `try/catch AiSchemaError` when the input
+> (no-answer / mock) case. Wrap it in `try/catch AiSchemaError` when the input
 > isn't trusted to produce clean structured data.
 
 ## `ai.summarize` — condense content

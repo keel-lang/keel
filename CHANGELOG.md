@@ -8,9 +8,28 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Email IMAP moved to a maintained async client, clearing a future-Rust-incompatibility warning.
+%%TAGLINE%% AI provider failures now throw `AiError` with a reason instead of silently degrading to `none`, so a model outage can't hide behind a `??` default.
 
 ### Changed
+
+- **`ai.*` provider failures throw `AiError` instead of returning `none`.** A real provider failure — Ollama unreachable, network error, or a model that isn't mapped — now *throws* a typed `AiError` carrying a machine-readable `reason` (`"unavailable"` for network/unreachable, `"provider"` for a config/mapping fault) rather than degrading to `none`. Previously these failures returned `none`, so `ai.classify(...) ?? Urgency.medium` quietly produced `medium` whether the model genuinely had no answer **or the model was down** — an outage was indistinguishable from a real classification. Now `none` strictly means *absence* (the model returned no answer, no model is configured, or mock mode), and `??` defaults apply only to that; failures surface with a reason you can catch and act on:
+
+```keel
+use std/ai
+use std/io
+type Urgency = low | medium | high
+
+task triage(body: str) -> Urgency {
+  try {
+    ai.classify(body, as: Urgency) ?? Urgency.medium   # ?? handles a no-answer none
+  } catch err: AiError {
+    io.notify("classifier {err.reason}: {err.message}") # reason: "unavailable" | "provider"
+    Urgency.medium
+  }
+}
+```
+
+  This makes the three failure causes individually catchable, which absence-as-`none` could not express: provider unavailable → `AiError` (`reason: "unavailable"`), output unparseable → `AiSchemaError` (unchanged, carries `got`), and a call that exceeds its time budget → `TimeoutError` (unchanged, via `@limits timeout` / `control.with_timeout`). Mock mode (`KEEL_LLM=mock`) is unchanged in observable behavior: every `ai.*` call still returns `none`, so existing `?? default` tests and examples keep working — mock now models deterministic *absence* rather than a simulated failure. No `.keel` program that handled absence with `??`/`when` needs updating; programs relying on a network failure silently becoming `none` must now catch `AiError`.
 
 - **Email IMAP now uses the maintained `async-imap` client.** The runtime previously depended on `imap 2.4.1`, which transitively pinned `imap-proto 0.10.2` — a crate that emitted a future-incompatibility warning (`trailing semicolon in macro used in expression position`, [rust#79813](https://github.com/rust-lang/rust/issues/79813)) and is slated to become a hard error in a future Rust release. `Email.fetch` and `Email.archive` now run on `async-imap 0.11` (with `async-native-tls`), which tracks the current `imap-proto 0.16`, so the warning is gone. The IMAP calls now run natively on the async interpreter instead of `tokio::task::spawn_blocking`. No language-surface change: `Email.fetch`, `Email.send`, and `Email.archive` behave exactly as before.
 

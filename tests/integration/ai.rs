@@ -528,3 +528,56 @@ run(A)
         "try/catch fallback variant not used:\n{stdout}"
     );
 }
+
+#[test]
+fn unavailable_provider_throws_ai_error_instead_of_silent_none() {
+    // #38: a real provider failure must throw `AiError` (carrying a machine-
+    // readable `reason`) rather than silently returning `none`. Previously
+    // `ai.classify(...) ?? default` masked an outage as the default value, so an
+    // agent could not tell "the model is down" from "the model had no answer".
+    //
+    // Pointing at a closed port forces a connection failure (`CallFailed`). The
+    // `?? Mood.calm` must NOT fire — the call throws, the `??` is bypassed, and
+    // the agent catches `AiError` with `reason == "unavailable"`. Mock mode still
+    // yields `none` (covered by the trace tests above), so `??` defaults there.
+    let src = r#"
+use std/ai
+use std/io
+type Mood = calm | tense
+
+agent A {
+  @tools [ai, io]
+  @role "tester"
+  @on_start {
+    try {
+      m = ai.classify("hello", as: Mood) ?? Mood.calm
+      io.show("defaulted={m}")
+    } catch e: AiError {
+      io.show("caught reason={e.reason}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(
+        src,
+        &[
+            ("KEEL_LLM", ""),
+            ("OLLAMA_HOST", "http://127.0.0.1:1"),
+            ("KEEL_OLLAMA_MODEL", "test-model"),
+        ],
+    );
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught reason=unavailable"),
+        "unavailable provider should throw AiError(reason: unavailable):\n{stdout}\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("defaulted="),
+        "`??` masked the provider failure instead of letting AiError propagate:\n{stdout}"
+    );
+}

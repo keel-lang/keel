@@ -26,6 +26,12 @@ agent ErrorDemo {
     } catch err: AiSchemaError {
       io.show("LLM gave unexpected output: {err.got}")
       result = Urgency.medium
+    } catch err: AiError {
+      # Provider failure (network/unreachable/misconfigured) — `reason` is
+      # "unavailable" or "provider". This throws instead of degrading to none,
+      # so an outage can't hide behind the `?? Urgency.medium` above.
+      io.show("Classifier {err.reason}: {err.message}")
+      result = Urgency.medium
     } catch err: Error {
       io.show("Unexpected error: {err.message}")
     }
