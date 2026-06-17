@@ -471,3 +471,60 @@ run(A)
     );
     assert!(stdout.contains("neutral"), "?? default not used:\n{stdout}");
 }
+
+#[test]
+fn triage_try_catch_supplies_fallback_on_schema_error() {
+    // Regression for #76: against a real model, `ai.classify` *raises*
+    // `AiSchemaError` when the output matches no variant — `??` only rescues
+    // `none`, so `?? Urgency.medium` alone would let the error abort the run.
+    // The shipped triage pattern (examples/email_agent.keel, README) wraps the
+    // call in try/catch so a non-conforming email falls back instead of crashing.
+    //
+    // Mock mode can't exercise this (it yields `none`, not a raise), so we drive
+    // a real schema mismatch through the HTTP path with a body that contains no
+    // Urgency variant — mirroring the HTML-newsletter failure from the issue.
+    let server = start_repeated_json_response_server(
+        r#"{"message":{"content":"<html>weekly newsletter, nothing to see here</html>"}}"#,
+        1,
+    );
+    let src = r#"
+use std/ai
+use std/io
+type Urgency = low | medium | high | critical
+
+task triage(body: str) -> Urgency {
+  try {
+    ai.classify(body, as: Urgency) ?? Urgency.medium
+  } catch err: AiSchemaError {
+    Urgency.medium
+  }
+}
+
+agent A {
+  @tools [ai, io]
+  @role "tester"
+  @on_start {
+    u = triage("buy now")
+    io.show("urgency={u}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(
+        src,
+        &[
+            ("KEEL_LLM", ""),
+            ("OLLAMA_HOST", server.as_str()),
+            ("KEEL_OLLAMA_MODEL", "test-model"),
+        ],
+    );
+    assert!(
+        ok,
+        "triage aborted on AiSchemaError instead of falling back\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("urgency=medium"),
+        "try/catch fallback variant not used:\n{stdout}"
+    );
+}

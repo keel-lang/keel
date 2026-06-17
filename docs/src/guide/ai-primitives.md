@@ -26,6 +26,23 @@ urgency = ai.classify(email.body,
 
 **Returns:** `T?` (where `T` is the enum). Use `?? T.variant` to supply a default inline.
 
+> **`??` does not catch schema mismatch.** `??` only fires on a `none` result —
+> model unavailable, mock mode, or a timeout. If the model returns text that
+> matches **no** variant of `T`, `ai.classify` *raises* `AiSchemaError`, which
+> `??` does **not** rescue. HTML-heavy or chatty inputs trigger this against real
+> models. In production, wrap the call in `try/catch AiSchemaError` so one bad
+> input can't abort a batch:
+>
+> ```keel
+> try {
+>   urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
+> } catch err: AiSchemaError {
+>   urgency = Urgency.medium   # err.got holds the raw output
+> }
+> ```
+>
+> See [Error Handling](./error-handling.md).
+
 ## `ai.extract` — pull structured data from text
 
 ```keel
@@ -45,6 +62,11 @@ result = ai.extract("Invoice from ACME $99.99 on 2026-01-10", as: Invoice)
 Both forms are fully wired as of v0.1.3:
 - `schema: { field: "type" }` — inline map of field names to type strings.
 - `as: T` — derives the schema from a declared `type T { ... }` struct; raises a runtime error if `T` is not a known struct type. As of v0.1.19 the type checker resolves `T` from the `as:` argument, so field accesses on the result are statically checked.
+
+> Like `ai.classify`, `ai.extract` **raises `AiSchemaError`** when the model's
+> output can't be coerced to the requested shape — `??` only covers the `none`
+> (model-unavailable) case. Wrap it in `try/catch AiSchemaError` when the input
+> isn't trusted to produce clean structured data.
 
 ## `ai.summarize` — condense content
 

@@ -14,6 +14,22 @@ All notable changes to Keel.
 
 - **Email IMAP now uses the maintained `async-imap` client.** The runtime previously depended on `imap 2.4.1`, which transitively pinned `imap-proto 0.10.2` — a crate that emitted a future-incompatibility warning (`trailing semicolon in macro used in expression position`, [rust#79813](https://github.com/rust-lang/rust/issues/79813)) and is slated to become a hard error in a future Rust release. `Email.fetch` and `Email.archive` now run on `async-imap 0.11` (with `async-native-tls`), which tracks the current `imap-proto 0.16`, so the warning is gone. The IMAP calls now run natively on the async interpreter instead of `tokio::task::spawn_blocking`. No language-surface change: `Email.fetch`, `Email.send`, and `Email.archive` behave exactly as before.
 
+### Fixed
+
+- **`examples/email_agent.keel` and the README triage snippet no longer crash on real models.** Both guarded `ai.classify` with `??` alone — but `ai.classify` (and `ai.extract`) *raise* `AiSchemaError` when the model's output matches no enum variant, and `??` only rescues a `none` result. So the `?? Urgency.medium` fallback fired only in mock/no-model mode; against a real model an HTML-heavy newsletter (reproduced on both `gemma4` and `gpt-oss:20b`) raised `AiSchemaError` and aborted the whole agent run — the opposite of what the example implied. The `triage` task now wraps the call in `try/catch AiSchemaError`, so a single non-conforming email falls back and the batch continues:
+
+```keel
+task triage(email: { body: str, from: str, subject: str }) -> Urgency {
+  try {
+    ai.classify(email.body, as: Urgency) ?? Urgency.medium
+  } catch err: AiSchemaError {
+    Urgency.medium
+  }
+}
+```
+
+  The README hero example was additionally rewritten to valid v0.1 syntax (the removed PascalCase prelude `Ai.`/`Io.`/`Email.`, an unimplemented `fallback:` argument, and missing `use std/…` imports), and `docs/src/guide/ai-primitives.md` now documents that `??` does not catch `AiSchemaError`. Runtime behaviour is unchanged — schema mismatch still throws by design (see `SPEC.md §11.1`).
+
 ---
 
 ## [0.2.2] — 2026-06-17

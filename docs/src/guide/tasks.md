@@ -33,6 +33,8 @@ task compose(body: str, tone: str = "friendly") -> str {
 
 # Struct parameters (inline type)
 task triage(msg: {body: str, from: str}) -> Urgency {
+  # `??` covers a none result; in production wrap classify in try/catch to also
+  # handle AiSchemaError — see the Error Handling guide.
   ai.classify(msg.body, as: Urgency) ?? Urgency.medium
 }
 ```
@@ -90,6 +92,8 @@ use std/email
 
 # Top-level: shared, testable
 task triage(email: {body: str}) -> Urgency {
+  # In production, wrap classify in try/catch to handle AiSchemaError
+  # (non-conforming model output) — `??` only covers a none result.
   ai.classify(email.body, as: Urgency) ?? Urgency.medium
 }
 
