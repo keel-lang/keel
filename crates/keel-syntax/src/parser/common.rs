@@ -11,18 +11,14 @@ use crate::lexer::{Span, Token};
 
 /// Parser extra: rich errors over the spanned token stream.
 pub(super) type Extra = extra::Err<Rich<'static, Token, SimpleSpan>>;
-/// fn-pointer that splits each `(Token, SimpleSpan)` item into token + span.
-pub(super) type Mapper = fn((Token, SimpleSpan)) -> (Token, SimpleSpan);
+/// fn-pointer that converts each lexer item's `Range<usize>` span into chumsky's
+/// `SimpleSpan` as the stream is consumed.
+pub(super) type Mapper = fn((Token, Span)) -> (Token, SimpleSpan);
 /// Concrete, `'static` token-stream input, kept nameable so every sub-parser can
 /// return a boxed [`P`]. Boxing avoids the macOS linker crash on deeply nested
 /// chumsky types.
-pub(super) type In = MappedInput<
-    'static,
-    Token,
-    SimpleSpan,
-    Stream<std::vec::IntoIter<(Token, SimpleSpan)>>,
-    Mapper,
->;
+pub(super) type In =
+    MappedInput<'static, Token, SimpleSpan, Stream<std::vec::IntoIter<(Token, Span)>>, Mapper>;
 pub(super) type P<T> = Boxed<'static, 'static, In, T, Extra>;
 
 /// Compatibility shim reproducing chumsky 0.9's `map_with_span(|value, span|)`
@@ -48,10 +44,8 @@ impl<T: 'static, Pa> KeelExt<T> for Pa where Pa: Parser<'static, In, T, Extra> +
 /// supplies the end-of-input span.
 pub(super) fn token_stream(tokens: Vec<(Token, Span)>, source_len: usize) -> In {
     let eoi: SimpleSpan = (source_len..source_len + 1).into();
-    let mapper: Mapper = |(t, s)| (t, s);
-    let spanned: Vec<(Token, SimpleSpan)> =
-        tokens.into_iter().map(|(t, s)| (t, s.into())).collect();
-    Stream::from_iter(spanned).map(eoi, mapper)
+    let mapper: Mapper = |(t, s)| (t, s.into());
+    Stream::from_iter(tokens).map(eoi, mapper)
 }
 
 // ---------------------------------------------------------------------------

@@ -35,6 +35,21 @@ enum PostfixOp {
     Index(SpannedExpr),
 }
 
+/// Build a left-associative `BinaryOp` node spanning operands `l`..`r`.
+/// Shared by every binary-precedence `foldl` level (`* / %`, `+ -`,
+/// comparisons, `and`, `or`).
+fn binop(l: SpannedExpr, (op, r): (BinOp, SpannedExpr)) -> SpannedExpr {
+    let span = l.span.start..r.span.end;
+    Node::new(
+        Expr::BinaryOp {
+            left: Box::new(l),
+            op,
+            right: Box::new(r),
+        },
+        span,
+    )
+}
+
 fn parse_duration_unit(s: &str) -> Option<DurationUnit> {
     match s {
         "milliseconds" | "millisecond" | "millis" | "ms" => Some(DurationUnit::Milliseconds),
@@ -520,17 +535,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                     .or(just(Token::Percent).to(BinOp::Mod))
                     .then(unary)
                     .repeated(),
-                |l, (op, r)| {
-                    let span = l.span.start..r.span.end;
-                    Node::new(
-                        Expr::BinaryOp {
-                            left: Box::new(l),
-                            op,
-                            right: Box::new(r),
-                        },
-                        span,
-                    )
-                },
+                binop,
             )
             .boxed();
 
@@ -543,17 +548,7 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                     .or(just(Token::Minus).to(BinOp::Sub))
                     .then(product)
                     .repeated(),
-                |l, (op, r)| {
-                    let span = l.span.start..r.span.end;
-                    Node::new(
-                        Expr::BinaryOp {
-                            left: Box::new(l),
-                            op,
-                            right: Box::new(r),
-                        },
-                        span,
-                    )
-                },
+                binop,
             )
             .boxed();
 
@@ -585,56 +580,20 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                 ))
                 .then(range)
                 .repeated(),
-                |l, (op, r)| {
-                    let span = l.span.start..r.span.end;
-                    Node::new(
-                        Expr::BinaryOp {
-                            left: Box::new(l),
-                            op,
-                            right: Box::new(r),
-                        },
-                        span,
-                    )
-                },
+                binop,
             )
             .boxed();
 
         // ── and ──────────────────────────────────────────────────
         let land = cmp
             .clone()
-            .foldl(
-                just(Token::And).to(BinOp::And).then(cmp).repeated(),
-                |l, (op, r)| {
-                    let span = l.span.start..r.span.end;
-                    Node::new(
-                        Expr::BinaryOp {
-                            left: Box::new(l),
-                            op,
-                            right: Box::new(r),
-                        },
-                        span,
-                    )
-                },
-            )
+            .foldl(just(Token::And).to(BinOp::And).then(cmp).repeated(), binop)
             .boxed();
 
         // ── or ───────────────────────────────────────────────────
         let lor = land
             .clone()
-            .foldl(
-                just(Token::Or).to(BinOp::Or).then(land).repeated(),
-                |l, (op, r)| {
-                    let span = l.span.start..r.span.end;
-                    Node::new(
-                        Expr::BinaryOp {
-                            left: Box::new(l),
-                            op,
-                            right: Box::new(r),
-                        },
-                        span,
-                    )
-                },
-            )
+            .foldl(just(Token::Or).to(BinOp::Or).then(land).repeated(), binop)
             .boxed();
 
         // ── |> ───────────────────────────────────────────────────
