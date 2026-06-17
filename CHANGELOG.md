@@ -8,7 +8,11 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% Email IMAP moved to a maintained async client, clearing a future-Rust-incompatibility warning.
+
+### Changed
+
+- **Email IMAP now uses the maintained `async-imap` client.** The runtime previously depended on `imap 2.4.1`, which transitively pinned `imap-proto 0.10.2` — a crate that emitted a future-incompatibility warning (`trailing semicolon in macro used in expression position`, [rust#79813](https://github.com/rust-lang/rust/issues/79813)) and is slated to become a hard error in a future Rust release. `Email.fetch` and `Email.archive` now run on `async-imap 0.11` (with `async-native-tls`), which tracks the current `imap-proto 0.16`, so the warning is gone. The IMAP calls now run natively on the async interpreter instead of `tokio::task::spawn_blocking`. No language-surface change: `Email.fetch`, `Email.send`, and `Email.archive` behave exactly as before.
 
 ---
 
