@@ -170,7 +170,11 @@ git commit -m "Release v0.1.X — <short theme>"
 git push origin main
 ```
 
-Commit message rules: describe what the code change does — no AI attribution, no model names, no `Co-Authored-By`.
+Commit message rules:
+
+- **Subject line only — never add a body.** The release commit is a single `-m` line and nothing else. The CHANGELOG is the canonical record of what shipped; do not duplicate or paraphrase it in the commit. Never pass a second `-m`, a heredoc, or bullet points. A body is a blocking mistake.
+- **The `<short theme>` must come from the actual release.** Derive it from the `%%TAGLINE%%`/CHANGELOG entry for this version — never invent feature names. If the subject doesn't match what the CHANGELOG says shipped, stop and fix it.
+- Describe what the code change does — no AI attribution, no model names, no `Co-Authored-By`.
 
 ## Step 10 — Confirmation Gate for Tag (REQUIRED)
 
