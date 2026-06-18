@@ -24,6 +24,17 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      # Cache the cargo registry and the target/ directory across runs. The
+      # expensive part of CI is compiling the dependency graph (tokio, hyper,
+      # reqwest, axum, lettre, …) in both the debug and release profiles; on a
+      # warm cache those artifacts are restored instead of rebuilt, so only the
+      # workspace crates recompile. rust-cache keys on the lockfile and rustc
+      # version and evicts the (cheap) workspace artifacts to keep the cache lean.
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
 
       - name: Check formatting
         run: cargo fmt --check
