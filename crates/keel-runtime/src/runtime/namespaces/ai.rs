@@ -3,7 +3,39 @@ use std::collections::HashMap;
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{CallArgValue, Host, Namespace, RuntimeErrorKind};
 use crate::runtime::convert::json_to_value;
+use crate::runtime::llm::LlmError;
 use crate::runtime::namespace::{find_arg, ns, positional, throw_typed_error};
+
+/// Map an `LlmError` to a typed Keel runtime error.
+///
+/// Real failures throw rather than degrade to `none`, so a production agent
+/// whose model is unreachable or misconfigured surfaces the cause instead of
+/// silently taking a `??` default:
+///   - network / provider unreachable → `AiError { reason: "unavailable" }`
+///   - model not mapped / config fault → `AiError { reason: "provider" }`
+///   - output matched no enum/schema   → `AiSchemaError { got }`
+///
+/// Mock mode and a model that genuinely returns no answer never reach here —
+/// those yield `Ok(None)` so `??` and `when` handle the absence.
+fn throw_llm_error(e: LlmError) -> miette::Result<Value> {
+    match e {
+        LlmError::SchemaValidation { got } => throw_typed_error(
+            RuntimeErrorKind::AiSchema,
+            &format!("LLM output did not match expected schema: '{got}'"),
+            Some(("got", got)),
+        ),
+        LlmError::CallFailed(msg) => throw_typed_error(
+            RuntimeErrorKind::Ai,
+            &msg,
+            Some(("reason", "unavailable".into())),
+        ),
+        LlmError::ConfigError(msg) => throw_typed_error(
+            RuntimeErrorKind::Ai,
+            &msg,
+            Some(("reason", "provider".into())),
+        ),
+    }
+}
 
 pub(crate) fn namespace() -> Namespace {
     ns!("ai", {
@@ -25,16 +57,7 @@ pub(crate) fn namespace() -> Namespace {
             match llm.classify(role.as_deref(), &rules, &input, &variants, &criteria, &model).await {
                 Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant, None)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::SchemaValidation { got }) => {
-                    throw_typed_error(
-                        RuntimeErrorKind::AiSchema,
-                        &format!("LLM output did not match expected schema: '{got}'"),
-                        Some(("got", got)),
-                    )
-                }
-                // Network / timeout / mock failures: return none so `??` provides the default.
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -56,8 +79,7 @@ pub(crate) fn namespace() -> Namespace {
             match llm.summarize(role.as_deref(), &rules, &input, length, format, max, unit_val, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -78,8 +100,7 @@ pub(crate) fn namespace() -> Namespace {
             {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -137,8 +158,7 @@ pub(crate) fn namespace() -> Namespace {
                     }
                 }
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -151,6 +171,11 @@ pub(crate) fn namespace() -> Namespace {
                 Some(other) => vec![other.to_display_string()],
                 None => return Err(miette::miette!("ai.translate: missing `to:` argument")),
             };
+            if target_langs.is_empty() {
+                return Err(miette::miette!(
+                    "ai.translate: `to:` must contain at least one language"
+                ));
+            }
             let model = resolve_model(host, &args);
             let role = host.current_role();
             let rules = host.current_rules();
@@ -167,8 +192,7 @@ pub(crate) fn namespace() -> Namespace {
                     Ok(Value::Map(out))
                 }
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -193,8 +217,7 @@ pub(crate) fn namespace() -> Namespace {
                     Ok(Value::Map(m))
                 }
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -209,8 +232,7 @@ pub(crate) fn namespace() -> Namespace {
             match llm.prompt(role.as_deref(), &rules, &system, &user, response_format, &model).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
-                Err(crate::runtime::llm::LlmError::CallFailed(_)) => Ok(Value::None),
-                Err(e) => throw_typed_error(RuntimeErrorKind::Ai, &e.to_string(), None),
+                Err(e) => throw_llm_error(e),
             }
         }),
 
@@ -263,5 +285,50 @@ fn extract_criteria(args: &[CallArgValue]) -> Vec<(String, String)> {
             })
             .collect(),
         _ => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpreter::RuntimeError;
+
+    fn typed(e: LlmError) -> RuntimeError {
+        throw_llm_error(e)
+            .unwrap_err()
+            .downcast::<RuntimeError>()
+            .expect("LlmError should map to a typed RuntimeError")
+    }
+
+    #[test]
+    fn call_failed_throws_ai_error_with_unavailable_reason() {
+        let err = typed(LlmError::CallFailed("Ollama unreachable".into()));
+        assert_eq!(err.type_name(), "AiError");
+        assert_eq!(
+            err.fields.get("reason").map(|v| v.to_display_string()),
+            Some("unavailable".into())
+        );
+    }
+
+    #[test]
+    fn config_error_throws_ai_error_with_provider_reason() {
+        let err = typed(LlmError::ConfigError("model not mapped".into()));
+        assert_eq!(err.type_name(), "AiError");
+        assert_eq!(
+            err.fields.get("reason").map(|v| v.to_display_string()),
+            Some("provider".into())
+        );
+    }
+
+    #[test]
+    fn schema_validation_throws_ai_schema_error_with_got() {
+        let err = typed(LlmError::SchemaValidation {
+            got: "maybe".into(),
+        });
+        assert_eq!(err.type_name(), "AiSchemaError");
+        assert_eq!(
+            err.fields.get("got").map(|v| v.to_display_string()),
+            Some("maybe".into())
+        );
     }
 }

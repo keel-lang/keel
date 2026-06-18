@@ -18,7 +18,7 @@ task prioritize(ticket: { body: str }) -> Priority {
 }
 
 task respond(ticket: { body: str, from: str }, category: Category) -> str {
-  ai.draft("support response to {ticket.body}", tone: "empathetic and professional", guidance: "address the {category} issue directly") ?? "(could not draft response)"
+  ai.draft("support response to {ticket.body}", tone: "empathetic and professional", guidance: "address the {category} issue directly") ?? "(no response drafted)"
 }
 
 test "categorize uses mocked category" {

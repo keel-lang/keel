@@ -168,6 +168,8 @@ Known technical debt to address post-v0.1:
 
 - ~~**Typed runtime errors for all stdlib namespaces.**~~ Shipped. All catchable namespace errors now carry a stable `RuntimeErrorKind` (`FileError`, `CsvError`, `DbError`, `MathError`, `MemoryError`, `EmailError`, `HttpError`, `ShellError`, `JsonError`, `EnvError`, `AiError`, `AiSchemaError`, `CapabilityError`, `TimeoutError`, `DeadlineError`, `UserRaised`, `RuntimeBusy`). `try/catch` can match any specific type or use `Error` as the fallback. `raise` now produces `UserRaised`. The mutable interpreter side-channel (`last_typed_error`) was removed in the companion issue (#19); this issue finishes the migration by classifying all remaining `miette!` string errors.
 
+- ~~**Unified AI failure model — absence vs. failure.**~~ Shipped (#38). `ai.*` now draws a clean line: `none` means genuine *absence* (the model returned no answer, no model is configured, or mock mode), handled with `??`/`when`; a real provider *failure* (network, unreachable, model not mapped) *throws* `AiError` carrying a machine-readable `reason` (`"unavailable"` / `"provider"`), handled with `try/catch`. Previously network/config failures degraded to `none`, so an outage was indistinguishable from a real classification behind a `??` default. Mock mode now models deterministic absence (`Ok(None)`), keeping `?? default` tests green. `AiSchemaError` (unparseable output) is unchanged.
+
 - **v1.0** is the first API-stable release. Semver begins at v1.0. Scope defined after real usage feedback from v0.1.
 
 One ship at a time.

@@ -21,7 +21,7 @@ task triage_email(email: { body: str }) -> TriageResult {
 
 task draft_reply(email: { body: str, from: str }, guidance: str? = none) -> str {
   history = memory.recall("interactions with {email.from}", limit: 5)
-  ai.draft("response to {email.body}", tone: "professional", context: history, guidance: guidance, max_length: 200) ?? "(draft failed)"
+  ai.draft("response to {email.body}", tone: "professional", context: history, guidance: guidance, max_length: 200) ?? "(no draft generated)"
 }
 
 task plan_followup(email: { subject: str }, urgency: Urgency) {

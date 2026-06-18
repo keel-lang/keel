@@ -19,7 +19,9 @@ enum Provider {
     Ollama {
         base_url: String,
     },
-    /// No-op provider for tests. Every call returns `CallFailed`.
+    /// No-op provider for tests. Every primitive returns `Ok(None)` —
+    /// deterministic *absence*, not failure — so `??` defaults fire in mock
+    /// mode while real provider failures (network/config) still throw `AiError`.
     Mock,
 }
 
@@ -59,10 +61,12 @@ pub type LlmResult = Result<String, LlmError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LlmError {
-    /// Configuration problem (model not mapped, Ollama unreachable).
+    /// Misconfiguration the operator must fix (model not mapped). Surfaces as
+    /// `AiError { reason: "provider" }`.
     #[error("{0}")]
     ConfigError(String),
-    /// Network/HTTP failure calling the LLM provider.
+    /// Provider unreachable / network or HTTP failure calling the LLM. Surfaces
+    /// as `AiError { reason: "unavailable" }`.
     #[error("{0}")]
     CallFailed(String),
     /// LLM output didn't match the expected enum or schema. `got` is the raw output.
@@ -194,7 +198,7 @@ impl LlmClient {
         system: &str,
         user: &str,
         model: &str,
-    ) -> LlmResult {
+    ) -> Result<Option<String>, LlmError> {
         let mut full_system = match role {
             Some(r) if !r.is_empty() => format!("You are {r}.\n\n"),
             _ => String::new(),
@@ -220,10 +224,14 @@ impl LlmClient {
         }
 
         match &self.provider {
-            Provider::Ollama { base_url } => {
-                self.call_ollama(base_url, &full_system, user, model).await
-            }
-            Provider::Mock => Err(LlmError::CallFailed("mock mode".into())),
+            Provider::Ollama { base_url } => self
+                .call_ollama(base_url, &full_system, user, model)
+                .await
+                .map(Some),
+            // Mock yields deterministic *absence* (not failure): the prompt is
+            // still built and traced above, but no provider is called, so `??`
+            // and `when` handle the `none` in tests.
+            Provider::Mock => Ok(None),
         }
     }
 
@@ -309,33 +317,31 @@ impl LlmClient {
             }
         }
 
-        match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
-                let cleaned = response.trim().to_lowercase();
-                for variant in variants {
-                    let lv = variant.to_lowercase();
-                    if cleaned == lv || cleaned.contains(&lv) {
-                        if self.trace.load(Ordering::Relaxed) {
-                            println!(
-                                "  {} Result: {}",
-                                "✓".bright_green(),
-                                variant.bright_white().bold()
-                            );
-                        }
-                        return Ok(Some(variant.clone()));
-                    }
+        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+            return Ok(None);
+        };
+        let cleaned = response.trim().to_lowercase();
+        for variant in variants {
+            let lv = variant.to_lowercase();
+            if cleaned == lv || cleaned.contains(&lv) {
+                if self.trace.load(Ordering::Relaxed) {
+                    println!(
+                        "  {} Result: {}",
+                        "✓".bright_green(),
+                        variant.bright_white().bold()
+                    );
                 }
-                println!(
-                    "  {} LLM returned '{}', no exact match",
-                    "⚠".bright_yellow(),
-                    cleaned.dimmed()
-                );
-                Err(LlmError::SchemaValidation {
-                    got: response.trim().to_string(),
-                })
+                return Ok(Some(variant.clone()));
             }
-            Err(e) => Err(e),
         }
+        println!(
+            "  {} LLM returned '{}', no exact match",
+            "⚠".bright_yellow(),
+            cleaned.dimmed()
+        );
+        Err(LlmError::SchemaValidation {
+            got: response.trim().to_string(),
+        })
     }
 
     #[expect(
@@ -387,15 +393,13 @@ impl LlmClient {
                 .unwrap_or("items");
             system.push_str(&format!(" Use at most {n} {unit_str}."));
         }
-        match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
-                if self.trace.load(Ordering::Relaxed) {
-                    println!("  {} Summary ready", "✓".bright_green());
-                }
-                Ok(Some(response.trim().to_string()))
-            }
-            Err(e) => Err(e),
+        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+            return Ok(None);
+        };
+        if self.trace.load(Ordering::Relaxed) {
+            println!("  {} Summary ready", "✓".bright_green());
         }
+        Ok(Some(response.trim().to_string()))
     }
 
     #[expect(
@@ -435,15 +439,13 @@ impl LlmClient {
             system.push_str(&format!("\n\nKeep it under {n} characters."));
         }
 
-        match self.call(role, rules, &system, description, model).await {
-            Ok(response) => {
-                if self.trace.load(Ordering::Relaxed) {
-                    println!("  {} Draft ready", "✓".bright_green());
-                }
-                Ok(Some(response.trim().to_string()))
-            }
-            Err(e) => Err(e),
+        let Some(response) = self.call(role, rules, &system, description, model).await? else {
+            return Ok(None);
+        };
+        if self.trace.load(Ordering::Relaxed) {
+            println!("  {} Draft ready", "✓".bright_green());
         }
+        Ok(Some(response.trim().to_string()))
     }
 
     pub async fn extract(
@@ -470,15 +472,13 @@ impl LlmClient {
              Respond in JSON with exactly these field names. Use null for missing fields.",
             fields_desc.join("\n  ")
         );
-        match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
-                if self.trace.load(Ordering::Relaxed) {
-                    println!("  {} Extracted", "✓".bright_green());
-                }
-                Ok(Some(response.trim().to_string()))
-            }
-            Err(e) => Err(e),
+        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+            return Ok(None);
+        };
+        if self.trace.load(Ordering::Relaxed) {
+            println!("  {} Extracted", "✓".bright_green());
         }
+        Ok(Some(response.trim().to_string()))
     }
 
     pub async fn translate(
@@ -511,26 +511,28 @@ impl LlmClient {
                  Respond in JSON with language names as keys and translations as values."
             )
         };
-        match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
-                let trimmed = response.trim().to_string();
-                if self.trace.load(Ordering::Relaxed) {
-                    println!("  {} Translated", "✓".bright_green());
-                }
-                if target_langs.len() == 1 {
-                    let mut map = HashMap::new();
-                    map.insert(target_langs[0].clone(), trimmed);
-                    Ok(Some(map))
-                } else if let Ok(parsed) = serde_json::from_str::<HashMap<String, String>>(&trimmed)
-                {
-                    Ok(Some(parsed))
-                } else {
-                    let mut map = HashMap::new();
-                    map.insert(target_langs[0].clone(), trimmed);
-                    Ok(Some(map))
-                }
-            }
-            Err(e) => Err(e),
+        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+            return Ok(None);
+        };
+        let trimmed = response.trim().to_string();
+        if self.trace.load(Ordering::Relaxed) {
+            println!("  {} Translated", "✓".bright_green());
+        }
+        // A multi-language reply that isn't valid JSON falls back to keying the
+        // raw text under the first requested language. `first()` keeps that path
+        // panic-free even if a caller bypasses the namespace's non-empty guard.
+        if target_langs.len() == 1 {
+            let mut map = HashMap::new();
+            map.insert(target_langs[0].clone(), trimmed);
+            Ok(Some(map))
+        } else if let Ok(parsed) = serde_json::from_str::<HashMap<String, String>>(&trimmed) {
+            Ok(Some(parsed))
+        } else if let Some(first) = target_langs.first() {
+            let mut map = HashMap::new();
+            map.insert(first.clone(), trimmed);
+            Ok(Some(map))
+        } else {
+            Ok(Some(HashMap::new()))
         }
     }
 
@@ -559,32 +561,30 @@ impl LlmClient {
              REASON: <one sentence>",
             options.join(", ")
         );
-        match self.call(role, rules, &system, input, model).await {
-            Ok(response) => {
-                let trimmed = response.trim();
-                let mut choice = String::new();
-                let mut reason = String::new();
-                for line in trimmed.lines() {
-                    if let Some(c) = line.strip_prefix("CHOICE:") {
-                        choice = c.trim().to_string();
-                    } else if let Some(r) = line.strip_prefix("REASON:") {
-                        reason = r.trim().to_string();
-                    }
-                }
-                if choice.is_empty() {
-                    choice = trimmed.to_string();
-                }
-                if self.trace.load(Ordering::Relaxed) {
-                    println!(
-                        "  {} Decision: {}",
-                        "✓".bright_green(),
-                        choice.bright_white().bold()
-                    );
-                }
-                Ok(Some((choice, reason)))
+        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+            return Ok(None);
+        };
+        let trimmed = response.trim();
+        let mut choice = String::new();
+        let mut reason = String::new();
+        for line in trimmed.lines() {
+            if let Some(c) = line.strip_prefix("CHOICE:") {
+                choice = c.trim().to_string();
+            } else if let Some(r) = line.strip_prefix("REASON:") {
+                reason = r.trim().to_string();
             }
-            Err(e) => Err(e),
         }
+        if choice.is_empty() {
+            choice = trimmed.to_string();
+        }
+        if self.trace.load(Ordering::Relaxed) {
+            println!(
+                "  {} Decision: {}",
+                "✓".bright_green(),
+                choice.bright_white().bold()
+            );
+        }
+        Ok(Some((choice, reason)))
     }
 
     /// Returns a clone of the internal `Arc<AtomicBool>` so callers can verify
@@ -615,21 +615,19 @@ impl LlmClient {
         if response_format.as_deref() == Some("json") {
             full_sys.push_str("\n\nRespond with valid JSON only. No prose, no markdown fences.");
         }
-        match self.call(role, rules, &full_sys, user, model).await {
-            Ok(response) => {
-                let trimmed = response.trim().to_string();
-                if response_format.as_deref() == Some("json")
-                    && serde_json::from_str::<serde_json::Value>(&trimmed).is_err()
-                {
-                    return Err(LlmError::SchemaValidation { got: trimmed });
-                }
-                if self.trace.load(Ordering::Relaxed) {
-                    println!("  {} Response ready", "✓".bright_green());
-                }
-                Ok(Some(trimmed))
-            }
-            Err(e) => Err(e),
+        let Some(response) = self.call(role, rules, &full_sys, user, model).await? else {
+            return Ok(None);
+        };
+        let trimmed = response.trim().to_string();
+        if response_format.as_deref() == Some("json")
+            && serde_json::from_str::<serde_json::Value>(&trimmed).is_err()
+        {
+            return Err(LlmError::SchemaValidation { got: trimmed });
         }
+        if self.trace.load(Ordering::Relaxed) {
+            println!("  {} Response ready", "✓".bright_green());
+        }
+        Ok(Some(trimmed))
     }
 }
 

@@ -6,7 +6,8 @@ Keel separates *absence* from *failure*:
 
 | Situation | Mechanism | Handle with |
 |---|---|---|
-| LLM unavailable / mock / network failure | Returns `T?` (`none`) | `??` or `when` |
+| Model had no answer / no model configured / mock | Returns `T?` (`none`) | `??` or `when` |
+| LLM provider unreachable or misconfigured | Throws `AiError` (`reason` field) | `try/catch` |
 | LLM gave output that didn't match schema | Throws `AiSchemaError` | `try/catch` |
 | Namespace operation failed (I/O, network, parse) | Throws a typed error | `try/catch` |
 | Fatal config error | Hard error | fix the config |
@@ -93,8 +94,8 @@ All stdlib error types and the namespaces that raise them:
 | `ShellError` | `shell.*` | Failed to spawn shell or wait for process |
 | `JsonError` | `json.*` | JSON parse errors, serialization failures |
 | `EnvError` | `env.require` | Required env variable not set |
-| `AiError` | `ai.*` | LLM config errors |
-| `AiSchemaError` | `ai.extract`, `ai.classify` | LLM output didn't match expected schema (`got` field contains raw output) |
+| `AiError` | `ai.*` | Provider unreachable, network failure, or misconfiguration (`reason` field: `"unavailable"` or `"provider"`) |
+| `AiSchemaError` | `ai.extract`, `ai.classify`, `ai.prompt` (JSON mode) | LLM output didn't match expected schema (`got` field contains raw output) |
 | `CapabilityError` | any `@tools`-restricted method | Method not allowed by the agent's `@tools` list |
 | `TimeoutError` | `control.with_timeout` | Closure exceeded the given duration |
 | `DeadlineError` | `control.with_deadline` | Closure ran past the deadline |
@@ -102,6 +103,24 @@ All stdlib error types and the namespaces that raise them:
 | `RuntimeBusy` | any async event | Interpreter event queue full |
 
 Catch any of these specifically, or use `catch e: Error` as a fallback for all.
+
+**`AiError` extra field:**
+
+| Field | Type | Value |
+|---|---|---|
+| `message` | `str` | Human-readable description |
+| `reason` | `str` | `"unavailable"` (network / provider unreachable) or `"provider"` (model not mapped / config fault) |
+
+A provider failure throws `AiError` rather than returning `none`, so `ai.classify(...) ?? default` never silently hides an outage — the `??` default applies only to genuine absence (no answer, no model configured, mock mode). Catch `AiError` to retry or degrade explicitly:
+
+```keel
+try {
+  urgency = ai.classify(email.body, as: Urgency) ?? Urgency.medium
+} catch err: AiError {
+  io.notify("classifier {err.reason}: {err.message}")
+  urgency = Urgency.medium
+}
+```
 
 **`AiSchemaError` extra field:**
 

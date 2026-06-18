@@ -28,7 +28,7 @@ agent Responder {
   on escalate(incident: Incident) {
     self.handled = self.handled + 1
     tone = if self.handled > 5 { "concise" } else { "thorough" }
-    runbook = ai.draft("Incident response runbook for: {incident.title} in the {incident.service} service", tone: tone, guidance: "cover immediate mitigation and rollback steps") ?? "(runbook generation failed — check LLM connectivity)"
+    runbook = ai.draft("Incident response runbook for: {incident.title} in the {incident.service} service", tone: tone, guidance: "cover immediate mitigation and rollback steps") ?? "(no runbook generated)"
     io.show("[Responder #{self.handled}] {incident.id}: {incident.title}")
     io.show(runbook)
   }
