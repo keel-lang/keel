@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.2.3 — 2026-06-18
+
 ### AI provider failures throw `AiError` instead of silently returning `none`
 
 `ai.*` now separates *absence* from *failure*. `none` means the model genuinely

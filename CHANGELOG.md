@@ -8,7 +8,12 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% AI provider failures now throw `AiError` with a reason instead of silently degrading to `none`, so a model outage can't hide behind a `??` default.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.2.3] — 2026-06-18
+
 
 ### Changed
 
