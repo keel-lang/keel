@@ -82,7 +82,6 @@ impl Scorer for Game {
     "oops"                                  # int not str, and must return int not str
   }
   task extra(self) -> int { 0 }            # error: not part of interface Scorer
-  # missing: score is required
 }
 ```
 

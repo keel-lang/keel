@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-Interface conformance now checks `impl` method parameter types, not just their count.
+%%TAGLINE%% Interface conformance now checks `impl` method parameter types, not just their count.
 
 ### Changed
 
