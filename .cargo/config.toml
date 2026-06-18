@@ -2,4 +2,3 @@
 coverage = "llvm-cov --workspace --all-targets --summary-only"
 coverage-html = "llvm-cov --workspace --all-targets --html --output-dir target/llvm-cov/html"
 coverage-lcov = "llvm-cov --workspace --all-targets --lcov --output-path target/llvm-cov/lcov.info"
-test = "test --features test-util"
