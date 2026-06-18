@@ -92,53 +92,35 @@ impl Interpreter {
                                     sig.name
                                 )));
                             }
-                            // Arity check (excluding the `self` param).
-                            let req_params: Vec<_> = sig
-                                .params
-                                .iter()
-                                .filter(|p| {
-                                    !matches!(&p.name, crate::ast::Binding::Ident(n) if n == "self")
-                                })
-                                .collect();
                             let got_method = impl_decl
                                 .methods
                                 .iter()
                                 .find(|m| m.name == sig.name)
                                 .unwrap();
-                            let got_params: Vec<_> = got_method
-                                .params
-                                .iter()
-                                .filter(|p| {
-                                    !matches!(&p.name, crate::ast::Binding::Ident(n) if n == "self")
-                                })
-                                .collect();
-                            if req_params.len() != got_params.len() {
-                                return Err(runtime_error(format!(
-                                    "impl `{iface_name}` for `{type_name}`: method `{}` expects {} parameter(s) but got {}",
-                                    sig.name,
-                                    req_params.len(),
-                                    got_params.len()
-                                )));
-                            }
-                            // Parameter-type check — same typed rule as return
-                            // types, applied per position so the runtime and the
-                            // static checker reject identical mismatches.
                             let env = &self.type_env;
-                            for (idx, (req_p, got_p)) in
-                                req_params.iter().zip(&got_params).enumerate()
-                            {
-                                let req_ty = iface::resolve_type_expr(&req_p.ty.kind, env);
-                                let got_ty = iface::resolve_type_expr(&got_p.ty.kind, env);
-                                if !iface::type_satisfies(&req_ty, &got_ty) {
-                                    let label = match &got_p.name {
-                                        crate::ast::Binding::Ident(n) => format!("`{n}`"),
-                                        crate::ast::Binding::Destruct(_) => format!("#{}", idx + 1),
-                                    };
+                            // Parameter conformance (arity + per-position types),
+                            // checked through the shared helper so the runtime
+                            // and the static checker reject identical mismatches.
+                            match iface::check_param_conformance(
+                                &sig.params,
+                                &got_method.params,
+                                env,
+                            ) {
+                                iface::ParamConformance::Ok => {}
+                                iface::ParamConformance::ArityMismatch { required, actual } => {
                                     return Err(runtime_error(format!(
-                                        "impl `{iface_name}` for `{type_name}`: method `{}` parameter {label} must be `{}` but is `{}`",
+                                        "impl `{iface_name}` for `{type_name}`: method `{}` expects {required} parameter(s) but got {actual}",
+                                        sig.name
+                                    )));
+                                }
+                                iface::ParamConformance::TypeMismatches(mismatches) => {
+                                    let m = &mismatches[0];
+                                    return Err(runtime_error(format!(
+                                        "impl `{iface_name}` for `{type_name}`: method `{}` parameter {} must be `{}` but is `{}`",
                                         sig.name,
-                                        type_display_str(&req_p.ty.kind),
-                                        type_display_str(&got_p.ty.kind),
+                                        m.label,
+                                        type_display_str(&m.required.ty.kind),
+                                        type_display_str(&m.actual.ty.kind),
                                     )));
                                 }
                             }
