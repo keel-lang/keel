@@ -234,8 +234,14 @@ fn examples_run_capability_clean_under_mock() {
         files.len()
     );
 
+    // Some examples (file_processing, capability_gating) write relative paths.
+    // Run the corpus in a throwaway dir so those artifacts never land in the
+    // repo; the TempDir is dropped at the end of the test, cleaning everything.
+    let workdir = tempfile::tempdir().expect("create example workdir");
+
     for file in files {
         let output = Command::new(keel_binary())
+            .current_dir(workdir.path())
             .env("KEEL_ONESHOT", "1")
             .env("KEEL_LLM", "mock")
             .arg("run")

@@ -17,31 +17,31 @@ pub fn keel_binary() -> PathBuf {
 }
 
 pub fn run_example(name: &str) -> (bool, String, String) {
-    let bin = keel_binary();
-    let example = project_root().join("examples").join(format!("{name}.keel"));
-    let output = Command::new(&bin)
-        .env("KEEL_ONESHOT", "1")
-        .env("KEEL_LLM", "mock")
-        .arg("run")
-        .arg(&example)
-        .output()
-        .expect("failed to run keel binary");
-    let ok = output.status.success();
-    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-    (ok, stdout, stderr)
+    run_example_subcommand("run", name)
 }
 
 pub fn test_example(name: &str) -> (bool, String, String) {
+    run_example_subcommand("test", name)
+}
+
+/// Run a shipped example through `keel <subcommand>` in a throwaway working
+/// directory. Examples like `file_processing.keel` write relative paths
+/// (`test.txt`, `data/output.txt`); running them in a temp dir keeps those
+/// artifacts out of the repo and isolates concurrently-running examples from
+/// each other. The `TempDir` is dropped at the end of the call, deleting the
+/// directory and everything the example wrote into it.
+fn run_example_subcommand(subcommand: &str, name: &str) -> (bool, String, String) {
     let bin = keel_binary();
     let example = project_root().join("examples").join(format!("{name}.keel"));
+    let workdir = tempfile::tempdir().expect("create example workdir");
     let output = Command::new(&bin)
+        .current_dir(workdir.path())
         .env("KEEL_ONESHOT", "1")
         .env("KEEL_LLM", "mock")
-        .arg("test")
+        .arg(subcommand)
         .arg(&example)
         .output()
-        .expect("failed to run keel test");
+        .expect("failed to run keel binary");
     let ok = output.status.success();
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
