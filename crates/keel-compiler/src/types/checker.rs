@@ -710,6 +710,11 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
         // site to point to.
         let impl_span = self.current_span.clone().unwrap_or(0..0);
 
+        // Conformance checks share the runtime's resolution context so
+        // `keel check` and `keel run` always apply identical rules. The env is
+        // loop-invariant, so build it once for every method.
+        let env = self.type_env();
+
         for sig in &sigs {
             if !provided.contains(sig.name.as_str()) {
                 self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
@@ -726,32 +731,43 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
                 .find(|m| m.name == sig.name)
                 .unwrap();
 
-            // Arity check (exclude `self`).
-            let req_arity = sig
-                .params
-                .iter()
-                .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
-                .count();
-            let got_arity = got_method
-                .params
-                .iter()
-                .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
-                .count();
-            if req_arity != got_arity {
-                self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
-                    impl_name: type_name.clone(),
-                    interface_name: iface_name.clone(),
-                    reason: format!(
-                        "method `{}` expects {req_arity} parameter(s) but got {got_arity}",
-                        sig.name
-                    ),
-                    span: got_method.name_span.clone(),
-                });
+            // Parameter conformance (arity + per-position types), checked
+            // through the shared helper so `keel check` and `keel run` reject
+            // identical mismatches.
+            match iface::check_param_conformance(&sig.params, &got_method.params, &env) {
+                iface::ParamConformance::Ok => {}
+                iface::ParamConformance::ArityMismatch { required, actual } => {
+                    self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                        impl_name: type_name.clone(),
+                        interface_name: iface_name.clone(),
+                        reason: format!(
+                            "method `{}` expects {required} parameter(s) but got {actual}",
+                            sig.name
+                        ),
+                        span: got_method.name_span.clone(),
+                    });
+                }
+                iface::ParamConformance::TypeMismatches(mismatches) => {
+                    // Report every offending position, each pointing at its own param.
+                    for m in mismatches {
+                        self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                            impl_name: type_name.clone(),
+                            interface_name: iface_name.clone(),
+                            reason: format!(
+                                "method `{}` parameter {} must be `{}` but is `{}`",
+                                sig.name,
+                                m.label,
+                                type_display_str(&m.required.ty.kind),
+                                type_display_str(&m.actual.ty.kind),
+                            ),
+                            span: m.actual.ty.span.clone(),
+                        });
+                    }
+                }
             }
 
             // Return-type check — use the shared typed conformance function so
             // that the checker and the runtime always apply identical rules.
-            let env = self.type_env();
             let req_sig = Signature {
                 params: vec![],
                 ret: sig

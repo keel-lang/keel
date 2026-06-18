@@ -94,7 +94,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `std/random` | [x] | `random.float()`, `random.int(min:, max:)`, `random.bool()` | — |
 | `std/uuid` | [x] | `uuid.v4()`, `uuid.v7()`, `uuid.v5(ns:, name:)`, `uuid.parse(s) -> Uuid?`; `uuid()` prelude alias; `.version()`, `.format(as:)`, `.to_str()` | Implements `Stringable` |
 | `Stringable` interface | [x] | `impl Stringable for T { task to_str(self) -> str { ... } }`; enables `"{expr}"` interpolation for user-defined types | Primitives + `Uuid` built-in; user types opt in via `impl` block; `impl` reserved keyword |
-| User-defined interfaces | [x] | `interface Name { task method(self) -> T }` declares a protocol; `impl Name for Type { ... }` satisfies it; compiler validates all methods present, arity, and return types; impl methods take priority over built-in map methods | No interface-as-type (`task f(x: Iterable)`) — values are structural, not nominally typed through interfaces |
+| User-defined interfaces | [x] | `interface Name { task method(self) -> T }` declares a protocol; `impl Name for Type { ... }` satisfies it; compiler validates all methods present, arity, parameter types, and return types; impl methods take priority over built-in map methods | No interface-as-type (`task f(x: Iterable)`) — values are structural, not nominally typed through interfaces |
 | `Comparable` interface | [x] | `task compare(self, other) -> int`; wired into `list.sort()`, `list.min()`, `list.max()`, global `min()`/`max()` | Async insertion sort for struct lists |
 | `Equatable` interface | [x] | `task equals(self, other) -> bool`; method-only, `==` stays structural | — |
 | `Serializable` interface | [x] | `task to_json(self) -> str`; auto-wired into `json.stringify` | — |

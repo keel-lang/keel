@@ -26,7 +26,7 @@
 
 use std::collections::HashMap;
 
-use crate::ast::{TypeDef, TypeExpr};
+use crate::ast::{Binding, Param, TypeDef, TypeExpr};
 
 use super::checker::Ty;
 
@@ -178,15 +178,21 @@ pub fn signature_satisfies(required: &Signature, actual: &Signature) -> bool {
         return false;
     }
     for (req_ty, act_ty) in required.params.iter().zip(&actual.params) {
-        if !ty_satisfies(req_ty, act_ty) {
+        if !type_satisfies(req_ty, act_ty) {
             return false;
         }
     }
-    ty_satisfies(&required.ret, &actual.ret)
+    type_satisfies(&required.ret, &actual.ret)
 }
 
 /// Returns `true` if `actual` satisfies the `required` type position.
-fn ty_satisfies(required: &Ty, actual: &Ty) -> bool {
+///
+/// Applies the covariance rules from the module-level documentation: `Dynamic`
+/// in the required position is a wildcard, `List(Dynamic)` accepts any list,
+/// and everything else requires an exact structural match.  Shared by
+/// [`signature_satisfies`] and [`check_param_conformance`] so the return type
+/// and every parameter position are compared by the one rule.
+fn type_satisfies(required: &Ty, actual: &Ty) -> bool {
     match required {
         // Explicit wildcard: `dynamic` in the required position accepts anything.
         Ty::Dynamic => true,
@@ -196,6 +202,88 @@ fn ty_satisfies(required: &Ty, actual: &Ty) -> bool {
         }
         _ => required == actual,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Parameter-list conformance
+// ---------------------------------------------------------------------------
+
+/// One `impl` method parameter position whose type does not satisfy the
+/// interface signature.
+///
+/// Both parameter declarations are borrowed so each caller renders the type
+/// names with its own display helper and points a diagnostic at the offending
+/// parameter's span — information that lives on [`Param`], not on [`Ty`].
+#[derive(Debug)]
+pub struct ParamMismatch<'a> {
+    /// Human-readable label for the parameter: its name in backticks, or
+    /// `#N` (1-based position) for a destructured binding with no single name.
+    pub label: String,
+    /// The interface's declaration of this parameter (the required type).
+    pub required: &'a Param,
+    /// The `impl`'s declaration of this parameter (the actual type).
+    pub actual: &'a Param,
+}
+
+/// The outcome of comparing an `impl` method's parameter list against the
+/// interface signature's parameter list (both excluding `self`).
+#[derive(Debug)]
+pub enum ParamConformance<'a> {
+    /// Every parameter position conforms.
+    Ok,
+    /// The parameter counts differ.
+    ArityMismatch { required: usize, actual: usize },
+    /// Same arity, but one or more positions have a non-conforming type, in
+    /// declaration order.
+    TypeMismatches(Vec<ParamMismatch<'a>>),
+}
+
+/// Compare an `impl` method's parameters against the interface signature's,
+/// applying the same per-position [`type_satisfies`] rule the return type uses.
+///
+/// `self` receivers are filtered from both sides first. This is the single
+/// source of truth for parameter conformance shared by the static checker and
+/// the runtime registration pass, so the two phases never drift.
+pub fn check_param_conformance<'a>(
+    required: &'a [Param],
+    actual: &'a [Param],
+    env: &TypeEnv,
+) -> ParamConformance<'a> {
+    let req: Vec<&Param> = required.iter().filter(|p| !is_self(p)).collect();
+    let got: Vec<&Param> = actual.iter().filter(|p| !is_self(p)).collect();
+    if req.len() != got.len() {
+        return ParamConformance::ArityMismatch {
+            required: req.len(),
+            actual: got.len(),
+        };
+    }
+    let mut mismatches = Vec::new();
+    for (idx, (req_p, got_p)) in req.iter().zip(&got).enumerate() {
+        let req_ty = resolve_type_expr(&req_p.ty.kind, env);
+        let got_ty = resolve_type_expr(&got_p.ty.kind, env);
+        if !type_satisfies(&req_ty, &got_ty) {
+            let label = match &got_p.name {
+                Binding::Ident(n) => format!("`{n}`"),
+                Binding::Destruct(_) => format!("#{}", idx + 1),
+            };
+            mismatches.push(ParamMismatch {
+                label,
+                required: req_p,
+                actual: got_p,
+            });
+        }
+    }
+    if mismatches.is_empty() {
+        ParamConformance::Ok
+    } else {
+        ParamConformance::TypeMismatches(mismatches)
+    }
+}
+
+/// Whether a parameter is the synthetic `self` receiver, excluded from
+/// conformance comparison.
+fn is_self(p: &Param) -> bool {
+    matches!(&p.name, Binding::Ident(n) if n == "self")
 }
 
 // ---------------------------------------------------------------------------
@@ -355,6 +443,103 @@ mod tests {
             ret: Ty::Str,
         };
         assert!(!signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn param_type_mismatch_fails() {
+        // Same arity, different parameter type — the gap this change closes.
+        let req = Signature {
+            params: vec![Ty::Str],
+            ret: Ty::Str,
+        };
+        let got = Signature {
+            params: vec![Ty::Int],
+            ret: Ty::Str,
+        };
+        assert!(!signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn dynamic_required_param_accepts_any_concrete() {
+        // `dynamic` in the required (interface) parameter position is a wildcard.
+        let req = Signature {
+            params: vec![Ty::Dynamic],
+            ret: Ty::Str,
+        };
+        let got = Signature {
+            params: vec![Ty::Str],
+            ret: Ty::Str,
+        };
+        assert!(signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn type_satisfies_exact_and_wildcard() {
+        assert!(type_satisfies(&Ty::Str, &Ty::Str));
+        assert!(!type_satisfies(&Ty::Str, &Ty::Int));
+        assert!(type_satisfies(&Ty::Dynamic, &Ty::Int));
+        // Wildcard is one-directional: a concrete required type rejects `dynamic`.
+        assert!(!type_satisfies(&Ty::Str, &Ty::Dynamic));
+    }
+
+    // ── check_param_conformance ──────────────────────────────────────────
+
+    fn param(name: &str, ty: &str) -> Param {
+        Param {
+            name: Binding::Ident(name.to_owned()),
+            name_span: 0..0,
+            ty: te_spanned(ty),
+            default: None,
+            variadic: false,
+        }
+    }
+
+    #[test]
+    fn param_conformance_ignores_self_and_matches_types() {
+        let req = [param("self", "str"), param("url", "str")];
+        let got = [param("self", "str"), param("url", "str")];
+        assert!(matches!(
+            check_param_conformance(&req, &got, &env()),
+            ParamConformance::Ok
+        ));
+    }
+
+    #[test]
+    fn param_conformance_reports_arity() {
+        let req = [param("self", "str"), param("url", "str")];
+        let got = [param("self", "str")];
+        assert!(matches!(
+            check_param_conformance(&req, &got, &env()),
+            ParamConformance::ArityMismatch {
+                required: 1,
+                actual: 0
+            }
+        ));
+    }
+
+    #[test]
+    fn param_conformance_reports_each_type_mismatch_with_label() {
+        let req = [param("self", "str"), param("url", "str")];
+        let got = [param("self", "str"), param("url", "int")];
+        match check_param_conformance(&req, &got, &env()) {
+            ParamConformance::TypeMismatches(ms) => {
+                assert_eq!(ms.len(), 1);
+                assert_eq!(ms[0].label, "`url`");
+            }
+            other => panic!("expected type mismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn param_conformance_dynamic_required_accepts_concrete() {
+        let mut dyn_param = param("data", "str");
+        dyn_param.ty = Node::synthetic(TypeExpr::Dynamic);
+        let req = [param("self", "str"), dyn_param];
+        let got = [param("self", "str"), param("data", "str")];
+        assert!(matches!(
+            check_param_conformance(&req, &got, &env()),
+            ParamConformance::Ok
+        ));
     }
 
     #[test]

@@ -4,6 +4,29 @@
 
 ## Unreleased
 
+### Interface conformance checks `impl` parameter types
+
+When a struct's `impl` block satisfies an `interface`, the compiler now verifies
+each method parameter's **type** — not just the parameter count and return type.
+A parameter whose type differs from the interface signature is now a conformance
+error in both `keel check` and `keel run`:
+
+```keel
+interface Fetcher {
+  task fetch(self, url: str) -> str
+}
+type Client { id: int }
+impl Fetcher for Client {
+  task fetch(self, url: int) -> str { "x" }   # error: parameter `url` must be `str` but is `int`
+}
+```
+
+`dynamic` in the interface's parameter position stays a wildcard — an `impl` may
+narrow it to any concrete type, which is how `Comparable`/`Equatable` accept
+`other: dynamic`. A concrete interface parameter type requires an exact match.
+The check shares the same comparison path as the return-type check, so the
+checker and the runtime always agree.
+
 ---
 
 ## v0.2.3 — 2026-06-18

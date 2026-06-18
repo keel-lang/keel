@@ -43,7 +43,8 @@ io.show(p.print())    # → "(1.5, 2.0)"
 - `self` inside the block receives the struct value. Use `self.field` to access fields.
 - Each method listed in the interface must be provided — missing methods are a compile-time error.
 - Extra methods not listed in the interface are a compile-time error.
-- Return types must match exactly.
+- Parameter count and parameter types must match the interface signature. `dynamic` in the interface's parameter position is a wildcard — an `impl` may narrow it to any concrete type (this is how `Comparable` declares `other: dynamic` while an `impl` writes `other: Score`). A concrete parameter type requires an exact match.
+- Return types must match exactly (`dynamic` in the return position is likewise a wildcard).
 - Interfaces and their `impl` blocks can appear in any order in the same file.
 
 ## Multiple types, one interface
@@ -71,15 +72,16 @@ impl Printable for Rect {
 
 ```keel
 interface Scorer {
-  task score(self) -> int
+  task score(self, weight: int) -> int
 }
 
 type Game { pts: int }
 
 impl Scorer for Game {
-  task score(self) -> str { "oops" }   # error: must return int, not str
-  task extra(self) -> int { 0 }        # error: not part of interface Scorer
-  # missing: score is required
+  task score(self, weight: str) -> str {   # two errors: param `weight` must be
+    "oops"                                  # int not str, and must return int not str
+  }
+  task extra(self) -> int { 0 }            # error: not part of interface Scorer
 }
 ```
 

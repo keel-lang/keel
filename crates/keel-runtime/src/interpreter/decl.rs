@@ -92,38 +92,41 @@ impl Interpreter {
                                     sig.name
                                 )));
                             }
-                            // Arity check (excluding the `self` param).
-                            let req_params: Vec<_> = sig
-                                .params
-                                .iter()
-                                .filter(|p| {
-                                    !matches!(&p.name, crate::ast::Binding::Ident(n) if n == "self")
-                                })
-                                .collect();
                             let got_method = impl_decl
                                 .methods
                                 .iter()
                                 .find(|m| m.name == sig.name)
                                 .unwrap();
-                            let got_params: Vec<_> = got_method
-                                .params
-                                .iter()
-                                .filter(|p| {
-                                    !matches!(&p.name, crate::ast::Binding::Ident(n) if n == "self")
-                                })
-                                .collect();
-                            if req_params.len() != got_params.len() {
-                                return Err(runtime_error(format!(
-                                    "impl `{iface_name}` for `{type_name}`: method `{}` expects {} parameter(s) but got {}",
-                                    sig.name,
-                                    req_params.len(),
-                                    got_params.len()
-                                )));
+                            let env = &self.type_env;
+                            // Parameter conformance (arity + per-position types),
+                            // checked through the shared helper so the runtime
+                            // and the static checker reject identical mismatches.
+                            match iface::check_param_conformance(
+                                &sig.params,
+                                &got_method.params,
+                                env,
+                            ) {
+                                iface::ParamConformance::Ok => {}
+                                iface::ParamConformance::ArityMismatch { required, actual } => {
+                                    return Err(runtime_error(format!(
+                                        "impl `{iface_name}` for `{type_name}`: method `{}` expects {required} parameter(s) but got {actual}",
+                                        sig.name
+                                    )));
+                                }
+                                iface::ParamConformance::TypeMismatches(mismatches) => {
+                                    let m = &mismatches[0];
+                                    return Err(runtime_error(format!(
+                                        "impl `{iface_name}` for `{type_name}`: method `{}` parameter {} must be `{}` but is `{}`",
+                                        sig.name,
+                                        m.label,
+                                        type_display_str(&m.required.ty.kind),
+                                        type_display_str(&m.actual.ty.kind),
+                                    )));
+                                }
                             }
                             // Return-type check — use the shared typed
                             // conformance function so the runtime and the
                             // static checker always agree.
-                            let env = &self.type_env;
                             let req_sig = Signature {
                                 params: vec![],
                                 ret: sig
