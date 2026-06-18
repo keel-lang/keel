@@ -171,6 +171,11 @@ pub(crate) fn namespace() -> Namespace {
                 Some(other) => vec![other.to_display_string()],
                 None => return Err(miette::miette!("ai.translate: missing `to:` argument")),
             };
+            if target_langs.is_empty() {
+                return Err(miette::miette!(
+                    "ai.translate: `to:` must contain at least one language"
+                ));
+            }
             let model = resolve_model(host, &args);
             let role = host.current_role();
             let rules = host.current_rules();

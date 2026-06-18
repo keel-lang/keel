@@ -20,7 +20,7 @@ agent BillingSpecialist {
 
   on handle(ticket: Ticket) {
     self.resolved = self.resolved + 1
-    reply = ai.draft("Billing support reply to: {ticket.body}", tone: "empathetic and clear") ?? "(draft unavailable)"
+    reply = ai.draft("Billing support reply to: {ticket.body}", tone: "empathetic and clear") ?? "(no draft generated)"
     io.show("[Billing] {ticket.id} → {ticket.from}")
     io.show(reply)
   }
@@ -40,7 +40,7 @@ agent TechSpecialist {
 
   on handle(ticket: Ticket) {
     self.resolved = self.resolved + 1
-    reply = ai.draft("Technical support reply to: {ticket.body}", tone: "precise", guidance: "include a code snippet if the issue involves an API or SDK") ?? "(draft unavailable)"
+    reply = ai.draft("Technical support reply to: {ticket.body}", tone: "precise", guidance: "include a code snippet if the issue involves an API or SDK") ?? "(no draft generated)"
     io.show("[Tech] {ticket.id} → {ticket.from}")
     io.show(reply)
   }

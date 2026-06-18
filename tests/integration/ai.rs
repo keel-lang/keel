@@ -581,3 +581,43 @@ run(A)
         "`??` masked the provider failure instead of letting AiError propagate:\n{stdout}"
     );
 }
+
+#[test]
+fn translate_empty_target_list_raises_instead_of_panicking() {
+    // An empty `to: []` previously slipped past the namespace and reached
+    // `target_langs[0]` in the translator, panicking the interpreter. The guard
+    // fires before any provider call, so it surfaces a clean, catchable error
+    // even in mock mode.
+    let src = r#"
+use std/ai
+use std/io
+
+agent A {
+  @tools [ai, io]
+  @role "tester"
+  @on_start {
+    try {
+      ai.translate("hello", to: [])
+      io.show("no-error")
+    } catch e: Error {
+      io.show("caught={e.message}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(src, &[("KEEL_LLM", "mock")]);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught=") && stdout.contains("at least one language"),
+        "empty `to: []` should raise a catchable error, not panic:\n{stdout}\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("no-error"),
+        "empty `to: []` should not silently succeed:\n{stdout}"
+    );
+}

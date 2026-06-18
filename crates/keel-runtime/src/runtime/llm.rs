@@ -518,16 +518,21 @@ impl LlmClient {
         if self.trace.load(Ordering::Relaxed) {
             println!("  {} Translated", "✓".bright_green());
         }
+        // A multi-language reply that isn't valid JSON falls back to keying the
+        // raw text under the first requested language. `first()` keeps that path
+        // panic-free even if a caller bypasses the namespace's non-empty guard.
         if target_langs.len() == 1 {
             let mut map = HashMap::new();
             map.insert(target_langs[0].clone(), trimmed);
             Ok(Some(map))
         } else if let Ok(parsed) = serde_json::from_str::<HashMap<String, String>>(&trimmed) {
             Ok(Some(parsed))
-        } else {
+        } else if let Some(first) = target_langs.first() {
             let mut map = HashMap::new();
-            map.insert(target_langs[0].clone(), trimmed);
+            map.insert(first.clone(), trimmed);
             Ok(Some(map))
+        } else {
+            Ok(Some(HashMap::new()))
         }
     }
 

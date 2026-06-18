@@ -12,7 +12,7 @@ type ReviewResult {
 }
 
 task review_code(diff: str) -> str {
-  ai.draft("code review feedback for this diff:\n{diff}", tone: "constructive", guidance: "focus on bugs, security issues, and readability") ?? "(review failed)"
+  ai.draft("code review feedback for this diff:\n{diff}", tone: "constructive", guidance: "focus on bugs, security issues, and readability") ?? "(no review generated)"
 }
 
 task assess_risk(diff: str) -> Severity {

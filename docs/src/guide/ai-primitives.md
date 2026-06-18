@@ -145,7 +145,7 @@ score = ai.prompt(
 
 `ai.prompt(...)` **must be followed by `as T`**. Use `as dynamic` if the response shape is truly unknown — this is a deliberate, visible opt-out.
 
-> **Status:** fully wired as of v0.1.3. `response_format: json` injects "Respond with valid JSON only. No prose, no markdown fences." into the system prompt and validates the reply — a non-JSON reply is a runtime error.
+> **Status:** fully wired as of v0.1.3. `response_format: json` injects "Respond with valid JSON only. No prose, no markdown fences." into the system prompt and validates the reply — a non-JSON reply raises `AiSchemaError` (with the raw output in `got`), the same error `ai.classify` and `ai.extract` raise on unparseable output.
 
 ## Per-call model override
 

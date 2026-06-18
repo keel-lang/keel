@@ -95,7 +95,7 @@ All stdlib error types and the namespaces that raise them:
 | `JsonError` | `json.*` | JSON parse errors, serialization failures |
 | `EnvError` | `env.require` | Required env variable not set |
 | `AiError` | `ai.*` | Provider unreachable, network failure, or misconfiguration (`reason` field: `"unavailable"` or `"provider"`) |
-| `AiSchemaError` | `ai.extract`, `ai.classify` | LLM output didn't match expected schema (`got` field contains raw output) |
+| `AiSchemaError` | `ai.extract`, `ai.classify`, `ai.prompt` (JSON mode) | LLM output didn't match expected schema (`got` field contains raw output) |
 | `CapabilityError` | any `@tools`-restricted method | Method not allowed by the agent's `@tools` list |
 | `TimeoutError` | `control.with_timeout` | Closure exceeded the given duration |
 | `DeadlineError` | `control.with_deadline` | Closure ran past the deadline |
