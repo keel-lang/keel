@@ -45,7 +45,18 @@ jobs:
       - name: Check documentation
         run: cargo doc --no-deps --document-private-items
 
+      # On PRs, only verify the release profile still type/borrow-checks — a few
+      # seconds, vs. ~2 min for the full opt-3 + fat-LTO build. The optimized
+      # binary feeds nothing else in CI (tests use the debug binary), and there
+      # is no release-divergent code, so this catches the same compile errors.
+      - name: Check release profile compiles
+        if: github.event_name == 'pull_request'
+        run: cargo check --release
+
+      # On push to main (and manual dispatch), do the full optimized build so a
+      # release-only link/codegen failure surfaces before it reaches a release.
       - name: Build release binary
+        if: github.event_name != 'pull_request'
         run: cargo build --release
 
       - name: Run tests
