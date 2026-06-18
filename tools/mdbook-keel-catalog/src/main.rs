@@ -160,19 +160,19 @@ mod tests {
 
     #[test]
     fn parse_directive_extracts_namespace() {
-        assert_eq!(parse_directive("{{#catalog File}}"), Some("File"));
-        assert_eq!(parse_directive("  {{#catalog Random}}  "), Some("Random"));
-        assert_eq!(parse_directive("{{#catalog Ai}}"), Some("Ai"));
+        assert_eq!(parse_directive("{{#catalog file}}"), Some("file"));
+        assert_eq!(parse_directive("  {{#catalog random}}  "), Some("random"));
+        assert_eq!(parse_directive("{{#catalog ai}}"), Some("ai"));
         assert_eq!(parse_directive("regular text"), None);
         assert_eq!(parse_directive("{{#include foo.md}}"), None);
     }
 
     #[test]
     fn render_namespace_table_file() {
-        let table = render_namespace_table("File");
+        let table = render_namespace_table("file");
         assert!(table.contains("| Method | Signature | Description |"));
-        assert!(table.contains("`File.read`"));
-        assert!(table.contains("`File.write`"));
+        assert!(table.contains("`file.read`"));
+        assert!(table.contains("`file.write`"));
         assert!(table.contains("path: str"));
         assert!(table.contains("→ str"));
         assert!(table.contains("→ none"));
@@ -186,28 +186,28 @@ mod tests {
 
     #[test]
     fn render_namespace_table_ai_special_returns() {
-        let table = render_namespace_table("Ai");
+        let table = render_namespace_table("ai");
         assert!(table.contains("Enum?"), "AiClassify should render as Enum?");
         assert!(table.contains("T?"), "AiExtract should render as T?");
     }
 
     #[test]
     fn expand_directives_replaces_catalog_line() {
-        let input = "Before\n{{#catalog Random}}\nAfter";
+        let input = "Before\n{{#catalog random}}\nAfter";
         let out = expand_directives(input);
         assert!(out.contains("Before"));
-        assert!(out.contains("`Random.float`"));
+        assert!(out.contains("`random.float`"));
         assert!(out.contains("After"));
-        assert!(!out.contains("{{#catalog Random}}"));
+        assert!(!out.contains("{{#catalog random}}"));
     }
 
     #[test]
     fn expand_directives_preserves_surrounding_prose() {
-        let input = "# Title\n\nSome prose.\n\n{{#catalog Log}}\n\nMore prose.";
+        let input = "# Title\n\nSome prose.\n\n{{#catalog log}}\n\nMore prose.";
         let out = expand_directives(input);
         assert!(out.contains("# Title"));
         assert!(out.contains("Some prose."));
-        assert!(out.contains("`Log.info`"));
+        assert!(out.contains("`log.info`"));
         assert!(out.contains("More prose."));
     }
 
@@ -226,15 +226,15 @@ mod tests {
     fn expand_directives_directive_at_end_preserves_trailing_newline() {
         // render_namespace_table always ends with \n; that newline should be the
         // trailing newline when the directive is the last line of the file.
-        let input = "Intro.\n\n{{#catalog Random}}\n";
+        let input = "Intro.\n\n{{#catalog random}}\n";
         let out = expand_directives(input);
         assert!(out.ends_with('\n'), "output must end with newline");
-        assert!(out.contains("`Random.float`"));
+        assert!(out.contains("`random.float`"));
     }
 
     #[test]
     fn optional_param_renders_with_question_mark() {
-        let table = render_namespace_table("Cache");
+        let table = render_namespace_table("cache");
         assert!(
             table.contains("ttl?: duration"),
             "optional ttl param should render with ?"
@@ -249,7 +249,7 @@ mod tests {
                     "content": "",
                     "sub_items": [{
                         "Chapter": {
-                            "content": "{{#catalog Random}}",
+                            "content": "{{#catalog random}}",
                             "sub_items": []
                         }
                     }]
@@ -259,7 +259,7 @@ mod tests {
         expand_book(&mut book);
         let inner = &book["items"][0]["Chapter"]["sub_items"][0]["Chapter"]["content"];
         assert!(
-            inner.as_str().unwrap().contains("`Random.float`"),
+            inner.as_str().unwrap().contains("`random.float`"),
             "directives in sub-chapters must be expanded"
         );
     }
