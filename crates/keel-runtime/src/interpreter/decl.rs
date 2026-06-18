@@ -124,13 +124,15 @@ impl Interpreter {
                             // types, applied per position so the runtime and the
                             // static checker reject identical mismatches.
                             let env = &self.type_env;
-                            for (req_p, got_p) in req_params.iter().zip(&got_params) {
+                            for (idx, (req_p, got_p)) in
+                                req_params.iter().zip(&got_params).enumerate()
+                            {
                                 let req_ty = iface::resolve_type_expr(&req_p.ty.kind, env);
                                 let got_ty = iface::resolve_type_expr(&got_p.ty.kind, env);
                                 if !iface::type_satisfies(&req_ty, &got_ty) {
                                     let label = match &got_p.name {
                                         crate::ast::Binding::Ident(n) => format!("`{n}`"),
-                                        crate::ast::Binding::Destruct(_) => "parameter".to_string(),
+                                        crate::ast::Binding::Destruct(_) => format!("#{}", idx + 1),
                                     };
                                     return Err(runtime_error(format!(
                                         "impl `{iface_name}` for `{type_name}`: method `{}` parameter {label} must be `{}` but is `{}`",
