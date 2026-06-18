@@ -120,10 +120,29 @@ impl Interpreter {
                                     got_params.len()
                                 )));
                             }
+                            // Parameter-type check — same typed rule as return
+                            // types, applied per position so the runtime and the
+                            // static checker reject identical mismatches.
+                            let env = &self.type_env;
+                            for (req_p, got_p) in req_params.iter().zip(&got_params) {
+                                let req_ty = iface::resolve_type_expr(&req_p.ty.kind, env);
+                                let got_ty = iface::resolve_type_expr(&got_p.ty.kind, env);
+                                if !iface::type_satisfies(&req_ty, &got_ty) {
+                                    let label = match &got_p.name {
+                                        crate::ast::Binding::Ident(n) => format!("`{n}`"),
+                                        crate::ast::Binding::Destruct(_) => "parameter".to_string(),
+                                    };
+                                    return Err(runtime_error(format!(
+                                        "impl `{iface_name}` for `{type_name}`: method `{}` parameter {label} must be `{}` but is `{}`",
+                                        sig.name,
+                                        type_display_str(&req_p.ty.kind),
+                                        type_display_str(&got_p.ty.kind),
+                                    )));
+                                }
+                            }
                             // Return-type check — use the shared typed
                             // conformance function so the runtime and the
                             // static checker always agree.
-                            let env = &self.type_env;
                             let req_sig = Signature {
                                 params: vec![],
                                 ret: sig

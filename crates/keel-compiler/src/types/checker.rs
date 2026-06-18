@@ -726,32 +726,62 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
                 .find(|m| m.name == sig.name)
                 .unwrap();
 
-            // Arity check (exclude `self`).
-            let req_arity = sig
+            // Conformance checks share the runtime's resolution context so
+            // `keel check` and `keel run` always apply identical rules.
+            let env = self.type_env();
+
+            // Parameters excluding the `self` receiver, in declaration order.
+            let req_params: Vec<&Param> = sig
                 .params
                 .iter()
                 .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
-                .count();
-            let got_arity = got_method
+                .collect();
+            let got_params: Vec<&Param> = got_method
                 .params
                 .iter()
                 .filter(|p| !matches!(&p.name, Binding::Ident(n) if n == "self"))
-                .count();
-            if req_arity != got_arity {
+                .collect();
+
+            if req_params.len() != got_params.len() {
                 self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
                     impl_name: type_name.clone(),
                     interface_name: iface_name.clone(),
                     reason: format!(
-                        "method `{}` expects {req_arity} parameter(s) but got {got_arity}",
-                        sig.name
+                        "method `{}` expects {} parameter(s) but got {}",
+                        sig.name,
+                        req_params.len(),
+                        got_params.len()
                     ),
                     span: got_method.name_span.clone(),
                 });
+            } else {
+                // Parameter-type check — same typed rule as return types, applied
+                // per position so the diagnostic points at the offending param.
+                for (idx, (req_p, got_p)) in req_params.iter().zip(&got_params).enumerate() {
+                    let req_ty = iface::resolve_type_expr(&req_p.ty.kind, &env);
+                    let got_ty = iface::resolve_type_expr(&got_p.ty.kind, &env);
+                    if !iface::type_satisfies(&req_ty, &got_ty) {
+                        let label = match &got_p.name {
+                            Binding::Ident(n) => format!("`{n}`"),
+                            Binding::Destruct(_) => format!("#{}", idx + 1),
+                        };
+                        self.errors.push(TypeDiagnostic::InterfaceNotSatisfied {
+                            impl_name: type_name.clone(),
+                            interface_name: iface_name.clone(),
+                            reason: format!(
+                                "method `{}` parameter {label} must be `{}` but is `{}`",
+                                sig.name,
+                                type_display_str(&req_p.ty.kind),
+                                type_display_str(&got_p.ty.kind),
+                            ),
+                            span: got_p.ty.span.clone(),
+                        });
+                    }
+                }
             }
 
             // Return-type check — use the shared typed conformance function so
             // that the checker and the runtime always apply identical rules.
-            let env = self.type_env();
             let req_sig = Signature {
                 params: vec![],
                 ret: sig

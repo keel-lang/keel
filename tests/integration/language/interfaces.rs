@@ -252,3 +252,87 @@ run_test()
         "dynamic should accept any concrete type\nstdout: {stdout}\nstderr: {stderr}"
     );
 }
+
+#[test]
+fn impl_wrong_param_type_is_an_error() {
+    // Matching arity but a different parameter type must be rejected.
+    let src = r#"
+use std/io
+interface Fetcher {
+  task fetch(self, url: str) -> str
+}
+type Client { id: int }
+impl Fetcher for Client {
+  task fetch(self, url: int) -> str { "x" }
+}
+task run_test() { io.show("x") }
+run_test()
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "should have failed — parameter type mismatch");
+    assert!(
+        stderr.contains("parameter") && stderr.contains("url"),
+        "expected parameter-type mismatch error, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_matching_param_types_pass() {
+    let src = r#"
+use std/io
+interface Fetcher {
+  task fetch(self, url: str) -> str
+}
+type Client { id: int }
+impl Fetcher for Client {
+  task fetch(self, url: str) -> str { "got {url}" }
+}
+task run_test() {
+  c: Client = { id: 1 }
+  io.show(c.fetch("/x"))
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("got /x"), "got: {stdout}");
+}
+
+#[test]
+fn impl_wrong_param_type_rejected_by_runtime() {
+    // The REPL registers declarations through the interpreter without the
+    // static checker, so this exercises the runtime conformance path in
+    // `interpreter::decl` directly — under `keel run` the checker masks it.
+    let src = "interface Fetcher { task fetch(self, url: str) -> str }\n\
+               type Client { id: int }\n\
+               impl Fetcher for Client { task fetch(self, url: int) -> str { \"x\" } }\n";
+    let (_ok, stdout, stderr) = repl_inline(src);
+    let combined = format!("{stdout}{stderr}");
+    assert!(
+        combined.contains("parameter") && combined.contains("url"),
+        "expected runtime conformance error from REPL, got:\n{combined}"
+    );
+}
+
+#[test]
+fn impl_dynamic_param_type_accepts_any_concrete() {
+    // `dynamic` in the interface parameter position is an explicit wildcard:
+    // an impl may narrow it to any concrete type.
+    let src = r#"
+use std/io
+interface Logger {
+  task log(self, data: dynamic) -> str
+}
+type C { id: int }
+impl Logger for C {
+  task log(self, data: str) -> str { data }
+}
+task run_test() { io.show("ok") }
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "dynamic param should accept any concrete type\nstdout: {stdout}\nstderr: {stderr}"
+    );
+}

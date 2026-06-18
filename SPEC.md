@@ -797,7 +797,9 @@ io.show(p.print())    # → "(1.5, 2.0)"
 - The named interface must be declared (either user-defined or a built-in like `Stringable`) before any `impl` references it — unless both appear in the same file, in which case order does not matter (the compiler pre-collects all interface declarations).
 - Every method listed in the interface must be provided. Missing methods are a compile-time error.
 - Extra methods not listed in the interface are a compile-time error.
-- Return types must match exactly.
+- Parameter count must match (excluding `self`).
+- Parameter types must match the interface signature. `dynamic` in the interface's parameter position is a wildcard — an `impl` may narrow it to any concrete type (this is how `Comparable`/`Equatable` accept `other: dynamic` while the `impl` declares `other: Score`). A concrete interface parameter type requires an exact match.
+- Return types must match exactly (`dynamic` in the return position is likewise a wildcard).
 - `self` inside the block receives the struct value. Use `self.field` to access fields.
 
 **Dispatch rule.** The runtime dispatches `impl` methods by the value's declared type tag. A value acquires its tag at the first typed boundary it crosses: a `let x: TypeName = ...` binding, a task parameter with a named type annotation, a task return with a named return type, or an `ai.extract(…, as: TypeName)` call. List elements are promoted to `Value::Struct` when the list is assigned to a `list[TypeName]` variable. Untagged maps (struct literals not yet passed through a typed boundary) do not dispatch to any `impl` method.

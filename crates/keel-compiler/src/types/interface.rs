@@ -178,15 +178,22 @@ pub fn signature_satisfies(required: &Signature, actual: &Signature) -> bool {
         return false;
     }
     for (req_ty, act_ty) in required.params.iter().zip(&actual.params) {
-        if !ty_satisfies(req_ty, act_ty) {
+        if !type_satisfies(req_ty, act_ty) {
             return false;
         }
     }
-    ty_satisfies(&required.ret, &actual.ret)
+    type_satisfies(&required.ret, &actual.ret)
 }
 
 /// Returns `true` if `actual` satisfies the `required` type position.
-fn ty_satisfies(required: &Ty, actual: &Ty) -> bool {
+///
+/// Applies the covariance rules from the module-level documentation: `Dynamic`
+/// in the required position is a wildcard, `List(Dynamic)` accepts any list,
+/// and everything else requires an exact structural match.  Exposed so that
+/// callers can check a single parameter or return position and report a precise
+/// per-position diagnostic, while still sharing one comparison rule with
+/// [`signature_satisfies`].
+pub fn type_satisfies(required: &Ty, actual: &Ty) -> bool {
     match required {
         // Explicit wildcard: `dynamic` in the required position accepts anything.
         Ty::Dynamic => true,
@@ -355,6 +362,43 @@ mod tests {
             ret: Ty::Str,
         };
         assert!(!signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn param_type_mismatch_fails() {
+        // Same arity, different parameter type — the gap this change closes.
+        let req = Signature {
+            params: vec![Ty::Str],
+            ret: Ty::Str,
+        };
+        let got = Signature {
+            params: vec![Ty::Int],
+            ret: Ty::Str,
+        };
+        assert!(!signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn dynamic_required_param_accepts_any_concrete() {
+        // `dynamic` in the required (interface) parameter position is a wildcard.
+        let req = Signature {
+            params: vec![Ty::Dynamic],
+            ret: Ty::Str,
+        };
+        let got = Signature {
+            params: vec![Ty::Str],
+            ret: Ty::Str,
+        };
+        assert!(signature_satisfies(&req, &got));
+    }
+
+    #[test]
+    fn type_satisfies_exact_and_wildcard() {
+        assert!(type_satisfies(&Ty::Str, &Ty::Str));
+        assert!(!type_satisfies(&Ty::Str, &Ty::Int));
+        assert!(type_satisfies(&Ty::Dynamic, &Ty::Int));
+        // Wildcard is one-directional: a concrete required type rejects `dynamic`.
+        assert!(!type_satisfies(&Ty::Str, &Ty::Dynamic));
     }
 
     #[test]

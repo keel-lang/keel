@@ -282,6 +282,37 @@ pub fn run_inline_with_stdin(src: &str, stdin_text: &str) -> (bool, String, Stri
     (ok, stdout, stderr)
 }
 
+/// Feed `src` to `keel repl` over stdin and return `(ok, stdout, stderr)`.
+///
+/// The REPL registers declarations straight through the interpreter without
+/// running the static checker, so this is the only harness that exercises the
+/// interpreter's own conformance / registration errors directly (under
+/// `keel run` the checker runs first and masks them).
+#[allow(dead_code)]
+pub fn repl_inline(src: &str) -> (bool, String, String) {
+    let bin = keel_binary();
+    let mut child = Command::new(&bin)
+        .env("KEEL_REPL", "1")
+        .env("KEEL_LLM", "mock")
+        .arg("repl")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("run keel repl");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(src.as_bytes())
+        .expect("write child stdin");
+    let output = child.wait_with_output().expect("wait for keel repl");
+    let ok = output.status.success();
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+    (ok, stdout, stderr)
+}
+
 pub fn keel_string_literal(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }

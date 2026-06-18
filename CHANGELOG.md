@@ -8,7 +8,26 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+Interface conformance now checks `impl` method parameter types, not just their count.
+
+### Changed
+
+- **`impl` conformance now verifies parameter types, not just arity.** When a struct's `impl` block satisfies an `interface`, both `keel check` and `keel run` now require each method parameter to match the interface signature's type — previously only the *number* of parameters (and the return type) was checked, so a parameter could silently have the wrong type. `dynamic` in the interface's parameter position stays a wildcard (an `impl` may narrow it to a concrete type, which is how `Comparable`/`Equatable` accept `other: dynamic`); a concrete interface parameter type now requires an exact match. The check runs through the same shared `signature_satisfies` path as the return-type check, so the checker and the runtime always agree.
+
+```keel
+use std/io
+interface Fetcher {
+  task fetch(self, url: str) -> str
+}
+type Client { id: int }
+impl Fetcher for Client {
+  task fetch(self, url: int) -> str { "x" }   # error: parameter `url` must be `str` but is `int`
+}
+task run() { io.show("x") }
+run()
+```
+
+  A program with a mismatched parameter type that previously slipped past `keel check` will now report a conformance error pointing at the offending parameter. Programs whose `impl` parameter types already matched the interface (including any that narrow a `dynamic` interface parameter to a concrete type) are unaffected.
 
 ---
 
