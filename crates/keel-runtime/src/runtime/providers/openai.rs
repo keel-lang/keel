@@ -74,6 +74,16 @@ impl LlmProvider for OpenAiProvider {
         let client = self.client.clone();
         let url = format!("{}/v1/chat/completions", self.base_url);
         Box::pin(async move {
+            // `default` is Keel's "no @model set" sentinel; OpenAI has no
+            // server-side default, so reject it with an actionable error rather
+            // than asking the API for a model literally named "default".
+            if model == "default" {
+                return Err(LlmError::ConfigError(
+                    "the `openai` provider has no default model; set @model \"<model>\" on the \
+                     agent or pass `using: \"openai:<model>\"`"
+                        .to_string(),
+                ));
+            }
             let Some(key) = key else {
                 return Err(LlmError::ConfigError(
                     "OPENAI_API_KEY is not set; export it to use the `openai` provider".to_string(),

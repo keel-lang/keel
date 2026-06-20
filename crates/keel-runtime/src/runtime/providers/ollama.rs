@@ -79,14 +79,17 @@ impl OllamaProvider {
     fn resolve_model<'a>(&'a self, model: &'a str) -> Result<&'a str, LlmError> {
         // A leading `ollama:` is the routing prefix (the registry uses it to pick
         // this backend). Strip it, then resolve the remaining name the same way a
-        // bare tag is — alias lookup still applies. Only fall back to the literal
-        // name when the prefix was explicit and no alias matched.
+        // bare tag is — alias lookup still applies. A prefixed name with no alias
+        // is sent literally, EXCEPT the `default` sentinel: it never names a real
+        // Ollama tag, so it must reach the KEEL_OLLAMA_MODEL fallback below even
+        // under an explicit `ollama:` prefix (otherwise `@provider ollama` would
+        // ship the literal string "default" as the model).
         let had_prefix = model.starts_with("ollama:");
         let name = model.strip_prefix("ollama:").unwrap_or(model);
         if let Some(mapped) = self.model_map.get(name) {
             return Ok(mapped);
         }
-        if had_prefix {
+        if had_prefix && name != "default" {
             return Ok(name);
         }
         if !self.default_model.is_empty() {

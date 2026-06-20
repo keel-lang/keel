@@ -39,15 +39,30 @@ pub use keel_catalog::BUILTIN_LLM_PROVIDERS as BUILTIN_PROVIDERS;
 pub struct LlmClient {
     backends: HashMap<&'static str, Box<dyn LlmProvider>>,
     default_provider: &'static str,
+    /// A set-but-unrecognised `KEEL_PROVIDER`. Kept rather than silently ignored
+    /// so the misconfiguration surfaces loudly on the first `ai.*` call instead
+    /// of quietly routing to Ollama.
+    provider_config_error: Option<String>,
     trace: Arc<AtomicBool>,
 }
 
-/// Resolves the program-default provider from `KEEL_PROVIDER` (defaults to Ollama).
-fn default_provider(env: &dyn EnvProvider) -> &'static str {
-    match env.var("KEEL_PROVIDER").as_deref() {
-        Some("openai") => "openai",
-        Some("anthropic") => "anthropic",
-        _ => "ollama",
+/// Resolves the program-default provider from `KEEL_PROVIDER` (defaults to
+/// Ollama). A set-but-unrecognised value is a hard error rather than a silent
+/// fallback — consistent with the compile-time rejection of an unknown
+/// `@provider` name — surfaced as `AiError { reason: "provider" }` on first use.
+fn resolve_default_provider(env: &dyn EnvProvider) -> Result<&'static str, String> {
+    match env.var("KEEL_PROVIDER") {
+        None => Ok("ollama"),
+        Some(value) if value.is_empty() => Ok("ollama"),
+        Some(value) => BUILTIN_PROVIDERS
+            .into_iter()
+            .find(|provider| *provider == value.as_str())
+            .ok_or_else(|| {
+                format!(
+                    "KEEL_PROVIDER='{value}' is not a built-in provider — use one of: {}.",
+                    BUILTIN_PROVIDERS.join(", ")
+                )
+            }),
     }
 }
 
@@ -78,8 +93,12 @@ impl LlmClient {
             backends.insert("openai", Box::new(OpenAiProvider::from_env(env)));
             backends.insert("anthropic", Box::new(AnthropicProvider::from_env(env)));
         }
-        let default_provider = default_provider(env);
-        if trace.load(Ordering::Relaxed) {
+        let (default_provider, provider_config_error) = match resolve_default_provider(env) {
+            Ok(provider) => (provider, None),
+            // Keep a valid routing default; the error fires on the first call.
+            Err(message) => ("ollama", Some(message)),
+        };
+        if trace.load(Ordering::Relaxed) && provider_config_error.is_none() {
             println!(
                 "  {} LLM default provider: {}",
                 "→".dimmed(),
@@ -89,6 +108,7 @@ impl LlmClient {
         LlmClient {
             backends,
             default_provider,
+            provider_config_error,
             trace,
         }
     }
@@ -105,6 +125,7 @@ impl LlmClient {
         LlmClient {
             backends,
             default_provider: "ollama",
+            provider_config_error: None,
             trace,
         }
     }
@@ -137,6 +158,9 @@ impl LlmClient {
         model: &str,
         max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
+        if let Some(message) = &self.provider_config_error {
+            return Err(LlmError::ConfigError(message.clone()));
+        }
         let mut full_system = match role {
             Some(r) if !r.is_empty() => format!("You are {r}.\n\n"),
             _ => String::new(),
@@ -556,7 +580,13 @@ impl LlmClient {
 
 fn truncate(s: &str, max: usize) -> Cow<'_, str> {
     if s.len() > max {
-        Cow::Owned(format!("{}...", &s[..max]))
+        // Back off to the nearest char boundary so a multi-byte codepoint
+        // straddling `max` (common for non-ASCII trace input) never panics.
+        let mut end = max;
+        while end > 0 && !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        Cow::Owned(format!("{}...", &s[..end]))
     } else {
         Cow::Borrowed(s)
     }
@@ -564,7 +594,7 @@ fn truncate(s: &str, max: usize) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LlmClient, LlmError};
+    use super::{LlmClient, LlmError, truncate};
     use crate::runtime::context::MapEnv;
     use std::net::SocketAddr;
 
@@ -962,5 +992,74 @@ mod tests {
             .expect("content should be present");
 
         assert_eq!(out, "routed");
+    }
+
+    #[tokio::test]
+    async fn ollama_prefix_default_sentinel_resolves_configured_model() {
+        // Regression: `@provider ollama` turns a bare `default` tag into
+        // `ollama:default`. The sentinel must still resolve to KEEL_OLLAMA_MODEL
+        // rather than being sent to Ollama as a model literally named "default".
+        let base_url = fake_ollama(FakeResponse::EchoModel).await;
+        let client = client(&base_url, &[]); // KEEL_OLLAMA_MODEL = "default-model"
+
+        let summary = client
+            .summarize(
+                None,
+                &[],
+                "input",
+                None,
+                None,
+                None,
+                None,
+                "ollama:default",
+                None,
+            )
+            .await
+            .expect("summarize should succeed")
+            .expect("summary should be present");
+
+        assert_eq!(summary, "default-model");
+    }
+
+    #[tokio::test]
+    async fn unknown_keel_provider_is_config_error() {
+        // A set-but-unrecognised KEEL_PROVIDER must fail loudly, not silently
+        // route to Ollama.
+        let client = LlmClient::from_env(&MapEnv::with(&[("KEEL_PROVIDER", "claude")]));
+
+        let err = client
+            .prompt(None, &[], "s", "u", None, "gpt-4o", None)
+            .await
+            .expect_err("an unknown KEEL_PROVIDER must be a config error");
+
+        assert!(matches!(err, LlmError::ConfigError(m) if m.contains("KEEL_PROVIDER")));
+    }
+
+    #[tokio::test]
+    async fn openai_default_sentinel_is_config_error() {
+        // `KEEL_PROVIDER=openai` with an agent that sets no @model yields the
+        // `default` sentinel; OpenAI has no default-model fallback, so this must
+        // be a clear config error rather than a literal "default" model request.
+        let client = LlmClient::from_env(&MapEnv::with(&[
+            ("KEEL_PROVIDER", "openai"),
+            ("OPENAI_API_KEY", "sk-test"),
+        ]));
+
+        let err = client
+            .prompt(None, &[], "s", "u", None, "default", None)
+            .await
+            .expect_err("the default sentinel under openai must be a config error");
+
+        assert!(matches!(err, LlmError::ConfigError(m) if m.contains("default model")));
+    }
+
+    #[test]
+    fn truncate_backs_off_to_char_boundary() {
+        // A byte cap landing mid-codepoint must not panic.
+        assert_eq!(truncate("a😀b", 2).as_ref(), "a...");
+        // ASCII still truncates exactly at the cap.
+        assert_eq!(truncate("abcdef", 3).as_ref(), "abc...");
+        // Within the cap is returned untouched.
+        assert_eq!(truncate("hi", 8).as_ref(), "hi");
     }
 }

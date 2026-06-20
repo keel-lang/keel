@@ -80,6 +80,16 @@ impl LlmProvider for AnthropicProvider {
         let client = self.client.clone();
         let url = format!("{}/v1/messages", self.base_url);
         Box::pin(async move {
+            // `default` is Keel's "no @model set" sentinel; Anthropic has no
+            // server-side default, so reject it with an actionable error rather
+            // than asking the API for a model literally named "default".
+            if model == "default" {
+                return Err(LlmError::ConfigError(
+                    "the `anthropic` provider has no default model; set @model \"<model>\" on the \
+                     agent or pass `using: \"anthropic:<model>\"`"
+                        .to_string(),
+                ));
+            }
             let Some(key) = key else {
                 return Err(LlmError::ConfigError(
                     "ANTHROPIC_API_KEY is not set; export it to use the `anthropic` provider"

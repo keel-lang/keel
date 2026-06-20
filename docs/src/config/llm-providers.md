@@ -34,6 +34,9 @@ Three ways, **most-specific wins**:
    ```bash
    export KEEL_PROVIDER=anthropic   # default: ollama
    ```
+   It accepts only `ollama`, `openai`, or `anthropic`; an unrecognised value
+   throws `AiError { reason: "provider" }` on the first `ai.*` call rather than
+   silently falling back to Ollama.
 
 A bare model tag with no prefix and no `@provider` routes to the program default.
 
@@ -45,6 +48,8 @@ export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 A missing key throws `AiError { reason: "provider" }` — never a silent fallback.
+Unlike Ollama, these backends have no built-in default model: set `@model` (or a
+`using:`/prefixed tag). An agent with neither also throws `AiError { reason: "provider" }`.
 Endpoints can be overridden (for proxies, OpenAI-compatible servers, or testing):
 
 ```bash
