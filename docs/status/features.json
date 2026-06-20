@@ -64,7 +64,7 @@
       "name": "@limits { ... }",
       "tier": "stdlib",
       "status": "partial",
-      "notes": "`timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level"
+      "notes": "`timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens` now threaded into the provider request as the generation cap; `max_cost` extracted but not enforced"
     },
     {
       "name": "@team [...]",
@@ -73,18 +73,18 @@
       "notes": "Team membership used by `broadcast` routing (v0.1.6)"
     },
     {
-      "name": "@provider MyProvider",
+      "name": "@provider <name>",
       "tier": "stdlib",
-      "status": "planned",
-      "notes": "Parsed, no per-agent LLM-provider swap"
+      "status": "shipped",
+      "notes": "Selects a built-in backend (`ollama`/`openai`/`anthropic`) for the agent; unknown name is a compile error. Per-call override via `provider:` model-tag prefix; program default via `KEEL_PROVIDER`. User-authored Keel providers planned (SPEC §5.5)"
     }
   ],
   "namespaces": [
     {
       "name": "std/ai",
       "status": "partial",
-      "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json)",
-      "gaps": "`embed` deferred to v0.2 (requires pluggable provider registry); `ai.install(provider)` not registered",
+      "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json); swappable built-in backends — Ollama, OpenAI, Anthropic (Claude) — via `@model \"provider:model\"`, `@provider`, or `KEEL_PROVIDER`",
+      "gaps": "`embed` deferred to v0.2; user-authored `ai.install(provider)` planned (SPEC §5.5)",
       "purpose": "LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳"
     },
     {

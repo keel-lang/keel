@@ -1,6 +1,6 @@
 # Stdlib: `ai`
 
-`use std/ai` to access LLM-backed operations. Under the hood, every call dispatches through the `LlmProvider` interface; the default provider is selected from `@model` (on the agent) or `KEEL_OLLAMA_MODEL`.
+`use std/ai` to access LLM-backed operations. Under the hood, every call dispatches through a swappable backend — Ollama (default), OpenAI, or Anthropic (Claude) — selected by the model tag's `provider:` prefix, the agent's `@provider`, or `KEEL_PROVIDER` (see [Choosing a provider and model](#choosing-a-provider-and-model)).
 
 ## `ai.classify` — categorize into an enum
 
@@ -147,16 +147,29 @@ score = ai.prompt(
 
 > **Status:** fully wired as of v0.1.3. `response_format: json` injects "Respond with valid JSON only. No prose, no markdown fences." into the system prompt and validates the reply — a non-JSON reply raises `AiSchemaError` (with the raw output in `got`), the same error `ai.classify` and `ai.extract` raise on unparseable output.
 
-## Per-call model override
+## Choosing a provider and model
+
+`ai.*` runs on one of three built-in backends — **Ollama** (default, local),
+**OpenAI**, and **Anthropic (Claude)**. A `provider:` prefix on the model tag
+picks the backend per call; `@provider <name>` sets an agent's default; and
+`KEEL_PROVIDER` sets the program default.
 
 ```keel
-urgency = ai.classify(email.body, as: Urgency, using: "fast")
-reply   = ai.draft("response to {email}", using: "smart")
+agent Researcher {
+  @provider anthropic
+  @model "claude-opus-4-8"           # bare tag → the agent's @provider (Claude)
+}
+
+urgency = ai.classify(email.body, as: Urgency, using: "openai:gpt-4o")  # per call
+reply   = ai.draft("response to {email}", using: "fast")               # Ollama alias
 ```
 
-`using:` accepts a model alias that resolves via `KEEL_MODEL_<ALIAS>` environment variables, or a literal Ollama tag (`"ollama:gemma4"` or just `"gemma4"` if a single default is set). See [LLM Providers](../config/llm-providers.md).
+`using:` accepts a `provider:model` tag (`"openai:gpt-4o"`, `"anthropic:claude-opus-4-8"`),
+an Ollama alias resolved via `KEEL_MODEL_<ALIAS>`, or a literal Ollama tag. OpenAI
+and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`; a missing key throws
+`AiError { reason: "provider" }`. Full setup: see [LLM Providers](../config/llm-providers.md).
 
-Every `ai.*` call goes through the `LlmProvider` interface. Ollama is the only wired backend; `@provider` and `ai.install(...)` are reserved for a future release.
+Writing your own provider in Keel (`ai.install(...)`) is planned for a future release.
 
 ## Why functions, not keywords
 

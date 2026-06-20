@@ -396,6 +396,49 @@ impl Interpreter {
             .unwrap_or_else(|| "default".to_string())
     }
 
+    /// The current agent's `@provider` attribute — a built-in backend name
+    /// (`ollama`, `openai`, `anthropic`) written as a bareword identifier — or
+    /// `None` when absent. The `ai` namespace uses it as the agent's default
+    /// provider for model tags that carry no `provider:` prefix.
+    pub fn current_provider(&self) -> Option<String> {
+        let agent = self.current_agent.as_ref()?;
+        let def = agent.lock().def.clone();
+        for attr in &def.attributes {
+            if attr.name == "provider"
+                && let AttributeBody::Expr(node) = &attr.body
+                && let Expr::Ident(name) = &node.kind
+            {
+                return Some(name.clone());
+            }
+        }
+        None
+    }
+
+    /// The current agent's `@limits { max_tokens: N }`, or `None` when absent or
+    /// not a positive integer literal. Threaded into the provider request as the
+    /// generation cap. Only the inline-struct form is read; spread-update limits
+    /// fall back to the default.
+    pub fn current_max_tokens(&self) -> Option<u32> {
+        let agent = self.current_agent.as_ref()?;
+        let def = agent.lock().def.clone();
+        for attr in &def.attributes {
+            if attr.name == "limits"
+                && let AttributeBody::Expr(node) = &attr.body
+                && let Expr::StructLit(fields) = &node.kind
+            {
+                for (key, val) in fields {
+                    if key.as_str() == Some("max_tokens")
+                        && let Expr::Integer(n) = &val.kind
+                        && *n > 0
+                    {
+                        return u32::try_from(*n).ok();
+                    }
+                }
+            }
+        }
+        None
+    }
+
     /// The current agent's `@role "..."` string, if any. Used by the
     /// LLM client to prepend an agent-identity preamble to every
     /// system prompt — so `Ai.draft(...)` inside an agent with

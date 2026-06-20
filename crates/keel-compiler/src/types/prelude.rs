@@ -185,6 +185,12 @@ static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
         prelude.insert(n.to_string());
     }
 
+    // `@provider` backend names (mirrors `@memory` modes above), sourced from the
+    // shared catalog so the checker and runtime never disagree.
+    for n in keel_catalog::BUILTIN_LLM_PROVIDERS {
+        prelude.insert(n.to_string());
+    }
+
     // Built-in interface names
     for iface in [
         "Stringable",

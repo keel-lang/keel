@@ -1,0 +1,39 @@
+use std/ai
+use std/io
+
+# Keel ships three built-in LLM backends — Ollama (default, local), OpenAI, and
+# Anthropic (Claude). A `provider:` prefix on the model tag picks the backend per
+# call; `@provider` sets an agent's default; `KEEL_PROVIDER` sets the program
+# default. No extra code, no `ai.install`.
+
+# Per-call override via the model-tag prefix — works without any @provider.
+task summarize_with(text: str, model: str) -> str {
+  ai.summarize(text, in: 1, unit: sentences, using: model) ?? "(no summary)"
+}
+
+agent Researcher {
+  @tools [ai, io]
+  @provider anthropic           # this agent's default backend…
+  @model "claude-opus-4-8"       # …used for bare (unprefixed) model tags
+  @role "You write concise research summaries"
+  @limits { max_tokens: 1024 }   # caps generation on the provider
+
+  @on_start {
+    # Routes to the agent's @provider (anthropic) + @model.
+    default = ai.summarize("Keel makes agents first-class.", in: 1, unit: sentences)
+      ?? "(no summary)"
+    io.show("anthropic (agent default): {default}")
+
+    # Per-call override to a different backend by prefixing the model tag.
+    openai = summarize_with("Keel makes agents first-class.", "openai:gpt-4o")
+    io.show("openai (per-call): {openai}")
+
+    # And the local default, explicitly.
+    local = summarize_with("Keel makes agents first-class.", "ollama:llama3")
+    io.show("ollama (explicit): {local}")
+
+    stop(self)
+  }
+}
+
+run(Researcher)

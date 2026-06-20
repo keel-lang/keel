@@ -891,22 +891,42 @@ for n in Range { lo: 1, hi: 3 } { io.show("{n}") }   # 1, 2, 3
 
 The language can't know about every provider. Interfaces let stdlib declare the *protocol*, ship a default implementation, and, once the runtime registry is wired, let users swap implementations.
 
-### 5.5 Installing implementations <span class="badge badge-soon">Planned</span>
+### 5.5 Selecting an LLM provider
 
-Custom implementation installation is planned, but not registered in the v0.1 runtime yet. The intended startup shape is:
+`ai.*` dispatches through swappable backends. Three are built in — `ollama`
+(default, local), `openai`, and `anthropic` (Claude) — and a program selects
+between them with **zero extra code**, three ways, most-specific wins:
 
 ```keel
-# At startup — swap the default LLM provider
-ai.install(MyCustomProvider)
+# Per-call: a `provider:` prefix on the model tag.
+agent Assistant {
+  @model "anthropic:claude-opus-4-8"   # routes this agent's ai.* calls to Claude
+}
 
-# Per-agent override
-agent Specialist {
-  @model "my-custom-model"
-  @provider MyOllamaProvider      # stdlib attribute that installs for this agent
+agent Helper {
+  @provider openai                     # per-agent default backend…
+  @model "gpt-4o"                       # …for bare (unprefixed) tags
 }
 ```
 
-Installation is scoped: per-program, per-agent, or per-call (via an explicit `using:` argument to stdlib functions).
+- **Per-call** — a model tag of the form `"<provider>:<model>"`
+  (`"openai:gpt-4o"`, `"anthropic:claude-opus-4-8"`, `"ollama:llama3"`), set via
+  `@model` or a `using:` argument.
+- **Per-agent** — `@provider <name>` (`ollama` | `openai` | `anthropic`) sets the
+  backend for that agent's bare tags. An unknown name is a compile-time error.
+- **Per-program** — the `KEEL_PROVIDER` environment variable sets the default
+  backend (otherwise `ollama`).
+
+OpenAI and Anthropic read their keys from `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`;
+a missing key surfaces as `AiError { reason: "provider" }`, never a silent
+fallback. `@limits { max_tokens }` caps generation for the backend.
+
+#### User-authored providers <span class="badge badge-soon">Planned</span>
+
+Writing a provider in Keel and installing it — `ai.install(MyProvider)` with
+`impl LlmProvider for MyProvider` — is planned for a future release, for the long
+tail of proprietary or self-hosted backends. The built-in backends above cover
+the common cases today.
 
 ---
 

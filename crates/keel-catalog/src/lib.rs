@@ -8,6 +8,8 @@
 //! This crate contains no executable namespace code — only data.
 
 pub mod builtins;
+pub mod providers;
 pub mod specs;
 
+pub use providers::{BUILTIN_LLM_PROVIDERS, is_builtin_llm_provider};
 pub use specs::{catalog, catalog_method, module_requires_capability};

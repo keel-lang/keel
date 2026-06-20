@@ -20,6 +20,7 @@ pub mod human;
 pub mod llm;
 pub mod namespace;
 pub mod namespaces;
+pub mod providers;
 
 pub use convert::{json_to_value, value_to_json};
 pub(crate) use namespaces::memory::derive_program_name_with_fs;

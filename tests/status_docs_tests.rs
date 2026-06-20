@@ -153,10 +153,10 @@ fn agents_status_claims_match_feature_status_source() {
         "`@team` is shipped in docs/status/features.json, but docs/src/guide/agents.md no longer says broadcast routing uses it"
     );
 
-    assert_eq!(status_by_name["@provider MyProvider"], "planned");
+    assert_eq!(status_by_name["@provider <name>"], "shipped");
     assert!(
-        agents.contains("`@provider` is parsed but has no runtime effect yet"),
-        "`@provider` is planned in docs/status/features.json, but docs/src/guide/agents.md no longer says it is unwired"
+        agents.contains("`@provider` selects a built-in LLM backend"),
+        "`@provider` is shipped in docs/status/features.json, but docs/src/guide/agents.md no longer says it selects a backend"
     );
 }
 

@@ -1,8 +1,9 @@
-//! Ollama-only LLM client for Keel v0.1.
+// Rust guideline compliant 2026-02-21
+//! High-level `ai.*` primitives over a swappable [`LlmProvider`] backend.
 //!
-//! Model resolution has no silent fallbacks: if a model can't be
-//! reached or mapped, the call fails with an error that explains how
-//! to fix it. `KEEL_LLM=mock` short-circuits all calls for tests.
+//! [`LlmClient`] owns prompt construction (role, rules, task system text) and
+//! output parsing; the chosen [`LlmProvider`] owns the transport. Model
+//! resolution has no silent fallbacks. `KEEL_LLM=mock` selects the mock backend.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -10,68 +11,44 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use colored::Colorize;
-use serde::{Deserialize, Serialize};
 
 use super::context::EnvProvider;
+use super::providers::anthropic::AnthropicProvider;
+use super::providers::mock::MockProvider;
+use super::providers::ollama::OllamaProvider;
+use super::providers::openai::OpenAiProvider;
+use super::providers::{CompletionRequest, LlmProvider};
 
-#[derive(Debug, Clone)]
-enum Provider {
-    Ollama {
-        base_url: String,
-    },
-    /// No-op provider for tests. Every primitive returns `Ok(None)` —
-    /// deterministic *absence*, not failure — so `??` defaults fire in mock
-    /// mode while real provider failures (network/config) still throw `AiError`.
-    Mock,
-}
+pub use super::providers::LlmError;
 
-/// LLM client for `Ai.*` namespace operations.
+/// Default upper bound on generated tokens when an agent sets no `@limits`.
+///
+/// Anthropic and OpenAI require `max_tokens`; this value is large enough for the
+/// short structured outputs the `ai.*` primitives produce without truncating.
+const DEFAULT_MAX_TOKENS: u32 = 4096;
+
+/// Built-in backend names. Routing and `@provider` validation share this set.
+///
+/// Re-exported from [`keel_catalog`] so the checker and runtime never disagree.
+pub use keel_catalog::BUILTIN_LLM_PROVIDERS as BUILTIN_PROVIDERS;
+
+/// Dispatches `ai.*` primitives through a registry of [`LlmProvider`] backends.
+///
+/// A `provider:` prefix on the model tag picks the backend; a bare tag routes
+/// to the program default. The registry always holds every built-in name.
 pub struct LlmClient {
-    client: reqwest::Client,
-    provider: Provider,
-    model_map: HashMap<String, String>,
-    ollama_default: String,
+    backends: HashMap<&'static str, Box<dyn LlmProvider>>,
+    default_provider: &'static str,
     trace: Arc<AtomicBool>,
 }
 
-#[derive(Serialize)]
-struct OllamaRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    stream: bool,
-}
-
-#[derive(Deserialize)]
-struct OllamaResponse {
-    message: Option<OllamaMessage>,
-}
-
-#[derive(Deserialize)]
-struct OllamaMessage {
-    content: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-struct ChatMessage {
-    role: String,
-    content: String,
-}
-
-pub type LlmResult = Result<String, LlmError>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum LlmError {
-    /// Misconfiguration the operator must fix (model not mapped). Surfaces as
-    /// `AiError { reason: "provider" }`.
-    #[error("{0}")]
-    ConfigError(String),
-    /// Provider unreachable / network or HTTP failure calling the LLM. Surfaces
-    /// as `AiError { reason: "unavailable" }`.
-    #[error("{0}")]
-    CallFailed(String),
-    /// LLM output didn't match the expected enum or schema. `got` is the raw output.
-    #[error("LLM output did not match expected schema: '{got}'")]
-    SchemaValidation { got: String },
+/// Resolves the program-default provider from `KEEL_PROVIDER` (defaults to Ollama).
+fn default_provider(env: &dyn EnvProvider) -> &'static str {
+    match env.var("KEEL_PROVIDER").as_deref() {
+        Some("openai") => "openai",
+        Some("anthropic") => "anthropic",
+        _ => "ollama",
+    }
 }
 
 impl Default for LlmClient {
@@ -91,43 +68,27 @@ impl LlmClient {
     }
 
     pub fn from_env_with_trace(env: &dyn EnvProvider, trace: Arc<AtomicBool>) -> Self {
+        let mut backends: HashMap<&'static str, Box<dyn LlmProvider>> = HashMap::new();
         if env.var("KEEL_LLM").as_deref() == Some("mock") {
-            return Self::mock_with_trace(trace);
+            for name in BUILTIN_PROVIDERS {
+                backends.insert(name, Box::new(MockProvider));
+            }
+        } else {
+            backends.insert("ollama", Box::new(OllamaProvider::from_env(env)));
+            backends.insert("openai", Box::new(OpenAiProvider::from_env(env)));
+            backends.insert("anthropic", Box::new(AnthropicProvider::from_env(env)));
         }
-
-        let client = reqwest::Client::new();
-        let model_map = Self::load_model_map(env);
-        let ollama_host = env
-            .var("OLLAMA_HOST")
-            .unwrap_or_else(|| "http://localhost:11434".to_string());
-        let ollama_default = env.var("KEEL_OLLAMA_MODEL").unwrap_or_default();
-
+        let default_provider = default_provider(env);
         if trace.load(Ordering::Relaxed) {
             println!(
-                "  {} LLM provider: {} ({})",
+                "  {} LLM default provider: {}",
                 "→".dimmed(),
-                "Ollama".bright_cyan(),
-                ollama_host.dimmed()
+                default_provider.bright_cyan()
             );
-            for (keel_name, ollama_name) in &model_map {
-                println!(
-                    "     {} → {}",
-                    keel_name.dimmed(),
-                    ollama_name.bright_cyan()
-                );
-            }
-            if !ollama_default.is_empty() {
-                println!("     {} → {}", "*".dimmed(), ollama_default.bright_cyan());
-            }
         }
-
         LlmClient {
-            client,
-            provider: Provider::Ollama {
-                base_url: ollama_host,
-            },
-            model_map,
-            ollama_default,
+            backends,
+            default_provider,
             trace,
         }
     }
@@ -137,58 +98,34 @@ impl LlmClient {
     }
 
     pub fn mock_with_trace(trace: Arc<AtomicBool>) -> Self {
+        let mut backends: HashMap<&'static str, Box<dyn LlmProvider>> = HashMap::new();
+        for name in BUILTIN_PROVIDERS {
+            backends.insert(name, Box::new(MockProvider));
+        }
         LlmClient {
-            client: reqwest::Client::new(),
-            provider: Provider::Mock,
-            model_map: HashMap::new(),
-            ollama_default: String::new(),
+            backends,
+            default_provider: "ollama",
             trace,
         }
     }
 
-    fn load_model_map(env: &dyn EnvProvider) -> HashMap<String, String> {
-        // `KEEL_MODEL_<NAME>=<ollama_model>` maps a Keel-side model
-        // alias to an Ollama tag, e.g.:
-        //   KEEL_MODEL_FAST=gemma4
-        //   KEEL_MODEL_SMART=mistral:7b-instruct
-        let mut map = HashMap::new();
-        for (key, val) in env.vars() {
-            if let Some(suffix) = key.strip_prefix("KEEL_MODEL_")
-                && !val.is_empty()
-            {
-                map.insert(suffix.to_ascii_lowercase().replace('_', "-"), val);
-            }
-        }
-        map
+    /// Selects the backend for `model`: a `provider:` tag prefix wins, otherwise
+    /// the program default. The registry always holds every built-in name.
+    fn provider_for(&self, model: &str) -> &dyn LlmProvider {
+        let name = BUILTIN_PROVIDERS
+            .into_iter()
+            .find(|p| model.starts_with(&format!("{p}:")))
+            .unwrap_or(self.default_provider);
+        let backend = self.backends.get(name).unwrap_or_else(|| {
+            self.backends
+                .get(self.default_provider)
+                .expect("registry always holds the default provider")
+        });
+        &**backend
     }
 
     pub fn describe_model(&self, model: &str) -> String {
-        match &self.provider {
-            Provider::Ollama { base_url } => match self.resolve_model(model) {
-                Ok(name) => format!("{name} (ollama @ {base_url})"),
-                Err(_) => format!("{model} (not mapped)"),
-            },
-            Provider::Mock => format!("{model} (mock)"),
-        }
-    }
-
-    fn resolve_model<'a>(&'a self, model: &'a str) -> Result<&'a str, LlmError> {
-        if let Some(stripped) = model.strip_prefix("ollama:") {
-            return Ok(stripped);
-        }
-        if let Some(mapped) = self.model_map.get(model) {
-            return Ok(mapped);
-        }
-        if !self.ollama_default.is_empty() {
-            return Ok(&self.ollama_default);
-        }
-        Err(LlmError::ConfigError(format!(
-            "Model '{model}' has no mapping.\n\
-             Set one of:\n  \
-               export KEEL_MODEL_{}=<ollama_model>\n  \
-               export KEEL_OLLAMA_MODEL=<ollama_model>",
-            model.to_uppercase().replace('-', "_")
-        )))
+        self.provider_for(model).describe_model(model)
     }
 
     async fn call(
@@ -198,6 +135,7 @@ impl LlmClient {
         system: &str,
         user: &str,
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
         let mut full_system = match role {
             Some(r) if !r.is_empty() => format!("You are {r}.\n\n"),
@@ -223,69 +161,22 @@ impl LlmClient {
             );
         }
 
-        match &self.provider {
-            Provider::Ollama { base_url } => self
-                .call_ollama(base_url, &full_system, user, model)
-                .await
-                .map(Some),
-            // Mock yields deterministic *absence* (not failure): the prompt is
-            // still built and traced above, but no provider is called, so `??`
-            // and `when` handle the `none` in tests.
-            Provider::Mock => Ok(None),
-        }
-    }
-
-    async fn call_ollama(
-        &self,
-        base_url: &str,
-        system: &str,
-        user: &str,
-        model: &str,
-    ) -> LlmResult {
-        let resolved = self.resolve_model(model)?;
-        let url = format!("{base_url}/api/chat");
-        let request = OllamaRequest {
-            model: resolved.to_string(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".into(),
-                    content: system.to_string(),
-                },
-                ChatMessage {
-                    role: "user".into(),
-                    content: user.to_string(),
-                },
-            ],
-            stream: false,
-        };
-        let response = self
-            .client
-            .post(&url)
-            .json(&request)
-            .send()
+        self.provider_for(model)
+            .complete(CompletionRequest {
+                system: full_system,
+                user: user.to_string(),
+                model: model.to_string(),
+                max_tokens: max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+            })
             .await
-            .map_err(|e| LlmError::CallFailed(format!("Ollama unreachable at {base_url}: {e}")))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(LlmError::CallFailed(format!(
-                "Ollama returned {status}: {body}"
-            )));
-        }
-
-        let body: OllamaResponse = response
-            .json()
-            .await
-            .map_err(|e| LlmError::CallFailed(format!("Failed to parse Ollama response: {e}")))?;
-
-        body.message
-            .and_then(|m| m.content)
-            .ok_or_else(|| LlmError::CallFailed("Empty response from Ollama".into()))
     }
 
     // ── High-level primitives used by the Ai namespace ────────────────
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn classify(
         &self,
         role: Option<&str>,
@@ -294,6 +185,7 @@ impl LlmClient {
         variants: &[String],
         criteria: &[(String, String)],
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
         let variants_str = variants.join(", ");
         if self.trace.load(Ordering::Relaxed) {
@@ -317,7 +209,10 @@ impl LlmClient {
             }
         }
 
-        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &system, input, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         let cleaned = response.trim().to_lowercase();
@@ -358,6 +253,7 @@ impl LlmClient {
         max: Option<i64>,
         unit: Option<String>,
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
         let length_instruction = match &length {
             Some((n, unit)) => format!("in {n} {unit}"),
@@ -393,7 +289,10 @@ impl LlmClient {
                 .unwrap_or("items");
             system.push_str(&format!(" Use at most {n} {unit_str}."));
         }
-        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &system, input, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         if self.trace.load(Ordering::Relaxed) {
@@ -415,6 +314,7 @@ impl LlmClient {
         guidance: Option<&str>,
         max_length: Option<i64>,
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
         let tone_s = tone.unwrap_or("neutral");
         if self.trace.load(Ordering::Relaxed) {
@@ -439,7 +339,10 @@ impl LlmClient {
             system.push_str(&format!("\n\nKeep it under {n} characters."));
         }
 
-        let Some(response) = self.call(role, rules, &system, description, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &system, description, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         if self.trace.load(Ordering::Relaxed) {
@@ -455,6 +358,7 @@ impl LlmClient {
         input: &str,
         schema: &[(String, String)],
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
         let fields_desc: Vec<String> = schema.iter().map(|(n, t)| format!("{n}: {t}")).collect();
         if self.trace.load(Ordering::Relaxed) {
@@ -472,7 +376,10 @@ impl LlmClient {
              Respond in JSON with exactly these field names. Use null for missing fields.",
             fields_desc.join("\n  ")
         );
-        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &system, input, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         if self.trace.load(Ordering::Relaxed) {
@@ -488,6 +395,7 @@ impl LlmClient {
         input: &str,
         target_langs: &[String],
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<HashMap<String, String>>, LlmError> {
         let langs = target_langs.join(", ");
         if self.trace.load(Ordering::Relaxed) {
@@ -511,7 +419,10 @@ impl LlmClient {
                  Respond in JSON with language names as keys and translations as values."
             )
         };
-        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &system, input, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         let trimmed = response.trim().to_string();
@@ -543,6 +454,7 @@ impl LlmClient {
         input: &str,
         options: &[String],
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<(String, String)>, LlmError> {
         if self.trace.load(Ordering::Relaxed) {
             println!(
@@ -561,7 +473,10 @@ impl LlmClient {
              REASON: <one sentence>",
             options.join(", ")
         );
-        let Some(response) = self.call(role, rules, &system, input, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &system, input, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         let trimmed = response.trim();
@@ -595,6 +510,10 @@ impl LlmClient {
         Arc::clone(&self.trace)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn prompt(
         &self,
         role: Option<&str>,
@@ -603,6 +522,7 @@ impl LlmClient {
         user: &str,
         response_format: Option<String>,
         model: &str,
+        max_tokens: Option<u32>,
     ) -> Result<Option<String>, LlmError> {
         if self.trace.load(Ordering::Relaxed) {
             println!(
@@ -615,7 +535,10 @@ impl LlmClient {
         if response_format.as_deref() == Some("json") {
             full_sys.push_str("\n\nRespond with valid JSON only. No prose, no markdown fences.");
         }
-        let Some(response) = self.call(role, rules, &full_sys, user, model).await? else {
+        let Some(response) = self
+            .call(role, rules, &full_sys, user, model, max_tokens)
+            .await?
+        else {
             return Ok(None);
         };
         let trimmed = response.trim().to_string();
@@ -712,13 +635,76 @@ mod tests {
         let client = client(&base_url, &[("KEEL_MODEL_FAST_MODEL", "mapped-model")]);
 
         let summary = client
-            .summarize(None, &[], "input", None, None, None, None, "fast-model")
+            .summarize(
+                None,
+                &[],
+                "input",
+                None,
+                None,
+                None,
+                None,
+                "fast-model",
+                None,
+            )
             .await
             .expect("summarize should succeed")
             .expect("summary should be present");
 
         assert_eq!(summary, "mapped-model");
         assert!(client.describe_model("fast-model").contains("mapped-model"));
+    }
+
+    #[tokio::test]
+    async fn ollama_prefix_still_resolves_alias_map() {
+        // Regression: an `ollama:` routing prefix (added by `@provider ollama`)
+        // must not bypass the alias map — `ollama:fast-model` should resolve the
+        // same as the bare `fast-model` tag, not be sent literally.
+        let base_url = fake_ollama(FakeResponse::EchoModel).await;
+        let client = client(&base_url, &[("KEEL_MODEL_FAST_MODEL", "mapped-model")]);
+
+        let summary = client
+            .summarize(
+                None,
+                &[],
+                "input",
+                None,
+                None,
+                None,
+                None,
+                "ollama:fast-model",
+                None,
+            )
+            .await
+            .expect("summarize should succeed")
+            .expect("summary should be present");
+
+        assert_eq!(summary, "mapped-model");
+    }
+
+    #[tokio::test]
+    async fn ollama_prefix_unmapped_name_is_sent_literally() {
+        // When the prefix is explicit and no alias matches, the literal tag is
+        // used directly (no "has no mapping" error) — `ollama:llama3` → `llama3`.
+        let base_url = fake_ollama(FakeResponse::EchoModel).await;
+        let client = client(&base_url, &[]);
+
+        let summary = client
+            .summarize(
+                None,
+                &[],
+                "input",
+                None,
+                None,
+                None,
+                None,
+                "ollama:llama3",
+                None,
+            )
+            .await
+            .expect("summarize should succeed")
+            .expect("summary should be present");
+
+        assert_eq!(summary, "llama3");
     }
 
     #[tokio::test]
@@ -734,6 +720,7 @@ mod tests {
                 &["low".to_string(), "high".to_string()],
                 &[("urgent tickets".to_string(), "high".to_string())],
                 "default",
+                None,
             )
             .await
             .expect("classify should succeed");
@@ -754,6 +741,7 @@ mod tests {
                 &["low".to_string(), "high".to_string()],
                 &[],
                 "default",
+                None,
             )
             .await
             .expect_err("unknown variant should be a schema error");
@@ -774,6 +762,7 @@ mod tests {
                 "user",
                 Some("json".to_string()),
                 "default",
+                None,
             )
             .await
             .expect_err("json prompt should validate response JSON");
@@ -791,7 +780,7 @@ mod tests {
         let client = client(&base_url, &[]);
 
         let err = client
-            .draft(None, &[], "write", None, None, None, "default")
+            .draft(None, &[], "write", None, None, None, "default", None)
             .await
             .expect_err("HTTP 500 should fail");
 
@@ -812,6 +801,7 @@ mod tests {
                 "input",
                 &[("name".into(), "str".into())],
                 "default",
+                None,
             )
             .await
             .expect_err("malformed JSON should fail");
@@ -833,6 +823,7 @@ mod tests {
                 "hello",
                 &["fr".to_string(), "es".to_string()],
                 "default",
+                None,
             )
             .await
             .expect("translate should succeed")
@@ -848,12 +839,128 @@ mod tests {
         let client = client(&base_url, &[]);
 
         let decision = client
-            .decide(None, &[], "release?", &["ship".to_string()], "default")
+            .decide(
+                None,
+                &[],
+                "release?",
+                &["ship".to_string()],
+                "default",
+                None,
+            )
             .await
             .expect("decide should succeed")
             .expect("decision should be present");
 
         assert_eq!(decision.0, "ship it");
         assert_eq!(decision.1, "");
+    }
+
+    async fn spawn(router: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind fake provider server");
+        let addr: SocketAddr = listener.local_addr().expect("read fake provider address");
+        tokio::spawn(async move {
+            axum::serve(listener, router)
+                .await
+                .expect("serve fake provider");
+        });
+        format!("http://{addr}")
+    }
+
+    async fn fake_openai(content: &'static str) -> String {
+        let app = Router::new().route(
+            "/v1/chat/completions",
+            post(move || async move {
+                Json(json!({ "choices": [{ "message": { "role": "assistant", "content": content } }] }))
+            }),
+        );
+        spawn(app).await
+    }
+
+    async fn fake_anthropic(content: &'static str) -> String {
+        let app = Router::new().route(
+            "/v1/messages",
+            post(move || async move {
+                Json(json!({ "content": [{ "type": "text", "text": content }], "stop_reason": "end_turn" }))
+            }),
+        );
+        spawn(app).await
+    }
+
+    #[tokio::test]
+    async fn openai_backend_returns_choice_content() {
+        let base = fake_openai("hi from openai").await;
+        let client = LlmClient::from_env(&MapEnv::with(&[
+            ("OPENAI_BASE_URL", base.as_str()),
+            ("OPENAI_API_KEY", "sk-test"),
+        ]));
+
+        let out = client
+            .prompt(None, &[], "sys", "user", None, "openai:gpt-4o", None)
+            .await
+            .expect("prompt should succeed")
+            .expect("content should be present");
+
+        assert_eq!(out, "hi from openai");
+    }
+
+    #[tokio::test]
+    async fn anthropic_backend_extracts_text_block() {
+        let base = fake_anthropic("hi from claude").await;
+        let client = LlmClient::from_env(&MapEnv::with(&[
+            ("ANTHROPIC_BASE_URL", base.as_str()),
+            ("ANTHROPIC_API_KEY", "sk-test"),
+        ]));
+
+        let out = client
+            .prompt(
+                None,
+                &[],
+                "sys",
+                "user",
+                None,
+                "anthropic:claude-opus-4-8",
+                None,
+            )
+            .await
+            .expect("prompt should succeed")
+            .expect("content should be present");
+
+        assert_eq!(out, "hi from claude");
+    }
+
+    #[tokio::test]
+    async fn anthropic_missing_key_is_config_error() {
+        let client = LlmClient::from_env(&MapEnv::with(&[(
+            "ANTHROPIC_BASE_URL",
+            "http://127.0.0.1:1",
+        )]));
+
+        let err = client
+            .prompt(None, &[], "sys", "user", None, "anthropic:claude-x", None)
+            .await
+            .expect_err("missing key should be a config error");
+
+        assert!(matches!(err, LlmError::ConfigError(m) if m.contains("ANTHROPIC_API_KEY")));
+    }
+
+    #[tokio::test]
+    async fn default_provider_routes_bare_tag() {
+        // `KEEL_PROVIDER=openai` routes an unprefixed model tag to OpenAI.
+        let base = fake_openai("routed").await;
+        let client = LlmClient::from_env(&MapEnv::with(&[
+            ("KEEL_PROVIDER", "openai"),
+            ("OPENAI_BASE_URL", base.as_str()),
+            ("OPENAI_API_KEY", "sk-test"),
+        ]));
+
+        let out = client
+            .prompt(None, &[], "s", "u", None, "gpt-4o", None)
+            .await
+            .expect("prompt should succeed")
+            .expect("content should be present");
+
+        assert_eq!(out, "routed");
     }
 }

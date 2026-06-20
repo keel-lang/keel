@@ -4,6 +4,36 @@
 
 ## Unreleased
 
+### Swappable LLM providers — Ollama, OpenAI, and Anthropic (Claude)
+
+`ai.*` no longer hard-codes Ollama. Three backends ship built in and are selected
+with no extra code, most-specific wins:
+
+```keel
+agent Researcher {
+  @provider anthropic            # this agent's default backend…
+  @model "claude-opus-4-8"        # …for bare model tags
+  @limits { max_tokens: 1024 }
+}
+
+# Per-call override via the model-tag prefix — no @provider needed:
+summary = ai.summarize(text, using: "openai:gpt-4o") ?? "(none)"
+```
+
+- **Per-call** — a `provider:` prefix on the model tag (`"openai:gpt-4o"`,
+  `"anthropic:claude-opus-4-8"`, `"ollama:llama3"`), via `@model` or `using:`.
+- **Per-agent** — `@provider ollama|openai|anthropic` sets the agent's default for
+  bare tags. An unknown name is a compile-time error.
+- **Per-program** — `KEEL_PROVIDER` sets the default backend (otherwise `ollama`).
+
+OpenAI and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`; a missing key
+throws `AiError { reason: "provider" }`, never a silent fallback. `@limits {
+max_tokens }` is now threaded into the request as the generation cap. Writing a
+provider in Keel (`ai.install`) remains planned — see
+[LLM Providers](./config/llm-providers.md).
+
+---
+
 ### Interface conformance checks `impl` parameter types
 
 When a struct's `impl` block satisfies an `interface`, the compiler now verifies
