@@ -3,7 +3,6 @@ use std::sync::Arc;
 use miette::Result;
 
 use crate::ast::{AgentItem, AttributeBody, Binding, Decl, Expr, TypeDef, TypeExpr};
-use crate::runtime::llm::BUILTIN_PROVIDERS;
 use crate::types::interface::{self as iface, Signature};
 
 use super::runtime_error;
@@ -287,15 +286,11 @@ impl Interpreter {
                             AttributeBody::Expr(node)
                                 if matches!(
                                     &node.kind,
-                                    Expr::Ident(name) if BUILTIN_PROVIDERS.contains(&name.as_str())
+                                    Expr::Ident(name) if keel_catalog::is_builtin_llm_provider(name)
                                 )
                         );
                         if !valid {
-                            return Err(runtime_error(format!(
-                                "@provider must name a built-in provider — use one of: {}. \
-                                 User-authored providers are planned; see SPEC §5.5.",
-                                BUILTIN_PROVIDERS.join(", ")
-                            )));
+                            return Err(runtime_error(keel_catalog::provider_attribute_error()));
                         }
                     }
                 }

@@ -83,16 +83,15 @@ impl LlmClient {
     }
 
     pub fn from_env_with_trace(env: &dyn EnvProvider, trace: Arc<AtomicBool>) -> Self {
-        let mut backends: HashMap<&'static str, Box<dyn LlmProvider>> = HashMap::new();
-        if env.var("KEEL_LLM").as_deref() == Some("mock") {
-            for name in BUILTIN_PROVIDERS {
-                backends.insert(name, Box::new(MockProvider));
-            }
+        let backends = if env.var("KEEL_LLM").as_deref() == Some("mock") {
+            mock_backends()
         } else {
+            let mut backends: HashMap<&'static str, Box<dyn LlmProvider>> = HashMap::new();
             backends.insert("ollama", Box::new(OllamaProvider::from_env(env)));
             backends.insert("openai", Box::new(OpenAiProvider::from_env(env)));
             backends.insert("anthropic", Box::new(AnthropicProvider::from_env(env)));
-        }
+            backends
+        };
         let (default_provider, provider_config_error) = match resolve_default_provider(env) {
             Ok(provider) => (provider, None),
             // Keep a valid routing default; the error fires on the first call.
@@ -118,12 +117,8 @@ impl LlmClient {
     }
 
     pub fn mock_with_trace(trace: Arc<AtomicBool>) -> Self {
-        let mut backends: HashMap<&'static str, Box<dyn LlmProvider>> = HashMap::new();
-        for name in BUILTIN_PROVIDERS {
-            backends.insert(name, Box::new(MockProvider));
-        }
         LlmClient {
-            backends,
+            backends: mock_backends(),
             default_provider: "ollama",
             provider_config_error: None,
             trace,
@@ -133,15 +128,14 @@ impl LlmClient {
     /// Selects the backend for `model`: a `provider:` tag prefix wins, otherwise
     /// the program default. The registry always holds every built-in name.
     fn provider_for(&self, model: &str) -> &dyn LlmProvider {
-        let name = BUILTIN_PROVIDERS
-            .into_iter()
-            .find(|p| model.starts_with(&format!("{p}:")))
-            .unwrap_or(self.default_provider);
-        let backend = self.backends.get(name).unwrap_or_else(|| {
-            self.backends
-                .get(self.default_provider)
-                .expect("registry always holds the default provider")
-        });
+        let name = keel_catalog::builtin_provider_prefix(model).unwrap_or(self.default_provider);
+        // `name` is always a built-in (a recognised prefix or the default), and
+        // every constructor seeds the registry with all built-in names, so the
+        // lookup cannot miss.
+        let backend = self
+            .backends
+            .get(name)
+            .expect("registry holds every built-in provider");
         &**backend
     }
 
@@ -576,6 +570,15 @@ impl LlmClient {
         }
         Ok(Some(trimmed))
     }
+}
+
+/// A registry mapping every built-in provider name to the mock backend. Shared
+/// by `KEEL_LLM=mock` and the explicit `mock` constructors.
+fn mock_backends() -> HashMap<&'static str, Box<dyn LlmProvider>> {
+    BUILTIN_PROVIDERS
+        .into_iter()
+        .map(|name| (name, Box::new(MockProvider) as Box<dyn LlmProvider>))
+        .collect()
 }
 
 fn truncate(s: &str, max: usize) -> Cow<'_, str> {

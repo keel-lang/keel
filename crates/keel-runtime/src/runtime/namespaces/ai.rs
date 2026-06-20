@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{CallArgValue, Host, Namespace, RuntimeErrorKind};
 use crate::runtime::convert::json_to_value;
-use crate::runtime::llm::{BUILTIN_PROVIDERS, LlmError};
+use crate::runtime::llm::LlmError;
 use crate::runtime::namespace::{find_arg, ns, positional, throw_typed_error};
 
 /// Map an `LlmError` to a typed Keel runtime error.
@@ -259,25 +259,15 @@ fn resolve_model(host: &dyn Host, args: &[CallArgValue]) -> String {
         Some(v) => v.to_display_string(),
         None => host.current_model(),
     };
-    apply_provider(host, tag)
-}
-
-/// Prepends the agent's `@provider` as a routing prefix when the model tag
-/// carries no explicit `provider:` prefix of its own. A tag like
-/// `"anthropic:claude-opus-4-8"` is left untouched; a bare `"gpt-4o"` under
-/// `@provider openai` becomes `"openai:gpt-4o"`.
-fn apply_provider(host: &dyn Host, tag: String) -> String {
     provider_prefixed(host.current_provider().as_deref(), tag)
 }
 
-/// Pure core of [`apply_provider`]: given the agent's `@provider` (if any) and a
-/// model tag, return the routed tag. An explicit `provider:` prefix on `tag`
-/// always wins; otherwise `current` is prepended when present.
+/// Prepends the agent's `@provider` (`current`) as a routing prefix when the
+/// model tag carries no explicit `provider:` prefix of its own. A tag like
+/// `"anthropic:claude-opus-4-8"` is left untouched; a bare `"gpt-4o"` under
+/// `@provider openai` becomes `"openai:gpt-4o"`.
 fn provider_prefixed(current: Option<&str>, tag: String) -> String {
-    if BUILTIN_PROVIDERS
-        .iter()
-        .any(|p| tag.starts_with(&format!("{p}:")))
-    {
+    if keel_catalog::builtin_provider_prefix(&tag).is_some() {
         return tag;
     }
     match current {

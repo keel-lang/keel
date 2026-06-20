@@ -473,14 +473,7 @@ impl Checker<'_, '_> {
                 AttributeBody::Expr(node) => node.span.clone(),
                 _ => self.current_span.clone().unwrap_or(0..0),
             };
-            self.err_at(
-                format!(
-                    "@provider must name a built-in provider — use one of: {}. \
-                     User-authored providers are planned; see SPEC §5.5.",
-                    keel_catalog::BUILTIN_LLM_PROVIDERS.join(", ")
-                ),
-                span,
-            );
+            self.err_at(keel_catalog::provider_attribute_error(), span);
         }
     }
 

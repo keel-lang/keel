@@ -44,6 +44,15 @@ pub enum LlmError {
     SchemaValidation { got: String },
 }
 
+/// Config error for the `default` model sentinel under a provider that has no
+/// server-side default and requires an explicit model (OpenAI, Anthropic).
+pub(crate) fn no_default_model_error(provider: &str) -> LlmError {
+    LlmError::ConfigError(format!(
+        "the `{provider}` provider has no default model; set @model \"<model>\" on the \
+         agent or pass `using: \"{provider}:<model>\"`"
+    ))
+}
+
 /// A single model call: a built system prompt, the user content, and limits.
 ///
 /// `system` and `user` stay separate because backends place the system prompt
@@ -55,7 +64,8 @@ pub struct CompletionRequest {
     pub system: String,
     /// The user content to act on.
     pub user: String,
-    /// Resolved model tag, with any `provider:` prefix already stripped.
+    /// The model tag as routed. A built-in `provider:` prefix may still be
+    /// present — each provider strips its own prefix before calling the model.
     pub model: String,
     /// Upper bound on generated tokens. Required by Anthropic and OpenAI.
     pub max_tokens: u32,

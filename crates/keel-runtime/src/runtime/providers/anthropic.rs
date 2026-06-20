@@ -84,10 +84,8 @@ impl LlmProvider for AnthropicProvider {
             // server-side default, so reject it with an actionable error rather
             // than asking the API for a model literally named "default".
             if model == "default" {
-                return Err(LlmError::ConfigError(
-                    "the `anthropic` provider has no default model; set @model \"<model>\" on the \
-                     agent or pass `using: \"anthropic:<model>\"`"
-                        .to_string(),
+                return Err(crate::runtime::providers::no_default_model_error(
+                    "anthropic",
                 ));
             }
             let Some(key) = key else {
