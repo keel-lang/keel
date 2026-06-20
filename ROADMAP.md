@@ -8,7 +8,7 @@
 
 1. **Small core, deep stdlib.** Everything that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime.
 2. **Rust from day one.** Single-binary distribution, async via Tokio, no runtime dependencies on other language ecosystems.
-3. **Stdlib-as-modules.** The standard library is imported explicitly — `use std/ai`, `use std/file` — with the same syntax as local file imports; nothing is ambient except agent verbs, generic utilities, and built-in types. Implementations are designed to become swappable via interfaces; v0.1 ships Ollama only.
+3. **Stdlib-as-modules.** The standard library is imported explicitly — `use std/ai`, `use std/file` — with the same syntax as local file imports; nothing is ambient except agent verbs, generic utilities, and built-in types. Implementations are swappable; v0.1 ships built-in Ollama, OpenAI, and Anthropic (Claude) LLM backends, selected per program, agent, or call. User-authored providers written in Keel are planned (SPEC §5.5).
 4. **No silent fallbacks.** Configuration mistakes surface as errors at startup, not as silent mock responses at runtime.
 
 ---
@@ -67,15 +67,15 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `@tools [...]` | stdlib | [x] | Deny-by-default capability gating for effectful modules (ai, io, http, email, file, shell, db, search, env); pure-compute modules are never gated; `@tools all` is the explicit unrestricted form; uncovered direct calls are compile errors, transitive calls raise `CapabilityError` at runtime; `if` guards re-evaluated per turn |
 | `@memory persistent\|session\|none` | stdlib | [x] | Selects memory scope; enforced at runtime (v0.1.10) |
 | `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `ai.*` call (v0.1.3) |
-| `@limits { ... }` | stdlib | [~] | `timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens`/`max_cost` extracted but not enforced at the Ollama level |
+| `@limits { ... }` | stdlib | [~] | `timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens` now threaded into the provider request as the generation cap; `max_cost` extracted but not enforced |
 | `@team [...]` | stdlib | [x] | Team membership used by `broadcast` routing (v0.1.6) |
-| `@provider MyProvider` | stdlib | [ ] | Parsed, no per-agent LLM-provider swap |
+| `@provider <name>` | stdlib | [x] | Selects a built-in backend (`ollama`/`openai`/`anthropic`) for the agent; unknown name is a compile error. Per-call override via `provider:` model-tag prefix; program default via `KEEL_PROVIDER`. User-authored Keel providers planned (SPEC §5.5) |
 
 ### Stdlib namespaces
 
 | Namespace | Status | Implemented | Gaps |
 |---|---|---|---|
-| `std/ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json) | `embed` deferred to v0.2 (requires pluggable provider registry); `ai.install(provider)` not registered |
+| `std/ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json); swappable built-in backends — Ollama, OpenAI, Anthropic (Claude) — via `@model "provider:model"`, `@provider`, or `KEEL_PROVIDER` | `embed` deferred to v0.2; user-authored `ai.install(provider)` planned (SPEC §5.5) |
 | `std/io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
 | `std/schedule` | [x] | `every`, `after`, `at`, `cron`, `sleep` | — |
 | `std/email` | [~] | `fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback) | — |

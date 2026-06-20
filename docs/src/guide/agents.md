@@ -77,7 +77,7 @@ Attributes are identifier-prefixed metadata clauses. They declare agent identity
 
 Everything else — `@tools`, `@memory`, `@rules`, `@limits`, `@on_start`, `@on_stop`, and user-defined attributes — is **stdlib-registered**. Adding a new attribute requires a library, not a language change.
 
-`@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@team` are fully wired; `@team` is used by `broadcast` routing. `@provider` is parsed but has no runtime effect yet — Ollama is the only backend.
+`@on_start`, `@on_stop`, `@rules`, `@tools`, `@memory`, and `@team` are fully wired; `@team` is used by `broadcast` routing. `@provider` selects a built-in LLM backend for the agent — `ollama`, `openai`, or `anthropic` (see [LLM Providers](../config/llm-providers.md)); an unknown name is a compile error.
 
 ### `@tools` — capability list
 

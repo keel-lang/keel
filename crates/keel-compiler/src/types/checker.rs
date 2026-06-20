@@ -1258,6 +1258,39 @@ task t() {
     }
 
     #[test]
+    fn provider_builtin_name_is_ok() {
+        type_ok(
+            r#"
+agent A {
+  @provider anthropic
+  @model "claude-opus-4-8"
+}
+
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn provider_unknown_resolvable_name_is_compile_error() {
+        // A name that *resolves* (a declared type) must still be rejected at
+        // check time — not slip through to runtime.
+        expect_error(
+            r#"
+type MyProvider { id: int }
+
+agent A {
+  @provider MyProvider
+  @model "x"
+}
+
+run(A)
+"#,
+            "built-in provider",
+        );
+    }
+
+    #[test]
     fn error_self_outside_agent() {
         expect_error(
             r#"

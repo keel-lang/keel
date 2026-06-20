@@ -98,6 +98,13 @@ pub trait Host: Send {
     /// Model tag for the current agent (`@model`), or `"default"`.
     fn current_model(&self) -> String;
 
+    /// The `@provider` attribute of the current agent (a built-in backend
+    /// name like `openai`), or `None` when absent.
+    fn current_provider(&self) -> Option<String>;
+
+    /// The `@limits { max_tokens }` value of the current agent, or `None`.
+    fn current_max_tokens(&self) -> Option<u32>;
+
     /// The `@role` string of the current agent, or `None` outside an agent.
     fn current_role(&self) -> Option<String>;
 
@@ -230,6 +237,14 @@ impl Host for Interpreter {
 
     fn current_model(&self) -> String {
         Interpreter::current_model(self)
+    }
+
+    fn current_provider(&self) -> Option<String> {
+        Interpreter::current_provider(self)
+    }
+
+    fn current_max_tokens(&self) -> Option<u32> {
+        Interpreter::current_max_tokens(self)
     }
 
     fn current_role(&self) -> Option<String> {
@@ -412,6 +427,14 @@ impl Host for MockHost {
 
     fn current_agent_name(&self) -> Option<String> {
         unimplemented!("MockHost does not support current_agent_name")
+    }
+
+    fn current_provider(&self) -> Option<String> {
+        None
+    }
+
+    fn current_max_tokens(&self) -> Option<u32> {
+        None
     }
 
     fn require_agent_context(&self, _caller: &str) -> miette::Result<(String, String)> {

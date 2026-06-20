@@ -8,7 +8,31 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Interface conformance now checks `impl` method parameter types, not just their count.
+%%TAGLINE%% Swappable LLM providers — `ai.*` now runs on Ollama, OpenAI, or Anthropic (Claude), selected per program, agent, or call.
+
+### Added
+
+- **Swappable LLM backends — OpenAI and Anthropic (Claude) join Ollama.** `ai.*` no longer hard-codes Ollama. Three backends ship built in and are selected with no extra code, most-specific wins: a `provider:` prefix on a model tag (`@model "anthropic:claude-opus-4-8"`, or a `using:` argument) picks the backend per call; `@provider <name>` sets an agent's default backend for bare tags; `KEEL_PROVIDER` sets the program default (otherwise `ollama`). OpenAI and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — a missing key throws `AiError { reason: "provider" }`, never a silent fallback. `@provider` accepts only the built-in names `ollama`, `openai`, `anthropic`; anything else is a compile-time error (user-authored Keel providers are planned — see SPEC §5.5). `@limits { max_tokens }` is now threaded into the request as the generation cap.
+
+```keel
+use std/ai
+
+agent Researcher {
+  @provider anthropic
+  @model "claude-opus-4-8"
+  @limits { max_tokens: 1024 }
+
+  on ask(question: str) {
+    answer = ai.prompt(system: "You are concise.", user: question)
+    # …
+  }
+}
+
+# Per-call override via the model-tag prefix — no @provider needed:
+task quick(q: str) -> str {
+  ai.prompt(system: "Answer in one line.", user: q, using: "openai:gpt-4o") ?? "no answer"
+}
+```
 
 ### Changed
 

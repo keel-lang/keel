@@ -278,6 +278,23 @@ impl Interpreter {
                     }
                 }
 
+                // Validate @provider — only built-in backend names in v0.1.
+                for attr in &def.attributes {
+                    if attr.name == "provider" {
+                        let valid = matches!(
+                            &attr.body,
+                            AttributeBody::Expr(node)
+                                if matches!(
+                                    &node.kind,
+                                    Expr::Ident(name) if keel_catalog::is_builtin_llm_provider(name)
+                                )
+                        );
+                        if !valid {
+                            return Err(runtime_error(keel_catalog::provider_attribute_error()));
+                        }
+                    }
+                }
+
                 self.globals
                     .insert(a.name.clone(), Value::AgentRef(a.name.clone()));
                 self.store.agents.insert(a.name.clone(), Arc::new(def));
@@ -723,6 +740,39 @@ mod tests {
             })],
         });
         assert!(interp.register_decl(&decl).is_ok());
+    }
+
+    #[test]
+    fn agent_provider_builtin_name_ok() {
+        let mut interp = new_interp();
+        let decl = Decl::Agent(AgentDecl {
+            name: "Bot".into(),
+            name_span: 0..0,
+            items: vec![AgentItem::Attribute(AttributeDecl {
+                name: "provider".into(),
+                body: AttributeBody::Expr(Node::synthetic(Expr::Ident("anthropic".into()))),
+            })],
+        });
+        assert!(interp.register_decl(&decl).is_ok());
+    }
+
+    #[test]
+    fn agent_provider_unknown_name_is_error() {
+        let mut interp = new_interp();
+        let decl = Decl::Agent(AgentDecl {
+            name: "Bot".into(),
+            name_span: 0..0,
+            items: vec![AgentItem::Attribute(AttributeDecl {
+                name: "provider".into(),
+                body: AttributeBody::Expr(Node::synthetic(Expr::Ident("bogus".into()))),
+            })],
+        });
+        let err = interp.register_decl(&decl).unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("built-in provider"),
+            "expected provider error, got: {msg}"
+        );
     }
 
     #[test]

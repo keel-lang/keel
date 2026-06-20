@@ -46,6 +46,7 @@ pub(crate) fn namespace() -> Namespace {
             let variants = classify_variants(host, &args)?;
             let criteria = extract_criteria(&args);
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let enum_type = find_arg(&args, "as").and_then(|v| match v {
                 Value::Namespace(n) => Some(n.clone()),
@@ -54,7 +55,7 @@ pub(crate) fn namespace() -> Namespace {
 
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
-            match llm.classify(role.as_deref(), &rules, &input, &variants, &criteria, &model).await {
+            match llm.classify(role.as_deref(), &rules, &input, &variants, &criteria, &model, max_tokens).await {
                 Ok(Some(variant)) => Ok(Value::EnumVariant(enum_type, variant, None)),
                 Ok(None) => Ok(Value::None),
                 Err(e) => throw_llm_error(e),
@@ -73,10 +74,11 @@ pub(crate) fn namespace() -> Namespace {
             let format = find_arg(&args, "format").map(|v| v.to_display_string());
             let max = find_arg(&args, "max").and_then(|v| v.as_int());
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
-            match llm.summarize(role.as_deref(), &rules, &input, length, format, max, unit_val, &model).await {
+            match llm.summarize(role.as_deref(), &rules, &input, length, format, max, unit_val, &model, max_tokens).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
                 Err(e) => throw_llm_error(e),
@@ -91,11 +93,12 @@ pub(crate) fn namespace() -> Namespace {
             let guidance = find_arg(&args, "guidance").map(|v| v.to_display_string());
             let max_length = find_arg(&args, "max_length").and_then(|v| v.as_int());
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
             match llm
-                .draft(role.as_deref(), &rules, &description, tone.as_deref(), guidance.as_deref(), max_length, &model)
+                .draft(role.as_deref(), &rules, &description, tone.as_deref(), guidance.as_deref(), max_length, &model, max_tokens)
                 .await
             {
                 Ok(Some(s)) => Ok(Value::String(s)),
@@ -137,10 +140,11 @@ pub(crate) fn namespace() -> Namespace {
                     },
                 };
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
-            match llm.extract(role.as_deref(), &rules, &input, &schema, &model).await {
+            match llm.extract(role.as_deref(), &rules, &input, &schema, &model, max_tokens).await {
                 Ok(Some(json)) => {
                     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json) {
                         let v = json_to_value(&parsed);
@@ -177,10 +181,11 @@ pub(crate) fn namespace() -> Namespace {
                 ));
             }
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
-            match llm.translate(role.as_deref(), &rules, &input, &target_langs, &model).await {
+            match llm.translate(role.as_deref(), &rules, &input, &target_langs, &model, max_tokens).await {
                 Ok(Some(map)) if target_langs.len() == 1 => {
                     Ok(Value::String(map.into_values().next().unwrap_or_default()))
                 }
@@ -205,10 +210,11 @@ pub(crate) fn namespace() -> Namespace {
                 _ => Vec::new(),
             };
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
-            match llm.decide(role.as_deref(), &rules, &input, &options, &model).await {
+            match llm.decide(role.as_deref(), &rules, &input, &options, &model, max_tokens).await {
                 Ok(Some((choice, reason))) => {
                     let mut m = HashMap::new();
                     m.insert(MapKey::Str("choice".into()), Value::String(choice));
@@ -226,10 +232,11 @@ pub(crate) fn namespace() -> Namespace {
             let user = find_arg(&args, "user").map(|v| v.to_display_string()).unwrap_or_default();
             let response_format = find_arg(&args, "response_format").map(|v| v.to_display_string());
             let model = resolve_model(host, &args);
+            let max_tokens = host.current_max_tokens();
             let role = host.current_role();
             let rules = host.current_rules();
             let llm = host.runtime().llm.clone();
-            match llm.prompt(role.as_deref(), &rules, &system, &user, response_format, &model).await {
+            match llm.prompt(role.as_deref(), &rules, &system, &user, response_format, &model, max_tokens).await {
                 Ok(Some(s)) => Ok(Value::String(s)),
                 Ok(None) => Ok(Value::None),
                 Err(e) => throw_llm_error(e),
@@ -248,10 +255,25 @@ pub(crate) fn namespace() -> Namespace {
 ///   2. enclosing agent's `@model` attribute
 ///   3. `"default"` (triggers KEEL_OLLAMA_MODEL catch-all)
 fn resolve_model(host: &dyn Host, args: &[CallArgValue]) -> String {
-    if let Some(v) = find_arg(args, "using") {
-        return v.to_display_string();
+    let tag = match find_arg(args, "using") {
+        Some(v) => v.to_display_string(),
+        None => host.current_model(),
+    };
+    provider_prefixed(host.current_provider().as_deref(), tag)
+}
+
+/// Prepends the agent's `@provider` (`current`) as a routing prefix when the
+/// model tag carries no explicit `provider:` prefix of its own. A tag like
+/// `"anthropic:claude-opus-4-8"` is left untouched; a bare `"gpt-4o"` under
+/// `@provider openai` becomes `"openai:gpt-4o"`.
+fn provider_prefixed(current: Option<&str>, tag: String) -> String {
+    if keel_catalog::builtin_provider_prefix(&tag).is_some() {
+        return tag;
     }
-    host.current_model()
+    match current {
+        Some(provider) => format!("{provider}:{tag}"),
+        None => tag,
+    }
 }
 
 /// Extract enum variants from `as: T` (Value::Namespace(T)) by looking
@@ -330,5 +352,27 @@ mod tests {
             err.fields.get("got").map(|v| v.to_display_string()),
             Some("maybe".into())
         );
+    }
+
+    #[test]
+    fn provider_prefixed_explicit_prefix_wins() {
+        // An explicit `provider:` prefix is never overridden by the agent's @provider.
+        assert_eq!(
+            provider_prefixed(Some("openai"), "anthropic:claude-opus-4-8".into()),
+            "anthropic:claude-opus-4-8"
+        );
+    }
+
+    #[test]
+    fn provider_prefixed_bare_tag_gets_agent_provider() {
+        assert_eq!(
+            provider_prefixed(Some("openai"), "gpt-4o".into()),
+            "openai:gpt-4o"
+        );
+    }
+
+    #[test]
+    fn provider_prefixed_bare_tag_without_provider_is_unchanged() {
+        assert_eq!(provider_prefixed(None, "gpt-4o".into()), "gpt-4o");
     }
 }

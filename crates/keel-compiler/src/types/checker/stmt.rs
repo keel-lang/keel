@@ -425,6 +425,14 @@ impl Checker<'_, '_> {
     }
 
     fn check_attribute(&mut self, attr: &AttributeDecl) {
+        // `@provider` must name a built-in backend. Validate here so a typo is a
+        // compile-time error from `keel check` — including names that happen to
+        // resolve (e.g. a declared type), which the generic `infer_expr` path
+        // below would otherwise accept.
+        if attr.name == "provider" {
+            self.check_provider_attribute(attr);
+            return;
+        }
         match &attr.body {
             AttributeBody::Block(body) => {
                 let mut scope = self.fresh_scope();
@@ -448,6 +456,24 @@ impl Checker<'_, '_> {
                     }
                 }
             }
+        }
+    }
+
+    fn check_provider_attribute(&mut self, attr: &AttributeDecl) {
+        let ok = matches!(
+            &attr.body,
+            AttributeBody::Expr(node)
+                if matches!(
+                    &node.kind,
+                    Expr::Ident(name) if keel_catalog::is_builtin_llm_provider(name)
+                )
+        );
+        if !ok {
+            let span = match &attr.body {
+                AttributeBody::Expr(node) => node.span.clone(),
+                _ => self.current_span.clone().unwrap_or(0..0),
+            };
+            self.err_at(keel_catalog::provider_attribute_error(), span);
         }
     }
 
