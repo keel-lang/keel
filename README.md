@@ -9,12 +9,12 @@
 </p>
 
 <p align="center">
-  <em>v0.1 — alpha. Not production-ready. Breaking changes expected between 0.x releases.</em>
+  <em>v0.2 — alpha. Not production-ready. Breaking changes expected between 0.x releases.</em>
 </p>
 
 ---
 
-## Status: Alpha (v0.1)
+## Status: Alpha (v0.2)
 
 Keel is in **early design and implementation**. There are **no production users** and no stable API. The language and standard library will change — including in ways that break existing `.keel` files — across upcoming 0.x releases.
 
@@ -82,13 +82,13 @@ agent EmailBot {
 run(EmailBot)
 ```
 
-Zero imports. The `Ai`, `Io`, `Email`, `Schedule` namespaces are in scope from the start.
+Each file imports the stdlib modules it uses — `use std/ai`, `use std/email`, … — and every agent declares which of those it may call through deny-by-default `@tools`. Namespaces are lowercase: `ai.*`, `io.*`, `email.*`, `schedule.*`.
 
 ---
 
 ## Design in One Paragraph
 
-The core language has a small reserved keyword set and the actor model. Everything else is a stdlib function call behind a planned **interface** boundary. v0.1 ships that boundary in the design and uses Ollama as the only LLM backend; runtime provider swapping is still planned. Reserved keyword inflation is the enemy. See [SPEC.md §0–§3](SPEC.md) for the design, [ROADMAP.md](ROADMAP.md) for shipped status, and [SPEC.md §10](SPEC.md) for the full keyword list.
+The core language has a small reserved keyword set and the actor model. Everything else is a stdlib function call behind an **interface** boundary. `ai.*` dispatches through that boundary to one of three built-in backends — Ollama (local default), OpenAI, and Anthropic — or a provider you write in Keel with `impl LlmProvider`. The compiler knows a namespace's shape; the runtime installs the backend. Reserved keyword inflation is the enemy. See [SPEC.md §0–§3](SPEC.md) for the design, [ROADMAP.md](ROADMAP.md) for shipped status, and [SPEC.md §10](SPEC.md) for the full keyword list.
 
 ---
 
@@ -130,14 +130,15 @@ export KEEL_OLLAMA_MODEL=gemma4
 
 | | Typical Python + LangChain | Keel |
 |---|---|---|
-| Classify an email | Parser + prompt template + chain | `Ai.classify(body, as: Urgency)` |
-| Ask a human | `input()` + manual formatting | `Io.ask("How to respond?")` |
-| Schedule a check | `schedule` library + while loop | `Schedule.every(5.minutes, () => { ... })` |
-| Send email | SMTP config + lettre-style setup | `Email.send(reply, to: addr)` |
-| Type safety | none at compile time | exhaustive match checking, `T?` nullable types |
-| Imports needed | 10+ | 0 |
+| Classify an email | Parser + prompt template + chain | `ai.classify(body, as: Urgency)` |
+| Ask a human | `input()` + manual formatting | `io.ask("How to respond?")` |
+| Schedule a check | `schedule` library + while loop | `schedule.every(5.minutes, () => { ... })` |
+| Send email | SMTP config + lettre-style setup | `email.send(reply, to: addr)` |
+| Swap LLM backend | rewrite SDK calls | `@provider anthropic` or `KEEL_PROVIDER` |
+| Tool access | implicit, ungoverned | deny-by-default `@tools [ai, email]` |
+| Type safety | none at compile time | exhaustive match checking, nullable (`T?`) safety, return-type checks |
 
-The zero-import story comes from the **prelude**: stdlib namespaces are auto-imported into every file. The compiler doesn't know what `Ai` is — the runtime installs it. The interface model is the intended extension point; v0.1 exposes model alias selection through `using:` and `KEEL_MODEL_*`, while custom provider installation is still planned.
+`ai.*` dispatches through a swappable provider interface — the compiler knows the namespace's shape, the runtime installs the backend (Ollama, OpenAI, Anthropic, or one you write). Per-call model selection goes through `using:` and `KEEL_MODEL_*`; provider selection through `@provider`, a `provider:` model-tag prefix, or `KEEL_PROVIDER`.
 
 ---
 
@@ -145,14 +146,17 @@ The zero-import story comes from the **prelude**: stdlib namespaces are auto-imp
 
 ```
 keel run agent.keel       Execute a program
-keel check agent.keel     Type-check without running
+keel test agent.keel      Run the program's test blocks
+keel check agent.keel     Type-check without running (--strict rejects unresolved types)
 keel fmt agent.keel       Auto-format
+keel lint agent.keel      Style and best-practice checks (--fix applies safe fixes)
 keel init my-project      Scaffold a new project
 keel repl                 Interactive REPL
-keel lint agent.keel      Static analysis; --fix flag
 keel lsp                  Language server (stdin/stdout)
 keel build agent.keel     Deferred: bytecode compiler post-v0.1
 ```
+
+Global flags: `--trace` narrates LLM calls; `--log-level debug|info|warn|error` sets the `Log.*` threshold.
 
 ---
 
@@ -192,7 +196,7 @@ cd vscode-keel
 code --install-extension keel-lang-*.vsix
 ```
 
-The LSP provides diagnostics, autocomplete, and hover. Refactoring and inlay hints are on the roadmap.
+The LSP provides diagnostics, completion, hover, and go-to-definition. Refactoring and inlay hints are on the roadmap.
 
 ---
 
@@ -209,8 +213,8 @@ cd docs && mdbook serve
 
 Keel is in alpha. Semver is **not** respected between 0.x minor versions.
 
-- **0.1.x** — current alpha. API is unstable; breaking changes in patch releases are allowed.
-- **0.2.x and later** — scoped after v0.1 ships. See [ROADMAP.md](ROADMAP.md).
+- **0.2.x** — current alpha. One module system (`use std/<name>` and local file imports), deny-by-default `@tools`, built-in `test` blocks, swappable LLM providers. API is unstable; breaking changes in patch releases are allowed.
+- **0.x** — further pre-1.0 releases will keep breaking things where the design demands it. The [changelog](CHANGELOG.md) flags every break. See [ROADMAP.md](ROADMAP.md).
 - **1.0.x** — first API-stable release. Semver begins.
 
 Do not write anything you're not willing to rewrite.

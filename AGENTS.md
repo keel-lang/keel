@@ -11,16 +11,17 @@ src/
   lexer.rs          # Token definitions (logos)
   parser.rs         # Grammar (chumsky 0.9, BoxedParser)
   ast/              # AST node types
-  types/            # Type checker (enum exhaustiveness, arg arity, scope;
-                    #   full nullable-safety enforcement is WIP — see ROADMAP)
+  types/            # Type checker (enum exhaustiveness, arg arity, scope,
+                    #   nullable safety with call-site enforcement, return-type
+                    #   matching, struct subtyping, generic instantiation)
   interpreter/      # Tree-walking async interpreter
   vm/               # Placeholder module for v0.1 — `keel build` is deferred
                     #   post-v0.1; the tree-walking interpreter is the only
                     #   execution path shipping today
-  runtime/          # LLM client (Ollama), email (IMAP/SMTP), human I/O, std module namespaces
+  runtime/          # LLM client (Ollama/OpenAI/Anthropic + user-authored providers), email (IMAP/SMTP), human I/O, std module namespaces
   formatter.rs      # Pretty-printer (keel fmt)
   repl.rs           # Interactive REPL
-  lsp.rs            # Language Server Protocol (diagnostics only in v0.1)
+  lsp/              # Language Server Protocol (diagnostics, completion, hover, go-to-definition)
   main.rs           # CLI entry (clap)
 brand/              # Logo, color tokens, mdBook theme (single source of truth)
 examples/           # .keel example programs
@@ -31,7 +32,7 @@ docs/               # mdBook documentation
 
 ## Key Design Decisions
 
-- **Statically typed, inference-first** — every expression has a known type; the checker currently catches scope, arity, and enum-exhaustiveness issues. Full nullable enforcement and return-type matching are in-progress — see `ROADMAP.md`. `SPEC.md` is the source of truth for the surface.
+- **Statically typed, inference-first** — every expression has a known type; the checker catches scope, arity, enum exhaustiveness, nullable safety (with call-site enforcement), return-type matching, struct subtyping, and generic instantiation. See `ROADMAP.md` for the full shipped list. `SPEC.md` is the source of truth for the surface.
 - **No silent fallbacks** — unmapped LLM models fail with actionable errors, not mock responses.
 - **Newlines as statement separators** — lexer normalizes newlines, parser uses them for statement boundaries.
 - **BoxedParser everywhere** — required to avoid macOS linker crash on deeply nested chumsky types.
