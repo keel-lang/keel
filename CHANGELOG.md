@@ -8,7 +8,13 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Swappable LLM providers — `ai.*` runs on built-in Ollama, OpenAI, and Anthropic backends, or a provider you write in Keel.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.2.4] — 2026-06-21
+
+Swappable LLM providers — `ai.*` runs on built-in Ollama, OpenAI, and Anthropic backends, or a provider you write in Keel.
 
 ### Added
 

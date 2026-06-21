@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.2.4 — 2026-06-21
+
 ### User-authored LLM providers — write a backend in Keel
 
 For proprietary or self-hosted models the built-in backends don't cover, any

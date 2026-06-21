@@ -1307,11 +1307,11 @@ dependencies = [
 
 [[package]]
 name = "keel-catalog"
-version = "0.2.3"
+version = "0.2.4"
 
 [[package]]
 name = "keel-compiler"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "keel-catalog",
  "keel-syntax",
@@ -1322,7 +1322,7 @@ dependencies = [
 
 [[package]]
 name = "keel-lang"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "clap",
  "colored",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "keel-runtime"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "async-imap",
  "async-native-tls",
@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "keel-syntax"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "chumsky",
  "logos",

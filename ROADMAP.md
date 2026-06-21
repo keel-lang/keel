@@ -8,7 +8,7 @@
 
 1. **Small core, deep stdlib.** Everything that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime.
 2. **Rust from day one.** Single-binary distribution, async via Tokio, no runtime dependencies on other language ecosystems.
-3. **Stdlib-as-modules.** The standard library is imported explicitly — `use std/ai`, `use std/file` — with the same syntax as local file imports; nothing is ambient except agent verbs, generic utilities, and built-in types. Implementations are swappable; v0.1 ships built-in Ollama, OpenAI, and Anthropic (Claude) LLM backends, selected per program, agent, or call. User-authored providers written in Keel are planned (SPEC §5.5).
+3. **Stdlib-as-modules.** The standard library is imported explicitly — `use std/ai`, `use std/file` — with the same syntax as local file imports; nothing is ambient except agent verbs, generic utilities, and built-in types. Implementations are swappable; v0.1 ships built-in Ollama, OpenAI, and Anthropic (Claude) LLM backends, selected per program, agent, or call. User-authored providers written in Keel ship with all backends (SPEC §5.5).
 4. **No silent fallbacks.** Configuration mistakes surface as errors at startup, not as silent mock responses at runtime.
 
 ---
@@ -69,7 +69,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 | `@rules [...]` | stdlib | [x] | Injected as a bullet list into the system prompt of every `ai.*` call (v0.1.3) |
 | `@limits { ... }` | stdlib | [~] | `timeout` enforced via `control.with_timeout` (v0.1.7); `max_tokens` now threaded into the provider request as the generation cap; `max_cost` extracted but not enforced |
 | `@team [...]` | stdlib | [x] | Team membership used by `broadcast` routing (v0.1.6) |
-| `@provider <name>` | stdlib | [x] | Selects a built-in backend (`ollama`/`openai`/`anthropic`) for the agent; unknown name is a compile error. Per-call override via `provider:` model-tag prefix; program default via `KEEL_PROVIDER`. User-authored Keel providers planned (SPEC §5.5) |
+| `@provider <name>` | stdlib | [x] | Selects a built-in backend (`ollama`/`openai`/`anthropic`) or a user-authored provider type for the agent; unknown built-in name is a compile error. Per-call override via `provider:` model-tag prefix; program default via `KEEL_PROVIDER`. User-authored providers via `impl LlmProvider` + `ai.install`/`@provider` (v0.2.4) |
 
 ### Stdlib namespaces
 

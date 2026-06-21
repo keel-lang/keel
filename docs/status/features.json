@@ -76,7 +76,7 @@
       "name": "@provider <name>",
       "tier": "stdlib",
       "status": "shipped",
-      "notes": "Selects a built-in backend (`ollama`/`openai`/`anthropic`) for the agent; unknown name is a compile error. Per-call override via `provider:` model-tag prefix; program default via `KEEL_PROVIDER`. User-authored Keel providers planned (SPEC §5.5)"
+      "notes": "Selects a built-in backend (`ollama`/`openai`/`anthropic`) or a user-authored provider type for the agent; unknown built-in name is a compile error. Per-call override via `provider:` model-tag prefix; program default via `KEEL_PROVIDER`. User-authored providers via `impl LlmProvider` + `ai.install`/`@provider` (v0.2.4)"
     }
   ],
   "namespaces": [
