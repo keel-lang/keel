@@ -4,7 +4,9 @@ use crate::interpreter::value::{MapKey, Value};
 use crate::interpreter::{CallArgValue, Host, Namespace, RuntimeErrorKind};
 use crate::runtime::convert::json_to_value;
 use crate::runtime::llm::{LlmError, Transport};
-use crate::runtime::namespace::{find_arg, ns, positional, throw_typed_error};
+use crate::runtime::namespace::{
+    find_arg, make_typed_report_with, ns, positional, throw_typed_error,
+};
 use crate::runtime::providers::CompletionRequest;
 
 /// Map an `LlmError` to a typed Keel runtime error.
@@ -343,15 +345,14 @@ fn transport_for(
         return Ok(Transport::Builtin);
     };
     if host.provider_is_active(&type_name) {
-        return Err(throw_typed_error(
+        return Err(make_typed_report_with(
             RuntimeErrorKind::Ai,
-            &format!(
+            format!(
                 "provider `{type_name}` called an `ai.*` operation from inside its own \
                  `complete()`; this would recurse without bound"
             ),
             Some(("reason", "provider".into())),
-        )
-        .expect_err("throw_typed_error always returns Err"));
+        ));
     }
     Ok(Transport::User(Box::new(move |req| {
         Box::pin(async move {
