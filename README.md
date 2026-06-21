@@ -158,16 +158,25 @@ keel build agent.keel     Deferred: bytecode compiler post-v0.1
 
 ## LLM Provider
 
-Keel v0.1 ships with a single backend: **Ollama** (local, offline). It follows the planned `LlmProvider` interface shape, but custom provider installation is not wired yet. No silent fallbacks — if a model isn't configured, you get a clear error.
+`ai.*` dispatches through swappable backends. Three ship built in — **Ollama**
+(default, local), **OpenAI**, and **Anthropic (Claude)** — selected with no extra
+code: a `provider:` prefix on the model tag (per call), `@provider` (per agent),
+or `KEEL_PROVIDER` (per program). For proprietary or self-hosted models, write a
+provider in Keel (`impl LlmProvider` + `ai.install`/`@provider`). No silent
+fallbacks — a missing key or unmapped model throws a clear `AiError`.
 
 ```bash
-# Required: Ollama running locally with a pulled model
+# Ollama (default): a local daemon with a pulled model
 export KEEL_OLLAMA_MODEL=gemma4
+export KEEL_MODEL_FAST=gemma4              # optional per-alias mapping
 
-# Optional: per-alias mapping
-export KEEL_MODEL_FAST=gemma4
-export KEEL_MODEL_SMART=mistral:7b-instruct
+# OpenAI / Anthropic: select the backend and supply a key
+export KEEL_PROVIDER=anthropic
+export ANTHROPIC_API_KEY=sk-...
 ```
+
+See [docs: LLM Providers](docs/src/config/llm-providers.md) for user-authored
+providers and the full precedence rules.
 
 ---
 

@@ -59,4 +59,11 @@ pub const SPEC: &[BuiltinMethod] = &[
         result: BuiltinResult::Unknown,
         doc: "Embed text into a vector (reserved, not yet stable).",
     },
+    BuiltinMethod {
+        namespace: "ai",
+        name: "install",
+        params: &[],
+        result: BuiltinResult::Fixed(TySpec::None_),
+        doc: "Register a user-authored `LlmProvider` as the program-wide backend.",
+    },
 ];

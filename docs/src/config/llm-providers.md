@@ -99,12 +99,58 @@ In mock mode every `ai.*` call returns `none` regardless of provider —
 deterministic *absence*, never a failure — so `??` defaults fire predictably.
 (Real provider failures throw `AiError`; mock mode does not simulate them.)
 
-## User-authored providers <span class="badge badge-soon">Coming soon</span>
+## User-authored providers
 
-> Status: planned. Writing a provider in Keel (`impl LlmProvider for MyProvider`)
-> and installing it with `ai.install(MyProvider)` is planned for a future release,
-> for proprietary or self-hosted backends. The built-in providers above cover the
-> common cases today. See [SPEC §5.5](https://github.com/keel-lang/keel/blob/main/SPEC.md).
+For proprietary or self-hosted models the built-in backends don't cover, write a
+provider **in Keel**. Any field-less type with `impl LlmProvider` becomes a
+backend `ai.*` can dispatch through:
+
+```keel
+use std/ai
+use std/env
+use std/http
+
+type MyProvider {}
+
+impl LlmProvider for MyProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    # The provider is constructed with no fields, so read configuration from
+    # the environment — not from struct fields.
+    key = env.get("MY_LLM_KEY")!
+    http.post(
+      "https://my-llm.example/v1/complete",
+      headers: { "Authorization": "Bearer {key}" },
+      body: { system: req.system, prompt: req.user, model: req.model, max_tokens: req.max_tokens }
+    )["text"]
+  }
+}
+
+ai.install(MyProvider)   # program-wide default
+```
+
+`complete(self, req: CompletionRequest) -> str` returns the **raw** model text;
+Keel applies its own prompt construction and output parsing (enum matching for
+`ai.classify`, schema validation for `ai.extract`) on top, so `??`, `when`, and
+the typed `AiError` / `AiSchemaError` behave identically to the built-in
+backends. The `CompletionRequest` struct carries `system`, `user`, `model`, and
+`max_tokens`.
+
+Select a user provider the same two ways as a built-in:
+
+- `ai.install(MyProvider)` — program-wide default (lowest precedence, below a
+  `provider:` model-tag prefix and `@provider`).
+- `@provider MyProvider` — per agent.
+
+`ai.install(X)` and `@provider X` require `X` to implement `LlmProvider`;
+anything else is a compile-time error. A provider must not call `ai.*` from
+inside its own `complete()` — that re-entry raises an `AiError` rather than
+recursing without bound.
+
+A provider is **trusted transport**, like a built-in backend: its `complete()`
+may call effectful modules (`env`, `http`, …) regardless of the consuming
+agent's `@tools`. An agent only needs `@tools [ai]` to use a provider that talks
+HTTP under the hood — just as it does for the built-in OpenAI and Anthropic
+backends.
 
 ## Troubleshooting
 

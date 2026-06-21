@@ -1,0 +1,46 @@
+use std/ai
+use std/io
+use std/testing
+
+# User-authored LLM provider (SPEC §5.5).
+#
+# Any type with `impl LlmProvider` becomes a backend that `ai.*` can dispatch
+# through — for proprietary or self-hosted models the built-in `ollama`,
+# `openai`, and `anthropic` backends don't cover.
+#
+# A provider is a *field-less* type: the runtime constructs it with no fields,
+# so configuration (endpoints, API keys) is read from the environment inside
+# `complete()` — e.g. `env.get("MY_LLM_URL")` — not from struct fields.
+
+type EchoProvider {}
+
+impl LlmProvider for EchoProvider {
+  # `complete` receives the fully-built request and returns the raw model text.
+  # A real provider would POST `req.system` / `req.user` to its endpoint with
+  # `req.model` and `req.max_tokens`; here we just echo to stay deterministic.
+  task complete(self, req: CompletionRequest) -> str {
+    "echo: {req.user}"
+  }
+}
+
+# Register it program-wide. `ai.install` is the lowest-precedence backend:
+# a per-call `provider:` model prefix and a per-agent `@provider` both win.
+ai.install(EchoProvider)
+
+test "installed provider answers ai.prompt" {
+  ai.install(EchoProvider)
+  assert ai.prompt(system: "ignored", user: "hello") == "echo: hello"
+}
+
+agent Demo {
+  @tools [ai, io]
+  # `@provider` also accepts a user type, scoped to this agent's bare model tags.
+  @provider EchoProvider
+  @on_start {
+    reply = ai.prompt(system: "You are a demo.", user: "ping") ?? "no reply"
+    io.show(reply)
+    stop(self)
+  }
+}
+
+run(Demo)

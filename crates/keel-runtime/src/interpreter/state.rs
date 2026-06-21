@@ -213,6 +213,14 @@ pub struct Interpreter {
     /// Format: `<stem>_<sha256[:12]>` for real files; `__repl__` / `__inline__`
     /// for REPL and inline evaluations. Defaults to `"__inline__"`.
     pub(crate) program_name: String,
+    /// Type name of the user-authored provider registered with `ai.install`,
+    /// or `None` when no program-wide user provider is installed. This is the
+    /// lowest-precedence backend, below per-call prefixes and `@provider`.
+    pub(crate) installed_provider: Option<String>,
+    /// User-provider type names whose `complete()` is currently executing.
+    /// Guards against a provider re-entering `ai.*` from inside its own
+    /// `complete()`, which would recurse without bound.
+    pub(crate) active_providers: Vec<String>,
 }
 
 impl Interpreter {
@@ -242,6 +250,8 @@ impl Interpreter {
             active_http_servers: Arc::new(AtomicU64::new(0)),
             source: None,
             program_name: "__inline__".to_string(),
+            installed_provider: None,
+            active_providers: Vec::new(),
         };
         crate::runtime::install_prelude(&mut interp);
         interp
@@ -396,10 +406,11 @@ impl Interpreter {
             .unwrap_or_else(|| "default".to_string())
     }
 
-    /// The current agent's `@provider` attribute — a built-in backend name
-    /// (`ollama`, `openai`, `anthropic`) written as a bareword identifier — or
-    /// `None` when absent. The `ai` namespace uses it as the agent's default
-    /// provider for model tags that carry no `provider:` prefix.
+    /// The current agent's `@provider` attribute, written as a bareword
+    /// identifier — either a built-in backend name (`ollama`, `openai`,
+    /// `anthropic`) or a user-authored provider type — or `None` when absent.
+    /// The `ai` namespace uses it as the agent's default provider for model
+    /// tags that carry no `provider:` prefix.
     pub fn current_provider(&self) -> Option<String> {
         let agent = self.current_agent.as_ref()?;
         let def = agent.lock().def.clone();
@@ -614,6 +625,13 @@ fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
         default: None,
         variadic: false,
     };
+    let named_param = |name: &str, ty: &str| Param {
+        name: Binding::Ident(name.to_string()),
+        name_span: 0..0,
+        ty: Node::synthetic(TypeExpr::Named(ty.to_string())),
+        default: None,
+        variadic: false,
+    };
 
     map.insert(
         "Stringable".to_string(),
@@ -659,6 +677,15 @@ fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
             params: vec![self_param()],
             // list[dynamic] — wildcard list return, matches any list[T] in conformance checks
             return_type: Some(Node::synthetic(TypeExpr::List(Box::new(TypeExpr::Dynamic)))),
+        }],
+    );
+    map.insert(
+        "LlmProvider".to_string(),
+        vec![TaskSig {
+            name: "complete".to_string(),
+            name_span: 0..0,
+            params: vec![self_param(), named_param("req", "CompletionRequest")],
+            return_type: Some(Node::synthetic(TypeExpr::Named("str".to_string()))),
         }],
     );
     map

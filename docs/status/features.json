@@ -83,8 +83,8 @@
     {
       "name": "std/ai",
       "status": "partial",
-      "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json); swappable built-in backends — Ollama, OpenAI, Anthropic (Claude) — via `@model \"provider:model\"`, `@provider`, or `KEEL_PROVIDER`",
-      "gaps": "`embed` deferred to v0.2; user-authored `ai.install(provider)` planned (SPEC §5.5)",
+      "implemented_ops": "`classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json); swappable built-in backends — Ollama, OpenAI, Anthropic (Claude) — via `@model \"provider:model\"`, `@provider`, or `KEEL_PROVIDER`; user-authored providers via `impl LlmProvider` + `ai.install`/`@provider` (SPEC §5.5)",
+      "gaps": "`embed` deferred to v0.2",
       "purpose": "LLM operations: `classify`, `extract`, `summarize`, `draft`, `translate`, `decide`, `prompt` · `embed` ⏳"
     },
     {

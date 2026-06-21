@@ -7,6 +7,8 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -31,6 +33,41 @@ const DEFAULT_MAX_TOKENS: u32 = 4096;
 ///
 /// Re-exported from [`keel_catalog`] so the checker and runtime never disagree.
 pub use keel_catalog::BUILTIN_LLM_PROVIDERS as BUILTIN_PROVIDERS;
+
+/// Boxed, non-`'static` future a user-provider transport returns.
+///
+/// Unlike [`super::providers::LlmFuture`] (which is `'static`), this future may
+/// borrow the interpreter for `'a`, because a user provider re-enters the
+/// interpreter inline to run its `complete()` method.
+type UserTransportFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Option<String>, LlmError>> + Send + 'a>>;
+
+/// One-shot transport that turns a [`CompletionRequest`] into raw model output
+/// by invoking a user-authored Keel provider.
+type UserTransportFn<'a> =
+    Box<dyn FnOnce(CompletionRequest) -> UserTransportFuture<'a> + Send + 'a>;
+
+/// The transport seam for a single model call.
+///
+/// The built-in path dispatches through the [`LlmProvider`] registry; the user
+/// path re-enters the interpreter. Keeping this at the call boundary lets the
+/// prompt-construction and output-parsing logic in [`LlmClient`] stay identical
+/// across both — only the transport differs.
+pub enum Transport<'a> {
+    /// Dispatch through the built-in provider registry (model-prefix routed).
+    Builtin,
+    /// Run a user-authored `impl LlmProvider`, re-entering the interpreter.
+    User(UserTransportFn<'a>),
+}
+
+impl std::fmt::Debug for Transport<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Builtin => f.write_str("Transport::Builtin"),
+            Self::User(_) => f.write_str("Transport::User(..)"),
+        }
+    }
+}
 
 /// Dispatches `ai.*` primitives through a registry of [`LlmProvider`] backends.
 ///
@@ -143,6 +180,10 @@ impl LlmClient {
         self.provider_for(model).describe_model(model)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     async fn call(
         &self,
         role: Option<&str>,
@@ -151,8 +192,13 @@ impl LlmClient {
         user: &str,
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<String>, LlmError> {
-        if let Some(message) = &self.provider_config_error {
+        // A bad program-default only blocks the built-in path; a user provider
+        // or an explicit `provider:` prefix is unaffected by it.
+        if matches!(transport, Transport::Builtin)
+            && let Some(message) = &self.provider_config_error
+        {
             return Err(LlmError::ConfigError(message.clone()));
         }
         let mut full_system = match role {
@@ -179,14 +225,16 @@ impl LlmClient {
             );
         }
 
-        self.provider_for(model)
-            .complete(CompletionRequest {
-                system: full_system,
-                user: user.to_string(),
-                model: model.to_string(),
-                max_tokens: max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
-            })
-            .await
+        let request = CompletionRequest {
+            system: full_system,
+            user: user.to_string(),
+            model: model.to_string(),
+            max_tokens: max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+        };
+        match transport {
+            Transport::Builtin => self.provider_for(model).complete(request).await,
+            Transport::User(run) => run(request).await,
+        }
     }
 
     // ── High-level primitives used by the Ai namespace ────────────────
@@ -204,6 +252,7 @@ impl LlmClient {
         criteria: &[(String, String)],
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<String>, LlmError> {
         let variants_str = variants.join(", ");
         if self.trace.load(Ordering::Relaxed) {
@@ -228,7 +277,7 @@ impl LlmClient {
         }
 
         let Some(response) = self
-            .call(role, rules, &system, input, model, max_tokens)
+            .call(role, rules, &system, input, model, max_tokens, transport)
             .await?
         else {
             return Ok(None);
@@ -272,6 +321,7 @@ impl LlmClient {
         unit: Option<String>,
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<String>, LlmError> {
         let length_instruction = match &length {
             Some((n, unit)) => format!("in {n} {unit}"),
@@ -308,7 +358,7 @@ impl LlmClient {
             system.push_str(&format!(" Use at most {n} {unit_str}."));
         }
         let Some(response) = self
-            .call(role, rules, &system, input, model, max_tokens)
+            .call(role, rules, &system, input, model, max_tokens, transport)
             .await?
         else {
             return Ok(None);
@@ -333,6 +383,7 @@ impl LlmClient {
         max_length: Option<i64>,
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<String>, LlmError> {
         let tone_s = tone.unwrap_or("neutral");
         if self.trace.load(Ordering::Relaxed) {
@@ -358,7 +409,15 @@ impl LlmClient {
         }
 
         let Some(response) = self
-            .call(role, rules, &system, description, model, max_tokens)
+            .call(
+                role,
+                rules,
+                &system,
+                description,
+                model,
+                max_tokens,
+                transport,
+            )
             .await?
         else {
             return Ok(None);
@@ -369,6 +428,10 @@ impl LlmClient {
         Ok(Some(response.trim().to_string()))
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn extract(
         &self,
         role: Option<&str>,
@@ -377,6 +440,7 @@ impl LlmClient {
         schema: &[(String, String)],
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<String>, LlmError> {
         let fields_desc: Vec<String> = schema.iter().map(|(n, t)| format!("{n}: {t}")).collect();
         if self.trace.load(Ordering::Relaxed) {
@@ -395,7 +459,7 @@ impl LlmClient {
             fields_desc.join("\n  ")
         );
         let Some(response) = self
-            .call(role, rules, &system, input, model, max_tokens)
+            .call(role, rules, &system, input, model, max_tokens, transport)
             .await?
         else {
             return Ok(None);
@@ -406,6 +470,10 @@ impl LlmClient {
         Ok(Some(response.trim().to_string()))
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn translate(
         &self,
         role: Option<&str>,
@@ -414,6 +482,7 @@ impl LlmClient {
         target_langs: &[String],
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<HashMap<String, String>>, LlmError> {
         let langs = target_langs.join(", ");
         if self.trace.load(Ordering::Relaxed) {
@@ -438,7 +507,7 @@ impl LlmClient {
             )
         };
         let Some(response) = self
-            .call(role, rules, &system, input, model, max_tokens)
+            .call(role, rules, &system, input, model, max_tokens, transport)
             .await?
         else {
             return Ok(None);
@@ -465,6 +534,10 @@ impl LlmClient {
         }
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "prelude API maps named Keel arguments directly into the LLM request"
+    )]
     pub async fn decide(
         &self,
         role: Option<&str>,
@@ -473,6 +546,7 @@ impl LlmClient {
         options: &[String],
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<(String, String)>, LlmError> {
         if self.trace.load(Ordering::Relaxed) {
             println!(
@@ -492,7 +566,7 @@ impl LlmClient {
             options.join(", ")
         );
         let Some(response) = self
-            .call(role, rules, &system, input, model, max_tokens)
+            .call(role, rules, &system, input, model, max_tokens, transport)
             .await?
         else {
             return Ok(None);
@@ -541,6 +615,7 @@ impl LlmClient {
         response_format: Option<String>,
         model: &str,
         max_tokens: Option<u32>,
+        transport: Transport<'_>,
     ) -> Result<Option<String>, LlmError> {
         if self.trace.load(Ordering::Relaxed) {
             println!(
@@ -554,7 +629,7 @@ impl LlmClient {
             full_sys.push_str("\n\nRespond with valid JSON only. No prose, no markdown fences.");
         }
         let Some(response) = self
-            .call(role, rules, &full_sys, user, model, max_tokens)
+            .call(role, rules, &full_sys, user, model, max_tokens, transport)
             .await?
         else {
             return Ok(None);
@@ -597,7 +672,7 @@ fn truncate(s: &str, max: usize) -> Cow<'_, str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LlmClient, LlmError, truncate};
+    use super::{LlmClient, LlmError, Transport, truncate};
     use crate::runtime::context::MapEnv;
     use std::net::SocketAddr;
 
@@ -678,6 +753,7 @@ mod tests {
                 None,
                 "fast-model",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("summarize should succeed")
@@ -706,6 +782,7 @@ mod tests {
                 None,
                 "ollama:fast-model",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("summarize should succeed")
@@ -732,6 +809,7 @@ mod tests {
                 None,
                 "ollama:llama3",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("summarize should succeed")
@@ -754,6 +832,7 @@ mod tests {
                 &[("urgent tickets".to_string(), "high".to_string())],
                 "default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("classify should succeed");
@@ -775,6 +854,7 @@ mod tests {
                 &[],
                 "default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect_err("unknown variant should be a schema error");
@@ -796,6 +876,7 @@ mod tests {
                 Some("json".to_string()),
                 "default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect_err("json prompt should validate response JSON");
@@ -813,7 +894,17 @@ mod tests {
         let client = client(&base_url, &[]);
 
         let err = client
-            .draft(None, &[], "write", None, None, None, "default", None)
+            .draft(
+                None,
+                &[],
+                "write",
+                None,
+                None,
+                None,
+                "default",
+                None,
+                Transport::Builtin,
+            )
             .await
             .expect_err("HTTP 500 should fail");
 
@@ -835,6 +926,7 @@ mod tests {
                 &[("name".into(), "str".into())],
                 "default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect_err("malformed JSON should fail");
@@ -857,6 +949,7 @@ mod tests {
                 &["fr".to_string(), "es".to_string()],
                 "default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("translate should succeed")
@@ -879,6 +972,7 @@ mod tests {
                 &["ship".to_string()],
                 "default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("decide should succeed")
@@ -930,7 +1024,16 @@ mod tests {
         ]));
 
         let out = client
-            .prompt(None, &[], "sys", "user", None, "openai:gpt-4o", None)
+            .prompt(
+                None,
+                &[],
+                "sys",
+                "user",
+                None,
+                "openai:gpt-4o",
+                None,
+                Transport::Builtin,
+            )
             .await
             .expect("prompt should succeed")
             .expect("content should be present");
@@ -955,6 +1058,7 @@ mod tests {
                 None,
                 "anthropic:claude-opus-4-8",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("prompt should succeed")
@@ -971,7 +1075,16 @@ mod tests {
         )]));
 
         let err = client
-            .prompt(None, &[], "sys", "user", None, "anthropic:claude-x", None)
+            .prompt(
+                None,
+                &[],
+                "sys",
+                "user",
+                None,
+                "anthropic:claude-x",
+                None,
+                Transport::Builtin,
+            )
             .await
             .expect_err("missing key should be a config error");
 
@@ -989,7 +1102,16 @@ mod tests {
         ]));
 
         let out = client
-            .prompt(None, &[], "s", "u", None, "gpt-4o", None)
+            .prompt(
+                None,
+                &[],
+                "s",
+                "u",
+                None,
+                "gpt-4o",
+                None,
+                Transport::Builtin,
+            )
             .await
             .expect("prompt should succeed")
             .expect("content should be present");
@@ -1016,6 +1138,7 @@ mod tests {
                 None,
                 "ollama:default",
                 None,
+                Transport::Builtin,
             )
             .await
             .expect("summarize should succeed")
@@ -1031,7 +1154,16 @@ mod tests {
         let client = LlmClient::from_env(&MapEnv::with(&[("KEEL_PROVIDER", "claude")]));
 
         let err = client
-            .prompt(None, &[], "s", "u", None, "gpt-4o", None)
+            .prompt(
+                None,
+                &[],
+                "s",
+                "u",
+                None,
+                "gpt-4o",
+                None,
+                Transport::Builtin,
+            )
             .await
             .expect_err("an unknown KEEL_PROVIDER must be a config error");
 
@@ -1049,7 +1181,16 @@ mod tests {
         ]));
 
         let err = client
-            .prompt(None, &[], "s", "u", None, "default", None)
+            .prompt(
+                None,
+                &[],
+                "s",
+                "u",
+                None,
+                "default",
+                None,
+                Transport::Builtin,
+            )
             .await
             .expect_err("the default sentinel under openai must be a config error");
 

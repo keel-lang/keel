@@ -169,7 +169,10 @@ an Ollama alias resolved via `KEEL_MODEL_<ALIAS>`, or a literal Ollama tag. Open
 and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`; a missing key throws
 `AiError { reason: "provider" }`. Full setup: see [LLM Providers](../config/llm-providers.md).
 
-Writing your own provider in Keel (`ai.install(...)`) is planned for a future release.
+For proprietary or self-hosted models, you can also **write your own provider in
+Keel** — any field-less type with `impl LlmProvider` becomes a backend, selected
+with `ai.install(MyProvider)` or `@provider MyProvider`. See
+[User-authored providers](../config/llm-providers.md#user-authored-providers).
 
 ## Why functions, not keywords
 

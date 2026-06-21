@@ -141,7 +141,14 @@ impl Interpreter {
         // `@tools` may not call any effectful module; `@tools all` is the
         // explicit unrestricted form. Pure-compute modules (json, math, …)
         // and __global (agent lifecycle builtins) are never gated.
+        //
+        // A user-authored provider's `complete()` (active_providers non-empty)
+        // is trusted program infrastructure — like a built-in backend that makes
+        // HTTP calls without the agent granting `@tools [http]` — so its own
+        // transport calls (env, http, …) run ungated regardless of the consuming
+        // agent's `@tools`.
         if keel_catalog::module_requires_capability(ns_name)
+            && self.active_providers.is_empty()
             && let Some(agent_mutex) = &self.current_agent
         {
             let (allowed, agent_name) = {

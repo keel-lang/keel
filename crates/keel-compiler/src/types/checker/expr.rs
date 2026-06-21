@@ -1137,8 +1137,11 @@ impl Checker<'_, '_> {
         match members {
             super::ModuleMembers::Std(ns) => match prelude::catalog_method(&ns, method) {
                 Some(entry) => {
-                    if !self.agent_capability_allows(&ns, method, binding, span) {
+                    if !self.agent_capability_allows(&ns, method, binding, span.clone()) {
                         return Ty::Error;
+                    }
+                    if ns == "ai" && method == "install" {
+                        self.check_ai_install_arg(args, span);
                     }
                     self.catalog_result_ty(entry, args)
                 }
@@ -1182,6 +1185,26 @@ impl Checker<'_, '_> {
                 );
                 Ty::Error
             }
+        }
+    }
+
+    /// Validate the argument to `ai.install(X)`: `X` must be a bare type name
+    /// that implements `LlmProvider`. Reuses the same conformance rule as
+    /// `@provider X` so the two install sites word rejections identically.
+    fn check_ai_install_arg(&mut self, args: &[CallArg], span: crate::lexer::Span) {
+        let Some(first) = args.first() else {
+            self.err_at(
+                "ai.install expects a provider type, e.g. `ai.install(MyProvider)`",
+                span,
+            );
+            return;
+        };
+        match &first.value.kind {
+            Expr::Ident(name) => self.check_provider_name(name, first.value.span.clone()),
+            _ => self.err_at(
+                "ai.install expects a provider type name, e.g. `ai.install(MyProvider)`",
+                first.value.span.clone(),
+            ),
         }
     }
 
