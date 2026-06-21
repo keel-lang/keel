@@ -1370,6 +1370,20 @@ ai.install(Bogus)
     }
 
     #[test]
+    fn ai_install_builtin_name_is_compile_error() {
+        // A built-in backend name is not installable — it resolves to no value at
+        // runtime (a confusing `Undefined` error). Reject it at check time and
+        // point at `@provider`/the `provider:` prefix instead.
+        expect_error(
+            r#"
+use std/ai
+ai.install(openai)
+"#,
+            "built-in backend",
+        );
+    }
+
+    #[test]
     fn error_self_outside_agent() {
         expect_error(
             r#"

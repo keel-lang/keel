@@ -1189,8 +1189,10 @@ impl Checker<'_, '_> {
     }
 
     /// Validate the argument to `ai.install(X)`: `X` must be a bare type name
-    /// that implements `LlmProvider`. Reuses the same conformance rule as
-    /// `@provider X` so the two install sites word rejections identically.
+    /// that implements `LlmProvider`. Unlike `@provider X`, a built-in backend
+    /// name is *not* accepted here — built-ins are selected with `@provider` or a
+    /// `provider:` model prefix, and a bare backend name is not a value the
+    /// interpreter can install (it resolves to nothing at runtime).
     fn check_ai_install_arg(&mut self, args: &[CallArg], span: crate::lexer::Span) {
         let Some(first) = args.first() else {
             self.err_at(
@@ -1199,13 +1201,25 @@ impl Checker<'_, '_> {
             );
             return;
         };
-        match &first.value.kind {
-            Expr::Ident(name) => self.check_provider_name(name, first.value.span.clone()),
-            _ => self.err_at(
+        let Expr::Ident(name) = &first.value.kind else {
+            self.err_at(
                 "ai.install expects a provider type name, e.g. `ai.install(MyProvider)`",
                 first.value.span.clone(),
-            ),
+            );
+            return;
+        };
+        if keel_catalog::is_builtin_llm_provider(name) {
+            self.err_at(
+                format!(
+                    "ai.install expects a user-authored provider type implementing \
+                     `LlmProvider`, not the built-in backend `{name}` — select a built-in \
+                     with `@provider {name}` or a `{name}:` model prefix instead"
+                ),
+                first.value.span.clone(),
+            );
+            return;
         }
+        self.check_provider_name(name, first.value.span.clone());
     }
 
     /// Enforce deny-by-default `@tools` at compile time for direct std calls
