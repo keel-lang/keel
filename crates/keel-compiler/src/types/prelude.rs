@@ -148,6 +148,7 @@ static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
         "EnvError",
         "AiError",
         "AiSchemaError",
+        "CompletionRequest",
         "CapabilityError",
         "TimeoutError",
         "DeadlineError",
@@ -198,6 +199,7 @@ static PRELUDE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
         "Equatable",
         "Serializable",
         "Iterable",
+        "LlmProvider",
     ] {
         prelude.insert(iface.to_string());
     }
@@ -259,6 +261,13 @@ pub(crate) fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
         default: None,
         variadic: false,
     };
+    let named_param = |name: &str, ty: &str| Param {
+        name: Binding::Ident(name.to_string()),
+        name_span: 0..0,
+        ty: Node::synthetic(TypeExpr::Named(ty.to_string())),
+        default: None,
+        variadic: false,
+    };
 
     map.insert(
         "Stringable".to_string(),
@@ -305,7 +314,36 @@ pub(crate) fn builtin_interfaces() -> HashMap<String, Vec<TaskSig>> {
             return_type: Some(Node::synthetic(TypeExpr::List(Box::new(TypeExpr::Dynamic)))),
         }],
     );
+    map.insert(
+        "LlmProvider".to_string(),
+        vec![TaskSig {
+            name: "complete".to_string(),
+            name_span: 0..0,
+            params: vec![self_param(), named_param("req", "CompletionRequest")],
+            return_type: Some(Node::synthetic(TypeExpr::Named("str".to_string()))),
+        }],
+    );
 
+    map
+}
+
+/// Return the built-in struct types known to the checker without an explicit
+/// `type` declaration.
+///
+/// `CompletionRequest` is the value a user-authored `LlmProvider.complete`
+/// receives; registering it here lets `req.system`/`req.user`/`req.model`/
+/// `req.max_tokens` field access type-check.
+pub(crate) fn builtin_structs() -> HashMap<String, Vec<(String, Ty)>> {
+    let mut map = HashMap::new();
+    map.insert(
+        "CompletionRequest".to_string(),
+        vec![
+            ("system".to_string(), Ty::Str),
+            ("user".to_string(), Ty::Str),
+            ("model".to_string(), Ty::Str),
+            ("max_tokens".to_string(), Ty::Int),
+        ],
+    );
     map
 }
 

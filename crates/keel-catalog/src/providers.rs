@@ -26,13 +26,13 @@ pub fn builtin_provider_prefix(model: &str) -> Option<&'static str> {
         .find(|provider| *provider == prefix)
 }
 
-/// The shared error message for an `@provider` attribute that doesn't name a
-/// built-in backend. Used by both the compiler checker and the interpreter so
-/// the two phases word the rejection identically.
+/// The shared error message for an `@provider` attribute that names neither a
+/// built-in backend nor a type implementing `LlmProvider`. Used by both the
+/// compiler checker and the interpreter so the two phases word it identically.
 pub fn provider_attribute_error() -> String {
     format!(
-        "@provider must name a built-in provider — use one of: {}. \
-         User-authored providers are planned; see SPEC §5.5.",
+        "@provider must name a built-in provider — one of: {} — or a type with \
+         `impl LlmProvider`. See SPEC §5.5.",
         BUILTIN_LLM_PROVIDERS.join(", ")
     )
 }

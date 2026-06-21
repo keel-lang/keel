@@ -75,7 +75,7 @@ Legend: **[x]** complete · **[~]** partial · **[ ]** planned.
 
 | Namespace | Status | Implemented | Gaps |
 |---|---|---|---|
-| `std/ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json); swappable built-in backends — Ollama, OpenAI, Anthropic (Claude) — via `@model "provider:model"`, `@provider`, or `KEEL_PROVIDER` | `embed` deferred to v0.2; user-authored `ai.install(provider)` planned (SPEC §5.5) |
+| `std/ai` | [~] | `classify`, `summarize` (format/max), `draft`, `extract` (as: T), `translate`, `decide`, `prompt` (response_format: json); swappable built-in backends — Ollama, OpenAI, Anthropic (Claude) — via `@model "provider:model"`, `@provider`, or `KEEL_PROVIDER`; user-authored providers via `impl LlmProvider` + `ai.install`/`@provider` (SPEC §5.5) | `embed` deferred to v0.2 |
 | `std/io` | [x] | `notify`, `show`, `ask`, `confirm` | — |
 | `std/schedule` | [x] | `every`, `after`, `at`, `cron`, `sleep` | — |
 | `std/email` | [~] | `fetch` (IMAP), `send` (SMTP), `archive` (IMAP folder move with fallback) | — |

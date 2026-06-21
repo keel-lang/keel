@@ -8,11 +8,33 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Swappable LLM providers — `ai.*` now runs on Ollama, OpenAI, or Anthropic (Claude), selected per program, agent, or call.
+%%TAGLINE%% Swappable LLM providers — `ai.*` runs on built-in Ollama, OpenAI, and Anthropic backends, or a provider you write in Keel.
 
 ### Added
 
-- **Swappable LLM backends — OpenAI and Anthropic (Claude) join Ollama.** `ai.*` no longer hard-codes Ollama. Three backends ship built in and are selected with no extra code, most-specific wins: a `provider:` prefix on a model tag (`@model "anthropic:claude-opus-4-8"`, or a `using:` argument) picks the backend per call; `@provider <name>` sets an agent's default backend for bare tags; `KEEL_PROVIDER` sets the program default (otherwise `ollama`). OpenAI and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — a missing key throws `AiError { reason: "provider" }`, never a silent fallback. `@provider` accepts only the built-in names `ollama`, `openai`, `anthropic`; anything else is a compile-time error (user-authored Keel providers are planned — see SPEC §5.5). `@limits { max_tokens }` is now threaded into the request as the generation cap.
+- **User-authored LLM providers — write a backend in Keel.** For proprietary or self-hosted models the built-in backends don't cover, any field-less type with `impl LlmProvider` is now a backend `ai.*` can dispatch through. `ai.install(MyProvider)` registers it program-wide (the lowest-precedence default, below a `provider:` prefix and `@provider`); `@provider MyProvider` selects it per agent. `complete(self, req: CompletionRequest) -> str` returns the raw model output — Keel applies its own prompt construction and output parsing (enum matching, schema validation) identically to built-in and user providers, so `??`, `when`, and the typed `AiError`/`AiSchemaError` errors behave the same. `CompletionRequest` is a built-in struct (`system`, `user`, `model`, `max_tokens`). `ai.install(X)` and `@provider X` require `X` to implement `LlmProvider` (a compile-time error otherwise), and a provider that calls `ai.*` from inside its own `complete()` is rejected with an `AiError` rather than recursing without bound.
+
+```keel
+use std/ai
+use std/env
+use std/http
+
+type MyProvider {}
+impl LlmProvider for MyProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    key = env.get("MY_LLM_KEY")!
+    http.post("https://my-llm.example/complete", body: { prompt: req.user })["text"]
+  }
+}
+
+ai.install(MyProvider)        # program-wide, or `@provider MyProvider` per agent
+
+task ask(q: str) -> str {
+  ai.prompt(system: "Be concise.", user: q) ?? "no answer"
+}
+```
+
+- **Swappable LLM backends — OpenAI and Anthropic (Claude) join Ollama.** `ai.*` no longer hard-codes Ollama. Three backends ship built in and are selected with no extra code, most-specific wins: a `provider:` prefix on a model tag (`@model "anthropic:claude-opus-4-8"`, or a `using:` argument) picks the backend per call; `@provider <name>` sets an agent's default backend for bare tags; `KEEL_PROVIDER` sets the program default (otherwise `ollama`). OpenAI and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` — a missing key throws `AiError { reason: "provider" }`, never a silent fallback. `@provider` accepts the built-in names `ollama`, `openai`, `anthropic` (and now user-authored provider types — see above); anything else is a compile-time error. `@limits { max_tokens }` is now threaded into the request as the generation cap.
 
 ```keel
 use std/ai

@@ -99,8 +99,25 @@ pub trait Host: Send {
     fn current_model(&self) -> String;
 
     /// The `@provider` attribute of the current agent (a built-in backend
-    /// name like `openai`), or `None` when absent.
+    /// name like `openai`, or a user-authored provider type), or `None`.
     fn current_provider(&self) -> Option<String>;
+
+    // ── user-authored provider registry ───────────────────────────────────
+
+    /// Type name registered program-wide via `ai.install`, or `None`.
+    fn installed_provider(&self) -> Option<String>;
+
+    /// Register `type_name` as the program-wide user provider (`ai.install`).
+    fn set_installed_provider(&mut self, type_name: String);
+
+    /// Whether `type_name`'s `complete()` is currently on the call stack.
+    fn provider_is_active(&self, type_name: &str) -> bool;
+
+    /// Mark `type_name`'s `complete()` as entered (re-entry guard).
+    fn push_active_provider(&mut self, type_name: String);
+
+    /// Mark `type_name`'s `complete()` as exited (re-entry guard).
+    fn pop_active_provider(&mut self, type_name: &str);
 
     /// The `@limits { max_tokens }` value of the current agent, or `None`.
     fn current_max_tokens(&self) -> Option<u32>;
@@ -243,6 +260,28 @@ impl Host for Interpreter {
         Interpreter::current_provider(self)
     }
 
+    fn installed_provider(&self) -> Option<String> {
+        self.installed_provider.clone()
+    }
+
+    fn set_installed_provider(&mut self, type_name: String) {
+        self.installed_provider = Some(type_name);
+    }
+
+    fn provider_is_active(&self, type_name: &str) -> bool {
+        self.active_providers.iter().any(|n| n == type_name)
+    }
+
+    fn push_active_provider(&mut self, type_name: String) {
+        self.active_providers.push(type_name);
+    }
+
+    fn pop_active_provider(&mut self, type_name: &str) {
+        if let Some(pos) = self.active_providers.iter().rposition(|n| n == type_name) {
+            self.active_providers.remove(pos);
+        }
+    }
+
     fn current_max_tokens(&self) -> Option<u32> {
         Interpreter::current_max_tokens(self)
     }
@@ -305,6 +344,11 @@ impl Host for Interpreter {
             let event_tx = self.event_tx.clone();
             let active_http_servers = self.active_http_servers.clone();
             let live_agents = self.live_agents.clone();
+            // Carry the program-wide user provider and the re-entrancy guard so a
+            // spawned closure routes `ai.*` through the same installed provider and
+            // still trips the recursion guard for it.
+            let installed_provider = self.installed_provider.clone();
+            let active_providers = self.active_providers.clone();
 
             let handle = tokio::spawn(async move {
                 let mut local_interp = Interpreter::with_runtime(runtime);
@@ -322,6 +366,8 @@ impl Host for Interpreter {
                 local_interp.live_agents = live_agents;
                 local_interp.current_agent = current_agent;
                 local_interp.program_name = program_name;
+                local_interp.installed_provider = installed_provider;
+                local_interp.active_providers = active_providers;
                 local_interp
                     .call_closure(&params, &body, vec![])
                     .await
@@ -431,6 +477,26 @@ impl Host for MockHost {
 
     fn current_provider(&self) -> Option<String> {
         None
+    }
+
+    fn installed_provider(&self) -> Option<String> {
+        None
+    }
+
+    fn set_installed_provider(&mut self, _type_name: String) {
+        unimplemented!("MockHost does not support set_installed_provider")
+    }
+
+    fn provider_is_active(&self, _type_name: &str) -> bool {
+        false
+    }
+
+    fn push_active_provider(&mut self, _type_name: String) {
+        unimplemented!("MockHost does not support push_active_provider")
+    }
+
+    fn pop_active_provider(&mut self, _type_name: &str) {
+        unimplemented!("MockHost does not support pop_active_provider")
     }
 
     fn current_max_tokens(&self) -> Option<u32> {

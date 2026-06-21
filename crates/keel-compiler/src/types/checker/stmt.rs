@@ -460,21 +460,44 @@ impl Checker<'_, '_> {
     }
 
     fn check_provider_attribute(&mut self, attr: &AttributeDecl) {
-        let ok = matches!(
-            &attr.body,
-            AttributeBody::Expr(node)
-                if matches!(
-                    &node.kind,
-                    Expr::Ident(name) if keel_catalog::is_builtin_llm_provider(name)
-                )
-        );
-        if !ok {
-            let span = match &attr.body {
-                AttributeBody::Expr(node) => node.span.clone(),
-                _ => self.current_span.clone().unwrap_or(0..0),
-            };
+        let AttributeBody::Expr(node) = &attr.body else {
+            let span = self.current_span.clone().unwrap_or(0..0);
             self.err_at(keel_catalog::provider_attribute_error(), span);
+            return;
+        };
+        let Expr::Ident(name) = &node.kind else {
+            self.err_at(keel_catalog::provider_attribute_error(), node.span.clone());
+            return;
+        };
+        self.check_provider_name(name, node.span.clone());
+    }
+
+    /// Validate a provider reference — `@provider X` or `ai.install(X)`.
+    ///
+    /// `X` must be a built-in backend name or a type implementing `LlmProvider`.
+    /// A user provider type must be field-less: the runtime constructs its
+    /// receiver with no fields, so configuration is read from `env.*` inside
+    /// `complete()`.
+    pub(crate) fn check_provider_name(&mut self, name: &str, span: Span) {
+        if keel_catalog::is_builtin_llm_provider(name) {
+            return;
         }
+        if self.llm_provider_types.contains(name) {
+            if let Some(fields) = self.structs.get(name)
+                && !fields.is_empty()
+            {
+                self.err_at(
+                    format!(
+                        "provider `{name}` must be a field-less type — read configuration \
+                         from env.* inside `complete()`, since the runtime constructs the \
+                         provider with no fields"
+                    ),
+                    span,
+                );
+            }
+            return;
+        }
+        self.err_at(keel_catalog::provider_attribute_error(), span);
     }
 
     fn check_block(&mut self, block: &Block, scope: &mut Scope) {

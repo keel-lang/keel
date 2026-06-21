@@ -5,12 +5,27 @@ use crate::interpreter::{RuntimeError, RuntimeErrorKind};
 /// Returns a bare `miette::Report` wrapping a typed `RuntimeError` with a
 /// stable diagnostic code. Use this inside `.map_err()` closures. Use
 /// `throw_typed_error` instead when the call site returns `miette::Result<Value>`
-/// directly.
+/// directly, or `make_typed_report_with` when you need a bare `Report` plus an
+/// extra named field.
 pub(crate) fn make_typed_report(
     kind: RuntimeErrorKind,
     message: impl Into<String>,
 ) -> miette::Report {
+    make_typed_report_with(kind, message, None)
+}
+
+/// Like `make_typed_report`, but optionally attaches one extra named field
+/// (e.g. `got` for `AiSchemaError`, `reason` for provider errors).
+pub(crate) fn make_typed_report_with(
+    kind: RuntimeErrorKind,
+    message: impl Into<String>,
+    extra: Option<(&str, String)>,
+) -> miette::Report {
     let mut fields = std::collections::HashMap::new();
+    if let Some((key, val)) = extra {
+        fields.insert(key.to_string(), Value::String(val));
+    }
+    // Insert "message" last so it is never overwritten by an extra field.
     fields.insert("message".to_string(), Value::String(message.into()));
     miette::Report::new(RuntimeError::new(kind, fields))
 }
@@ -22,13 +37,7 @@ pub(crate) fn throw_typed_error(
     message: &str,
     extra: Option<(&str, String)>,
 ) -> miette::Result<Value> {
-    let mut fields = std::collections::HashMap::new();
-    if let Some((key, val)) = extra {
-        fields.insert(key.to_string(), Value::String(val));
-    }
-    // Insert "message" last so it is never overwritten by an extra field.
-    fields.insert("message".to_string(), Value::String(message.to_string()));
-    Err(miette::Report::new(RuntimeError::new(kind, fields)))
+    Err(make_typed_report_with(kind, message, extra))
 }
 
 pub(crate) fn find_arg<'a>(args: &'a [CallArgValue], name: &str) -> Option<&'a Value> {

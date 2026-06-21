@@ -26,6 +26,7 @@ impl Checker<'_, '_> {
             "Equatable",
             "Serializable",
             "Iterable",
+            "LlmProvider",
         ];
         for node in &program.declarations {
             self.current_span = Some(node.span.clone());
@@ -61,6 +62,9 @@ impl Checker<'_, '_> {
                     self.check_impl_conformance(impl_decl);
                     if impl_decl.interface_name == "Iterable" {
                         self.iterable_types.insert(impl_decl.type_name.clone());
+                    }
+                    if impl_decl.interface_name == "LlmProvider" {
+                        self.llm_provider_types.insert(impl_decl.type_name.clone());
                     }
                 }
                 _ => {}

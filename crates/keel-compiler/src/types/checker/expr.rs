@@ -1137,8 +1137,11 @@ impl Checker<'_, '_> {
         match members {
             super::ModuleMembers::Std(ns) => match prelude::catalog_method(&ns, method) {
                 Some(entry) => {
-                    if !self.agent_capability_allows(&ns, method, binding, span) {
+                    if !self.agent_capability_allows(&ns, method, binding, span.clone()) {
                         return Ty::Error;
+                    }
+                    if ns == "ai" && method == "install" {
+                        self.check_ai_install_arg(args, span);
                     }
                     self.catalog_result_ty(entry, args)
                 }
@@ -1183,6 +1186,40 @@ impl Checker<'_, '_> {
                 Ty::Error
             }
         }
+    }
+
+    /// Validate the argument to `ai.install(X)`: `X` must be a bare type name
+    /// that implements `LlmProvider`. Unlike `@provider X`, a built-in backend
+    /// name is *not* accepted here — built-ins are selected with `@provider` or a
+    /// `provider:` model prefix, and a bare backend name is not a value the
+    /// interpreter can install (it resolves to nothing at runtime).
+    fn check_ai_install_arg(&mut self, args: &[CallArg], span: crate::lexer::Span) {
+        let Some(first) = args.first() else {
+            self.err_at(
+                "ai.install expects a provider type, e.g. `ai.install(MyProvider)`",
+                span,
+            );
+            return;
+        };
+        let Expr::Ident(name) = &first.value.kind else {
+            self.err_at(
+                "ai.install expects a provider type name, e.g. `ai.install(MyProvider)`",
+                first.value.span.clone(),
+            );
+            return;
+        };
+        if keel_catalog::is_builtin_llm_provider(name) {
+            self.err_at(
+                format!(
+                    "ai.install expects a user-authored provider type implementing \
+                     `LlmProvider`, not the built-in backend `{name}` — select a built-in \
+                     with `@provider {name}` or a `{name}:` model prefix instead"
+                ),
+                first.value.span.clone(),
+            );
+            return;
+        }
+        self.check_provider_name(name, first.value.span.clone());
     }
 
     /// Enforce deny-by-default `@tools` at compile time for direct std calls

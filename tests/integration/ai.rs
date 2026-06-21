@@ -582,6 +582,262 @@ run(A)
     );
 }
 
+// ---------------------------------------------------------------------------
+// User-authored providers (#44): `impl LlmProvider` + `ai.install` / `@provider`
+// ---------------------------------------------------------------------------
+
+#[test]
+fn installed_user_provider_routes_classify() {
+    // A Keel-authored provider is a deterministic backend: `ai.install` makes it
+    // the program-wide transport, so `ai.classify` dispatches into its
+    // `complete()` instead of any built-in HTTP/mock path.
+    let src = r#"
+use std/ai
+use std/io
+type Urgency = low | medium | high
+
+type FixedProvider {}
+impl LlmProvider for FixedProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    "high"
+  }
+}
+
+ai.install(FixedProvider)
+
+agent A {
+  @tools [ai, io]
+  @on_start {
+    u = ai.classify("anything", as: Urgency) ?? Urgency.low
+    io.show("urgency={u}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("urgency=high"),
+        "installed provider did not route classify:\n{stdout}\n{stderr}"
+    );
+}
+
+#[test]
+fn per_agent_at_provider_routes_to_user_type() {
+    // `@provider MyType` selects a user provider for that agent's bare model tags.
+    let src = r#"
+use std/ai
+use std/io
+
+type Shouter {}
+impl LlmProvider for Shouter {
+  task complete(self, req: CompletionRequest) -> str {
+    "ECHO: {req.user}"
+  }
+}
+
+agent A {
+  @tools [ai, io]
+  @provider Shouter
+  @on_start {
+    r = ai.prompt(system: "sys", user: "hello") ?? "none"
+    io.show("got={r}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("got=ECHO: hello"),
+        "@provider user type did not receive the CompletionRequest user field:\n{stdout}\n{stderr}"
+    );
+}
+
+#[test]
+fn user_provider_recursion_guard_raises_instead_of_looping() {
+    // A provider whose `complete()` calls `ai.*` again would recurse without
+    // bound; the guard turns that into a catchable error rather than a hang.
+    let src = r#"
+use std/ai
+use std/io
+
+type Loopy {}
+impl LlmProvider for Loopy {
+  task complete(self, req: CompletionRequest) -> str {
+    ai.prompt(system: "x", user: "y") ?? "fallback"
+  }
+}
+
+ai.install(Loopy)
+
+agent A {
+  @tools [ai, io]
+  @on_start {
+    try {
+      ai.prompt(system: "s", user: "u")
+      io.show("no-error")
+    } catch e: AiError {
+      io.show("caught={e.message}")
+    }
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("caught="),
+        "recursion guard did not raise a catchable AiError:\n{stdout}\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("no-error"),
+        "re-entrant provider call should not have succeeded:\n{stdout}"
+    );
+}
+
+#[test]
+fn provider_complete_runs_effectful_modules_ungated() {
+    // A user provider is trusted transport, like a built-in backend: its
+    // `complete()` may call effectful modules (env/http) even when the consuming
+    // agent only grants `@tools [ai]` — the provider's needs are not the agent's.
+    let src = r#"
+use std/ai
+use std/io
+use std/env
+
+type EnvProvider {}
+impl LlmProvider for EnvProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    prefix = env.get("KEEL_TEST_PROVIDER_PREFIX") ?? "default"
+    "{prefix}: {req.user}"
+  }
+}
+
+ai.install(EnvProvider)
+
+agent A {
+  @tools [ai, io]
+  @on_start {
+    r = ai.prompt(system: "s", user: "hello") ?? "none"
+    io.show("got={r}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline_with_env(
+        src,
+        &[("KEEL_LLM", "mock"), ("KEEL_TEST_PROVIDER_PREFIX", "cfg")],
+    );
+    assert!(
+        ok,
+        "provider's complete() was blocked by the agent's @tools\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("got=cfg: hello"),
+        "provider did not read env config ungated:\n{stdout}\n{stderr}"
+    );
+}
+
+#[test]
+fn installed_provider_routes_inside_spawned_closure() {
+    // `ai.install` must reach `ai.*` calls made inside `async.spawn(...)`.
+    let src = r#"
+use std/ai
+use std/async
+use std/io
+
+type FixedProvider {}
+impl LlmProvider for FixedProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    "spawned: {req.user}"
+  }
+}
+
+ai.install(FixedProvider)
+
+agent A {
+  @tools [ai, io]
+  @on_start {
+    h = async.spawn(() => {
+      ai.prompt(system: "s", user: "hi") ?? "none"
+    })
+    r = async.join_all([h])
+    io.show("result={r[0]}")
+    stop(self)
+  }
+}
+run(A)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "program exited non-zero\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("result=spawned: hi"),
+        "installed provider did not route inside a spawned closure:\n{stdout}\n{stderr}"
+    );
+}
+
+#[test]
+fn at_provider_unknown_type_is_compile_error() {
+    let src = r#"
+use std/ai
+type NotAProvider { id: int }
+
+agent A {
+  @tools [ai]
+  @provider NotAProvider
+  @on_start {
+    ai.prompt(system: "s", user: "u")
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(
+        !ok,
+        "@provider naming a non-LlmProvider type should fail `keel check`"
+    );
+    assert!(
+        stderr.contains("LlmProvider") || stderr.contains("built-in provider"),
+        "error should explain the provider must implement LlmProvider:\n{stderr}"
+    );
+}
+
+#[test]
+fn ai_install_non_conforming_type_is_compile_error() {
+    let src = r#"
+use std/ai
+type Bogus { id: int }
+
+ai.install(Bogus)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(
+        !ok,
+        "ai.install of a non-LlmProvider type should fail check"
+    );
+    assert!(
+        stderr.contains("LlmProvider") || stderr.contains("built-in provider"),
+        "error should explain the install target must implement LlmProvider:\n{stderr}"
+    );
+}
+
 #[test]
 fn translate_empty_target_list_raises_instead_of_panicking() {
     // An empty `to: []` previously slipped past the namespace and reached

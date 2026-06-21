@@ -278,18 +278,19 @@ impl Interpreter {
                     }
                 }
 
-                // Validate @provider — only built-in backend names in v0.1.
+                // Validate @provider: it must be a bare identifier — a built-in
+                // backend name or a user type implementing `LlmProvider`.
+                // Conformance for a user type is enforced by the checker (which
+                // `keel run` runs before execution) and again at dispatch time,
+                // so a registration-order-dependent impl-presence check here is
+                // neither needed nor reliable.
                 for attr in &def.attributes {
                     if attr.name == "provider" {
-                        let valid = matches!(
+                        let is_ident = matches!(
                             &attr.body,
-                            AttributeBody::Expr(node)
-                                if matches!(
-                                    &node.kind,
-                                    Expr::Ident(name) if keel_catalog::is_builtin_llm_provider(name)
-                                )
+                            AttributeBody::Expr(node) if matches!(&node.kind, Expr::Ident(_))
                         );
-                        if !valid {
+                        if !is_ident {
                             return Err(runtime_error(keel_catalog::provider_attribute_error()));
                         }
                     }
@@ -757,14 +758,31 @@ mod tests {
     }
 
     #[test]
-    fn agent_provider_unknown_name_is_error() {
+    fn agent_provider_user_type_name_is_accepted() {
+        // A non-built-in identifier is a user provider type; conformance is the
+        // checker's job, so registration accepts it without an impl present.
         let mut interp = new_interp();
         let decl = Decl::Agent(AgentDecl {
             name: "Bot".into(),
             name_span: 0..0,
             items: vec![AgentItem::Attribute(AttributeDecl {
                 name: "provider".into(),
-                body: AttributeBody::Expr(Node::synthetic(Expr::Ident("bogus".into()))),
+                body: AttributeBody::Expr(Node::synthetic(Expr::Ident("MyProvider".into()))),
+            })],
+        });
+        assert!(interp.register_decl(&decl).is_ok());
+    }
+
+    #[test]
+    fn agent_provider_non_ident_body_is_error() {
+        // A malformed @provider (not a bare identifier) is rejected outright.
+        let mut interp = new_interp();
+        let decl = Decl::Agent(AgentDecl {
+            name: "Bot".into(),
+            name_span: 0..0,
+            items: vec![AgentItem::Attribute(AttributeDecl {
+                name: "provider".into(),
+                body: AttributeBody::Expr(Node::synthetic(Expr::Integer(1))),
             })],
         });
         let err = interp.register_decl(&decl).unwrap_err();

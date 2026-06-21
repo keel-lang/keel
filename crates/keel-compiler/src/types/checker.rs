@@ -30,7 +30,7 @@ pub use crate::ide::hover::type_at;
 pub use crate::ide::symbols::{
     definition_of, ident_at_offset, ident_span_at_offset, is_top_level_symbol, usages_of,
 };
-use crate::types::prelude::builtin_interfaces;
+use crate::types::prelude::{builtin_interfaces, builtin_structs};
 use crate::types::scope::Scope;
 
 // ---------------------------------------------------------------------------
@@ -108,6 +108,9 @@ pub(crate) struct Checker<'hir, 'ast> {
     /// Type names that implement `Iterable` — used to allow `for x in value`
     /// on struct types.
     iterable_types: HashSet<String>,
+    /// Type names that implement `LlmProvider` — the eligible targets for
+    /// `@provider X` and `ai.install(X)`.
+    llm_provider_types: HashSet<String>,
     /// Generic type declarations stored as `name → (type_params, body)` for
     /// deferred instantiation when a concrete `Foo[str]` application appears.
     generic_decls: HashMap<String, (Vec<String>, TypeDef)>,
@@ -615,10 +618,11 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             errors: Vec::new(),
             enum_variants: HashMap::new(),
             enum_variant_fields: HashMap::new(),
-            structs: HashMap::new(),
+            structs: builtin_structs(),
             aliases: HashMap::new(),
             interfaces: builtin_interfaces(),
             iterable_types: HashSet::new(),
+            llm_provider_types: HashSet::new(),
             generic_decls: HashMap::new(),
             generic_task_decls: HashMap::new(),
             top_tasks: HashMap::new(),
@@ -1273,8 +1277,8 @@ run(A)
 
     #[test]
     fn provider_unknown_resolvable_name_is_compile_error() {
-        // A name that *resolves* (a declared type) must still be rejected at
-        // check time — not slip through to runtime.
+        // A name that *resolves* (a declared type) but has no `impl LlmProvider`
+        // must still be rejected at check time — not slip through to runtime.
         expect_error(
             r#"
 type MyProvider { id: int }
@@ -1287,6 +1291,95 @@ agent A {
 run(A)
 "#,
             "built-in provider",
+        );
+    }
+
+    #[test]
+    fn provider_user_type_with_impl_is_ok() {
+        type_ok(
+            r#"
+type MyProvider {}
+impl LlmProvider for MyProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    req.user
+  }
+}
+
+agent A {
+  @provider MyProvider
+  @model "x"
+}
+
+run(A)
+"#,
+        );
+    }
+
+    #[test]
+    fn ai_install_user_type_with_impl_is_ok() {
+        type_ok(
+            r#"
+use std/ai
+type MyProvider {}
+impl LlmProvider for MyProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    "{req.system} :: {req.model}"
+  }
+}
+
+ai.install(MyProvider)
+"#,
+        );
+    }
+
+    #[test]
+    fn provider_user_type_with_fields_is_compile_error() {
+        // The runtime constructs the provider with no fields, so a field-bearing
+        // provider type is rejected — config belongs in env.* inside complete().
+        expect_error(
+            r#"
+type Configured { key: str }
+impl LlmProvider for Configured {
+  task complete(self, req: CompletionRequest) -> str {
+    req.user
+  }
+}
+
+agent A {
+  @provider Configured
+  @model "x"
+}
+
+run(A)
+"#,
+            "field-less",
+        );
+    }
+
+    #[test]
+    fn ai_install_non_conforming_type_is_compile_error() {
+        expect_error(
+            r#"
+use std/ai
+type Bogus { id: int }
+
+ai.install(Bogus)
+"#,
+            "built-in provider",
+        );
+    }
+
+    #[test]
+    fn ai_install_builtin_name_is_compile_error() {
+        // A built-in backend name is not installable — it resolves to no value at
+        // runtime (a confusing `Undefined` error). Reject it at check time and
+        // point at `@provider`/the `provider:` prefix instead.
+        expect_error(
+            r#"
+use std/ai
+ai.install(openai)
+"#,
+            "built-in backend",
         );
     }
 

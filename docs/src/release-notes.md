@@ -4,6 +4,40 @@
 
 ## Unreleased
 
+### User-authored LLM providers — write a backend in Keel
+
+For proprietary or self-hosted models the built-in backends don't cover, any
+field-less type with `impl LlmProvider` is now a backend `ai.*` can dispatch
+through:
+
+```keel
+use std/ai
+use std/env
+use std/http
+
+type MyProvider {}
+impl LlmProvider for MyProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    key = env.get("MY_LLM_KEY")!
+    http.post("https://my-llm.example/complete", body: { prompt: req.user })["text"]
+  }
+}
+
+ai.install(MyProvider)        # program-wide, or `@provider MyProvider` per agent
+```
+
+`complete(self, req: CompletionRequest) -> str` returns the raw model text; Keel
+applies its own prompt construction and output parsing on top, so `??`, `when`,
+and the typed `AiError` / `AiSchemaError` behave the same as for built-in
+backends. `CompletionRequest` is a built-in struct (`system`, `user`, `model`,
+`max_tokens`). `ai.install(X)` and `@provider X` require `X` to implement
+`LlmProvider` (a compile-time error otherwise), and a provider that calls `ai.*`
+from inside its own `complete()` is rejected with an `AiError` instead of
+recursing without bound. See
+[User-authored providers](./config/llm-providers.md#user-authored-providers).
+
+---
+
 ### Swappable LLM providers — Ollama, OpenAI, and Anthropic (Claude)
 
 `ai.*` no longer hard-codes Ollama. Three backends ship built in and are selected
@@ -28,8 +62,8 @@ summary = ai.summarize(text, using: "openai:gpt-4o") ?? "(none)"
 
 OpenAI and Anthropic read `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`; a missing key
 throws `AiError { reason: "provider" }`, never a silent fallback. `@limits {
-max_tokens }` is now threaded into the request as the generation cap. Writing a
-provider in Keel (`ai.install`) remains planned — see
+max_tokens }` is now threaded into the request as the generation cap. You can
+also write your own provider in Keel — see above and
 [LLM Providers](./config/llm-providers.md).
 
 ---

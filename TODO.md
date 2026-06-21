@@ -30,9 +30,9 @@ Verdict: **plan** (worth doing — aligned with Keel's purpose, no redundant ove
 
 | Ref | Short | Description | Verdict | Why |
 |-----|-------|-------------|---------|-----|
-| K-14 | Ship one real interface implementation | `interface` declarations parse but don't dispatch. `@provider` parses but Ollama is hardcoded. Implement `LlmProvider` with two concrete backends (Ollama + mock/test) sharing the interface ABI. | **plan** | THE central architectural bet of Keel: swappable providers. Without this, Keel is a fixed framework with language syntax, not a language with replaceable backends. The single biggest gap between spec and reality. |
+| K-14 | Ship one real interface implementation | **Done** (#44). Built-in `LlmProvider` backends (Ollama/OpenAI/Anthropic) shipped in #46/#87; user-authored providers landed in #44 — `impl LlmProvider for X` dispatches through `ai.install(X)` (program-wide) or `@provider X` (per-agent), with `CompletionRequest` as a built-in struct, checker conformance via `signature_satisfies`, and a re-entrancy guard. | **done** | THE central architectural bet of Keel: swappable providers — built in *and* user-authored. |
 | K-15 | Interface conformance checks | **Done** (#45). `impl Interface for Type` conformance is enforced in both checker and runtime via the shared `types/interface.rs` — presence, arity, parameter types, return type, and extra-method rejection. `dynamic` in the interface position is a wildcard on both parameters and return. Provider *dispatch* (the `@provider` wiring) is tracked separately in K-14/K-16. | **done** | Method-signature conformance is complete; the static checker and the runtime apply identical rules through `signature_satisfies`. |
-| K-16 | Typed provider ABI | Define the runtime contract for provider dispatch: per-call, per-agent, per-program scoping; method resolution; error propagation. | **plan** | Follows from K-14. The interface system needs a concrete dispatch contract. |
+| K-16 | Typed provider ABI | **Done** (#46/#87). Runtime contract for provider dispatch: per-call (`provider:` prefix), per-agent (`@provider`), per-program (`KEEL_PROVIDER`/`ai.install`) scoping; method resolution; error propagation via `LlmError` → typed `AiError`. | **done** | The interface system's concrete dispatch contract, extended by user-authored providers in K-14. |
 
 ---
 

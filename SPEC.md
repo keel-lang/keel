@@ -921,12 +921,43 @@ OpenAI and Anthropic read their keys from `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`
 a missing key surfaces as `AiError { reason: "provider" }`, never a silent
 fallback. `@limits { max_tokens }` caps generation for the backend.
 
-#### User-authored providers <span class="badge badge-soon">Planned</span>
+#### User-authored providers
 
-Writing a provider in Keel and installing it — `ai.install(MyProvider)` with
-`impl LlmProvider for MyProvider` — is planned for a future release, for the long
-tail of proprietary or self-hosted backends. The built-in backends above cover
-the common cases today.
+For the long tail of proprietary or self-hosted backends, write a provider **in
+Keel** and install it. Any field-less type with `impl LlmProvider` becomes a
+backend `ai.*` can dispatch through:
+
+```keel
+type MyProvider {}
+
+impl LlmProvider for MyProvider {
+  task complete(self, req: CompletionRequest) -> str {
+    # `req` carries `system`, `user`, `model`, and `max_tokens`. Configuration
+    # (endpoints, keys) is read from env.* — the provider is constructed with
+    # no fields, so it holds no state of its own.
+    key = env.get("MY_LLM_KEY")!
+    http.post("https://my-llm.example/complete", body: { prompt: req.user })["text"]
+  }
+}
+
+ai.install(MyProvider)        # program-wide default (lowest precedence)
+
+agent Assistant {
+  @provider MyProvider        # …or per-agent, like the built-in names
+}
+```
+
+`complete(self, req: CompletionRequest) -> str` returns the raw model output;
+Keel's prompt construction and output parsing (enum matching, schema validation)
+are applied identically to built-in and user providers, so `??`, `when`, and the
+typed `AiError`/`AiSchemaError` errors behave the same. `CompletionRequest` is a
+built-in struct with fields `system: str`, `user: str`, `model: str`, and
+`max_tokens: int`.
+
+`ai.install(X)` and `@provider X` require `X` to be a type implementing
+`LlmProvider`; anything else is a compile-time error. A user provider must not
+call `ai.*` from inside its own `complete()` — that re-entry is rejected with an
+`AiError` rather than recursing without bound.
 
 ---
 
