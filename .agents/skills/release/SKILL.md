@@ -47,7 +47,7 @@ Every `.keel` file in `examples/` must be listed in `examples_all_parse` and pas
 
 ## Step 4a — Doc Code Block Audit
 
-Every `.keel` code block in `docs/src/` and every inline example in `CHANGELOG.md`, `SPEC.md`, and `ROADMAP.md` must be valid, runnable Keel code.
+Every `.keel` code block in `docs/src/` and every inline example in `CHANGELOG.md` and `SPEC.md` must be valid, runnable Keel code.
 
 For each block, ask:
 
@@ -135,7 +135,6 @@ Must show the real tagline (not `%%TAGLINE%%`) and `%%VERSION%%` restored as a p
 
 - `SPEC.md` — updated if the language surface changed.
 - `CHANGELOG.md` — `[Unreleased]` stamped to `[VERSION] — DATE`.
-- `ROADMAP.md` — shipped items marked `[x]`, new release row added.
 - `Cargo.toml` — `version` bumped.
 - `docs/status/features.json` — updated for any changed namespace, attribute, or CLI entry. `features.json` is the source of truth.
 
@@ -164,7 +163,7 @@ Do not run `git commit` or `git push` until the answer is an explicit yes.
 Once approved:
 
 ```bash
-git add Cargo.toml Cargo.lock CHANGELOG.md ROADMAP.md SPEC.md \
+git add Cargo.toml Cargo.lock CHANGELOG.md SPEC.md \
         src/ tests/ docs/ examples/ .github/
 git commit -m "Release v0.1.X — <short theme>"
 git push origin main

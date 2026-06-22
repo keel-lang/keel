@@ -14,7 +14,7 @@ use crate::ast::Program;
 pub fn compile(_program: &Program) -> Result<CompiledProgram, String> {
     Err(
         "keel build is deferred post-v0.1 — use `keel run` (the tree-walking \
-         interpreter is the supported execution path for v0.1). See ROADMAP.md."
+         interpreter is the supported execution path for v0.1)."
             .to_string(),
     )
 }

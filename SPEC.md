@@ -1,6 +1,6 @@
 # Keel Language Specification — v0.1 (Alpha)
 
-> **Status: Alpha.** Keel is in early design. The language is **not yet stable** and has **no production users**. Expect breaking changes between 0.x releases. This document is the design target for v0.1; [ROADMAP.md](ROADMAP.md) tracks shipped, partial, and planned implementation status.
+> **Status: Alpha.** Keel is in early design. The language is **not yet stable** and has **no production users**. Expect breaking changes between 0.x releases. This document is the design target for v0.1; [CHANGELOG.md](CHANGELOG.md) tracks implementation status, and the [GitHub project board](https://github.com/orgs/keel-lang/projects/1) tracks planned work.
 
 ---
 
@@ -16,7 +16,7 @@ The import is one line of ceremony, after which `ai.classify(...)` reads as if `
 ### Design principles
 
 1. **Small core, deep stdlib.** Every feature that can be a library is one. The core earns its keep through the type system, the compiler, or the actor runtime — not through surface syntax convenience.
-2. **Static typing with full inference as the design target.** The alpha checker already catches core mismatches and deliberately leaves some unsupported cases as `Unknown`; [ROADMAP.md](ROADMAP.md) is the status source for current checker coverage.
+2. **Static typing with full inference as the design target.** The alpha checker already catches core mismatches and deliberately leaves some unsupported cases as `Unknown`; the [CHANGELOG.md](CHANGELOG.md) records what each release added to checker coverage.
 3. **No silent fallbacks.** Operations that can fail return nullable types (`T?`) or throw typed errors. The caller handles absence with `??` or `when`, and catches errors with `try/catch`.
 4. **Tooling from day one.** Every feature is designed so the LSP can autocomplete, go-to-def, rename, and surface diagnostics.
 5. **Escape hatches are explicit.** `dynamic`, `extern`, `prompt` exist for real needs but must be opted into visibly.
@@ -64,7 +64,7 @@ A file may contain, in any order:
 
 ## 2. Type System
 
-Keel uses a **structural type system with full inference** as its design target. In the current alpha, the checker covers the core language and falls back to `Unknown` in some unsupported cases; those gaps are tracked in [ROADMAP.md](ROADMAP.md).
+Keel uses a **structural type system with full inference** as its design target. In the current alpha, the checker covers the core language and falls back to `Unknown` in some unsupported cases; those gaps are tracked in [GitHub Issues](https://github.com/keel-lang/keel/issues).
 
 ### 2.1 Design principles
 
@@ -2423,11 +2423,11 @@ That keeps the parser small, type inference uniform (no hard-coded primitive sig
 
 ## 27. What's Next
 
-v0.1 is the initial alpha. `keel run` accepts only the surface described in this document.
+Keel is in the **0.2.x alpha**. `keel run` accepts the surface described in this document.
 
-v0.2 and later are deliberately left **un-planned** until v0.1 ships and real usage reveals what to scope. See [ROADMAP.md](ROADMAP.md).
+The path to v1.0 is deliberately left **un-planned** — real usage drives what gets scoped next. See the [GitHub project board](https://github.com/orgs/keel-lang/projects/1) for planned work and [NON-GOALS.md](NON-GOALS.md) for what's been set aside.
 
-Breaking changes are expected between 0.x versions. Do not build production systems on v0.1. Play, prototype, break things, and send feedback.
+Breaking changes are expected between 0.x versions. Don't build production systems on it yet. Play, prototype, break things, and send feedback.
 
 ---
 

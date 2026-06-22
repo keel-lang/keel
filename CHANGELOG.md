@@ -4,7 +4,7 @@ All notable changes to Keel.
 
 > **Alpha.** Keel is v0.1. Breaking changes are expected between 0.x releases. Do not build production systems on 0.x.
 
-> **Doc-update rule.** Any feature or spec change — added, updated, or removed — must update the docs in the same release. At minimum: `docs/src/release-notes.md` plus every guide page in `docs/src/guide/` (and `docs/src/examples/`, `docs/src/cli/`, `docs/src/config/` where applicable) that the change touches. `SPEC.md` and `ROADMAP.md` are part of this rule. A release is not shipped until `mdbook build` runs clean over the updated pages.
+> **Doc-update rule.** Any feature or spec change — added, updated, or removed — must update the docs in the same release. At minimum: `docs/src/release-notes.md` plus every guide page in `docs/src/guide/` (and `docs/src/examples/`, `docs/src/cli/`, `docs/src/config/` where applicable) that the change touches. `SPEC.md` is part of this rule. A release is not shipped until `mdbook build` runs clean over the updated pages.
 
 ## [Unreleased]
 

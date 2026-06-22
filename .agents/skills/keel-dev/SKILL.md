@@ -38,7 +38,7 @@ Use this skill for non-trivial Keel development: language features, runtime or c
 4. **Implement**
    - Keep changes scoped to the request.
    - Update `SPEC.md` before source for new or changed language features.
-   - Update `CHANGELOG.md`, `ROADMAP.md`, and relevant `docs/src/` pages when behavior, feature status, or public docs change.
+   - Update `CHANGELOG.md` and relevant `docs/src/` pages when behavior, feature status, or public docs change. There is no `ROADMAP.md` or `TODO.md` — planned work is tracked in GitHub Issues, and deliberately-declined ideas in `NON-GOALS.md`.
    - Add or update focused tests for the changed behavior.
 
 5. **Verify**

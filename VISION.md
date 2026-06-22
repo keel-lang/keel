@@ -2,7 +2,7 @@
 
 > *What if languages were designed today, knowing that AI is the runtime?*
 
-> **Alpha notice.** Keel is v0.1 — alpha. No production users. Breaking changes expected between 0.x releases. This document describes the destination; [SPEC.md](SPEC.md) and [ROADMAP.md](ROADMAP.md) describe where we are on the way there.
+> **Alpha notice.** Keel is v0.1 — alpha. No production users. Breaking changes expected between 0.x releases. This document describes the destination; [SPEC.md](SPEC.md) and the [CHANGELOG.md](CHANGELOG.md) describe where we are on the way there.
 
 ---
 
@@ -55,7 +55,7 @@ run(EmailBot)
 ```
 
 - **27 keywords.** If a word isn't reserved, it's an identifier. Namespaces, duration units, attribute names — all identifiers.
-- **Static checking with an inference target.** The design aims for full inference; the current alpha checker catches core mismatches and still has deliberate gaps tracked in the roadmap.
+- **Static checking with an inference target.** The design aims for full inference; the current alpha checker catches core mismatches and still has deliberate gaps tracked in GitHub Issues.
 - **Exhaustive pattern matching.** Missing an enum variant is a compile error, not a runtime surprise.
 - **Nullable safety.** Operations that can fail return nullable types. The caller handles failure explicitly.
 - **Structural concurrency.** `Async.spawn`, `Async.join_all`, `Async.select`. Parent cancels children. Simple and sufficient.

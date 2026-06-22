@@ -88,5 +88,5 @@ When validating a language change, a clean run should:
   `Urgency` output
 
 If any of the above regresses, the triggering change probably needs
-investigation. For a feature-by-feature status map, see
-[ROADMAP.md](../../ROADMAP.md).
+investigation. For what shipped in each release, see
+[CHANGELOG.md](../../CHANGELOG.md).

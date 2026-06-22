@@ -107,4 +107,4 @@ keel run examples/showcase.keel
 - **0.x** — further pre-1.0 releases will keep breaking things where the design demands it. The [changelog](./changelog.md) flags every break.
 - **1.0.x** — first API-stable release. Semver begins.
 
-See [SPEC.md](https://github.com/keel-lang/keel/blob/main/SPEC.md) for the authoritative design and [ROADMAP.md](https://github.com/keel-lang/keel/blob/main/ROADMAP.md) for the plan.
+See [SPEC.md](https://github.com/keel-lang/keel/blob/main/SPEC.md) for the authoritative design and the [GitHub project board](https://github.com/orgs/keel-lang/projects/1) for planned work.

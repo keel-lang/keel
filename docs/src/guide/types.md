@@ -1,6 +1,6 @@
 # Types
 
-Keel is **statically typed with full inference as the design target**. In the current alpha, the checker catches core mismatches before your code runs. Where the type cannot be determined statically, the checker uses one of three internal fall-back markers — `Unknown(InferenceLimitation)`, `Unknown(ExternalDynamic)`, or `Unknown(UnsupportedFeature)` — which are distinct from the programmer-written `dynamic` annotation and are surfaced by `keel check --strict`; see the [ROADMAP](../../ROADMAP.md) for current checker coverage.
+Keel is **statically typed with full inference as the design target**. In the current alpha, the checker catches core mismatches before your code runs. Where the type cannot be determined statically, the checker uses one of three internal fall-back markers — `Unknown(InferenceLimitation)`, `Unknown(ExternalDynamic)`, or `Unknown(UnsupportedFeature)` — which are distinct from the programmer-written `dynamic` annotation and are surfaced by `keel check --strict`.
 
 ## Primitive types
 

@@ -20,9 +20,10 @@ Keel is in **early design and implementation**. There are **no production users*
 
 If you're here, you're either curious or contributing. Both are welcome. Neither is shipping to prod.
 
-- **Roadmap:** [ROADMAP.md](ROADMAP.md)
+- **Roadmap & issues:** [GitHub Issues](https://github.com/keel-lang/keel/issues) · [project board](https://github.com/orgs/keel-lang/projects/1)
 - **Spec:** [SPEC.md](SPEC.md)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+- **Non-goals:** [NON-GOALS.md](NON-GOALS.md)
 
 ---
 
@@ -88,7 +89,7 @@ Each file imports the stdlib modules it uses — `use std/ai`, `use std/email`, 
 
 ## Design in One Paragraph
 
-The core language has a small reserved keyword set and the actor model. Everything else is a stdlib function call behind an **interface** boundary. `ai.*` dispatches through that boundary to one of three built-in backends — Ollama (local default), OpenAI, and Anthropic — or a provider you write in Keel with `impl LlmProvider`. The compiler knows a namespace's shape; the runtime installs the backend. Reserved keyword inflation is the enemy. See [SPEC.md §0–§3](SPEC.md) for the design, [ROADMAP.md](ROADMAP.md) for shipped status, and [SPEC.md §10](SPEC.md) for the full keyword list.
+The core language has a small reserved keyword set and the actor model. Everything else is a stdlib function call behind an **interface** boundary. `ai.*` dispatches through that boundary to one of three built-in backends — Ollama (local default), OpenAI, and Anthropic — or a provider you write in Keel with `impl LlmProvider`. The compiler knows a namespace's shape; the runtime installs the backend. Reserved keyword inflation is the enemy. See [SPEC.md §0–§3](SPEC.md) for the design and [SPEC.md §10](SPEC.md) for the full keyword list.
 
 ---
 
@@ -214,7 +215,7 @@ cd docs && mdbook serve
 Keel is in alpha. Semver is **not** respected between 0.x minor versions.
 
 - **0.2.x** — current alpha. One module system (`use std/<name>` and local file imports), deny-by-default `@tools`, built-in `test` blocks, swappable LLM providers. API is unstable; breaking changes in patch releases are allowed.
-- **0.x** — further pre-1.0 releases will keep breaking things where the design demands it. The [changelog](CHANGELOG.md) flags every break. See [ROADMAP.md](ROADMAP.md).
+- **0.x** — further pre-1.0 releases will keep breaking things where the design demands it. The [changelog](CHANGELOG.md) flags every break; the [project board](https://github.com/orgs/keel-lang/projects/1) tracks what's planned.
 - **1.0.x** — first API-stable release. Semver begins.
 
 Do not write anything you're not willing to rewrite.
@@ -223,7 +224,7 @@ Do not write anything you're not willing to rewrite.
 
 ## Contributing
 
-Issues and PRs welcome. Document roles are explicit: [SPEC.md](SPEC.md) describes the language design target, [ROADMAP.md](ROADMAP.md) tracks shipped/partial/planned status, and the README plus mdBook describe current user-facing behavior.
+Issues and PRs welcome. Document roles are explicit: [SPEC.md](SPEC.md) describes the language design target, [CHANGELOG.md](CHANGELOG.md) records what shipped, [NON-GOALS.md](NON-GOALS.md) records what we've deliberately set aside, and the README plus mdBook describe current user-facing behavior. Day-to-day work and the roadmap live in [GitHub Issues](https://github.com/keel-lang/keel/issues) and the [project board](https://github.com/orgs/keel-lang/projects/1).
 
 ---
 

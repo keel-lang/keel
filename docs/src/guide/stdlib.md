@@ -296,7 +296,7 @@ winner = async.select([task1, task2])
 
 `async.select` cancels any handles that haven't completed yet once a winner is found.
 
-> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` is registered and raises a clear "planned for v0.2" error; `ai.embed` returns an empty list. Track the full status in [ROADMAP.md](../../ROADMAP.md).
+> **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` is registered and raises a clear "planned for v0.2" error; `ai.embed` returns an empty list. The status column in the table above is authoritative.
 
 ## Interfaces
 
