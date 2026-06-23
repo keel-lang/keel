@@ -231,3 +231,5 @@ Issues and PRs welcome. Document roles are explicit: [SPEC.md](SPEC.md) describe
 ## License
 
 MIT
+
+<!-- Note: issue #58 concerns adding a `//!` module-level doc to `context.rs`, a Rust source file — not README.md. -->
