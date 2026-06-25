@@ -1,0 +1,72 @@
+name: 🐛 Bug report
+description: Report something that doesn't work the way it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug! Keel is alpha software, so bugs are expected —
+        a clear, minimal reproduction is the single most useful thing you can give us.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, what you expected instead, and the impact.
+      placeholder: Running `keel run x.keel` panics instead of reporting a type error.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest `.keel` program that triggers the bug. Smaller is better.
+      render: rust
+      placeholder: |
+        use std/ai
+
+        task main() {
+          ai.classify("hi", as: Nope)
+        }
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The exact command you ran and its full output (paste the error verbatim).
+      render: shell
+      placeholder: |
+        $ keel run repro.keel
+        <full output here>
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Keel version
+      description: Output of `keel --version` (or the commit SHA if built from source).
+      placeholder: keel 0.2.4
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / platform
+      placeholder: macOS 15.5 (arm64)
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: My reproduction is minimal and runs with `KEEL_LLM=mock` where applicable.
+          required: false
