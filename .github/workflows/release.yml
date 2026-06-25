@@ -19,7 +19,7 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -117,7 +117,7 @@ jobs:
           echo "user_id=$user_id"  >> "$GITHUB_OUTPUT"
 
       - name: Checkout tap
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: keel-lang/homebrew-tap
           token: ${{ steps.app-token.outputs.token }}
