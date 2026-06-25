@@ -16,7 +16,7 @@ keel-compiler = { path = "../keel-compiler" }
 miette = { workspace = true }
 thiserror = "2"
 tokio = { workspace = true }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 colored = { workspace = true }
