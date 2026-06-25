@@ -13,7 +13,7 @@ miette = { version = "7", features = ["fancy"] }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-colored = "2"
+colored = "3"
 parking_lot = "0.12"
 tempfile = "3"
 async-imap = { version = "0.11", default-features = false, features = ["runtime-tokio"] }
