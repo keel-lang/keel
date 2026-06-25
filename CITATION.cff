@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+title: "Keel: a programming language where AI agents are first-class citizens"
+message: "If you use Keel in your research or writing, please cite it as below."
+type: software
+authors:
+  - given-names: Zied
+    family-names: Maktouf
+repository-code: "https://github.com/keel-lang/keel"
+url: "https://github.com/keel-lang/keel"
+abstract: >-
+  Keel is a statically typed, inference-first programming language built in Rust in which AI
+  agents are first-class citizens. Its core concurrency primitive is the actor model; AI,
+  scheduling, HTTP, email, memory, and human I/O are provided by a standard library.
+keywords:
+  - programming-language
+  - ai-agents
+  - actor-model
+  - rust
+  - llm
+license: MIT
+version: 0.2.4

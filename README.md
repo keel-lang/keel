@@ -12,6 +12,14 @@
   <em>v0.2 — alpha. Not production-ready. Breaking changes expected between 0.x releases.</em>
 </p>
 
+<p align="center">
+  <a href="https://github.com/keel-lang/keel/actions/workflows/ci.yml"><img src="https://github.com/keel-lang/keel/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
+  <a href="https://github.com/keel-lang/keel/releases"><img src="https://img.shields.io/github/v/release/keel-lang/keel?include_prereleases&sort=semver" alt="Latest release"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/keel-lang/keel" alt="License: MIT"/></a>
+  <img src="https://img.shields.io/badge/rust-edition%202024-orange.svg" alt="Rust edition 2024"/>
+  <img src="https://img.shields.io/badge/status-alpha-yellow.svg" alt="Status: alpha"/>
+</p>
+
 ---
 
 ## Status: Alpha (v0.2)

@@ -1,0 +1,53 @@
+name: 💡 Feature request
+description: Propose a language feature, stdlib addition, or improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Keel's surface is still soft enough that a good proposal can change
+        the language. To save everyone time, please describe the **problem** first, not just the
+        solution — and check it isn't already covered.
+
+  - type: checkboxes
+    id: prechecks
+    attributes:
+      label: Before proposing
+      options:
+        - label: I checked [NON-GOALS.md](https://github.com/keel-lang/keel/blob/main/NON-GOALS.md) and this isn't a deliberately declined idea (or I explain below why it should be reconsidered).
+          required: true
+        - label: I searched existing issues and discussions for prior art.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: The use case and the pain today. Why should the language / stdlib own this rather than user code?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed surface
+      description: Sketch the syntax or API. Show a `.keel` snippet of how it would be used.
+      render: rust
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other designs, workarounds, or how other languages handle this.
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Anything else — links, related issues, design trade-offs.
+    validations:
+      required: false
