@@ -29,7 +29,7 @@ chrono-tz = "0.10"
 regex = { workspace = true }
 glob = { workspace = true }
 axum = "0.8"
-sha2 = "0.10"
+sha2 = "0.11"
 fs2 = "0.4"
 parking_lot = { workspace = true }
 fastrand = "2.4"
