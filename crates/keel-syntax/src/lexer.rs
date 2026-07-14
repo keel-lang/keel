@@ -213,7 +213,7 @@ pub enum Token {
     Newline,
 
     // ── Comments (skipped) ───────────────────────────────────────────
-    #[regex(r"#[^\n]*", logos::skip)]
+    #[regex(r"#[^\n]*", logos::skip, allow_greedy = true)]
     Comment,
 }
 

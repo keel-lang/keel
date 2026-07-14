@@ -177,7 +177,7 @@ fn validate_byte_count(n: i64, context: &str) -> miette::Result<usize> {
 
 fn secure_random_bytes(n: usize, context: &str) -> miette::Result<Vec<u8>> {
     let mut bytes = vec![0_u8; n];
-    getrandom::getrandom(&mut bytes)
+    getrandom::fill(&mut bytes)
         .map_err(|e| miette::miette!("{context}: random source failed: {e}"))?;
     Ok(bytes)
 }

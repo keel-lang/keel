@@ -10,6 +10,10 @@ All notable changes to Keel.
 
 %%TAGLINE%% update this line before releasing — one sentence summary of the release
 
+### Changed
+
+- **Dependency upgrades.** `rustyline` 15→18, `logos` 0.14→0.16, `colored` 2→3, `rusqlite` 0.32→0.40, `sha2` 0.10→0.11, `getrandom` 0.2→0.4, `async-native-tls` 0.5→0.6, plus a routine `cargo update` of compatible transitive versions. No user-facing behavior change; internal call sites (`getrandom::fill`, digest-to-hex formatting, a logos comment-token lint annotation) were updated to match each library's new API surface.
+
 ---
 
 ## [0.2.4] — 2026-06-21

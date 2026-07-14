@@ -48,7 +48,12 @@ pub(crate) fn derive_program_name_with_fs(
             let bytes = p.as_os_str().as_encoded_bytes();
             let mut h = Sha256::new();
             h.update(bytes);
-            let hex = format!("{:x}", h.finalize());
+            let digest = h.finalize();
+            let mut hex = String::with_capacity(digest.len() * 2);
+            for byte in &digest {
+                use std::fmt::Write as _;
+                write!(&mut hex, "{byte:02x}").expect("writing hex to String cannot fail");
+            }
             let hash12 = &hex[..12];
             let basename = p.file_stem().and_then(|s| s.to_str()).unwrap_or("program");
             let safe_basename = sanitize_memory_basename(basename);

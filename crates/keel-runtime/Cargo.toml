@@ -29,12 +29,12 @@ chrono-tz = "0.10"
 regex = { workspace = true }
 glob = { workspace = true }
 axum = "0.8"
-sha2 = "0.10"
+sha2 = "0.11"
 fs2 = "0.4"
 parking_lot = { workspace = true }
 fastrand = "2.4"
-getrandom = "0.2"
-rusqlite = { version = "0.32", features = ["bundled"] }
+getrandom = "0.4"
+rusqlite = { version = "0.40", features = ["bundled"] }
 csv = { workspace = true }
 
 [dev-dependencies]

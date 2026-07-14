@@ -64,8 +64,7 @@ pub(crate) fn uuid_namespace_constant(field: &str) -> Option<Value> {
 
 fn random_bytes() -> miette::Result<[u8; 16]> {
     let mut bytes = [0_u8; 16];
-    getrandom::getrandom(&mut bytes)
-        .map_err(|e| miette::miette!("Uuid: random source failed: {e}"))?;
+    getrandom::fill(&mut bytes).map_err(|e| miette::miette!("Uuid: random source failed: {e}"))?;
     Ok(bytes)
 }
 
