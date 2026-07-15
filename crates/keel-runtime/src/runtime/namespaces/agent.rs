@@ -164,3 +164,46 @@ fn agents_in_team(host: &dyn Host, team: &str) -> Vec<String> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::interpreter::Interpreter;
+
+    fn arg(v: Value) -> CallArgValue {
+        CallArgValue {
+            name: None,
+            value: v,
+        }
+    }
+
+    // `delegate`'s target shape is validated at compile time by
+    // `check_delegate_call` in the checker, so its runtime `_ => Err` branch
+    // is unreachable from well-typed programs. `send`'s target is not
+    // specially checked — a non-agent value type-checks as a generic call
+    // and only fails here, at runtime, so this is the one messaging verb
+    // whose argument validation needs its own coverage.
+    #[tokio::test]
+    async fn send_rejects_non_agent_target() {
+        let mut interp = Interpreter::default();
+        install_messaging_fns(&mut interp);
+        let send = interp
+            .namespaces
+            .get("__global")
+            .and_then(|ns| ns.methods.get("send"))
+            .expect("send must be registered")
+            .clone();
+
+        let err = send(
+            &mut interp,
+            vec![
+                arg(Value::String("not-an-agent".into())),
+                arg(Value::Integer(1)),
+            ],
+        )
+        .await
+        .expect_err("non-agent target must fail");
+
+        assert_eq!(err.to_string(), "send: first arg must be an agent");
+    }
+}
