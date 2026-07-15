@@ -102,8 +102,7 @@ mod tests {
         match result {
             Value::Map(m) => {
                 assert_eq!(
-                    m.get(&MapKey::Str("stdout".into()))
-                        .map(|v| v.to_display_string()),
+                    m.get(&MapKey::Str("stdout".into())).map(|v| v.to_string()),
                     Some("hello\n".to_string())
                 );
                 assert_eq!(
@@ -170,7 +169,7 @@ mod tests {
             Value::Map(m) => {
                 let stdout = m
                     .get(&MapKey::Str("stdout".into()))
-                    .map(|v| v.to_display_string())
+                    .map(|v| v.to_string())
                     .unwrap_or_default();
                 // macOS resolves /var/folders/... symlinks; compare canonicalized paths.
                 let got = std::fs::canonicalize(stdout.trim()).expect("canonicalize stdout");
@@ -204,8 +203,7 @@ mod tests {
         match result {
             Value::Map(m) => {
                 assert_eq!(
-                    m.get(&MapKey::Str("stdout".into()))
-                        .map(|v| v.to_display_string()),
+                    m.get(&MapKey::Str("stdout".into())).map(|v| v.to_string()),
                     Some("hello from stdin".to_string())
                 );
             }

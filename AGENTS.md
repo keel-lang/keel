@@ -94,8 +94,8 @@ When writing a new stdlib namespace method:
   looked up by name), and width consistency (row vs. header column count). Never silently
   drop, truncate, or overwrite data that violates the declared contract — raise an error.
 - **Strict type matching over coercive display.** If the declared contract says `list[str]`,
-  match on `Value::String` explicitly. `to_display_string()` as a catch-all silently accepts
-  wrong types and produces un-round-trippable output.
+  match on `Value::String` explicitly. `.to_string()` (via `Display`) as a catch-all silently
+  accepts wrong types and produces un-round-trippable output.
 - **Private helpers use generic error messages.** Never hardcode a specific public function
   name in a shared helper's error string. If the caller identity matters for diagnostics,
   accept `caller: &str` as a parameter.

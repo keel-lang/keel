@@ -287,7 +287,7 @@ mod tests {
         let result = list(&mut interp, vec![arg(Value::String("d".into()))]).await;
         match result.unwrap() {
             Value::List(items) => {
-                let names: Vec<String> = items.iter().map(|v| v.to_display_string()).collect();
+                let names: Vec<String> = items.iter().map(|v| v.to_string()).collect();
                 assert!(names.contains(&"a.txt".to_string()));
                 assert!(names.contains(&"b.txt".to_string()));
             }
@@ -437,7 +437,7 @@ mod tests {
         let result = glob(&mut interp, vec![arg(Value::String("data/*.txt".into()))]).await;
         match result.unwrap() {
             Value::List(items) => {
-                let names: Vec<String> = items.iter().map(|v| v.to_display_string()).collect();
+                let names: Vec<String> = items.iter().map(|v| v.to_string()).collect();
                 assert!(
                     names.contains(&"data/a.txt".to_string()),
                     "missing a.txt: {names:?}"

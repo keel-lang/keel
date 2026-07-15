@@ -455,7 +455,7 @@ mod tests {
         match v {
             Value::Map(m) => m
                 .get(&MapKey::Str("body".into()))
-                .map(|v| v.to_display_string())
+                .map(|v| v.to_string())
                 .unwrap_or_default(),
             _ => String::new(),
         }

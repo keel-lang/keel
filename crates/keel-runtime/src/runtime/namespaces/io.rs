@@ -6,7 +6,7 @@ use crate::runtime::namespace::{ns, positional};
 pub(crate) fn namespace() -> Namespace {
     ns!("io", {
         "notify" => |_host, args| Box::pin(async move {
-            let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let msg = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             human::notify(&msg);
             Ok(Value::None)
         }),
@@ -16,7 +16,7 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::None)
         }),
         "ask" => |_i, args| Box::pin(async move {
-            let prompt = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let prompt = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             // Off-thread the blocking stdin read so the tokio runtime
             // can keep polling other tasks (signal watcher, scheduler).
             let answer = tokio::task::spawn_blocking(move || human::ask(&prompt))
@@ -26,7 +26,7 @@ pub(crate) fn namespace() -> Namespace {
             Ok(Value::String(answer))
         }),
         "confirm" => |_i, args| Box::pin(async move {
-            let prompt = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let prompt = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             let answer = tokio::task::spawn_blocking(move || human::confirm(&prompt))
                 .await
                 .map_err(|e| miette::miette!("io.confirm task join error: {e}"))?

@@ -265,7 +265,7 @@ impl Interpreter {
                     };
                     let message = match &v {
                         Value::String(s) => s.clone(),
-                        other => other.to_display_string(),
+                        other => other.to_string(),
                     };
                     Err(make_typed_report(RuntimeErrorKind::UserRaised, message))
                 }

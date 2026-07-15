@@ -175,17 +175,6 @@ impl Value {
         }
     }
 
-    /// Format this value for display-oriented APIs only.
-    ///
-    /// Data APIs must decode their declared input types explicitly instead of
-    /// silently coercing values through this helper.
-    pub fn to_display_string(&self) -> String {
-        match self {
-            Value::String(s) => s.clone(),
-            other => format!("{other}"),
-        }
-    }
-
     pub fn as_int(&self) -> Option<i64> {
         match self {
             Value::Integer(n) => Some(*n),
@@ -488,15 +477,11 @@ mod tests {
     }
 
     #[test]
-    fn to_display_string_passthrough() {
-        assert_eq!(Value::String("hello".into()).to_display_string(), "hello");
-    }
-
-    #[test]
-    fn to_display_string_formats_other() {
-        assert_eq!(Value::Integer(42).to_display_string(), "42");
-        assert_eq!(Value::Bool(true).to_display_string(), "true");
-        assert_eq!(Value::None.to_display_string(), "none");
+    fn display_scalars() {
+        assert_eq!(format!("{}", Value::String("hello".into())), "hello");
+        assert_eq!(format!("{}", Value::Integer(42)), "42");
+        assert_eq!(format!("{}", Value::Bool(true)), "true");
+        assert_eq!(format!("{}", Value::None), "none");
     }
 
     #[test]

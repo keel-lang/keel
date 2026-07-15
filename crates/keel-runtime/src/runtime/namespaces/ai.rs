@@ -45,7 +45,7 @@ pub(crate) fn namespace() -> Namespace {
         "classify" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
                 .ok_or_else(|| miette::miette!("ai.classify: missing input"))?
-                .to_display_string();
+                .to_string();
             let variants = classify_variants(host, &args)?;
             let criteria = extract_criteria(&args);
             let (model, user_provider) = resolve_provider(host, &args);
@@ -69,13 +69,13 @@ pub(crate) fn namespace() -> Namespace {
         "summarize" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
                 .ok_or_else(|| miette::miette!("ai.summarize: missing input"))?
-                .to_display_string();
-            let unit_val = find_arg(&args, "unit").map(|v| v.to_display_string());
+                .to_string();
+            let unit_val = find_arg(&args, "unit").map(|v| v.to_string());
             let length = match (find_arg(&args, "in"), &unit_val) {
                 (Some(Value::Integer(n)), Some(u)) => Some((*n, u.clone())),
                 _ => None,
             };
-            let format = find_arg(&args, "format").map(|v| v.to_display_string());
+            let format = find_arg(&args, "format").map(|v| v.to_string());
             let max = find_arg(&args, "max").and_then(|v| v.as_int());
             let (model, user_provider) = resolve_provider(host, &args);
             let max_tokens = host.current_max_tokens();
@@ -93,9 +93,9 @@ pub(crate) fn namespace() -> Namespace {
         "draft" => |host, args| Box::pin(async move {
             let description = positional(&args, 0)
                 .ok_or_else(|| miette::miette!("ai.draft: missing description"))?
-                .to_display_string();
-            let tone = find_arg(&args, "tone").map(|v| v.to_display_string());
-            let guidance = find_arg(&args, "guidance").map(|v| v.to_display_string());
+                .to_string();
+            let tone = find_arg(&args, "tone").map(|v| v.to_string());
+            let guidance = find_arg(&args, "guidance").map(|v| v.to_string());
             let max_length = find_arg(&args, "max_length").and_then(|v| v.as_int());
             let (model, user_provider) = resolve_provider(host, &args);
             let max_tokens = host.current_max_tokens();
@@ -115,10 +115,10 @@ pub(crate) fn namespace() -> Namespace {
 
         "extract" => |host, args| Box::pin(async move {
             let input = match find_arg(&args, "from") {
-                Some(v) => v.to_display_string(),
+                Some(v) => v.to_string(),
                 None => positional(&args, 0)
                     .ok_or_else(|| miette::miette!("ai.extract: missing input"))?
-                    .to_display_string(),
+                    .to_string(),
             };
             // Schema from `schema: { field: "type" }` map, or derived from `as: T` struct type.
             // target_type records the struct name when using `as: T` so the result can be tagged.
@@ -126,7 +126,7 @@ pub(crate) fn namespace() -> Namespace {
                 match find_arg(&args, "schema") {
                     Some(Value::Map(m)) => (
                         m.iter()
-                            .map(|(k, v)| (k.to_string(), v.to_display_string()))
+                            .map(|(k, v)| (k.to_string(), v.to_string()))
                             .collect(),
                         None,
                     ),
@@ -176,10 +176,10 @@ pub(crate) fn namespace() -> Namespace {
         "translate" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
                 .ok_or_else(|| miette::miette!("ai.translate: missing input"))?
-                .to_display_string();
+                .to_string();
             let target_langs: Vec<String> = match find_arg(&args, "to") {
-                Some(Value::List(items)) => items.iter().map(|v| v.to_display_string()).collect(),
-                Some(other) => vec![other.to_display_string()],
+                Some(Value::List(items)) => items.iter().map(|v| v.to_string()).collect(),
+                Some(other) => vec![other.to_string()],
                 None => return Err(miette::miette!("ai.translate: missing `to:` argument")),
             };
             if target_langs.is_empty() {
@@ -212,9 +212,9 @@ pub(crate) fn namespace() -> Namespace {
         "decide" => |host, args| Box::pin(async move {
             let input = positional(&args, 0)
                 .ok_or_else(|| miette::miette!("ai.decide: missing input"))?
-                .to_display_string();
+                .to_string();
             let options: Vec<String> = match find_arg(&args, "options") {
-                Some(Value::List(items)) => items.iter().map(|v| v.to_display_string()).collect(),
+                Some(Value::List(items)) => items.iter().map(|v| v.to_string()).collect(),
                 _ => Vec::new(),
             };
             let (model, user_provider) = resolve_provider(host, &args);
@@ -237,9 +237,9 @@ pub(crate) fn namespace() -> Namespace {
         }),
 
         "prompt" => |host, args| Box::pin(async move {
-            let system = find_arg(&args, "system").map(|v| v.to_display_string()).unwrap_or_default();
-            let user = find_arg(&args, "user").map(|v| v.to_display_string()).unwrap_or_default();
-            let response_format = find_arg(&args, "response_format").map(|v| v.to_display_string());
+            let system = find_arg(&args, "system").map(|v| v.to_string()).unwrap_or_default();
+            let user = find_arg(&args, "user").map(|v| v.to_string()).unwrap_or_default();
+            let response_format = find_arg(&args, "response_format").map(|v| v.to_string());
             let (model, user_provider) = resolve_provider(host, &args);
             let max_tokens = host.current_max_tokens();
             let role = host.current_role();
@@ -305,7 +305,7 @@ pub(crate) fn namespace() -> Namespace {
 /// provider leaves the tag bare and is dispatched by re-entering the interpreter.
 fn resolve_provider(host: &dyn Host, args: &[CallArgValue]) -> (String, Option<String>) {
     let tag = match find_arg(args, "using") {
-        Some(v) => v.to_display_string(),
+        Some(v) => v.to_string(),
         None => host.current_model(),
     };
     route_tag(
@@ -413,7 +413,7 @@ fn classify_variants(host: &dyn Host, args: &[CallArgValue]) -> miette::Result<V
         }
         Some(Value::List(items)) => {
             // Inline form: `as: [low, medium, high]`
-            Ok(items.iter().map(|v| v.to_display_string()).collect())
+            Ok(items.iter().map(|v| v.to_string()).collect())
         }
         _ => Err(miette::miette!("ai.classify: missing `as:` argument")),
     }
@@ -427,7 +427,7 @@ fn extract_criteria(args: &[CallArgValue]) -> Vec<(String, String)> {
             .map(|(k, v)| {
                 let variant_name = match v {
                     Value::EnumVariant(_, variant, _) => variant.clone(),
-                    other => other.to_display_string(),
+                    other => other.to_string(),
                 };
                 (k.to_string(), variant_name)
             })
@@ -453,7 +453,7 @@ mod tests {
         let err = typed(LlmError::CallFailed("Ollama unreachable".into()));
         assert_eq!(err.type_name(), "AiError");
         assert_eq!(
-            err.fields.get("reason").map(|v| v.to_display_string()),
+            err.fields.get("reason").map(|v| v.to_string()),
             Some("unavailable".into())
         );
     }
@@ -463,7 +463,7 @@ mod tests {
         let err = typed(LlmError::ConfigError("model not mapped".into()));
         assert_eq!(err.type_name(), "AiError");
         assert_eq!(
-            err.fields.get("reason").map(|v| v.to_display_string()),
+            err.fields.get("reason").map(|v| v.to_string()),
             Some("provider".into())
         );
     }
@@ -475,7 +475,7 @@ mod tests {
         });
         assert_eq!(err.type_name(), "AiSchemaError");
         assert_eq!(
-            err.fields.get("got").map(|v| v.to_display_string()),
+            err.fields.get("got").map(|v| v.to_string()),
             Some("maybe".into())
         );
     }

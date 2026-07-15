@@ -202,8 +202,9 @@ few rules that have bitten before (full text in [`AGENTS.md`](AGENTS.md)):
 - **Audit every exit path** in param/arg loops — variadic `break` and named-arg `continue` skip
   fall-through logic.
 - **Validate all structural preconditions** on stdlib inputs (uniqueness, non-empty, width
-  consistency). Match types strictly (`Value::String`), don't lean on `to_display_string()` as a
-  coercive catch-all. Never silently drop, truncate, or overwrite data — raise an error.
+  consistency). Match types strictly (`Value::String`), don't lean on `.to_string()` (via
+  `Display`) as a coercive catch-all. Never silently drop, truncate, or overwrite data — raise
+  an error.
 
 ---
 
