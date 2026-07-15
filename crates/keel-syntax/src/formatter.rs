@@ -1384,4 +1384,109 @@ run(A)
         );
         assert_idempotent(src);
     }
+
+    #[test]
+    fn idempotent_nested_string_interpolation() {
+        assert_idempotent(
+            r#"
+task greet(name: str) -> str {
+  "hi {name}"
+}
+
+task go() -> str {
+  who = "world"
+  "outer {greet("inner {who}")} done"
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn doubly_nested_string_interpolation_round_trips() {
+        let src = r#"task go() -> str { "a {"b {"c {1}"}"}" }"#.to_string() + "\n";
+        let formatted = format_source(&src);
+        assert!(
+            formatted.contains(r#"{"c {1}"}"#),
+            "innermost interpolation lost; got: {formatted:?}"
+        );
+        assert_idempotent(&src);
+    }
+
+    #[test]
+    fn idempotent_rich_enum_pattern_destructuring() {
+        assert_idempotent(
+            r#"
+type Action =
+  | reply { to: str, tone: str }
+  | forward { to: str }
+  | archive
+
+task describe(a: Action) -> str {
+  when a {
+    reply { to, tone } => "reply to {to} ({tone})"
+    forward { to } => "forward to {to}"
+    archive => "archive"
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn idempotent_duration_literals() {
+        assert_idempotent(
+            r#"
+task go() {
+  a = 5.milliseconds
+  b = 30.seconds
+  c = 10.minutes
+  d = 2.hours
+  e = 1.days
+  f = 3.weeks
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn duration_units_normalize_to_canonical_name() {
+        let src = "task go() { x = 500.millis }\n";
+        let formatted = format_source(src);
+        assert!(
+            formatted.contains("500.ms"),
+            "duration unit not normalized to canonical name; got: {formatted:?}"
+        );
+        assert_idempotent(src);
+    }
+
+    #[test]
+    fn idempotent_deeply_nested_blocks() {
+        assert_idempotent(
+            r#"
+agent Bot {
+  @role "..."
+
+  @on_start {
+    for x in [1, 2, 3] {
+      if x > 1 {
+        while x > 0 {
+          if x == 2 {
+            for y in [1] {
+              Io.notify(y.to_str())
+            }
+          } else {
+            Io.notify("skip")
+          }
+        }
+      } else {
+        Io.notify("one")
+      }
+    }
+  }
+}
+
+run(Bot)
+"#,
+        );
+    }
 }
