@@ -233,6 +233,20 @@
       "implemented_ops": "`run(cmd, stdin:?, cwd:?)` → `{ stdout: str, stderr: str, exit_code: int }`",
       "gaps": "—",
       "purpose": "Subprocess bridge: execute shell commands via `/bin/sh -c` and capture stdout/stderr. Requires `@tools [shell]`."
+    },
+    {
+      "name": "std/csv",
+      "status": "shipped",
+      "implemented_ops": "`parse`, `parse_records`, `stringify`",
+      "gaps": "—",
+      "purpose": "CSV serialization: `parse`, `parse_records`, `stringify` — RFC 4180 compliant"
+    },
+    {
+      "name": "std/testing",
+      "status": "shipped",
+      "implemented_ops": "`mock(module.method).returns(value)`",
+      "gaps": "—",
+      "purpose": "Test doubles: `mock(...)` — see [Testing](./testing.md)."
     }
   ],
   "cli": [
@@ -250,6 +264,11 @@
       "name": "keel fmt",
       "status": "shipped",
       "notes": "Auto-format; idempotent round-trip against the AST"
+    },
+    {
+      "name": "keel test",
+      "status": "shipped",
+      "notes": "Run top-level `test \"name\" { ... }` blocks; `--filter`, `--list`, `--fail-fast`, `--quiet`; directory paths recursively discover `.keel` files with tests"
     },
     {
       "name": "keel init",

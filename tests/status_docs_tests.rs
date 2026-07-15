@@ -53,6 +53,26 @@ fn docs_status<'a>(status: &'a FeatureStatus, key: &str) -> &'a str {
 }
 
 #[test]
+fn feature_status_source_lists_every_catalog_namespace() {
+    let source = feature_status();
+    let documented: std::collections::HashSet<String> =
+        source.namespaces.iter().map(|ns| ns.name.clone()).collect();
+
+    let mut missing: Vec<&str> = keel_catalog::catalog()
+        .map(|m| m.namespace)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .filter(|ns| !documented.contains(&format!("std/{ns}")))
+        .collect();
+    missing.sort_unstable();
+
+    assert!(
+        missing.is_empty(),
+        "namespace(s) {missing:?} are installed in keel_catalog::catalog() but missing from docs/status/features.json"
+    );
+}
+
+#[test]
 fn stdlib_module_status_table_matches_feature_status_source() {
     let source = feature_status();
     let prelude = read("docs/src/guide/stdlib.md");
