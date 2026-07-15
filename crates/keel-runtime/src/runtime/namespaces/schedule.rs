@@ -131,16 +131,22 @@ async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::
     tokio::spawn(async move {
         loop {
             let now = clock.now_utc();
-            if let Some(next_run) = next_cron_execution(&cron_spec, now) {
-                let delay = std::time::Duration::from_millis(
-                    (next_run - now).num_milliseconds().max(0) as u64,
-                );
-                tokio::time::sleep(delay).await;
+            // The minute-by-minute scan in `next_cron_execution` can walk up to
+            // 4 years of candidates for a spec that rarely (or never) matches;
+            // run it on the blocking thread pool so it can't stall this task's
+            // async worker thread.
+            let spec = cron_spec.clone();
+            let Ok(Some(next_run)) =
+                tokio::task::spawn_blocking(move || next_cron_execution(&spec, now)).await
+            else {
+                break;
+            };
 
-                if !send_or_stop(&tx, agent_name.clone(), closure_id) {
-                    break;
-                }
-            } else {
+            let delay =
+                std::time::Duration::from_millis((next_run - now).num_milliseconds().max(0) as u64);
+            tokio::time::sleep(delay).await;
+
+            if !send_or_stop(&tx, agent_name.clone(), closure_id) {
                 break;
             }
         }
@@ -152,6 +158,7 @@ async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::
 /// Parse a 5-field cron expression into a structured format.
 /// Format: minute hour day month weekday
 /// Each field can be: number, *, comma-separated list, range, or step expression.
+#[derive(Clone)]
 struct CronSpec {
     minutes: Vec<u32>,
     hours: Vec<u32>,
@@ -433,5 +440,45 @@ mod tests {
         assert_eq!(next.day(), 11);
         assert_eq!(next.hour(), 9);
         assert_eq!(next.minute(), 0);
+    }
+
+    // `schedule_cron`'s loop runs `next_cron_execution` on the blocking thread
+    // pool via `spawn_blocking` so a spec that scans years of candidates can't
+    // stall the async worker thread. These tests exercise that same join path.
+
+    #[tokio::test]
+    async fn next_cron_execution_via_spawn_blocking_matches_direct_call() {
+        let spec = parse_cron_spec("*/15 * * * *").expect("valid cron spec");
+        let from = chrono::Utc
+            .with_ymd_and_hms(2026, 5, 8, 10, 7, 42)
+            .single()
+            .expect("valid datetime");
+
+        let direct = next_cron_execution(&spec, from);
+        let spec_clone = spec.clone();
+        let via_spawn_blocking =
+            tokio::task::spawn_blocking(move || next_cron_execution(&spec_clone, from))
+                .await
+                .expect("spawn_blocking task must not panic or be cancelled");
+
+        assert_eq!(direct, via_spawn_blocking);
+    }
+
+    #[tokio::test]
+    async fn next_cron_execution_via_spawn_blocking_returns_none_for_impossible_date() {
+        // Day 31 and month 2 (February) never co-occur, so this spec forces a
+        // full multi-year scan that ends in `None` — the pathological case
+        // that motivated moving the scan off the async worker thread.
+        let spec = parse_cron_spec("0 0 31 2 *").expect("valid cron spec");
+        let from = chrono::Utc
+            .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
+            .single()
+            .expect("valid datetime");
+
+        let result = tokio::task::spawn_blocking(move || next_cron_execution(&spec, from))
+            .await
+            .expect("spawn_blocking task must not panic or be cancelled");
+
+        assert_eq!(result, None);
     }
 }
