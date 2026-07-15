@@ -15,6 +15,10 @@ All notable changes to Keel.
 - **Dependency upgrades.** `rustyline` 15→18, `logos` 0.14→0.16, `colored` 2→3, `rusqlite` 0.32→0.40, `sha2` 0.10→0.11, `getrandom` 0.2→0.4, `async-native-tls` 0.5→0.6, plus a routine `cargo update` of compatible transitive versions. No user-facing behavior change; internal call sites (`getrandom::fill`, digest-to-hex formatting, a logos comment-token lint annotation) were updated to match each library's new API surface.
 - **Removed `Value::to_display_string`.** All call sites now go through the `Display` impl on `Value` directly (`.to_string()`), which was already functionally identical. No user-facing behavior change.
 
+### Fixed
+
+- **`schedule.cron` could stall the runtime on rare/impossible expressions.** Computing the next fire time scanned candidate minutes one at a time — up to ~4 years' worth — synchronously inside the async task driving the cron loop. A spec that fires rarely (or never, e.g. `"0 0 31 2 *"`, which asks for February 31st) blocked that task's worker thread for the full scan. The scan now runs via `tokio::task::spawn_blocking`, off the async worker pool; the matching logic itself is unchanged.
+
 ---
 
 ## [0.2.4] — 2026-06-21
