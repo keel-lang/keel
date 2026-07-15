@@ -1,3 +1,19 @@
+//! Host services the interpreter depends on, gathered behind one handle.
+//!
+//! [`RuntimeContext`] is the seam between the tree-walking interpreter and
+//! everything that talks to the outside world: environment variables (`env`),
+//! wall-clock time (`clock`), the filesystem (`fs`), agent memory (`memory`),
+//! the namespace-method cache (`cache`), and the LLM client. Each concern
+//! lives in its own submodule behind a trait ([`EnvProvider`], [`Clock`],
+//! [`FileSystem`], [`PersistentMemoryStore`]) so `#[cfg(test)]` builds can
+//! swap in in-memory fakes (`MapEnv`, `FixedClock`, `InMemoryFileSystem`,
+//! `InMemoryPersistentMemoryStore`) without touching interpreter code.
+//!
+//! [`RuntimeContext::isolated_from`] clones the host-facing backends (env,
+//! clock, filesystem) but gives session memory, cache, async task handles,
+//! and the LLM client fresh state — this is what `keel test` uses to give
+//! each test case an isolated runtime.
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
