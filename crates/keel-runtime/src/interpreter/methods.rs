@@ -540,9 +540,9 @@ impl Interpreter {
             (Value::List(items), "join") => {
                 let sep = args
                     .first()
-                    .map(|a| a.value.to_display_string())
+                    .map(|a| a.value.to_string())
                     .unwrap_or_default();
-                let parts: Vec<String> = items.iter().map(|v| v.to_display_string()).collect();
+                let parts: Vec<String> = items.iter().map(|v| v.to_string()).collect();
                 Ok(Value::String(parts.join(&sep)))
             }
             (Value::List(items), "sort") => {

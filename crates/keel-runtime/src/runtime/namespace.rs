@@ -185,7 +185,7 @@ mod tests {
             .expect("typed payload should be preserved");
         assert_eq!(typed.type_name(), "AiError");
         assert_eq!(
-            typed.fields.get("message").map(|v| v.to_display_string()),
+            typed.fields.get("message").map(|v| v.to_string()),
             Some("something failed".into())
         );
         assert_eq!(
@@ -214,7 +214,7 @@ mod tests {
             .expect("typed payload should be preserved");
         assert_eq!(typed.type_name(), "AiSchemaError");
         assert_eq!(
-            typed.fields.get("got").map(|v| v.to_display_string()),
+            typed.fields.get("got").map(|v| v.to_string()),
             Some("{\"x\":1}".into())
         );
         assert_eq!(

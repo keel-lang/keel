@@ -14,22 +14,22 @@ fn log_if_enabled(host: &dyn Host, level: &str, msg: &str) {
 pub(crate) fn namespace() -> Namespace {
     ns!("log", {
         "info" => |host, args| Box::pin(async move {
-            let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let msg = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             log_if_enabled(host, "info", &msg);
             Ok(Value::None)
         }),
         "warn" => |host, args| Box::pin(async move {
-            let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let msg = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             log_if_enabled(host, "warn", &msg);
             Ok(Value::None)
         }),
         "error" => |host, args| Box::pin(async move {
-            let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let msg = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             log_if_enabled(host, "error", &msg);
             Ok(Value::None)
         }),
         "debug" => |host, args| Box::pin(async move {
-            let msg = positional(&args, 0).map(|v| v.to_display_string()).unwrap_or_default();
+            let msg = positional(&args, 0).map(|v| v.to_string()).unwrap_or_default();
             log_if_enabled(host, "debug", &msg);
             Ok(Value::None)
         }),

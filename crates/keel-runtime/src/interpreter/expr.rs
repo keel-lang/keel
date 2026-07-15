@@ -181,7 +181,7 @@ impl Interpreter {
                                     .await
                                 {
                                     Ok(Value::String(s)) => s,
-                                    _ => v.to_display_string(),
+                                    _ => v.to_string(),
                                 };
                                 let s = if let Some(raw_spec) = spec {
                                     apply_format_spec(&v, base, raw_spec)?

@@ -89,10 +89,7 @@ fn show_table(items: &[Value]) {
     for item in items {
         if let Value::Map(fields) = item {
             for (i, col) in columns.iter().enumerate() {
-                let val_len = fields
-                    .get(col)
-                    .map(|v| v.to_display_string().len())
-                    .unwrap_or(0);
+                let val_len = fields.get(col).map(|v| v.to_string().len()).unwrap_or(0);
                 if val_len > widths[i] {
                     widths[i] = val_len;
                 }
@@ -125,10 +122,7 @@ fn show_table(items: &[Value]) {
                 .iter()
                 .enumerate()
                 .map(|(i, col)| {
-                    let val = fields
-                        .get(col)
-                        .map(|v| v.to_display_string())
-                        .unwrap_or_default();
+                    let val = fields.get(col).map(|v| v.to_string()).unwrap_or_default();
                     let truncated = if val.len() > widths[i] {
                         format!("{}…", &val[..widths[i] - 1])
                     } else {

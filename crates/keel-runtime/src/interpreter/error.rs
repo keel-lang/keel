@@ -89,7 +89,7 @@ impl fmt::Display for RuntimeError {
         let msg = self
             .fields
             .get("message")
-            .map(|v| v.to_display_string())
+            .map(|v| v.to_string())
             .unwrap_or_default();
         write!(f, "{}: {}", self.type_name(), msg)
     }

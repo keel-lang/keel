@@ -476,7 +476,7 @@ run(A)
 #[test]
 fn format_spec_alignment_respects_custom_to_str() {
     // Alignment specs must call to_str() via impl dispatch, not fall back to
-    // to_display_string(), so {x:>10} and {x} produce the same base string.
+    // the default Display formatting, so {x:>10} and {x} produce the same base string.
     let src = r#"
 use std/io
 type Tag { value: str }
