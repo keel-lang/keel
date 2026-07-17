@@ -50,6 +50,7 @@ path = "src/main.rs"
 [dependencies]
 keel-catalog = { path = "crates/keel-catalog" }
 keel-compiler = { path = "crates/keel-compiler" }
+keel-kir = { path = "crates/keel-kir" }
 keel-runtime = { path = "crates/keel-runtime" }
 keel-syntax = { path = "crates/keel-syntax" }
 # The heavy I/O dependencies (reqwest, rusqlite, axum, lettre, imap, native-tls,
@@ -72,6 +73,12 @@ tempfile = { workspace = true }
 regex = { workspace = true }
 glob = { workspace = true }
 csv = { workspace = true }
+# Used only by tests/conformance/ to redirect fd 1 around an in-process engine
+# run so `println!`-based namespace output (io.print, log.*, …) can be
+# captured and diffed without shelling out to a subprocess. Already in the
+# dependency tree transitively (via miette/backtrace); this just names it
+# directly for the one call site that needs raw dup/dup2.
+libc = "0.2"
 
 [lints]
 workspace = true

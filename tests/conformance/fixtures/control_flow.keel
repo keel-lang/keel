@@ -1,0 +1,26 @@
+use std/io
+
+task classify(n: int) -> str {
+  if n % 15 == 0 {
+    return "fizzbuzz"
+  } else if n % 3 == 0 {
+    return "fizz"
+  } else if n % 5 == 0 {
+    return "buzz"
+  }
+  return "{n}"
+}
+
+agent FizzBuzz {
+  @tools [io]
+  @on_start {
+    i = 1
+    while i <= 15 {
+      io.show(classify(i))
+      i += 1
+    }
+    stop(self)
+  }
+}
+
+run(FizzBuzz)

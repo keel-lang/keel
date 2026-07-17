@@ -162,7 +162,7 @@ keel lint agent.keel      Style and best-practice checks (--fix applies safe fix
 keel init my-project      Scaffold a new project
 keel repl                 Interactive REPL
 keel lsp                  Language server (stdin/stdout)
-keel build agent.keel     Deferred: bytecode compiler post-v0.1
+keel build agent.keel     Native/LLVM backend, in progress: --emit=kir previews the mid-level IR; no codegen yet
 ```
 
 Global flags: `--trace` narrates LLM calls; `--log-level debug|info|warn|error` sets the `Log.*` threshold.

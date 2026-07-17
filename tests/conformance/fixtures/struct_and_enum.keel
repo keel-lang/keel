@@ -1,0 +1,23 @@
+use std/io
+
+type Product {
+  name: str
+  price: float
+}
+
+type Priority =
+  | low
+  | medium
+  | high
+
+task label(p: Priority) -> str {
+  when p {
+    low => "low"
+    medium => "medium"
+    high => "high"
+  }
+}
+
+widget: Product = { name: "Widget", price: 9.99 }
+io.show("{widget.name} costs {widget.price}")
+io.show("priority: {label(Priority.high)}")

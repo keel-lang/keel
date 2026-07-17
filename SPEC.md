@@ -2239,9 +2239,11 @@ Keel runs on the **Keel Runtime** (Rust, Tokio).
 
 ```
 v0.1 (alpha):   .keel → Lexer → Parser → Typechecker → Interpreter
-(later, TBD):   bytecode VM
-(later, TBD):   LLVM AOT backend → native binary
+(in progress):  Typechecker → KIR (mid-level IR, scalar subset today) → `keel build --emit=kir`
+(later, TBD):   KIR → LLVM → native binary (`keel build`; see designs/llvm-compilation.md)
 ```
+
+The interpreter is the only execution path v0.1 ships; `keel run` and `keel test` use it exclusively, and it remains the reference semantics for the native backend once that lands (`designs/llvm-compilation.md` §3). The bytecode-VM stub that previously reserved the `keel build` verb (`src/vm/`) has been removed — KIR takes over that role.
 
 ### Runtime services
 

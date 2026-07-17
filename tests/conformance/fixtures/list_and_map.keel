@@ -1,0 +1,7 @@
+use std/io
+
+nums = [1, 2, 3, 4, 5]
+doubled = nums.map(n => n * 2)
+total = doubled.reduce((acc, n) => acc + n, 0)
+io.show("doubled: {doubled}")
+io.show("total: {total}")

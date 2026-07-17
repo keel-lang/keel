@@ -20,7 +20,6 @@ use crate::lint;
 use crate::runtime::context::RuntimeContext;
 use crate::session;
 use crate::types::diagnostics::TypeDiagnostic;
-use crate::vm;
 
 fn load_source(path: &Path) -> Result<(String, String)> {
     let source = fs::read_to_string(path)
@@ -40,18 +39,6 @@ fn report_type_errors(errors: &[TypeDiagnostic], named_src: &NamedSource<String>
     for err in errors {
         eprintln!("{:?}", err.to_report(named_src));
     }
-}
-
-fn fail_on_type_errors(checked: &session::CheckedProgram, path: &Path) -> Result<()> {
-    if checked.has_errors() {
-        report_type_errors(&checked.diagnostics, &checked.source);
-        return Err(miette::miette!(
-            "{} type error(s) in {}",
-            checked.diagnostics.len(),
-            path.display()
-        ));
-    }
-    Ok(())
 }
 
 fn fail_on_graph_type_errors(checked: &session::CheckedGraph, path: &Path) -> Result<()> {
@@ -352,39 +339,50 @@ pub fn check_file(path: &Path, strict: bool) -> Result<()> {
     Ok(())
 }
 
-/// Compile a `.keel` file to a `.keelc` bytecode bundle.
+/// Compile a `.keel` file toward a native binary.
+///
+/// `keel build` is the future LLVM AOT backend entry point
+/// (`designs/llvm-compilation.md`). M0 wires the pipeline up to the KIR
+/// skeleton only: `emit == Some("kir")` type-checks the file and prints its
+/// mid-level IR dump (`keel_kir::dump`) instead of compiling. There is no
+/// codegen yet, so every other `emit` value — including `None` — errors.
 ///
 /// # Errors
 ///
-/// Returns an error if parsing, type-checking, or compilation fails.
-pub fn build_file(path: &Path) -> Result<()> {
-    let (src, name) = load_source(path)?;
-    let (program, named_src) = session::parse_source(&src, &name)?;
-    let checked = session::check_source(program, named_src);
-    fail_on_type_errors(&checked, path)?;
+/// Returns an error if the file cannot be read, parsed, or type-checked; if
+/// `--emit=kir` is requested for a multi-file program (KIR lowering does not
+/// consume a `ModuleGraph` yet, only a single entry file); if `--emit=kir`
+/// hits an AST construct outside the M0 scalar subset (see
+/// `keel_kir::lower`); or if `emit` is `None` or an unrecognized format,
+/// since native codegen does not exist yet.
+pub fn build_file(path: &Path, emit: Option<&str>) -> Result<()> {
+    let checked = load_checked_graph(path)?;
 
-    let compiled = vm::compiler::compile(&checked.ast)
-        .map_err(|e| miette::miette!("Compilation error: {e}"))?;
-
-    let out_path = path.with_extension("keelc");
-    let bytes = serde_json::to_vec_pretty(&compiled).into_diagnostic()?;
-    fs::write(&out_path, bytes).into_diagnostic()?;
-
-    let op_count: usize = compiled.main.ops.len()
-        + compiled
-            .functions
-            .iter()
-            .map(|f| f.ops.len())
-            .sum::<usize>();
-
-    eprintln!(
-        "✓ Compiled {} → {} ({} ops, {} functions)",
-        path.display(),
-        out_path.display(),
-        op_count,
-        compiled.functions.len()
-    );
-    Ok(())
+    match emit {
+        Some("kir") => {
+            if !checked.graph.is_single_module() {
+                return Err(miette::miette!(
+                    "`keel build --emit=kir` supports single-file programs only right now \
+                     (KIR lowering does not consume a multi-file `ModuleGraph` yet — \
+                     see designs/llvm-compilation.md §2.2)"
+                ));
+            }
+            let entry = checked.graph.entry();
+            let kir =
+                keel_kir::lower(&entry.program, &entry.name).map_err(|e| miette::miette!("{e}"))?;
+            print!("{}", keel_kir::dump::dump(&kir));
+            Ok(())
+        }
+        Some(other) => Err(miette::miette!(
+            "--emit={other}: unknown emit format (only `kir` is implemented)"
+        )),
+        None => Err(miette::miette!(
+            "native codegen not yet implemented — `keel build` is the future LLVM AOT backend \
+             ({}); pass --emit=kir to inspect the mid-level IR, or use `keel run` to execute {}",
+            "designs/llvm-compilation.md",
+            path.display()
+        )),
+    }
 }
 
 /// Format a `.keel` file in-place.
@@ -614,27 +612,59 @@ run(A)
     }
 
     #[test]
-    fn pipeline_build_reaches_deferred_vm_compiler_without_writing_bytecode() {
+    fn pipeline_build_without_emit_reports_codegen_not_implemented() {
         let file = write_keel_file(
             r#"
 task answer() -> int {
-  42
+  return 42
 }
 "#,
         );
-        let bytecode_path = file.path().with_extension("keelc");
 
-        let err = build_file(file.path()).expect_err("build is deferred in v0.1");
+        let err = build_file(file.path(), None).expect_err("native codegen does not exist yet");
 
         let message = err.to_string();
         assert!(
-            message.contains("deferred post-v0.1"),
-            "expected deferred build diagnostic, got: {message}"
+            message.contains("native codegen not yet implemented"),
+            "expected codegen-not-implemented diagnostic, got: {message}"
         );
+    }
+
+    #[test]
+    fn pipeline_build_emit_kir_succeeds_for_scalar_program() {
+        // `build_file` prints the dump straight to real stdout (it's the
+        // deliverable, not a status message) rather than returning it, so
+        // this only checks the `Result`; `tests/integration/build.rs`
+        // captures the actual printed dump through the compiled binary, and
+        // `crates/keel-kir/tests/golden_dump.rs` pins the dump format itself.
+        let file = write_keel_file(
+            r#"
+task answer() -> int {
+  return 42
+}
+"#,
+        );
+
+        build_file(file.path(), Some("kir")).expect("scalar-subset program should emit KIR");
+    }
+
+    #[test]
+    fn pipeline_build_emit_kir_rejects_unsupported_construct() {
+        let file = write_keel_file(
+            r#"
+agent A {
+  @role "x"
+}
+run(A)
+"#,
+        );
+
+        let err = build_file(file.path(), Some("kir"))
+            .expect_err("agent declarations are outside the M0 scalar subset");
+        let message = err.to_string();
         assert!(
-            !bytecode_path.exists(),
-            "deferred build must not write stale bytecode at {}",
-            bytecode_path.display()
+            message.contains("agent declaration"),
+            "expected scalar-subset rejection, got: {message}"
         );
     }
 
@@ -686,7 +716,7 @@ run(A)
     }
 
     #[test]
-    fn pipeline_build_reports_type_errors_before_deferred_compiler() {
+    fn pipeline_build_reports_type_errors_before_kir_lowering() {
         let file = write_keel_file(
             r#"
 task answer() -> int {
@@ -695,7 +725,7 @@ task answer() -> int {
 "#,
         );
 
-        let err = build_file(file.path()).expect_err("type error should fail build");
+        let err = build_file(file.path(), Some("kir")).expect_err("type error should fail build");
 
         let message = err.to_string();
         assert!(
