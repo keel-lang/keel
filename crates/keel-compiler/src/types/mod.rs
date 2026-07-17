@@ -8,6 +8,7 @@
 //! [`ty::Ty::Unknown`] without reporting an error. Use `keel check --strict`
 //! to reject bindings whose type the checker cannot resolve.
 
+pub mod artifacts;
 pub mod checker;
 pub mod diagnostics;
 pub mod interface;
