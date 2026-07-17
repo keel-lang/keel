@@ -75,10 +75,20 @@ enum Commands {
         /// Path to the .keel file
         file: PathBuf,
     },
-    /// Compile an Keel file to bytecode
+    /// Compile a Keel file to a native binary (not yet implemented)
+    ///
+    /// `keel build` is the future LLVM AOT backend entry point
+    /// (`designs/llvm-compilation.md`). M0 wires the pipeline up to the KIR
+    /// skeleton only: `--emit=kir` type-checks the file and prints its
+    /// mid-level IR dump. Without `--emit`, the command errors — there is no
+    /// codegen yet.
     Build {
         /// Path to the .keel file
         file: PathBuf,
+        /// Intermediate representation to print instead of compiling.
+        /// Only `kir` is implemented today.
+        #[arg(long, value_name = "FORMAT")]
+        emit: Option<String>,
     },
     /// Run style and best-practice checks on a Keel file
     Lint {
@@ -161,7 +171,7 @@ pub async fn run() -> Result<()> {
             repl::start_with_runtime(runtime).await
         }
         Commands::Fmt { file } => pipeline::fmt_file(&file),
-        Commands::Build { file } => pipeline::build_file(&file),
+        Commands::Build { file, emit } => pipeline::build_file(&file, emit.as_deref()),
         Commands::Lint { file, fix } => pipeline::lint_file(&file, fix),
         Commands::Lsp => {
             lsp::start().await;

@@ -41,7 +41,6 @@ pub(crate) mod cli;
 pub(crate) mod lsp;
 pub(crate) mod pipeline;
 pub(crate) mod repl;
-pub(crate) mod vm;
 
 /// Entry point for the `keel` CLI binary.
 ///

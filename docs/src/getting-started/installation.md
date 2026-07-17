@@ -46,19 +46,22 @@ You should see:
 ```
 Keel — AI agents as first-class citizens
 
-Usage: keel <COMMAND>
+Usage: keel [OPTIONS] <COMMAND>
 
 Commands:
   run    Execute a Keel program
+  test   Execute test blocks in a Keel program
   check  Type-check a Keel program without executing
   init   Scaffold a new Keel project
   repl   Interactive REPL
   fmt    Format a Keel file
-  build  Stub: bytecode compiler deferred post-v0.1
+  build  Compile a Keel file to a native binary (not yet implemented)
+  lint   Run style and best-practice checks on a Keel file
+  lsp    Start the Language Server Protocol server
   help   Print this message or the help of the given subcommand(s)
 ```
 
-`keel build` is listed because the CLI verb is reserved, but v0.1 intentionally returns a deferred-feature error. Use `keel run` or `keel check` for current workflows.
+`keel build` is listed because the verb is reserved for the future native/LLVM backend (see [`keel build`](../cli/build.md)), but v0.1 has no codegen yet — only a `--emit=kir` preview of the pipeline under construction. Use `keel run` or `keel check` for current workflows.
 
 ## LLM setup
 

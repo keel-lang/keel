@@ -1,0 +1,9 @@
+fn greeting(loud: bool) -> str {
+  if loud {
+    return "HELLO"
+  }
+  return "hello"
+}
+
+fn <toplevel>() -> none {
+}

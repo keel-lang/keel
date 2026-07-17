@@ -4,6 +4,7 @@
 
 mod agent;
 mod ai;
+mod build;
 #[path = "../common/mod.rs"]
 mod common;
 mod language;

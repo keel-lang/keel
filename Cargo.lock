@@ -1409,6 +1409,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "keel-kir"
+version = "0.2.4"
+dependencies = [
+ "keel-syntax",
+]
+
+[[package]]
 name = "keel-lang"
 version = "0.2.4"
 dependencies = [
@@ -1418,8 +1425,10 @@ dependencies = [
  "glob",
  "keel-catalog",
  "keel-compiler",
+ "keel-kir",
  "keel-runtime",
  "keel-syntax",
+ "libc",
  "logos",
  "miette",
  "parking_lot",

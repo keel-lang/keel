@@ -1,0 +1,15 @@
+[package]
+name = "keel-kir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Keel mid-level IR (KIR): typed, desugared AST->KIR lowering for the native backend (designs/llvm-compilation.md)."
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+keel-syntax = { path = "../keel-syntax" }
+
+[dev-dependencies]
