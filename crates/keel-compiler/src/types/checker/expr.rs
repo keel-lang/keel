@@ -31,6 +31,18 @@ fn mock_target_from_expr(expr: &SpannedExpr) -> Option<(&str, &str)> {
 
 impl Checker<'_, '_> {
     pub(crate) fn infer_expr(&mut self, spanned: &SpannedExpr, scope: &mut Scope) -> Ty {
+        let ty = self.infer_expr_uncached(spanned, scope);
+        self.record_expr_type(&spanned.span, &ty);
+        ty
+    }
+
+    /// Core inference match, factored out of [`Checker::infer_expr`] so the
+    /// wrapper can record every expression's resolved type in one place —
+    /// including every recursive sub-expression, since inner arms call back
+    /// through `self.infer_expr`, not this function directly. Consumed by
+    /// [`crate::types::checker::check_program_with_artifacts`] and
+    /// [`crate::types::checker::check_graph_with_artifacts`].
+    fn infer_expr_uncached(&mut self, spanned: &SpannedExpr, scope: &mut Scope) -> Ty {
         let expr = &spanned.kind;
         match expr {
             Expr::Integer(_) => Ty::Int,
@@ -558,6 +570,20 @@ impl Checker<'_, '_> {
                                             &mut type_env,
                                         );
                                     }
+                                    // Record the call-site instantiation, ordered by the
+                                    // task's declared type params. Params the unifier
+                                    // couldn't pin down (e.g. an unused type param) fall
+                                    // back to Unknown rather than silently omitting a slot.
+                                    let call_args: Vec<Ty> = td
+                                        .type_params
+                                        .iter()
+                                        .map(|p| {
+                                            type_env.get(p).cloned().unwrap_or(Ty::Unknown(
+                                                UnknownReason::InferenceLimitation,
+                                            ))
+                                        })
+                                        .collect();
+                                    self.record_instantiation(name, call_args);
                                     let td_variadic = td.params.last().is_some_and(|p| p.variadic);
                                     let resolved_params: Vec<(String, Ty)> = td
                                         .params

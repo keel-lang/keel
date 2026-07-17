@@ -16,6 +16,7 @@ mod expr;
 mod resolve;
 mod stmt;
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use crate::ast::*;
@@ -30,6 +31,7 @@ pub use crate::ide::hover::type_at;
 pub use crate::ide::symbols::{
     definition_of, ident_at_offset, ident_span_at_offset, is_top_level_symbol, usages_of,
 };
+pub use crate::types::artifacts::CheckArtifacts;
 use crate::types::prelude::{builtin_interfaces, builtin_structs};
 use crate::types::scope::Scope;
 
@@ -138,6 +140,23 @@ pub(crate) struct Checker<'hir, 'ast> {
     /// declarations plus symbol-imported types. `None` (single-file mode)
     /// means every collected type is visible.
     visible_types: Option<HashSet<String>>,
+    /// Artifacts collector for the `*_with_artifacts` entry points. `None`
+    /// (the default) for ordinary checking — recording is skipped entirely,
+    /// so `check_program`/`check_graph` pay no cost for it.
+    ///
+    /// `RefCell`, not a plain field behind `&mut self`: expression-type and
+    /// generic-instantiation recording happens from deep inside `&self`
+    /// helpers (`resolve_type`, `resolve_type_with_env`, `task_sig`,
+    /// `agent_info`) that are called from many contexts, some during
+    /// declaration collection before any `&mut self` borrow is available.
+    /// Threading `&mut self` through all of them would be a much larger,
+    /// higher-risk diff for what is pure instrumentation — it has no effect
+    /// on which diagnostics are produced or what any `Ty` resolves to.
+    ///
+    /// Non-reentrancy is required for this to be panic-free — see the
+    /// `# Panics` notes on [`Checker::record_expr_type`] and
+    /// [`Checker::record_instantiation`], the only two accessors.
+    artifacts: Option<RefCell<CheckArtifacts>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +173,24 @@ pub fn check_program(program: &Program, strict: bool) -> Vec<TypeDiagnostic> {
     let (hir, mut diagnostics, members) = lower_single(program);
     diagnostics.extend(check_lowered(&hir, members, strict));
     diagnostics
+}
+
+/// Like [`check_program`], but also returns the [`CheckArtifacts`] recorded
+/// during checking — the resolved type of every expression, plus every
+/// generic task/type instantiation encountered.
+///
+/// Added for KIR lowering (`designs/llvm-compilation.md` §2.3) and future
+/// IDE consumers; [`check_program`] keeps its original signature and cost
+/// unchanged for existing callers.
+#[must_use]
+pub fn check_program_with_artifacts(
+    program: &Program,
+    strict: bool,
+) -> (Vec<TypeDiagnostic>, CheckArtifacts) {
+    let (hir, mut diagnostics, members) = lower_single(program);
+    let (errors, artifacts) = check_lowered_with_artifacts(&hir, members, strict);
+    diagnostics.extend(errors);
+    (diagnostics, artifacts)
 }
 
 /// Lower a single in-memory program with its std imports resolved.
@@ -177,12 +214,44 @@ pub fn check_lowered(
     members: HashMap<String, ModuleMembers>,
     strict: bool,
 ) -> Vec<TypeDiagnostic> {
+    check_lowered_impl(hir, members, strict, false).0
+}
+
+/// Like [`check_lowered`], but also returns the [`CheckArtifacts`] recorded
+/// during checking.
+#[must_use]
+pub fn check_lowered_with_artifacts(
+    hir: &Hir<'_>,
+    members: HashMap<String, ModuleMembers>,
+    strict: bool,
+) -> (Vec<TypeDiagnostic>, CheckArtifacts) {
+    let (errors, artifacts) = check_lowered_impl(hir, members, strict, true);
+    (
+        errors,
+        artifacts.expect("artifacts requested via collect_artifacts=true"),
+    )
+}
+
+/// Shared implementation behind [`check_lowered`] and
+/// [`check_lowered_with_artifacts`]. `collect_artifacts` gates whether a
+/// [`CheckArtifacts`] collector is attached to the pass; when `false` the
+/// second return value is always `None` and recording is skipped entirely.
+fn check_lowered_impl(
+    hir: &Hir<'_>,
+    members: HashMap<String, ModuleMembers>,
+    strict: bool,
+    collect_artifacts: bool,
+) -> (Vec<TypeDiagnostic>, Option<CheckArtifacts>) {
     let mut c = Checker::new(hir);
     c.strict = strict;
     c.module_members = members;
+    if collect_artifacts {
+        c.artifacts = Some(RefCell::new(CheckArtifacts::default()));
+    }
     c.collect(hir.program());
     c.check_body(hir.program());
-    c.errors
+    let artifacts = c.artifacts.take().map(RefCell::into_inner);
+    (c.errors, artifacts)
 }
 
 /// Lower a graph's entry module with its imports in scope, for IDE
@@ -288,18 +357,39 @@ fn unresolvable_import_message(source: &crate::ast::UseSource) -> String {
 /// with `graph.modules`.
 #[must_use]
 pub fn check_graph(graph: &crate::modules::ModuleGraph) -> Vec<Vec<TypeDiagnostic>> {
-    check_graph_impl(graph, false)
+    check_graph_impl(graph, false, false).0
 }
 
 /// Like [`check_graph`], but also emits errors for any binding whose type
 /// the checker cannot resolve (`keel check --strict`).
 #[must_use]
 pub fn check_graph_strict(graph: &crate::modules::ModuleGraph) -> Vec<Vec<TypeDiagnostic>> {
-    check_graph_impl(graph, true)
+    check_graph_impl(graph, true, false).0
 }
 
-fn check_graph_impl(graph: &crate::modules::ModuleGraph, strict: bool) -> Vec<Vec<TypeDiagnostic>> {
+/// Like [`check_graph`], but also returns the [`CheckArtifacts`] recorded for
+/// each module, index-aligned with `graph.modules` (and with the returned
+/// diagnostics). Artifacts are kept per module rather than merged because
+/// [`crate::lexer::Span`] is a byte range into one module's source text —
+/// merging would let unrelated modules' spans collide.
+#[must_use]
+pub fn check_graph_with_artifacts(
+    graph: &crate::modules::ModuleGraph,
+) -> (Vec<Vec<TypeDiagnostic>>, Vec<CheckArtifacts>) {
+    check_graph_impl(graph, false, true)
+}
+
+/// Shared implementation behind [`check_graph`], [`check_graph_strict`], and
+/// [`check_graph_with_artifacts`]. `collect_artifacts` gates whether a
+/// [`CheckArtifacts`] collector is attached to each module's pass; when
+/// `false` the returned `Vec<CheckArtifacts>` is always empty.
+fn check_graph_impl(
+    graph: &crate::modules::ModuleGraph,
+    strict: bool,
+    collect_artifacts: bool,
+) -> (Vec<Vec<TypeDiagnostic>>, Vec<CheckArtifacts>) {
     let mut all: Vec<Vec<TypeDiagnostic>> = vec![Vec::new(); graph.modules.len()];
+    let mut artifacts: Vec<CheckArtifacts> = Vec::new();
 
     check_graph_name_conflicts(graph, &mut all);
 
@@ -309,6 +399,9 @@ fn check_graph_impl(graph: &crate::modules::ModuleGraph, strict: bool) -> Vec<Ve
         let hir = crate::hir::lower_ast_with_imports(&unit.program, &scope);
         let mut c = Checker::new(&hir);
         c.strict = strict;
+        if collect_artifacts {
+            c.artifacts = Some(RefCell::new(CheckArtifacts::default()));
+        }
         if graph.modules.len() > 1 {
             for (other_index, other) in graph.modules.iter().enumerate() {
                 if other_index != index {
@@ -322,9 +415,17 @@ fn check_graph_impl(graph: &crate::modules::ModuleGraph, strict: bool) -> Vec<Ve
         c.module_members = build_module_members(graph, index);
         c.check_body(&unit.program);
         diagnostics.extend(c.errors);
+        if collect_artifacts {
+            artifacts.push(
+                c.artifacts
+                    .take()
+                    .expect("set above when collect_artifacts is true")
+                    .into_inner(),
+            );
+        }
         all[index].extend(diagnostics);
     }
-    all
+    (all, artifacts)
 }
 
 /// Resolve one module's imports to the source declarations the HIR needs.
@@ -634,6 +735,7 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             strict: false,
             module_members: HashMap::new(),
             visible_types: None,
+            artifacts: None,
         }
     }
 
@@ -674,6 +776,46 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
 
     fn err_at(&mut self, msg: impl Into<String>, span: Span) {
         self.errors.push(TypeDiagnostic::other(msg, span));
+    }
+
+    /// Record the resolved type of an expression at `span`, when artifacts
+    /// collection is enabled for this pass (no-op otherwise). Takes `&self`
+    /// so it is callable from the `&self` resolution helpers, not just from
+    /// `infer_expr`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if called while a `borrow_mut()` on `self.artifacts` is already
+    /// active on the current call stack (`RefCell`'s double-borrow check).
+    /// This is safe today because every call site takes a single-statement
+    /// borrow that is dropped before the call returns, and no recording call
+    /// ever occurs while another one is in progress — in particular,
+    /// `infer_expr` records a node's type only *after* `infer_expr_uncached`
+    /// (which performs all recursive descent into sub-expressions) has fully
+    /// returned, so no recording of an outer node ever nests inside the
+    /// recording of an inner one. If you add a new call site, keep that
+    /// property: never call `record_expr_type`/`record_instantiation` from
+    /// code that could itself run while an existing call to either is still
+    /// holding its borrow (e.g. do not call them from inside
+    /// `CheckArtifacts`'s own methods, or from a callback invoked mid-borrow).
+    pub(crate) fn record_expr_type(&self, span: &Span, ty: &Ty) {
+        if let Some(artifacts) = &self.artifacts {
+            artifacts.borrow_mut().record_expr(span.clone(), ty);
+        }
+    }
+
+    /// Record one generic task/type instantiation, when artifacts collection
+    /// is enabled for this pass (no-op otherwise).
+    ///
+    /// # Panics
+    ///
+    /// Same non-reentrancy requirement as [`Checker::record_expr_type`]: the
+    /// `borrow_mut()` here must never nest inside another live borrow of
+    /// `self.artifacts`.
+    pub(crate) fn record_instantiation(&self, name: &str, type_args: Vec<Ty>) {
+        if let Some(artifacts) = &self.artifacts {
+            artifacts.borrow_mut().record_instantiation(name, type_args);
+        }
     }
 
     fn wrong_arity(
@@ -1090,8 +1232,8 @@ fn type_display_str(te: &TypeExpr) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Ty, TypeDiagnostic, check_program, definition_of, ident_at_offset, ident_span_at_offset,
-        type_at,
+        CheckArtifacts, Ty, TypeDiagnostic, check_program, check_program_with_artifacts,
+        definition_of, ident_at_offset, ident_span_at_offset, type_at,
     };
     use crate::lexer::lex;
     use crate::parser::parse;
@@ -1122,6 +1264,15 @@ mod tests {
             errs.iter().any(|e| e.contains(substring)),
             "expected error containing {substring:?}, got: {errs:?}"
         );
+    }
+
+    fn artifacts_of(source: &str) -> CheckArtifacts {
+        let named = NamedSource::new("t.keel", source.to_string());
+        let tokens = lex(source, &named).expect("lex failed");
+        let program = parse(tokens, source.len(), &named).expect("parse failed");
+        let (errs, artifacts) = check_program_with_artifacts(&program, false);
+        assert!(errs.is_empty(), "unexpected type errors: {errs:?}");
+        artifacts
     }
 
     // ─── Valid programs ─────────────────────────────────────────────────────────
@@ -3584,6 +3735,162 @@ impl Greetable for Person {
             )),
             "expected TypeMismatch span to point at '42' ({expr_start}..{expr_end}), got: {:?}",
             errs.iter().map(|e| e.span().clone()).collect::<Vec<_>>()
+        );
+    }
+
+    // ─── CheckArtifacts (issue #109) ────────────────────────────────────────────
+
+    #[test]
+    fn artifacts_record_scalar_binding_type() {
+        let src = "task t() {\n  n: int = 42\n}\n";
+        let offset = src.find("42").unwrap();
+        let artifacts = artifacts_of(src);
+        assert_eq!(artifacts.ty_at(offset), Some(&Ty::Int));
+    }
+
+    #[test]
+    fn artifacts_record_list_literal_type() {
+        let src = "task t() {\n  xs: list[int] = [1, 2, 3]\n}\n";
+        // The last `[` is the literal's own bracket — the earlier one belongs
+        // to the `list[int]` annotation.
+        let offset = src.rfind('[').unwrap();
+        let artifacts = artifacts_of(src);
+        assert_eq!(artifacts.ty_at(offset), Some(&Ty::List(Box::new(Ty::Int))));
+    }
+
+    #[test]
+    fn artifacts_record_named_struct_type() {
+        let src = "type Person { name: str, age: int }\n\ntask greet(p: Person) {\n  x = p\n}\n";
+        // The last `p` is the body's `x = p` reference; the earlier one is
+        // the parameter declaration itself.
+        let offset = src.rfind('p').unwrap();
+        let artifacts = artifacts_of(src);
+        assert_eq!(
+            artifacts.ty_at(offset),
+            Some(&Ty::Struct {
+                name: Some("Person".to_string()),
+                fields: vec![("name".to_string(), Ty::Str), ("age".to_string(), Ty::Int)],
+            })
+        );
+    }
+
+    #[test]
+    fn artifacts_record_nullable_type() {
+        let src = "task t(x: str?) {\n  y = x\n}\n";
+        // The last `x` is the body's `y = x` reference.
+        let offset = src.rfind('x').unwrap();
+        let artifacts = artifacts_of(src);
+        assert_eq!(
+            artifacts.ty_at(offset),
+            Some(&Ty::Nullable(Box::new(Ty::Str)))
+        );
+    }
+
+    #[test]
+    fn artifacts_record_dynamic_binding_type() {
+        let src = "task t(x: dynamic) {\n  y = x\n}\n";
+        // The last `x` is the body's `y = x` reference.
+        let offset = src.rfind('x').unwrap();
+        let artifacts = artifacts_of(src);
+        assert_eq!(artifacts.ty_at(offset), Some(&Ty::Dynamic));
+    }
+
+    #[test]
+    fn artifacts_record_generic_struct_instantiation() {
+        let src = r#"
+type Paginated[T] {
+  items: list[T]
+  page: int
+  has_more: bool
+}
+
+task t(p: Paginated[str]) {
+  items: list[str] = p.items
+}
+"#;
+        let artifacts = artifacts_of(src);
+        assert_eq!(
+            artifacts.generic_instantiations.get("Paginated"),
+            Some(&vec![vec![Ty::Str]])
+        );
+    }
+
+    #[test]
+    fn artifacts_record_generic_task_call_instantiation() {
+        let src = r#"
+task identity[T](x: T) -> T { x }
+
+task main() {
+  s: str = identity("hello")
+}
+"#;
+        let artifacts = artifacts_of(src);
+        assert_eq!(
+            artifacts.generic_instantiations.get("identity"),
+            Some(&vec![vec![Ty::Str]])
+        );
+    }
+
+    /// Regression guard for the `RefCell` non-reentrancy invariant documented
+    /// on `Checker::artifacts`/`record_expr_type`/`record_instantiation`: a
+    /// generic call nested inside another generic call's argument forces the
+    /// inner call's `record_instantiation`/`record_expr_type` borrows to be
+    /// taken and released *while inferring the outer call's argument*, i.e.
+    /// before the outer call takes its own borrow. If a future change ever
+    /// made these borrows overlap, this test would panic (double `borrow_mut`
+    /// on the same `RefCell`) instead of silently passing.
+    #[test]
+    fn artifacts_record_nested_generic_call_instantiations() {
+        let src = r#"
+task first[T](x: T) -> T { x }
+task second[U](y: U) -> U { y }
+
+task main() {
+  s: str = first(second("hello"))
+}
+"#;
+        let artifacts = artifacts_of(src);
+        assert_eq!(
+            artifacts.generic_instantiations.get("first"),
+            Some(&vec![vec![Ty::Str]])
+        );
+        assert_eq!(
+            artifacts.generic_instantiations.get("second"),
+            Some(&vec![vec![Ty::Str]])
+        );
+
+        // Both the inner and outer call expressions must have recorded their
+        // own (distinct-span) resolved type, confirming both survived to
+        // completion rather than one clobbering or pre-empting the other.
+        let inner_offset = src.find(r#"second("hello")"#).unwrap() + 1;
+        let outer_offset = src.find("first(").unwrap() + 1;
+        assert_eq!(artifacts.ty_at(inner_offset), Some(&Ty::Str));
+        assert_eq!(artifacts.ty_at(outer_offset), Some(&Ty::Str));
+    }
+
+    #[test]
+    fn check_program_unaffected_by_artifacts_collection() {
+        // Same source checked through both entry points must produce
+        // identical diagnostics — artifacts collection is instrumentation
+        // only and must never change checking semantics.
+        let src = r#"
+type Person { name: str, age: int }
+
+task greet(p: Person) -> str {
+  n: int = "oops"
+  p.name
+}
+"#;
+        let plain = type_errors(src);
+        let named = NamedSource::new("t.keel", src.to_string());
+        let tokens = lex(src, &named).expect("lex failed");
+        let program = parse(tokens, src.len(), &named).expect("parse failed");
+        let (with_artifacts, _artifacts) = check_program_with_artifacts(&program, false);
+        let with_artifacts: Vec<String> = with_artifacts.into_iter().map(|e| e.message()).collect();
+        assert_eq!(plain, with_artifacts);
+        assert!(
+            !plain.is_empty(),
+            "test source must actually produce an error"
         );
     }
 }
