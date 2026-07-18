@@ -1,0 +1,7 @@
+task sum_upto(n: int) -> int {
+  total = 0
+  for i in 0..n {
+    total += i
+  }
+  return total
+}

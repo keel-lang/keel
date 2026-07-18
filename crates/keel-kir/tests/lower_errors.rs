@@ -10,7 +10,10 @@ fn lower_err(source: &str) -> String {
 }
 
 #[test]
-fn for_loop_is_rejected() {
+fn for_over_list_param_is_rejected_at_signature() {
+    // `for` over a range lowers now (see golden fixture `for_range.kir`);
+    // this pins that a `list[int]` param is still rejected — at the
+    // signature, before the for-loop body is ever reached.
     let msg = lower_err(
         r#"
 task sum(xs: list[int]) -> int {
@@ -23,6 +26,51 @@ task sum(xs: list[int]) -> int {
 "#,
     );
     assert!(msg.contains("list type"), "unexpected message: {msg}");
+}
+
+#[test]
+fn for_over_non_range_iterable_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(n: int) -> int {
+  for x in n {
+  }
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("non-range iterable"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn for_with_where_filter_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  for x in 0..5 if x > 2 {
+  }
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("filter"), "unexpected message: {msg}");
+}
+
+#[test]
+fn for_range_bound_type_mismatch_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  for x in 0..1.5 {
+  }
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("expected `int`"), "unexpected message: {msg}");
 }
 
 #[test]

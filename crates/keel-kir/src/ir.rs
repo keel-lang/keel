@@ -94,6 +94,21 @@ pub enum Stmt {
         cond: Expr,
         body: Block,
     },
+    /// `for x in a..b { ... }` lowered to an indexed loop — the only `for`
+    /// shape M1 lowers (see `designs/llvm-compilation.md` §2.3, §4 M1).
+    /// `var` is a fresh `LocalId` of type `I64`, redeclared (per Keel's
+    /// always-declares assignment scoping) and rebound each iteration;
+    /// `low`/`high` are evaluated once, before the loop starts, in the
+    /// enclosing scope (they cannot see `var`). Both bounds are inclusive,
+    /// matching the interpreter's `Value::Range(lo, hi)` (`lo..=hi`).
+    /// Non-range iterables (lists, etc.) are out of scope until the
+    /// container ABI lands (M2).
+    ForIndex {
+        var: LocalId,
+        low: Expr,
+        high: Expr,
+        body: Block,
+    },
     /// `return expr` / bare `return`.
     Return(Option<Expr>),
     /// Expression evaluated for its side effect (e.g. a bare call).
