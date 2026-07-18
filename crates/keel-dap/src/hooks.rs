@@ -30,7 +30,7 @@ use keel_runtime::interpreter::{Host, Interpreter};
 
 use crate::eval;
 use crate::line_index::LineIndex;
-use crate::protocol::{DapScope, DapSource, DapStackFrame, Transport};
+use crate::protocol::{DapCommand, DapScope, DapSource, DapStackFrame, Transport};
 use crate::variables::{VariablesArena, locals_from_env};
 
 /// Sentinel `variablesReference` values for the two top-level DAP scopes —
@@ -68,6 +68,16 @@ pub struct DapHook {
     frames: Mutex<Vec<FrameInfo>>,
     paused_tx: Mutex<Option<mpsc::Sender<PausedRequest>>>,
     transport: Arc<Transport>,
+    /// The client's declared line/column indexing convention, read from
+    /// `initialize`'s `linesStartAt1`/`columnsStartAt1` (DAP defaults both
+    /// to `true` when absent). Everywhere else in this crate works in
+    /// 1-indexed lines internally (`LineIndex::line_at`); these flags are
+    /// only consulted at the client-facing edge — converting an incoming
+    /// breakpoint line, or an outgoing stack frame's line/column — so a
+    /// 0-indexed client sees numbers in its own convention without the rest
+    /// of the server needing to care.
+    lines_start_at_1: Mutex<bool>,
+    columns_start_at_1: Mutex<bool>,
 }
 
 impl DapHook {
@@ -79,6 +89,8 @@ impl DapHook {
             frames: Mutex::new(Vec::new()),
             paused_tx: Mutex::new(None),
             transport,
+            lines_start_at_1: Mutex::new(true),
+            columns_start_at_1: Mutex::new(true),
         }
     }
 
@@ -87,6 +99,45 @@ impl DapHook {
             .iter()
             .find(|(_, m)| m.path == path)
             .map(|(id, _)| *id)
+    }
+
+    /// Record the client's declared indexing convention. Called once, from
+    /// `initialize`, before any breakpoint or stack frame is reported.
+    pub fn set_indexing(&self, lines_start_at_1: bool, columns_start_at_1: bool) {
+        *self.lines_start_at_1.lock() = lines_start_at_1;
+        *self.columns_start_at_1.lock() = columns_start_at_1;
+    }
+
+    /// Convert a line number as sent by the client into this server's
+    /// internal 1-indexed convention.
+    pub fn line_from_client(&self, line: u32) -> u32 {
+        if *self.lines_start_at_1.lock() {
+            line
+        } else {
+            line + 1
+        }
+    }
+
+    /// Convert an internal 1-indexed line number into the client's
+    /// declared convention.
+    pub fn line_to_client(&self, line: u32) -> u32 {
+        if *self.lines_start_at_1.lock() {
+            line
+        } else {
+            line.saturating_sub(1)
+        }
+    }
+
+    /// The column to report for a stack frame, in the client's declared
+    /// convention. Column tracking isn't implemented (only lines are), so
+    /// this is always "the start of the line" in whichever indexing the
+    /// client asked for.
+    fn client_column(&self) -> u32 {
+        if *self.columns_start_at_1.lock() {
+            1
+        } else {
+            0
+        }
     }
 
     pub fn set_breakpoints(&self, module_id: usize, lines: Vec<u32>) {
@@ -157,8 +208,8 @@ impl DapHook {
                 DapStackFrame {
                     id: id as i64,
                     name: f.name.clone(),
-                    line,
-                    column: 1,
+                    line: self.line_to_client(line),
+                    column: self.client_column(),
                     source,
                 }
             })
@@ -237,15 +288,15 @@ impl DebugHook for DapHook {
                     arguments,
                     respond,
                 } = req;
-                match command.as_str() {
-                    "threads" => {
+                match DapCommand::parse(&command) {
+                    DapCommand::Threads => {
                         let _ = respond
                             .send(serde_json::json!({"threads": [{"id": 1, "name": "main"}]}));
                     }
-                    "stackTrace" => {
+                    DapCommand::StackTrace => {
                         let _ = respond.send(self.stack_trace_body());
                     }
-                    "scopes" => {
+                    DapCommand::Scopes => {
                         let is_top_frame =
                             arguments.get("frameId").and_then(Json::as_i64).unwrap_or(0) == 0;
                         let mut scopes = Vec::new();
@@ -265,7 +316,7 @@ impl DebugHook for DapHook {
                         }
                         let _ = respond.send(serde_json::json!({ "scopes": scopes }));
                     }
-                    "variables" => {
+                    DapCommand::Variables => {
                         let reference = arguments
                             .get("variablesReference")
                             .and_then(Json::as_i64)
@@ -279,7 +330,7 @@ impl DebugHook for DapHook {
                         };
                         let _ = respond.send(serde_json::json!({ "variables": vars }));
                     }
-                    "evaluate" => {
+                    DapCommand::Evaluate => {
                         let expression = arguments
                             .get("expression")
                             .and_then(Json::as_str)
@@ -295,18 +346,31 @@ impl DebugHook for DapHook {
                         };
                         let _ = respond.send(body);
                     }
-                    "continue" | "next" | "stepIn" | "stepOut" => {
-                        *self.step_mode.lock() = match command.as_str() {
-                            "continue" => StepMode::Continue,
-                            "next" => StepMode::StepOver(call_depth),
-                            "stepIn" => StepMode::StepIn,
-                            "stepOut" => StepMode::StepOut(call_depth),
-                            _ => unreachable!(),
+                    cmd @ (DapCommand::Continue
+                    | DapCommand::Next
+                    | DapCommand::StepIn
+                    | DapCommand::StepOut) => {
+                        *self.step_mode.lock() = match cmd {
+                            DapCommand::Continue => StepMode::Continue,
+                            DapCommand::Next => StepMode::StepOver(call_depth),
+                            DapCommand::StepIn => StepMode::StepIn,
+                            DapCommand::StepOut => StepMode::StepOut(call_depth),
+                            _ => unreachable!("cmd is constrained to the four bound above"),
                         };
                         let _ = respond.send(serde_json::json!({}));
                         break;
                     }
-                    _ => {
+                    // Every other variant either never reaches the paused
+                    // hook at all (`SetBreakpoints`/`Pause`/`Disconnect`/
+                    // `Terminate` are answered directly by
+                    // `dispatch_running_request`) or has no meaning while
+                    // paused (`Unsupported`) — reply empty rather than
+                    // leave the client's request hanging.
+                    DapCommand::SetBreakpoints
+                    | DapCommand::Pause
+                    | DapCommand::Disconnect
+                    | DapCommand::Terminate
+                    | DapCommand::Unsupported => {
                         let _ = respond.send(serde_json::json!({}));
                     }
                 }

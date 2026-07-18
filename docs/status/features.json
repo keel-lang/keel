@@ -298,7 +298,7 @@
     {
       "name": "keel dap",
       "status": "partial",
-      "notes": "Interpreter-backed Debug Adapter Protocol server (stdio); breakpoints (settable before or after configurationDone), step over/in/out, stack, locals, live agent state, expression evaluation; Async.spawn'd code undebugged, only innermost frame's variables inspectable, lines/columns always reported 1-indexed, no bundled editor integration yet (D0)"
+      "notes": "Interpreter-backed Debug Adapter Protocol server (stdio); breakpoints (settable before or after configurationDone), step over/in/out, stack, locals, live agent state, expression evaluation, honors the client's declared line/column indexing; Async.spawn'd code undebugged, only innermost frame's variables inspectable, no bundled editor integration yet (D0)"
     }
   ]
 }

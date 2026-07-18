@@ -58,8 +58,6 @@ This is the first debugger milestone. A few gaps are deliberate scope decisions,
 
 **Parameterized tests aren't debuggable.** `keel test --debug` requires `--filter` to match exactly one, non-parameterized (`test "name" for case in cases { ... }`) test.
 
-**Lines and columns are always reported 1-indexed.** The server doesn't read the client's `linesStartAt1`/`columnsStartAt1` capabilities from `initialize` — it assumes both are `true`. VS Code and most DAP clients default to 1-indexed already, so this doesn't affect them; a client that declares 0-indexed lines will see numbers off by one.
-
 ## Editor integration
 
 [vscode-keel](https://github.com/keel-lang/vscode-keel) launch-configuration support (so VS Code's "Run and Debug" panel can start `keel dap` automatically) is <span class="badge badge-soon">Coming soon</span>.
