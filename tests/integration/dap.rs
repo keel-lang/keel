@@ -111,7 +111,18 @@ impl DapClient {
     /// for each `(path, line)` pair → `configurationDone`) and wait for the
     /// first `stopped` event.
     fn start_and_stop_at(&mut self, breakpoints: &[(&str, u32)]) -> Value {
-        let s = self.send("initialize", json!({}));
+        self.start_and_stop_at_with_init(json!({}), breakpoints)
+    }
+
+    /// Like `start_and_stop_at`, but with caller-supplied `initialize`
+    /// arguments (e.g. `linesStartAt1`/`columnsStartAt1`) instead of the
+    /// default empty object.
+    fn start_and_stop_at_with_init(
+        &mut self,
+        init_args: Value,
+        breakpoints: &[(&str, u32)],
+    ) -> Value {
+        let s = self.send("initialize", init_args);
         assert_eq!(self.wait_response(s)["success"], true);
 
         let s = self.send("launch", json!({}));
@@ -271,6 +282,51 @@ z = add(x, y)
     let s = client.send("stackTrace", json!({"threadId": 1}));
     let frames = client.wait_response(s);
     assert_eq!(frames["body"]["stackFrames"][0]["line"], 4);
+
+    let status = client.resume_and_wait_exit();
+    assert!(status.success());
+}
+
+#[test]
+fn zero_indexed_client_receives_zero_indexed_lines_and_columns() {
+    // Regression test: the server used to always assume 1-indexed
+    // lines/columns, ignoring `initialize`'s `linesStartAt1`/
+    // `columnsStartAt1` capabilities entirely. A client that declares
+    // 0-indexed lines sends breakpoint requests in that convention and
+    // expects `stackTrace` to answer in the same convention.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = write_keel_file(
+        dir.path(),
+        "main.keel",
+        r#"
+task add(a: int, b: int) -> int {
+  sum = a + b
+  return sum
+}
+
+x = 1
+y = 2
+z = add(x, y)
+"#,
+    );
+    let path_str = path.to_str().unwrap().to_string();
+
+    let mut client = DapClient::spawn(&["dap", &path_str]);
+    // Internal line 3 (`sum = a + b`) is line 2 in a 0-indexed convention.
+    let stopped = client.start_and_stop_at_with_init(
+        json!({"linesStartAt1": false, "columnsStartAt1": false}),
+        &[(&path_str, 2)],
+    );
+    assert_eq!(stopped["body"]["reason"], "breakpoint");
+
+    let s = client.send("stackTrace", json!({"threadId": 1}));
+    let frames = client.wait_response(s);
+    let frame = &frames["body"]["stackFrames"][0];
+    assert_eq!(
+        frame["line"], 2,
+        "stackTrace must echo the client's 0-indexed convention, not the server's internal 1-indexed one"
+    );
+    assert_eq!(frame["column"], 0);
 
     let status = client.resume_and_wait_exit();
     assert!(status.success());

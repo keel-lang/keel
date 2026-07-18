@@ -21,6 +21,72 @@ pub enum IncomingMessage {
     Other,
 }
 
+/// Every request command this server recognizes once past the handshake
+/// (`setBreakpoints`/`configurationDone` are handshake-only and aren't
+/// represented here). Parsing the raw command string into this enum once,
+/// then matching on it, is the single source of truth for "which commands
+/// exist and what each one means" — `dispatch_running_request` and
+/// `DapHook`'s paused-request loop both match on it exhaustively, so adding
+/// a command here forces both call sites to decide what it does instead of
+/// silently disagreeing about which commands are recognized.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DapCommand {
+    Threads,
+    StackTrace,
+    Scopes,
+    Variables,
+    Evaluate,
+    Continue,
+    Next,
+    StepIn,
+    StepOut,
+    SetBreakpoints,
+    Pause,
+    Disconnect,
+    Terminate,
+    /// Any command string this server doesn't implement.
+    Unsupported,
+}
+
+impl DapCommand {
+    pub fn parse(command: &str) -> Self {
+        match command {
+            "threads" => Self::Threads,
+            "stackTrace" => Self::StackTrace,
+            "scopes" => Self::Scopes,
+            "variables" => Self::Variables,
+            "evaluate" => Self::Evaluate,
+            "continue" => Self::Continue,
+            "next" => Self::Next,
+            "stepIn" => Self::StepIn,
+            "stepOut" => Self::StepOut,
+            "setBreakpoints" => Self::SetBreakpoints,
+            "pause" => Self::Pause,
+            "disconnect" => Self::Disconnect,
+            "terminate" => Self::Terminate,
+            _ => Self::Unsupported,
+        }
+    }
+
+    /// Whether this command only makes sense while the interpreter is
+    /// paused inside `DebugHook::on_statement` — it must be forwarded there
+    /// via `DapHook::forward_if_paused` rather than answered directly.
+    pub fn requires_paused_frame(self) -> bool {
+        matches!(
+            self,
+            Self::Threads
+                | Self::StackTrace
+                | Self::Scopes
+                | Self::Variables
+                | Self::Evaluate
+                | Self::Continue
+                | Self::Next
+                | Self::StepIn
+                | Self::StepOut
+        )
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct RawRequest {
     pub seq: i64,

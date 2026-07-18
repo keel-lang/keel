@@ -27,7 +27,7 @@ use tokio::io::BufReader;
 
 use hooks::{DapHook, ModuleInfo};
 use line_index::LineIndex;
-use protocol::{IncomingMessage, RawRequest, Transport};
+use protocol::{DapCommand, IncomingMessage, RawRequest, Transport};
 
 /// What `run_dap_session` should execute once the client finishes the DAP
 /// handshake (`initialize`/`launch`/`setBreakpoints`/`configurationDone`).
@@ -155,6 +155,11 @@ pub async fn run_dap_session(
 /// source file and reply with each line marked verified. Shared between the
 /// handshake (before the program starts) and `dispatch_running_request`
 /// (after `configurationDone`, while the program may be running or paused).
+///
+/// Line numbers on the wire are in the client's declared indexing
+/// convention (`linesStartAt1`), not necessarily this server's internal
+/// 1-indexed one — `hook.line_from_client`/`line_to_client` convert at this
+/// boundary so `hook.set_breakpoints` always stores 1-indexed lines.
 fn handle_set_breakpoints(req: &RawRequest, hook: &DapHook, transport: &Transport) {
     let path = req
         .arguments
@@ -162,7 +167,7 @@ fn handle_set_breakpoints(req: &RawRequest, hook: &DapHook, transport: &Transpor
         .and_then(|s| s.get("path"))
         .and_then(Json::as_str)
         .unwrap_or("");
-    let lines: Vec<u32> = req
+    let client_lines: Vec<u32> = req
         .arguments
         .get("breakpoints")
         .and_then(Json::as_array)
@@ -172,12 +177,16 @@ fn handle_set_breakpoints(req: &RawRequest, hook: &DapHook, transport: &Transpor
                 .collect()
         })
         .unwrap_or_default();
-    if let Some(module_id) = hook.module_id_for_path(path) {
-        hook.set_breakpoints(module_id, lines.clone());
-    }
-    let verified: Vec<Json> = lines
+    let internal_lines: Vec<u32> = client_lines
         .iter()
-        .map(|line| serde_json::json!({"verified": true, "line": line}))
+        .map(|&line| hook.line_from_client(line))
+        .collect();
+    if let Some(module_id) = hook.module_id_for_path(path) {
+        hook.set_breakpoints(module_id, internal_lines);
+    }
+    let verified: Vec<Json> = client_lines
+        .iter()
+        .map(|&line| serde_json::json!({"verified": true, "line": line}))
         .collect();
     transport.respond(
         req.seq,
@@ -209,6 +218,20 @@ async fn handshake(
         };
         match req.command.as_str() {
             "initialize" => {
+                // DAP defaults both flags to `true` when the client omits
+                // them, so `unwrap_or(true)` matches an absent field to the
+                // spec rather than to this server's own convention.
+                let lines_start_at_1 = req
+                    .arguments
+                    .get("linesStartAt1")
+                    .and_then(Json::as_bool)
+                    .unwrap_or(true);
+                let columns_start_at_1 = req
+                    .arguments
+                    .get("columnsStartAt1")
+                    .and_then(Json::as_bool)
+                    .unwrap_or(true);
+                hook.set_indexing(lines_start_at_1, columns_start_at_1);
                 transport.respond(
                     req.seq,
                     "initialize",
@@ -291,14 +314,14 @@ async fn drive_session<T>(
 }
 
 /// Dispatch one request that arrived while the interpreter is running
-/// (paused or not). Session-scoped commands (`scopes`/`variables`/
-/// `evaluate`/`continue`/`next`/`stepIn`/`stepOut`/`threads`/`stackTrace`)
-/// only make sense while stopped, so they forward through the hook; an
-/// unpaused program answers them with an error rather than hanging.
+/// (paused or not). Matches `DapCommand` exhaustively: session-scoped
+/// commands (`scopes`/`variables`/`evaluate`/`continue`/`next`/`stepIn`/
+/// `stepOut`/`threads`/`stackTrace`) only make sense while stopped, so they
+/// forward through the hook — an unpaused program answers them with an
+/// error rather than hanging.
 async fn dispatch_running_request(req: RawRequest, hook: Arc<DapHook>, transport: Arc<Transport>) {
-    match req.command.as_str() {
-        "threads" | "stackTrace" | "scopes" | "variables" | "evaluate" | "continue" | "next"
-        | "stepIn" | "stepOut" => {
+    match DapCommand::parse(&req.command) {
+        cmd if cmd.requires_paused_frame() => {
             match hook
                 .forward_if_paused(req.command.clone(), req.arguments.clone())
                 .await
@@ -313,11 +336,11 @@ async fn dispatch_running_request(req: RawRequest, hook: Arc<DapHook>, transport
         // stopped. Real clients (VS Code included) routinely send this
         // after `configurationDone`, e.g. when a breakpoint is toggled
         // while the program is already running.
-        "setBreakpoints" => handle_set_breakpoints(&req, &hook, &transport),
-        "pause" => {
+        DapCommand::SetBreakpoints => handle_set_breakpoints(&req, &hook, &transport),
+        DapCommand::Pause => {
             transport.respond(req.seq, &req.command, true, serde_json::json!({}));
         }
-        "disconnect" | "terminate" => {
+        DapCommand::Disconnect | DapCommand::Terminate => {
             // `keel dap`/`keel test --debug` only ever launch the debuggee
             // (never attach to an existing process), so there is no
             // "detach and leave it running" case to support: a client
@@ -327,8 +350,12 @@ async fn dispatch_running_request(req: RawRequest, hook: Arc<DapHook>, transport
             transport.respond(req.seq, &req.command, true, serde_json::json!({}));
             std::process::exit(0);
         }
-        other => {
-            transport.respond_error(req.seq, other, "unsupported request");
+        // Unreachable in practice (the guard arm above already claims every
+        // `requires_paused_frame` variant), but the guard isn't visible to
+        // exhaustiveness checking, so this catch-all is what makes the match
+        // exhaustive; genuinely-unrecognized command strings also land here.
+        _ => {
+            transport.respond_error(req.seq, &req.command, "unsupported request");
         }
     }
 }
