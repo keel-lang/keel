@@ -125,6 +125,14 @@ pub struct AgentInstance {
     pub(crate) allowed_tools: Option<AllowedTools>,
 }
 
+/// Fields `Interpreter::begin_agent_turn` saves so `end_agent_turn` can
+/// restore them once the turn's block/handler/closure has run.
+pub(crate) struct AgentTurnState {
+    prev_agent: Option<Arc<Mutex<AgentInstance>>>,
+    prev_module: usize,
+    prev_depth: usize,
+}
+
 // ---------------------------------------------------------------------------
 // Interpreter state
 // ---------------------------------------------------------------------------
@@ -386,6 +394,47 @@ impl Interpreter {
         })
     }
 
+    /// Enter the context of one "agent turn" — a lifecycle block, event
+    /// handler, or scheduled closure running as (or on behalf of) an agent —
+    /// saving `current_agent`, `current_module_id`, and `call_depth` so
+    /// `end_agent_turn` can restore them. `agent` is the instance the turn
+    /// runs as; pass `None` for callbacks that aren't agent methods (e.g. an
+    /// HTTP handler closure), which leaves `current_agent` cleared for the
+    /// duration rather than exposing an agent's state to code that has no
+    /// `self`. `module_id` attributes the turn to the right file for
+    /// breakpoint/frame reporting; `None` leaves the caller's module in
+    /// place (there was nothing in `agent_module` for this agent to swap
+    /// to).
+    pub(crate) fn begin_agent_turn(
+        &mut self,
+        agent: Option<Arc<Mutex<AgentInstance>>>,
+        module_id: Option<usize>,
+    ) -> AgentTurnState {
+        let prev_agent = self.current_agent.take();
+        self.current_agent = agent;
+        let prev_module = self.current_module_id;
+        if let Some(module_id) = module_id {
+            self.current_module_id = module_id;
+        }
+        let prev_depth = self.call_depth;
+        self.call_depth = 0;
+        AgentTurnState {
+            prev_agent,
+            prev_module,
+            prev_depth,
+        }
+    }
+
+    /// Restore the fields `begin_agent_turn` saved. Callers that push a
+    /// debug frame or call `evaluate_tools_for_turn` do so between the two
+    /// calls, since those steps vary by call site and aren't part of the
+    /// save/restore this pair centralizes.
+    pub(crate) fn end_agent_turn(&mut self, saved: AgentTurnState) {
+        self.call_depth = saved.prev_depth;
+        self.current_module_id = saved.prev_module;
+        self.current_agent = saved.prev_agent;
+    }
+
     /// Fire a registered closure in the named agent's context.
     /// Called by the event loop when `Event::FireClosure` arrives.
     pub async fn call_scheduled_closure(
@@ -398,18 +447,10 @@ impl Interpreter {
         let (Some(c), Some(agent_inst)) = (closure, inst) else {
             return Ok(()); // agent stopped or closure removed
         };
-        let prev = self.current_agent.take();
-        self.current_agent = Some(agent_inst);
-        let prev_module = self.current_module_id;
-        if let Some(&module_id) = self.agent_module.get(agent_name) {
-            self.current_module_id = module_id;
-        }
-        let prev_depth = self.call_depth;
-        self.call_depth = 0;
+        let module_id = self.agent_module.get(agent_name).copied();
+        let turn = self.begin_agent_turn(Some(agent_inst), module_id);
         let result = self.call_closure(&c.params, &c.body, vec![]).await;
-        self.call_depth = prev_depth;
-        self.current_module_id = prev_module;
-        self.current_agent = prev;
+        self.end_agent_turn(turn);
         result.map(|_| ())
     }
 
@@ -437,14 +478,8 @@ impl Interpreter {
             return Ok(());
         };
 
-        let prev = self.current_agent.take();
-        self.current_agent = Some(agent_inst);
-        let prev_module = self.current_module_id;
-        if let Some(&module_id) = self.agent_module.get(agent_name) {
-            self.current_module_id = module_id;
-        }
-        let prev_depth = self.call_depth;
-        self.call_depth = 0;
+        let module_id = self.agent_module.get(agent_name).copied();
+        let turn = self.begin_agent_turn(Some(agent_inst), module_id);
         if self.debug_active {
             self.debug_hook.on_call_enter(super::debug_hook::FrameInfo {
                 name: format!("{agent_name}.on {event_name}"),
@@ -463,9 +498,7 @@ impl Interpreter {
         if self.debug_active {
             self.debug_hook.on_call_exit();
         }
-        self.call_depth = prev_depth;
-        self.current_module_id = prev_module;
-        self.current_agent = prev;
+        self.end_agent_turn(turn);
         result.map(|_| ())
     }
 
