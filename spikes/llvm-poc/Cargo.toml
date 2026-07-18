@@ -1,0 +1,13 @@
+# Toolchain spike for designs/llvm-compilation.md §1.6 (issue #110).
+# Standalone on purpose: the empty [workspace] table below keeps this crate
+# out of the root workspace so `cargo build` at the repo root never needs LLVM.
+[package]
+name = "llvm-poc"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+inkwell = { version = "0.9.0", features = ["llvm22-1"] }
+
+[workspace]
