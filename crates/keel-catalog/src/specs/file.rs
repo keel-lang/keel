@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "read",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "path",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "write",
+        method_id: 1,
         params: &[
             BuiltinParam {
                 name: "path",
@@ -35,6 +37,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "exists",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "path",
             ty: TySpec::Str,
@@ -46,6 +49,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "list",
+        method_id: 3,
         params: &[BuiltinParam {
             name: "path",
             ty: TySpec::Str,
@@ -57,6 +61,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "mkdir",
+        method_id: 4,
         params: &[BuiltinParam {
             name: "path",
             ty: TySpec::Str,
@@ -68,6 +73,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "remove",
+        method_id: 5,
         params: &[BuiltinParam {
             name: "path",
             ty: TySpec::Str,
@@ -79,6 +85,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "copy",
+        method_id: 6,
         params: &[
             BuiltinParam {
                 name: "src",
@@ -97,6 +104,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "glob",
+        method_id: 7,
         params: &[BuiltinParam {
             name: "pattern",
             ty: TySpec::Str,
@@ -108,6 +116,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "move",
+        method_id: 8,
         params: &[
             BuiltinParam {
                 name: "src",
@@ -126,6 +135,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "file",
         name: "mktemp",
+        method_id: 9,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Create a temporary file and return its path.",

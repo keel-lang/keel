@@ -5,6 +5,7 @@ use crate::builtins::*;
 pub const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
     namespace: "db",
     name: "connect",
+    method_id: 0,
     params: &[BuiltinParam {
         name: "url",
         ty: TySpec::Str,

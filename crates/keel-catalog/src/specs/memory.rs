@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "memory",
         name: "remember",
+        method_id: 0,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -24,6 +25,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "memory",
         name: "recall",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "key",
             ty: TySpec::Str,
@@ -35,6 +37,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "memory",
         name: "forget",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "key",
             ty: TySpec::Str,

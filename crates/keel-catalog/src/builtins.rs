@@ -99,6 +99,13 @@ pub struct BuiltinMethod {
     pub namespace: &'static str,
     /// The method name as it appears in Keel source (e.g., `"read"`).
     pub name: &'static str,
+    /// Stable id for this method within its namespace, consumed by
+    /// `keel-kir`'s `CallTarget::Ns` lowering and `keel-rt-ffi`'s
+    /// `keel_rt_call_ns` dispatch. Assigned once per method and never
+    /// reused: removing a method leaves a gap rather than shifting the ids
+    /// of the methods after it. Unique only within a namespace — pair with
+    /// [`crate::specs::namespace_id`] for a globally unique id.
+    pub method_id: u16,
     /// Declared parameter list. Empty `&[]` means zero or variadic
     /// parameters that are not statically validated by the checker yet.
     #[allow(dead_code)]

@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "uuid",
         name: "v4",
+        method_id: 0,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Uuid),
         doc: "Generate a random UUID v4.",
@@ -13,6 +14,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "uuid",
         name: "v7",
+        method_id: 1,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Uuid),
         doc: "Generate a time-sortable UUID v7.",
@@ -20,6 +22,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "uuid",
         name: "v5",
+        method_id: 2,
         params: &[
             BuiltinParam {
                 name: "ns",
@@ -38,6 +41,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "uuid",
         name: "parse",
+        method_id: 3,
         params: &[BuiltinParam {
             name: "s",
             ty: TySpec::Str,

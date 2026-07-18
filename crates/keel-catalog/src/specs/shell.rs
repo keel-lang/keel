@@ -5,6 +5,7 @@ use crate::builtins::*;
 pub const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
     namespace: "shell",
     name: "run",
+    method_id: 0,
     params: &[BuiltinParam {
         name: "cmd",
         ty: TySpec::Str,

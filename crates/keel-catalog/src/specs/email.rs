@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "email",
         name: "fetch",
+        method_id: 0,
         params: &[],
         result: BuiltinResult::Unknown,
         doc: "Fetch messages from the configured email inbox.",
@@ -13,6 +14,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "email",
         name: "send",
+        method_id: 1,
         params: &[
             BuiltinParam {
                 name: "to",
@@ -36,6 +38,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "email",
         name: "archive",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "id",
             ty: TySpec::Str,

@@ -116,4 +116,47 @@ mod tests {
             );
         }
     }
+
+    /// Every namespace installed by `namespaces()` must have a stable
+    /// `ns_id` in `keel_catalog::specs::NAMESPACE_IDS`, ids must be unique,
+    /// and there must be no orphaned entries for namespaces that no longer
+    /// exist. Pins the compiled path's `keel_rt_call_ns(ns_id, ..)` dispatch
+    /// table against accidental drift (see designs/llvm-compilation.md §2.7).
+    #[test]
+    fn namespace_ids_are_stable_and_complete() {
+        let installed = namespaces();
+        let installed_ns_names: HashSet<&str> =
+            installed.iter().map(|ns| ns.name.as_str()).collect();
+
+        let mut seen_ids = HashSet::new();
+        let mut ided_ns_names = HashSet::new();
+        for (name, id) in keel_catalog::specs::NAMESPACE_IDS {
+            assert!(
+                seen_ids.insert(*id),
+                "duplicate ns_id {id} (namespace {name:?})"
+            );
+            ided_ns_names.insert(*name);
+        }
+
+        assert_eq!(
+            installed_ns_names, ided_ns_names,
+            "installed namespaces and NAMESPACE_IDS disagree"
+        );
+    }
+
+    /// Every method in the catalog must have a `method_id` unique within its
+    /// namespace, so `(ns_id, method_id)` is a globally unique dispatch key.
+    #[test]
+    fn method_ids_are_unique_within_each_namespace() {
+        let mut seen: HashMap<&str, HashSet<u16>> = HashMap::new();
+        for m in keel_catalog::catalog() {
+            assert!(
+                seen.entry(m.namespace).or_default().insert(m.method_id),
+                "{}: duplicate method_id {} ({})",
+                m.namespace,
+                m.method_id,
+                m.name
+            );
+        }
+    }
 }

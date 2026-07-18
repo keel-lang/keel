@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "csv",
         name: "parse",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "s",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "csv",
         name: "parse_records",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "s",
             ty: TySpec::Str,
@@ -28,6 +30,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "csv",
         name: "stringify",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "rows",
             ty: TySpec::Dynamic,

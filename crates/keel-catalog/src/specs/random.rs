@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "random",
         name: "float",
+        method_id: 0,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "Return a random float in the range [0, 1).",
@@ -13,6 +14,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "random",
         name: "int",
+        method_id: 1,
         params: &[
             BuiltinParam {
                 name: "min",
@@ -31,6 +33,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "random",
         name: "bool",
+        method_id: 2,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Bool),
         doc: "Return a random boolean.",

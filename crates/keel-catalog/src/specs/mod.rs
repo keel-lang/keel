@@ -66,6 +66,52 @@ pub fn catalog_method(namespace: &str, name: &str) -> Option<&'static BuiltinMet
     catalog().find(|m| m.namespace == namespace && m.name == name)
 }
 
+/// Stable id for each of the 23 stdlib namespaces, consumed by `keel-kir`'s
+/// `CallTarget::Ns` lowering and `keel-rt-ffi`'s `keel_rt_call_ns(ns_id,
+/// method_id, ...)` generic dispatch entry point. Assigned once and
+/// append-only: never reassign or reuse an id when a namespace is removed,
+/// so a compiled program's dispatch ids stay meaningful across commits.
+///
+/// Paired with each method's [`BuiltinMethod::method_id`] (unique within the
+/// namespace) this gives every stdlib method a globally unique `(ns_id,
+/// method_id)` pair. The `spec_matches_installed_methods_for_all_namespaces`
+/// test in `keel-runtime` pins both halves.
+pub const NAMESPACE_IDS: &[(&str, u16)] = &[
+    ("ai", 0),
+    ("async", 1),
+    ("cache", 2),
+    ("control", 3),
+    ("crypto", 4),
+    ("csv", 5),
+    ("db", 6),
+    ("email", 7),
+    ("env", 8),
+    ("file", 9),
+    ("http", 10),
+    ("io", 11),
+    ("json", 12),
+    ("log", 13),
+    ("math", 14),
+    ("memory", 15),
+    ("random", 16),
+    ("schedule", 17),
+    ("search", 18),
+    ("shell", 19),
+    ("testing", 20),
+    ("time", 21),
+    ("uuid", 22),
+];
+
+/// Look up the stable [`NAMESPACE_IDS`] id for a namespace by name.
+///
+/// Returns `None` if `namespace` is not a registered stdlib namespace.
+pub fn namespace_id(namespace: &str) -> Option<u16> {
+    NAMESPACE_IDS
+        .iter()
+        .find(|(name, _)| *name == namespace)
+        .map(|(_, id)| *id)
+}
+
 /// Modules whose entry points exercise authority over the world outside the
 /// process — network, filesystem, subprocesses, external services, ambient
 /// secrets, humans, and LLMs. Only these require an `@tools` capability.

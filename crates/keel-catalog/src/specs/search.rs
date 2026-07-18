@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "search",
         name: "web",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "query",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "search",
         name: "news",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "query",
             ty: TySpec::Str,
