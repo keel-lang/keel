@@ -714,18 +714,14 @@ impl Interpreter {
                                 Ok(jval) => crate::runtime::json_to_value(&jval),
                                 Err(_) => Value::String(request_json.clone()),
                             };
-                        // `current_agent` is deliberately left untouched here
+                        // `current_agent` is deliberately left cleared here
                         // (unlike `call_scheduled_closure`/`call_event_handler`):
                         // this closure is a plain callback value, not an agent
                         // method, so it has no `self`/agent state to expose —
                         // `c.agent_name` below is used only to attribute the
                         // debugger's module/breakpoint tracking, nothing more.
-                        let prev_module = self.current_module_id;
-                        if let Some(&module_id) = self.agent_module.get(&c.agent_name) {
-                            self.current_module_id = module_id;
-                        }
-                        let prev_depth = self.call_depth;
-                        self.call_depth = 0;
+                        let module_id = self.agent_module.get(&c.agent_name).copied();
+                        let turn = self.begin_agent_turn(None, module_id);
                         let result = self
                             .call_closure(
                                 &c.params,
@@ -736,8 +732,7 @@ impl Interpreter {
                                 }],
                             )
                             .await;
-                        self.call_depth = prev_depth;
-                        self.current_module_id = prev_module;
+                        self.end_agent_turn(turn);
                         // Serialize result back to JSON string
                         let resp_val = result.unwrap_or_else(|err| {
                             eprintln!("[keel] HTTP handler error: {err}");

@@ -81,14 +81,8 @@ impl Interpreter {
         if let Some(attr) = on_start
             && let AttributeBody::Block(body) = attr.body
         {
-            let prev = self.current_agent.take();
-            self.current_agent = Some(inst.clone());
-            let prev_module = self.current_module_id;
-            if let Some(&module_id) = self.agent_module.get(agent_name) {
-                self.current_module_id = module_id;
-            }
-            let prev_depth = self.call_depth;
-            self.call_depth = 0;
+            let module_id = self.agent_module.get(agent_name).copied();
+            let turn = self.begin_agent_turn(Some(inst.clone()), module_id);
             if self.debug_active {
                 self.debug_hook.on_call_enter(FrameInfo {
                     name: format!("{agent_name}.on_start"),
@@ -104,9 +98,7 @@ impl Interpreter {
             if self.debug_active {
                 self.debug_hook.on_call_exit();
             }
-            self.call_depth = prev_depth;
-            self.current_module_id = prev_module;
-            self.current_agent = prev;
+            self.end_agent_turn(turn);
         }
 
         Ok(())
@@ -126,14 +118,8 @@ impl Interpreter {
                 && let AttributeBody::Block(body) = attr.body
             {
                 let inst = self.live_agents.lock().get(agent_name).cloned();
-                let prev = self.current_agent.take();
-                self.current_agent = inst;
-                let prev_module = self.current_module_id;
-                if let Some(&module_id) = self.agent_module.get(agent_name) {
-                    self.current_module_id = module_id;
-                }
-                let prev_depth = self.call_depth;
-                self.call_depth = 0;
+                let module_id = self.agent_module.get(agent_name).copied();
+                let turn = self.begin_agent_turn(inst, module_id);
                 if self.debug_active {
                     self.debug_hook.on_call_enter(FrameInfo {
                         name: format!("{agent_name}.on_stop"),
@@ -148,9 +134,7 @@ impl Interpreter {
                 if self.debug_active {
                     self.debug_hook.on_call_exit();
                 }
-                self.call_depth = prev_depth;
-                self.current_module_id = prev_module;
-                self.current_agent = prev;
+                self.end_agent_turn(turn);
             }
         }
         self.live_agents.lock().remove(agent_name);
