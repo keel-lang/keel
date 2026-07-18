@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "io",
         name: "ask",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "prompt",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "io",
         name: "confirm",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "prompt",
             ty: TySpec::Str,
@@ -28,6 +30,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "io",
         name: "notify",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "message",
             ty: TySpec::Str,
@@ -39,6 +42,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "io",
         name: "show",
+        method_id: 3,
         params: &[BuiltinParam {
             name: "value",
             ty: TySpec::Dynamic,

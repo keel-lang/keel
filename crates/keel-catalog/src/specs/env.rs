@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "env",
         name: "get",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "key",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "env",
         name: "require",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "key",
             ty: TySpec::Str,

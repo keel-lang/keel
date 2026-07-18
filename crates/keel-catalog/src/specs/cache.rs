@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "cache",
         name: "set",
+        method_id: 0,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -29,6 +30,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "cache",
         name: "get",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "key",
             ty: TySpec::Str,
@@ -40,6 +42,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "cache",
         name: "delete",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "key",
             ty: TySpec::Str,
@@ -51,6 +54,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "cache",
         name: "clear",
+        method_id: 3,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::None_),
         doc: "Clear all entries from the cache.",

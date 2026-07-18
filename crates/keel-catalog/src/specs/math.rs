@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "PI",
+        method_id: 0,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "The mathematical constant π (3.14159…).",
@@ -13,6 +14,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "E",
+        method_id: 1,
         params: &[],
         result: BuiltinResult::Fixed(TySpec::Float),
         doc: "The mathematical constant e (2.71828…).",
@@ -20,6 +22,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "sqrt",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -31,6 +34,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "pow",
+        method_id: 3,
         params: &[
             BuiltinParam {
                 name: "x",
@@ -49,6 +53,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "exp",
+        method_id: 4,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -60,6 +65,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "log",
+        method_id: 5,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -71,6 +77,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "log2",
+        method_id: 6,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -82,6 +89,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "log10",
+        method_id: 7,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -93,6 +101,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "sin",
+        method_id: 8,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -104,6 +113,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "cos",
+        method_id: 9,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -115,6 +125,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "tan",
+        method_id: 10,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -126,6 +137,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "asin",
+        method_id: 11,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -137,6 +149,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "acos",
+        method_id: 12,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -148,6 +161,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "atan",
+        method_id: 13,
         params: &[BuiltinParam {
             name: "x",
             ty: TySpec::Float,
@@ -159,6 +173,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "math",
         name: "atan2",
+        method_id: 14,
         params: &[
             BuiltinParam {
                 name: "y",

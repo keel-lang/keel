@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "http",
         name: "get",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "url",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "http",
         name: "post",
+        method_id: 1,
         params: &[
             BuiltinParam {
                 name: "url",
@@ -35,6 +37,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "http",
         name: "request",
+        method_id: 2,
         params: &[
             BuiltinParam {
                 name: "method",
@@ -53,6 +56,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "http",
         name: "serve",
+        method_id: 3,
         params: &[BuiltinParam {
             name: "port",
             ty: TySpec::Int,

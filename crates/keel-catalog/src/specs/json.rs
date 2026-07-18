@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "json",
         name: "parse",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "s",
             ty: TySpec::Str,
@@ -20,6 +21,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "json",
         name: "stringify",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "value",
             ty: TySpec::Dynamic,

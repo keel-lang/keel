@@ -6,6 +6,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "sha224",
+        method_id: 0,
         params: &[BuiltinParam {
             name: "data",
             ty: TySpec::Str,
@@ -17,6 +18,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "sha256",
+        method_id: 1,
         params: &[BuiltinParam {
             name: "data",
             ty: TySpec::Str,
@@ -28,6 +30,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "sha384",
+        method_id: 2,
         params: &[BuiltinParam {
             name: "data",
             ty: TySpec::Str,
@@ -39,6 +42,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "sha512",
+        method_id: 3,
         params: &[BuiltinParam {
             name: "data",
             ty: TySpec::Str,
@@ -50,6 +54,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "sha512_224",
+        method_id: 4,
         params: &[BuiltinParam {
             name: "data",
             ty: TySpec::Str,
@@ -61,6 +66,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "sha512_256",
+        method_id: 5,
         params: &[BuiltinParam {
             name: "data",
             ty: TySpec::Str,
@@ -72,6 +78,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "hmac_sha224",
+        method_id: 6,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -90,6 +97,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "hmac_sha256",
+        method_id: 7,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -108,6 +116,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "hmac_sha384",
+        method_id: 8,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -126,6 +135,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "hmac_sha512",
+        method_id: 9,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -144,6 +154,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "hmac_sha512_224",
+        method_id: 10,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -162,6 +173,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "hmac_sha512_256",
+        method_id: 11,
         params: &[
             BuiltinParam {
                 name: "key",
@@ -180,6 +192,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "token",
+        method_id: 12,
         params: &[BuiltinParam {
             name: "len",
             ty: TySpec::Int,
@@ -191,6 +204,7 @@ pub const SPEC: &[BuiltinMethod] = &[
     BuiltinMethod {
         namespace: "crypto",
         name: "random_bytes",
+        method_id: 13,
         params: &[BuiltinParam {
             name: "len",
             ty: TySpec::Int,
