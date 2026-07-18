@@ -101,6 +101,24 @@ fn dump_stmt(
             indent(out, depth);
             out.push_str("}\n");
         }
+        Stmt::ForIndex {
+            var,
+            low,
+            high,
+            body,
+        } => {
+            let v = &func.locals[*var];
+            let _ = writeln!(
+                out,
+                "for {} in {}..{} {{",
+                v.name,
+                fmt_expr(program, func, low),
+                fmt_expr(program, func, high)
+            );
+            dump_block(out, program, func, body, depth + 1);
+            indent(out, depth);
+            out.push_str("}\n");
+        }
         Stmt::Return(None) => {
             out.push_str("return\n");
         }

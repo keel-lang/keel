@@ -1,7 +1,9 @@
-//! Statement lowering — the M0 scalar subset: `let`/assign, `if`/`else`,
-//! `while`, `return`, and bare expression statements. Everything else
-//! (`for`, `when`, `try`/`catch`, `raise`, `assert`, `break`/`continue`,
-//! `self.field = ...`) is rejected; see module docs on `lower/mod.rs`.
+//! Statement lowering — the M0 scalar subset plus M1's `for`-over-ranges:
+//! `let`/assign, `if`/`else`, `while`, `for x in a..b`, `return`, and bare
+//! expression statements. Everything else (`when`, `try`/`catch`, `raise`,
+//! `assert`, `break`/`continue`, `self.field = ...`, `for` with a `where`
+//! filter or a non-range iterable) is rejected; see module docs on
+//! `lower/mod.rs`.
 
 use std::collections::HashMap;
 
@@ -157,7 +159,52 @@ pub(crate) fn lower_stmt(
             "self.field assignment",
             stmt.span.clone(),
         )),
-        ast::Stmt::For { .. } => Err(LowerError::unsupported("for loop", stmt.span.clone())),
+        ast::Stmt::For {
+            binding,
+            iter,
+            filter,
+            body,
+        } => {
+            if filter.is_some() {
+                return Err(LowerError::unsupported(
+                    "`for ... where` filter",
+                    stmt.span.clone(),
+                ));
+            }
+            let name = binding_ident(binding, &stmt.span)?;
+            let ast::Expr::Range(start, end) = &iter.kind else {
+                return Err(LowerError::unsupported(
+                    "`for` over a non-range iterable (container ABI lands in M2)",
+                    iter.span.clone(),
+                ));
+            };
+            // Bounds are evaluated once, before `var` exists, so they lower
+            // in the enclosing scope and cannot reference the loop variable.
+            let low = lower_expr(start, ctx, funcs, table)?;
+            if low.ty() != KirType::I64 {
+                return Err(LowerError::new(
+                    format!("`for` range start is `{}`, expected `int`", low.ty()),
+                    start.span.clone(),
+                ));
+            }
+            let high = lower_expr(end, ctx, funcs, table)?;
+            if high.ty() != KirType::I64 {
+                return Err(LowerError::new(
+                    format!("`for` range end is `{}`, expected `int`", high.ty()),
+                    end.span.clone(),
+                ));
+            }
+            ctx.push_scope();
+            let var = ctx.declare(name, KirType::I64);
+            let body = lower_block(body, ctx, funcs, table, ret_ty)?;
+            ctx.pop_scope();
+            Ok(ir::Stmt::ForIndex {
+                var,
+                low,
+                high,
+                body,
+            })
+        }
         ast::Stmt::When { .. } => Err(LowerError::unsupported("when statement", stmt.span.clone())),
         ast::Stmt::TryCatch { .. } => Err(LowerError::unsupported("try/catch", stmt.span.clone())),
         ast::Stmt::Raise(_) => Err(LowerError::unsupported("raise", stmt.span.clone())),

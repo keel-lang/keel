@@ -1,0 +1,10 @@
+fn sum_upto(n: int) -> int {
+  let total: int = 0
+  for i in 0..n {
+    total = (total + i)
+  }
+  return total
+}
+
+fn <toplevel>() -> none {
+}

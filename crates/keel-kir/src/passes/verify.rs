@@ -154,6 +154,30 @@ fn verify_stmt(program: &KirProgram, func: &KirFunction, stmt: &Stmt) -> Result<
             }
             verify_block(program, func, body)
         }
+        Stmt::ForIndex {
+            var,
+            low,
+            high,
+            body,
+        } => {
+            check_local(func, *var)?;
+            verify_expr(program, func, low)?;
+            verify_expr(program, func, high)?;
+            let var_ty = func.locals[*var].ty;
+            if var_ty != KirType::I64 {
+                return Err(format!("for-loop variable {var} is {var_ty}, expected int"));
+            }
+            if low.ty() != KirType::I64 {
+                return Err(format!(
+                    "for-loop range start is {}, expected int",
+                    low.ty()
+                ));
+            }
+            if high.ty() != KirType::I64 {
+                return Err(format!("for-loop range end is {}, expected int", high.ty()));
+            }
+            verify_block(program, func, body)
+        }
         Stmt::Return(None) => {
             if func.ret != KirType::Unit {
                 return Err(format!(
