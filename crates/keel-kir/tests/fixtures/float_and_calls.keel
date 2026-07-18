@@ -1,0 +1,7 @@
+task square(x: float) -> float {
+  return x * x
+}
+
+task hypot_sq(a: float, b: float) -> float {
+  return square(a) + square(b)
+}

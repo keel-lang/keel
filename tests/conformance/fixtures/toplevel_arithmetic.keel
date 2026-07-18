@@ -1,0 +1,5 @@
+use std/io
+
+x = 2 + 3
+y = x * 4
+io.show("result: {y}")

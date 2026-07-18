@@ -1,0 +1,168 @@
+//! Statement lowering — the M0 scalar subset: `let`/assign, `if`/`else`,
+//! `while`, `return`, and bare expression statements. Everything else
+//! (`for`, `when`, `try`/`catch`, `raise`, `assert`, `break`/`continue`,
+//! `self.field = ...`) is rejected; see module docs on `lower/mod.rs`.
+
+use std::collections::HashMap;
+
+use keel_syntax::ast::{self, Node};
+
+use super::{FnCtx, FuncSig, LowerError, binding_ident, ty_expr_to_kir};
+use crate::ir::{self, Block};
+use crate::span_table::SpanTable;
+use crate::types::KirType;
+
+use super::expr::lower_expr;
+
+/// Lowers a `{ ... }` block in its own child scope.
+pub(crate) fn lower_block(
+    block: &ast::Block,
+    ctx: &mut FnCtx,
+    funcs: &HashMap<String, FuncSig>,
+    table: &mut SpanTable,
+    ret_ty: KirType,
+) -> Result<Block, LowerError> {
+    ctx.push_scope();
+    let mut out = Vec::with_capacity(block.len());
+    for stmt in block {
+        out.push(lower_stmt(stmt, ctx, funcs, table, ret_ty)?);
+    }
+    ctx.pop_scope();
+    Ok(out)
+}
+
+/// Lowers a single statement. Does not open its own scope — callers that
+/// need block scoping (`if`/`while` bodies) go through [`lower_block`]; the
+/// synthetic top-level function lowers its statements directly into the
+/// function's single root scope.
+pub(crate) fn lower_stmt(
+    stmt: &Node<ast::Stmt>,
+    ctx: &mut FnCtx,
+    funcs: &HashMap<String, FuncSig>,
+    table: &mut SpanTable,
+    ret_ty: KirType,
+) -> Result<ir::Stmt, LowerError> {
+    match &stmt.kind {
+        ast::Stmt::Let { binding, ty, value } => {
+            let name = binding_ident(binding, &stmt.span)?;
+            let init = lower_expr(value, ctx, funcs, table)?;
+            let declared_ty = init.ty();
+            if let Some(annotation) = ty {
+                let annotated = ty_expr_to_kir(annotation)?;
+                if annotated != declared_ty {
+                    return Err(LowerError::new(
+                        format!(
+                            "`{name}` is annotated `{annotated}` but the initializer is `{declared_ty}`"
+                        ),
+                        annotation.span.clone(),
+                    ));
+                }
+            }
+            let local = ctx.declare(name, declared_ty);
+            Ok(ir::Stmt::Let { local, init })
+        }
+        ast::Stmt::AugAssign {
+            name,
+            name_span,
+            op,
+            rhs,
+        } => {
+            let local = ctx.resolve(name).ok_or_else(|| {
+                LowerError::new(format!("unknown identifier `{name}`"), name_span.clone())
+            })?;
+            let local_ty = ctx.locals[local].ty;
+            let rhs_expr = lower_expr(rhs, ctx, funcs, table)?;
+            let op = super::expr::convert_binop(*op);
+            let result_ty = super::expr::infer_binop_ty(op, local_ty, rhs_expr.ty(), &stmt.span)?;
+            if result_ty != local_ty {
+                return Err(LowerError::new(
+                    format!(
+                        "`{name}` is `{local_ty}`; `+=`-family ops must preserve the operand type (got `{result_ty}`)"
+                    ),
+                    stmt.span.clone(),
+                ));
+            }
+            let value = ir::Expr::BinOp {
+                op,
+                left: Box::new(ir::Expr::Local {
+                    id: local,
+                    ty: local_ty,
+                }),
+                right: Box::new(rhs_expr),
+                ty: result_ty,
+            };
+            Ok(ir::Stmt::Assign { local, value })
+        }
+        ast::Stmt::Return(None) => {
+            if ret_ty != KirType::Unit {
+                return Err(LowerError::new(
+                    format!("bare `return` in a function declared to return `{ret_ty}`"),
+                    stmt.span.clone(),
+                ));
+            }
+            Ok(ir::Stmt::Return(None))
+        }
+        ast::Stmt::Return(Some(value)) => {
+            let expr = lower_expr(value, ctx, funcs, table)?;
+            if expr.ty() != ret_ty {
+                return Err(LowerError::new(
+                    format!(
+                        "`return` value is `{}` but the function returns `{ret_ty}`",
+                        expr.ty()
+                    ),
+                    value.span.clone(),
+                ));
+            }
+            Ok(ir::Stmt::Return(Some(expr)))
+        }
+        ast::Stmt::If {
+            cond,
+            then_body,
+            else_body,
+        } => {
+            let cond_expr = lower_expr(cond, ctx, funcs, table)?;
+            if cond_expr.ty() != KirType::Bool {
+                return Err(LowerError::new(
+                    format!("`if` condition is `{}`, expected `bool`", cond_expr.ty()),
+                    cond.span.clone(),
+                ));
+            }
+            let then_branch = lower_block(then_body, ctx, funcs, table, ret_ty)?;
+            let else_branch = match else_body {
+                Some(body) => lower_block(body, ctx, funcs, table, ret_ty)?,
+                None => Vec::new(),
+            };
+            Ok(ir::Stmt::If {
+                cond: cond_expr,
+                then_branch,
+                else_branch,
+            })
+        }
+        ast::Stmt::While { cond, body } => {
+            let cond_expr = lower_expr(cond, ctx, funcs, table)?;
+            if cond_expr.ty() != KirType::Bool {
+                return Err(LowerError::new(
+                    format!("`while` condition is `{}`, expected `bool`", cond_expr.ty()),
+                    cond.span.clone(),
+                ));
+            }
+            let body = lower_block(body, ctx, funcs, table, ret_ty)?;
+            Ok(ir::Stmt::While {
+                cond: cond_expr,
+                body,
+            })
+        }
+        ast::Stmt::Expr(expr) => Ok(ir::Stmt::Expr(lower_expr(expr, ctx, funcs, table)?)),
+        ast::Stmt::SelfAssign { .. } => Err(LowerError::unsupported(
+            "self.field assignment",
+            stmt.span.clone(),
+        )),
+        ast::Stmt::For { .. } => Err(LowerError::unsupported("for loop", stmt.span.clone())),
+        ast::Stmt::When { .. } => Err(LowerError::unsupported("when statement", stmt.span.clone())),
+        ast::Stmt::TryCatch { .. } => Err(LowerError::unsupported("try/catch", stmt.span.clone())),
+        ast::Stmt::Raise(_) => Err(LowerError::unsupported("raise", stmt.span.clone())),
+        ast::Stmt::Assert { .. } => Err(LowerError::unsupported("assert", stmt.span.clone())),
+        ast::Stmt::Break => Err(LowerError::unsupported("break", stmt.span.clone())),
+        ast::Stmt::Continue => Err(LowerError::unsupported("continue", stmt.span.clone())),
+    }
+}

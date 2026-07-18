@@ -15,17 +15,18 @@ src/
                     #   nullable safety with call-site enforcement, return-type
                     #   matching, struct subtyping, generic instantiation)
   interpreter/      # Tree-walking async interpreter
-  vm/               # Placeholder module for v0.1 — `keel build` is deferred
-                    #   post-v0.1; the tree-walking interpreter is the only
-                    #   execution path shipping today
   runtime/          # LLM client (Ollama/OpenAI/Anthropic + user-authored providers), email (IMAP/SMTP), human I/O, std module namespaces
   formatter.rs      # Pretty-printer (keel fmt)
   repl.rs           # Interactive REPL
   lsp/              # Language Server Protocol (diagnostics, completion, hover, go-to-definition)
   main.rs           # CLI entry (clap)
+crates/keel-kir/    # Mid-level IR for the future native/LLVM backend (designs/llvm-compilation.md).
+                    #   `keel build` is the CLI entry point — `--emit=kir` previews the pipeline
+                    #   (scalar subset only); no codegen exists yet. Supersedes the old `src/vm/`
+                    #   bytecode-VM stub (removed; see NON-GOALS.md).
 brand/              # Logo, color tokens, mdBook theme (single source of truth)
 examples/           # .keel example programs
-tests/              # Lexer, parser, type checker, formatter, lsp, integration
+tests/              # Lexer, parser, type checker, formatter, lsp, integration, conformance
 docs/               # mdBook documentation
                     # VS Code extension lives at github.com/keel-lang/vscode-keel
 ```
@@ -41,7 +42,7 @@ docs/               # mdBook documentation
 
 ## Conventions
 
-- `.keel` file extension. (`.keelc` for compiled bytecode is reserved — `keel build` is deferred post-v0.1.)
+- `.keel` file extension. `keel build` is the reserved verb for the future native/LLVM backend (`designs/llvm-compilation.md`); `--emit=kir` previews the mid-level IR (scalar subset only) — no codegen yet.
 - Examples in `examples/`, tests in `tests/`, brand assets in `brand/`.
 - **Before adding or modifying any language feature** (new syntax, new built-in, new stdlib namespace, behaviour change), invoke the `design-lang` skill to validate the idea against Hejlsberg's design principles. Do this before touching `SPEC.md` or any source file.
 - Update `SPEC.md` before implementing new language features.
@@ -60,7 +61,7 @@ keel fmt file.keel       # auto-format
 keel init project-name   # scaffold
 keel repl                # interactive
 keel lsp                 # language server (stdin/stdout)
-# keel build             # deferred post-v0.1
+keel build file.keel --emit=kir  # preview mid-level IR (scalar subset); no codegen yet
 ```
 
 ## Release Checklist

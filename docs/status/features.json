@@ -292,8 +292,8 @@
     },
     {
       "name": "keel build",
-      "status": "deferred",
-      "notes": "Bytecode compiler + VM; explicitly deferred post-v0.1"
+      "status": "in progress",
+      "notes": "Native/LLVM AOT backend (designs/llvm-compilation.md); `--emit=kir` previews the scalar-subset mid-level IR, no codegen yet"
     },
     {
       "name": "keel dap",

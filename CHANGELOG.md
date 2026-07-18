@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program.
+%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program, alongside the first groundwork slice of the native LLVM backend.
 
 ### Added
 
@@ -38,6 +38,23 @@ keel dap counter.keel   # speaks DAP over stdio; point your editor's launch conf
 ```
 
 Known D0 gaps (see `docs/src/guide/debugging.md`): code inside `Async.spawn` runs undebugged; pausing one agent's handler stalls the single serialized event loop, so other agents' events queue up rather than continuing to run concurrently; only the innermost paused frame's variables are inspectable; a closure inherits the module of wherever it's called, not where it was declared; `pause` (breaking in without a prior breakpoint) is not yet wired up; parameterized (`test ... for ...`) tests aren't debuggable.
+
+- **`keel build --emit=kir` — the first slice of the native/LLVM backend (M0 of `designs/llvm-compilation.md`).** A new `keel-kir` crate lowers the scalar subset of Keel (`int`/`float`/`bool`/`str` literals, arithmetic and comparison, `if`/`else`, `while`, `let`/assign, task declarations with scalar params, direct calls, `return`) to a small typed mid-level IR (KIR), with a textual dump, a well-formedness verifier, and golden-dump tests. `keel build --emit=kir file.keel` type-checks the file and prints the dump; every construct outside the scalar subset (agents, structs, strings with interpolation, containers, `for`, `when`, …) is rejected by name rather than silently dropped. `keel build` without `--emit` now reports `native codegen not yet implemented` — this replaces the old `.keelc` bytecode-VM stub (`src/vm/`, removed; see `NON-GOALS.md`), which never produced a native binary and is superseded by the KIR/LLVM direction.
+
+  ```keel
+  task add(a: int, b: int) -> int {
+    return a + b
+  }
+  ```
+
+  ```
+  $ keel build examples/hello_world.keel --emit=kir
+  fn add(a: int, b: int) -> int {
+    return (a + b)
+  }
+  ```
+
+- **Interpreter-vs-interpreter conformance harness (`tests/conformance/`, also M0).** A new `cargo test --test conformance` runs the interpreter twice over every runnable `examples/*.keel` program plus a small curated fixture set, in-process (not by shelling out), and asserts the two runs produce byte-identical stdout and exit codes — the merge-gate infrastructure `designs/llvm-compilation.md` calls for once a second (compiled) engine exists. An `Engine` enum already has a stubbed `Compiled` variant so wiring in the real backend later doesn't change the harness's shape. Programs needing real network/email/interactive input, or with inherently non-deterministic output (random/uuid/wall-clock/concurrent-broadcast-ordering), are excluded via an explicit skip list with a one-line reason each.
 
 ### Changed
 

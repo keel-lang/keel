@@ -1,0 +1,6 @@
+task greeting(loud: bool) -> str {
+  if loud {
+    return "HELLO"
+  }
+  return "hello"
+}

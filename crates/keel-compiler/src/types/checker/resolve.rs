@@ -147,6 +147,10 @@ impl Checker<'_, '_> {
                 if let Some((type_params, type_def)) = self.generic_decls.get(name).cloned()
                     && type_params.len() == resolved_args.len()
                 {
+                    // Record the instantiation before substituting — this is
+                    // exactly the concrete type-argument list KIR's
+                    // monomorphizer needs, keyed by the generic's declared name.
+                    self.record_instantiation(name, resolved_args.clone());
                     // Build substitution map — iterate by ref so resolved_args stays owned.
                     let inner_env: HashMap<String, Ty> = type_params
                         .iter()

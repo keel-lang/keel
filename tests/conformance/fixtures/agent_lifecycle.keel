@@ -1,0 +1,11 @@
+use std/io
+
+agent Greeter {
+  @tools [io]
+  @on_start {
+    io.show("hello, conformance")
+    stop(self)
+  }
+}
+
+run(Greeter)

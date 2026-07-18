@@ -1,0 +1,10 @@
+fn square(x: float) -> float {
+  return (x * x)
+}
+
+fn hypot_sq(a: float, b: float) -> float {
+  return (square(a) + square(b))
+}
+
+fn <toplevel>() -> none {
+}

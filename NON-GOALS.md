@@ -25,7 +25,7 @@ Ideas that have been considered and **deliberately set aside** — recorded with
 
 ## Tooling, CI & ecosystem
 
-- **Tests for the stub VM / bytecode path.** Don't write tests for dead code. The VM either gets built or stays deferred alongside the `keel build` direction.
+- **A bytecode VM (`src/vm/`, `.keelc`).** Removed in favor of the LLVM AOT backend direction (`designs/llvm-compilation.md`): KIR takes the "compiler IR" role the stub was reserving, and native codegen takes the execution role. `.keelc` stays a reserved-but-unused extension.
 - **A benchmark harness.** Cold-start performance isn't a user-facing promise yet; not essential for alpha.
 - **Swapping `chrono` / `axum` / `reqwest` for lighter crates.** They work, with no bugs, perf issues, or advisories. Churn without a concrete problem to solve.
 - **WASM `extern namespace` plugins.** Embedding a WASM runtime — sandboxing, memory model, component model — is a massive undertaking. Let ecosystem demand prove itself first.
