@@ -50,6 +50,7 @@ path = "src/main.rs"
 [dependencies]
 keel-catalog = { path = "crates/keel-catalog" }
 keel-compiler = { path = "crates/keel-compiler" }
+keel-dap = { path = "crates/keel-dap" }
 keel-runtime = { path = "crates/keel-runtime" }
 keel-syntax = { path = "crates/keel-syntax" }
 # The heavy I/O dependencies (reqwest, rusqlite, axum, lettre, imap, native-tls,

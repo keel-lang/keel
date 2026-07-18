@@ -8,6 +8,7 @@ use crate::ast::{Decl, Program, TestDecl};
 use crate::lexer::Span;
 use crate::types::interface::TypeEnv;
 
+use super::debug_hook::DebugHook;
 use super::environment::Environment;
 use super::state::{CallArgValue, Event, Interpreter};
 use super::stmt::{ExprFlow, StmtOutcome};
@@ -278,6 +279,54 @@ pub async fn run_graph_tests_with_runtime(
     Ok(outcomes)
 }
 
+/// Debug a single, already-selected, non-parameterized test of a checked
+/// graph's entry file. `keel test --debug` requires `--filter` to resolve to
+/// exactly one test before calling this — `execute_test_prepared` and
+/// `TestFailure` are private to this module, so this is the one seam
+/// `keel-dap` has for driving a test under a `DebugHook`.
+pub async fn debug_graph_test(
+    graph: &crate::modules::ModuleGraph,
+    runtime: Arc<crate::runtime::context::RuntimeContext>,
+    test_name: &str,
+    hook: Arc<dyn DebugHook>,
+) -> Result<TestOutcome> {
+    let entry = graph.entry();
+    let test = entry
+        .program
+        .declarations
+        .iter()
+        .find_map(|node| match &node.kind {
+            Decl::Test(test) if test.name == test_name => Some(test.clone()),
+            _ => None,
+        })
+        .ok_or_else(|| miette::miette!("no test named `{test_name}` in {}", entry.name))?;
+
+    if test.param.is_some() {
+        return Err(miette::miette!(
+            "`keel test --debug` does not support parameterized tests yet — pick a non-parameterized test"
+        ));
+    }
+
+    let mut interp = graph_test_interpreter(graph, &runtime);
+    interp.set_debug_hook(hook);
+    interp.prepare_graph(graph)?;
+
+    let started = Instant::now();
+    let result = interp.execute_test_prepared(&test, None).await;
+    let elapsed = started.elapsed();
+    let source_path = entry.path.as_deref();
+    Ok(TestOutcome {
+        name: test.name.clone(),
+        passed: result.is_ok(),
+        error: result.as_ref().err().map(|failure| failure.error.clone()),
+        failure_location: result
+            .as_ref()
+            .err()
+            .and_then(|failure| format_failure_location(source_path, failure.span.as_ref())),
+        elapsed,
+    })
+}
+
 /// Fresh isolated interpreter for one graph test case.
 fn graph_test_interpreter(
     graph: &crate::modules::ModuleGraph,
@@ -292,6 +341,7 @@ fn graph_test_interpreter(
             crate::runtime::derive_program_name_with_fs(raw, interp.runtime.file_system.as_ref());
     }
     interp.source = Some(entry.source.clone());
+    interp.current_module_id = graph.entry_index();
     interp
 }
 
@@ -377,7 +427,7 @@ impl Interpreter {
         let mut env = Environment::new();
         for node in &program.declarations {
             if let Decl::Stmt(stmt_node) = &node.kind {
-                self.exec_stmt(&stmt_node.kind, &mut env).await?;
+                self.exec_stmt(stmt_node, &mut env).await?;
             }
         }
 
@@ -390,12 +440,14 @@ impl Interpreter {
     /// declarations (the implicit-main rule).
     pub async fn execute_graph(&mut self, graph: &crate::modules::ModuleGraph) -> Result<()> {
         self.prepare_graph(graph)?;
+        // Top-level statements belong to the entry module.
+        self.current_module_id = graph.entry_index();
         // Top-level statements form the implicit main: they share one
         // environment so earlier bindings are visible to later statements.
         let mut env = Environment::new();
         for node in &graph.entry().program.declarations {
             if let Decl::Stmt(stmt_node) = &node.kind {
-                self.exec_stmt(&stmt_node.kind, &mut env).await?;
+                self.exec_stmt(stmt_node, &mut env).await?;
             }
         }
         self.run_event_loop().await
@@ -422,9 +474,9 @@ impl Interpreter {
         }
         self.type_env = type_env;
 
-        for unit in &graph.modules {
+        for (module_id, unit) in graph.modules.iter().enumerate() {
             for node in &unit.program.declarations {
-                self.register_decl(&node.kind)?;
+                self.register_decl_with_module(&node.kind, module_id)?;
             }
         }
 
@@ -528,7 +580,7 @@ impl Interpreter {
         self.set_test_mocks(std::collections::HashMap::new());
 
         for stmt in &test.setup {
-            match self.exec_stmt(&stmt.kind, &mut env).await {
+            match self.exec_stmt(stmt, &mut env).await {
                 Ok(outcome) => match outcome {
                     StmtOutcome::Normal | StmtOutcome::Value(_) => {}
                     StmtOutcome::Return(_) => {
@@ -549,7 +601,7 @@ impl Interpreter {
         }
 
         for stmt in &test.body {
-            match self.exec_stmt(&stmt.kind, &mut env).await {
+            match self.exec_stmt(stmt, &mut env).await {
                 Ok(outcome) => match outcome {
                     StmtOutcome::Normal | StmtOutcome::Value(_) => {}
                     StmtOutcome::Return(_) => {
@@ -662,6 +714,18 @@ impl Interpreter {
                                 Ok(jval) => crate::runtime::json_to_value(&jval),
                                 Err(_) => Value::String(request_json.clone()),
                             };
+                        // `current_agent` is deliberately left untouched here
+                        // (unlike `call_scheduled_closure`/`call_event_handler`):
+                        // this closure is a plain callback value, not an agent
+                        // method, so it has no `self`/agent state to expose —
+                        // `c.agent_name` below is used only to attribute the
+                        // debugger's module/breakpoint tracking, nothing more.
+                        let prev_module = self.current_module_id;
+                        if let Some(&module_id) = self.agent_module.get(&c.agent_name) {
+                            self.current_module_id = module_id;
+                        }
+                        let prev_depth = self.call_depth;
+                        self.call_depth = 0;
                         let result = self
                             .call_closure(
                                 &c.params,
@@ -672,6 +736,8 @@ impl Interpreter {
                                 }],
                             )
                             .await;
+                        self.call_depth = prev_depth;
+                        self.current_module_id = prev_module;
                         // Serialize result back to JSON string
                         let resp_val = result.unwrap_or_else(|err| {
                             eprintln!("[keel] HTTP handler error: {err}");

@@ -40,6 +40,14 @@ To print only failing test lines and the final summary:
 keel test <path> --quiet
 ```
 
+To step through a single test under a debugger instead of running it directly:
+
+```bash
+keel test <path> --debug --filter "mocked classify returns critical"
+```
+
+`--debug` requires `--filter` to match exactly one test, and speaks the Debug Adapter Protocol over stdio instead of printing pass/fail output — see [`keel dap`](./dap.md) for the protocol details and current limitations.
+
 ## Example
 
 ```keel
@@ -95,6 +103,7 @@ FAIL mocked classify returns critical (2ms)
 - `--list` prints matching test names without running them.
 - `--fail-fast` stops after the first failing test.
 - `--quiet` suppresses passing test result lines while still printing failures and the final summary.
+- `--debug` runs the single test matched by `--filter` under the Debug Adapter Protocol instead of executing it directly; it fails fast if `--filter` matches zero or more than one test.
 - A file with no test blocks prints `0 tests found` and exits successfully.
 - Test result lines include elapsed time after the test name, and the final summary includes total suite time.
 - `keel run` ignores test blocks.

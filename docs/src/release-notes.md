@@ -4,6 +4,42 @@
 
 ## Unreleased
 
+### `keel dap` — a step debugger over the Debug Adapter Protocol
+
+Any DAP-speaking editor can now set breakpoints, step, and inspect variables
+— including live agent `state` — in a running Keel program:
+
+```keel
+agent Counter {
+  state {
+    count: int = 0
+  }
+
+  task bump(n: int) -> int {
+    result = n + 1        # set a breakpoint here
+    return result
+  }
+
+  @on_start {
+    self.count = self.bump(self.count)
+  }
+}
+
+run(Counter)
+```
+
+```bash
+keel dap counter.keel
+```
+
+It pauses the same interpreter `keel run`/`keel test` already use — no
+separate debug build. `keel test --debug --filter <name>` debugs a single
+test the same way. See [Debugging](./guide/debugging.md) for what's covered
+in this first milestone and what's still a documented gap (code inside
+`Async.spawn`, multi-frame variable inspection, and editor integration for
+[vscode-keel](https://github.com/keel-lang/vscode-keel) are the notable
+ones).
+
 ---
 
 ## v0.2.4 — 2026-06-21

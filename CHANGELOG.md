@@ -8,7 +8,36 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program.
+
+### Added
+
+- **`keel dap` — an interpreter-backed step debugger over the Debug Adapter Protocol.** Any DAP-speaking editor (VS Code, `lldb-dap`-style clients) can now set source breakpoints, step over/in/out, inspect the call stack, and view locals and live agent `state` in a running Keel program — the same tree-walking interpreter every `keel run`/`keel test` already uses, paused in place rather than a separate execution path. `keel test --debug --filter <name>` debugs a single test the same way. Evaluating an expression while paused (`watch`/`hover`) reuses the program's own expression evaluator, so it sees the same values, types, and errors the paused statement would.
+
+```keel
+agent Counter {
+  state {
+    count: int = 0
+  }
+
+  task bump(n: int) -> int {
+    result = n + 1        # set a breakpoint here
+    return result
+  }
+
+  @on_start {
+    self.count = self.bump(self.count)
+  }
+}
+
+run(Counter)
+```
+
+```bash
+keel dap counter.keel   # speaks DAP over stdio; point your editor's launch config at this
+```
+
+Known D0 gaps (see `docs/src/guide/debugging.md`): code inside `Async.spawn` runs undebugged; pausing one agent's handler stalls the single serialized event loop, so other agents' events queue up rather than continuing to run concurrently; only the innermost paused frame's variables are inspectable; a closure inherits the module of wherever it's called, not where it was declared; `pause` (breaking in without a prior breakpoint) is not yet wired up; parameterized (`test ... for ...`) tests aren't debuggable.
 
 ### Changed
 

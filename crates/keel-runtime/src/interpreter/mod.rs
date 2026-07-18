@@ -5,6 +5,7 @@
 //! `Io.notify`, `Schedule.every`, ...) resolved through the runtime
 //! prelude, and structured `self.` state mutation.
 
+pub mod debug_hook;
 pub mod environment;
 pub mod host;
 pub mod value;
@@ -25,8 +26,9 @@ mod store;
 
 pub(crate) use binary::{eval_binary, is_pascal_case};
 pub(crate) use binding::bind_value;
+pub use debug_hook::{DebugHook, FrameInfo, NoopDebugHook, SourceLocation};
 pub use entry::{
-    TestOutcome, run_graph_tests_with_runtime, run_graph_with_runtime,
+    TestOutcome, debug_graph_test, run_graph_tests_with_runtime, run_graph_with_runtime,
     run_tests_with_source_and_runtime, run_with_source_and_runtime, test_names,
 };
 pub(crate) use error::{RuntimeError, RuntimeErrorKind, runtime_error};

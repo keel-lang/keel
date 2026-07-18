@@ -1409,6 +1409,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "keel-dap"
+version = "0.2.4"
+dependencies = [
+ "keel-compiler",
+ "keel-runtime",
+ "keel-syntax",
+ "miette",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "keel-lang"
 version = "0.2.4"
 dependencies = [
@@ -1418,6 +1433,7 @@ dependencies = [
  "glob",
  "keel-catalog",
  "keel-compiler",
+ "keel-dap",
  "keel-runtime",
  "keel-syntax",
  "logos",

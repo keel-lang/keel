@@ -3,6 +3,7 @@ use miette::Result;
 use crate::ast::{AttributeBody, LambdaBody, LambdaParam, TaskDecl};
 
 use super::bind_value;
+use super::debug_hook::{FrameInfo, SourceLocation};
 use super::environment::Environment;
 use super::promote::promote_value;
 use super::state::{AllowedTools, CallArgValue, Interpreter, RecordedMockCall};
@@ -12,7 +13,37 @@ use super::{RuntimeErrorKind, runtime_error};
 use crate::runtime::namespace::make_typed_report;
 
 impl Interpreter {
+    /// Invoke a closure. Inherits `current_module_id` from the caller rather
+    /// than tracking a home module of its own — see `Value::Closure`'s doc
+    /// comment for why (a closure invoked right where it's defined, the
+    /// overwhelmingly common case, is already correct by inheritance; only a
+    /// closure passed across a module boundary into a std callback can be
+    /// misattributed, a documented D0 limitation).
     pub async fn call_closure(
+        &mut self,
+        params: &[LambdaParam],
+        body: &LambdaBody,
+        args: Vec<CallArgValue>,
+    ) -> Result<Value> {
+        self.call_depth += 1;
+        if self.debug_active {
+            self.debug_hook.on_call_enter(FrameInfo {
+                name: "<closure>".to_string(),
+                location: SourceLocation {
+                    module_id: self.current_module_id,
+                    span: 0..0,
+                },
+            });
+        }
+        let result = self.call_closure_inner(params, body, args).await;
+        if self.debug_active {
+            self.debug_hook.on_call_exit();
+        }
+        self.call_depth -= 1;
+        result
+    }
+
+    async fn call_closure_inner(
         &mut self,
         params: &[LambdaParam],
         body: &LambdaBody,
@@ -37,12 +68,40 @@ impl Interpreter {
         }
     }
 
+    /// Invoke a top-level task or impl method. `name` is looked up in
+    /// `task_module` to switch `current_module_id` for the call's duration;
+    /// an impl method or agent-internal task (absent from that table) simply
+    /// inherits whatever module is already current.
     pub(crate) async fn call_task(
         &mut self,
-        _name: &str,
+        name: &str,
         decl: &TaskDecl,
         args: Vec<CallArgValue>,
     ) -> Result<Value> {
+        let prev_module = self.current_module_id;
+        if let Some(&module_id) = self.task_module.get(name) {
+            self.current_module_id = module_id;
+        }
+        self.call_depth += 1;
+        if self.debug_active {
+            self.debug_hook.on_call_enter(FrameInfo {
+                name: name.to_string(),
+                location: SourceLocation {
+                    module_id: self.current_module_id,
+                    span: decl.name_span.clone(),
+                },
+            });
+        }
+        let result = self.call_task_inner(decl, args).await;
+        if self.debug_active {
+            self.debug_hook.on_call_exit();
+        }
+        self.call_depth -= 1;
+        self.current_module_id = prev_module;
+        result
+    }
+
+    async fn call_task_inner(&mut self, decl: &TaskDecl, args: Vec<CallArgValue>) -> Result<Value> {
         let mut env = Environment::new();
         // Positional args (no label) fill params in order; named args
         // (label matches param name) bind by name and are skipped in the

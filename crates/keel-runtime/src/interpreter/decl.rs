@@ -10,6 +10,28 @@ use super::state::{AgentDef, Interpreter};
 use super::value::Value;
 
 impl Interpreter {
+    /// Register a declaration from module `module_id` of a checked
+    /// `ModuleGraph`, additionally recording top-level tasks/agents into the
+    /// `task_module`/`agent_module` side tables a debugger uses to attribute
+    /// breakpoints to the right file. `keel run`/`keel test` on a single
+    /// in-memory program never call this — they use module `0` implicitly.
+    pub(crate) fn register_decl_with_module(
+        &mut self,
+        decl: &Decl,
+        module_id: usize,
+    ) -> Result<()> {
+        match decl {
+            Decl::Task(t) => {
+                self.task_module.insert(t.name.clone(), module_id);
+            }
+            Decl::Agent(a) => {
+                self.agent_module.insert(a.name.clone(), module_id);
+            }
+            _ => {}
+        }
+        self.register_decl(decl)
+    }
+
     pub fn register_decl(&mut self, decl: &Decl) -> Result<()> {
         match decl {
             Decl::Type(t) => {

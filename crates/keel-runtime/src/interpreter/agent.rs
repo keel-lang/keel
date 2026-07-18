@@ -6,6 +6,7 @@ use parking_lot::Mutex;
 
 use crate::ast::AttributeBody;
 
+use super::debug_hook::{FrameInfo, SourceLocation};
 use super::environment::Environment;
 use super::runtime_error;
 use super::state::{AgentInstance, CallArgValue, Interpreter};
@@ -82,9 +83,29 @@ impl Interpreter {
         {
             let prev = self.current_agent.take();
             self.current_agent = Some(inst.clone());
+            let prev_module = self.current_module_id;
+            if let Some(&module_id) = self.agent_module.get(agent_name) {
+                self.current_module_id = module_id;
+            }
+            let prev_depth = self.call_depth;
+            self.call_depth = 0;
+            if self.debug_active {
+                self.debug_hook.on_call_enter(FrameInfo {
+                    name: format!("{agent_name}.on_start"),
+                    location: SourceLocation {
+                        module_id: self.current_module_id,
+                        span: 0..0,
+                    },
+                });
+            }
             self.evaluate_tools_for_turn().await?;
             let mut env = Environment::new();
             self.exec_block(&body, &mut env).await?;
+            if self.debug_active {
+                self.debug_hook.on_call_exit();
+            }
+            self.call_depth = prev_depth;
+            self.current_module_id = prev_module;
             self.current_agent = prev;
         }
 
@@ -107,8 +128,28 @@ impl Interpreter {
                 let inst = self.live_agents.lock().get(agent_name).cloned();
                 let prev = self.current_agent.take();
                 self.current_agent = inst;
+                let prev_module = self.current_module_id;
+                if let Some(&module_id) = self.agent_module.get(agent_name) {
+                    self.current_module_id = module_id;
+                }
+                let prev_depth = self.call_depth;
+                self.call_depth = 0;
+                if self.debug_active {
+                    self.debug_hook.on_call_enter(FrameInfo {
+                        name: format!("{agent_name}.on_stop"),
+                        location: SourceLocation {
+                            module_id: self.current_module_id,
+                            span: 0..0,
+                        },
+                    });
+                }
                 let mut env = Environment::new();
                 self.exec_block(&body, &mut env).await?;
+                if self.debug_active {
+                    self.debug_hook.on_call_exit();
+                }
+                self.call_depth = prev_depth;
+                self.current_module_id = prev_module;
                 self.current_agent = prev;
             }
         }

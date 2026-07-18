@@ -91,6 +91,16 @@ pub enum Value {
     AgentHandlerRef(String, String),
 
     /// A closure: (params, boxed body).
+    ///
+    /// Carries no module identity of its own — when a debugger attributes a
+    /// paused frame to a source file, an invoked closure inherits whichever
+    /// module was already current at its call site rather than being tagged
+    /// with the module it was written in. This is correct for the
+    /// overwhelmingly common case (a lambda invoked right where it's
+    /// defined) and only misattributes a closure literal that crosses a
+    /// module boundary before being invoked (e.g. passed into `.map()`,
+    /// `Schedule.every()`, or `Http.serve()` from a different file than
+    /// where it was written) — a documented D0 limitation, not a bug.
     Closure(Vec<LambdaParam>, Box<LambdaBody>),
 
     /// Prelude namespace (by name). Method dispatch goes through the
