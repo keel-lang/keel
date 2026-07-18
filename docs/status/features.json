@@ -268,7 +268,7 @@
     {
       "name": "keel test",
       "status": "shipped",
-      "notes": "Run top-level `test \"name\" { ... }` blocks; `--filter`, `--list`, `--fail-fast`, `--quiet`; directory paths recursively discover `.keel` files with tests"
+      "notes": "Run top-level `test \"name\" { ... }` blocks; `--filter`, `--list`, `--fail-fast`, `--quiet`, `--debug`; directory paths recursively discover `.keel` files with tests"
     },
     {
       "name": "keel init",
@@ -294,6 +294,11 @@
       "name": "keel build",
       "status": "in progress",
       "notes": "Native/LLVM AOT backend (designs/llvm-compilation.md); `--emit=kir` previews the scalar-subset mid-level IR, no codegen yet"
+    },
+    {
+      "name": "keel dap",
+      "status": "partial",
+      "notes": "Interpreter-backed Debug Adapter Protocol server (stdio); breakpoints (settable before or after configurationDone), step over/in/out, stack, locals, live agent state, expression evaluation; Async.spawn'd code undebugged, only innermost frame's variables inspectable, lines/columns always reported 1-indexed, no bundled editor integration yet (D0)"
     }
   ]
 }

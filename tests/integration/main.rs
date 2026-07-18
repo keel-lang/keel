@@ -7,6 +7,7 @@ mod ai;
 mod build;
 #[path = "../common/mod.rs"]
 mod common;
+mod dap;
 mod language;
 mod lint;
 mod memory;

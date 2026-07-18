@@ -19,6 +19,7 @@
 - [Control Flow](./guide/control-flow.md)
 - [Collections & Lambdas](./guide/collections.md)
 - [Testing](./guide/testing.md)
+- [Debugging](./guide/debugging.md)
 - [Error Handling](./guide/error-handling.md)
 - [Interfaces](./guide/interfaces.md)
 - [Modules & Imports](./guide/modules.md)
@@ -47,6 +48,7 @@
 - [keel fmt](./cli/fmt.md)
 - [keel init](./cli/init.md)
 - [keel repl](./cli/repl.md)
+- [keel dap](./cli/dap.md)
 
 # Configuration
 

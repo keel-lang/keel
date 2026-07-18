@@ -10,7 +10,7 @@ use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use std::sync::Arc;
 
-use crate::ast::{Decl, Stmt};
+use crate::ast::{Decl, Node, Stmt};
 use crate::interpreter::Interpreter;
 use crate::interpreter::environment::Environment;
 use crate::interpreter::value::Value;
@@ -140,7 +140,7 @@ async fn eval_source(
         for node in &program.declarations {
             match &node.kind {
                 Decl::Stmt(stmt_node) => {
-                    last = Some(eval_stmt(interp, env, &stmt_node.kind).await?);
+                    last = Some(eval_stmt(interp, env, stmt_node).await?);
                 }
                 decl => {
                     interp.register_decl(decl)?;
@@ -155,13 +155,17 @@ async fn eval_source(
     let stmts = parser::parse_stmts(tokens, source.len(), &named)?;
     let mut last = None;
     for stmt_node in &stmts {
-        last = Some(eval_stmt(interp, env, &stmt_node.kind).await?);
+        last = Some(eval_stmt(interp, env, stmt_node).await?);
     }
     Ok(last)
 }
 
-async fn eval_stmt(interp: &mut Interpreter, env: &mut Environment, stmt: &Stmt) -> Result<Value> {
-    match interp.exec_stmt(stmt, env).await? {
+async fn eval_stmt(
+    interp: &mut Interpreter,
+    env: &mut Environment,
+    stmt_node: &Node<Stmt>,
+) -> Result<Value> {
+    match interp.exec_stmt(stmt_node, env).await? {
         crate::interpreter::StmtOutcome::Value(v) => Ok(v),
         crate::interpreter::StmtOutcome::Return(v) => Ok(v),
         crate::interpreter::StmtOutcome::Normal => Ok(Value::None),

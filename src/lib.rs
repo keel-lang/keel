@@ -38,6 +38,7 @@ pub mod session;
 
 // ── Internal implementation modules ─────────────────────────────────────────
 pub(crate) mod cli;
+pub(crate) mod dap;
 pub(crate) mod lsp;
 pub(crate) mod pipeline;
 pub(crate) mod repl;

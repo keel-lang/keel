@@ -4,9 +4,10 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{Block, Expr, Pattern, Stmt, StringPart};
+use crate::ast::{Block, Expr, Node, Pattern, Stmt, StringPart};
 
 use super::bind_value;
+use super::debug_hook::SourceLocation;
 use super::environment::Environment;
 use super::promote::promote_value;
 use super::state::{CallArgValue, Interpreter};
@@ -15,12 +16,29 @@ use super::{RuntimeError, RuntimeErrorKind, runtime_error};
 use crate::runtime::namespace::make_typed_report;
 
 impl Interpreter {
+    /// Execute one statement. `node` carries the statement's byte-offset
+    /// span, which — together with `current_module_id` — is exactly what a
+    /// debugger needs to attribute a paused frame to a source location; this
+    /// is the single seam every statement in the program passes through
+    /// exactly once, top-level or nested (see `exec_block` and the direct
+    /// callers in `entry.rs`).
     pub fn exec_stmt<'a>(
         &'a mut self,
-        stmt: &'a Stmt,
+        node: &'a Node<Stmt>,
         env: &'a mut Environment,
     ) -> Pin<Box<dyn Future<Output = Result<StmtOutcome>> + Send + 'a>> {
         Box::pin(async move {
+            if self.debug_active {
+                let hook = self.debug_hook.clone();
+                let location = SourceLocation {
+                    module_id: self.current_module_id,
+                    span: node.span.clone(),
+                };
+                let call_depth = self.call_depth;
+                hook.on_statement(self, env, location, call_depth).await?;
+            }
+
+            let stmt = &node.kind;
             match stmt {
                 Stmt::Let { binding, ty, value } => {
                     let v = match self.eval_expr(value, env).await? {
@@ -340,7 +358,7 @@ impl Interpreter {
     ) -> Result<StmtOutcome> {
         let mut last = Value::None;
         for node in block {
-            match self.exec_stmt(&node.kind, env).await? {
+            match self.exec_stmt(node, env).await? {
                 StmtOutcome::Return(v) => return Ok(StmtOutcome::Return(v)),
                 // Break and Continue bubble up through exec_block; the For
                 // loop handler in exec_stmt catches them at the loop boundary.

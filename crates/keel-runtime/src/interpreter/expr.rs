@@ -142,6 +142,21 @@ fn mock_target_from_expr(expr: &SpannedExpr) -> Option<(&str, &str)> {
 }
 
 impl Interpreter {
+    /// Evaluate an expression against a live, paused frame's environment —
+    /// the `evaluate` DAP request's implementation. `env` is typically the
+    /// exact `&mut Environment` a `DebugHook::on_statement` call is holding
+    /// while paused, so mutations the expression makes (e.g. a debug-console
+    /// assignment) are immediately visible once execution resumes.
+    pub async fn eval_in_frame(
+        &mut self,
+        spanned: &SpannedExpr,
+        env: &mut Environment,
+    ) -> Result<Value> {
+        match self.eval_expr(spanned, env).await? {
+            ExprFlow::Value(v) | ExprFlow::Return(v) => Ok(v),
+        }
+    }
+
     pub(crate) fn eval_expr<'a>(
         &'a mut self,
         spanned: &'a SpannedExpr,

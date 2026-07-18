@@ -17,6 +17,7 @@ use crate::ast::{
 use crate::types::interface::TypeEnv;
 
 use super::bind_value;
+use super::debug_hook::{DebugHook, NoopDebugHook};
 use super::environment::Environment;
 use super::error::RuntimeErrorKind;
 use super::host::Host;
@@ -221,6 +222,35 @@ pub struct Interpreter {
     /// Guards against a provider re-entering `ai.*` from inside its own
     /// `complete()`, which would recurse without bound.
     pub(crate) active_providers: Vec<String>,
+    /// Statement-boundary/call-transition hook for `keel dap`. Defaults to
+    /// [`NoopDebugHook`] and is never invoked unless `debug_active` is set —
+    /// see that field's doc comment.
+    pub(crate) debug_hook: Arc<dyn DebugHook>,
+    /// Fast-path gate: `false` (the default for every `keel run`/`keel test`
+    /// invocation) skips the hook call in `exec_stmt`/`call_task`/
+    /// `call_closure` entirely — no `Arc` clone, no boxed future allocation.
+    /// Set to `true` only by [`Interpreter::set_debug_hook`].
+    pub(crate) debug_active: bool,
+    /// Index into the checked `ModuleGraph` (or `0` for a single in-memory
+    /// program) that owns the statement currently executing. Updated at
+    /// task-call and agent-handler-dispatch boundaries only — a statement
+    /// never belongs to a different module than its enclosing task/handler,
+    /// so per-statement tracking isn't needed. Closures and impl methods
+    /// inherit whichever module is already current rather than being
+    /// separately tagged (see `Value::Closure`'s doc comment).
+    pub(crate) current_module_id: usize,
+    /// Call-stack depth, incremented/decremented around `call_task`/
+    /// `call_closure` bodies. Lets a debugger implement step-over/in/out by
+    /// comparing depth against the value captured when stepping began.
+    pub(crate) call_depth: usize,
+    /// Top-level task name → owning module index, populated during
+    /// `prepare_graph`'s registration pass. Absent entries (impl methods,
+    /// agent-internal tasks) leave `current_module_id` unchanged, inheriting
+    /// the caller's module.
+    pub(crate) task_module: HashMap<String, usize>,
+    /// Agent name → owning module index, populated during `prepare_graph`.
+    /// Consulted when dispatching `@on_start`/`@on_stop`/event handlers.
+    pub(crate) agent_module: HashMap<String, usize>,
 }
 
 impl Interpreter {
@@ -252,9 +282,23 @@ impl Interpreter {
             program_name: "__inline__".to_string(),
             installed_provider: None,
             active_providers: Vec::new(),
+            debug_hook: Arc::new(NoopDebugHook),
+            debug_active: false,
+            current_module_id: 0,
+            call_depth: 0,
+            task_module: HashMap::new(),
+            agent_module: HashMap::new(),
         };
         crate::runtime::install_prelude(&mut interp);
         interp
+    }
+
+    /// Install a debugger hook, called at every statement boundary and call
+    /// transition. `keel dap` calls this right after construction; every
+    /// other entry point leaves the default [`NoopDebugHook`] in place.
+    pub fn set_debug_hook(&mut self, hook: Arc<dyn DebugHook>) {
+        self.debug_hook = hook;
+        self.debug_active = true;
     }
 
     pub(crate) fn set_test_mocks(&mut self, mocks: HashMap<(String, String), TestMockState>) {
@@ -356,7 +400,15 @@ impl Interpreter {
         };
         let prev = self.current_agent.take();
         self.current_agent = Some(agent_inst);
+        let prev_module = self.current_module_id;
+        if let Some(&module_id) = self.agent_module.get(agent_name) {
+            self.current_module_id = module_id;
+        }
+        let prev_depth = self.call_depth;
+        self.call_depth = 0;
         let result = self.call_closure(&c.params, &c.body, vec![]).await;
+        self.call_depth = prev_depth;
+        self.current_module_id = prev_module;
         self.current_agent = prev;
         result.map(|_| ())
     }
@@ -387,12 +439,32 @@ impl Interpreter {
 
         let prev = self.current_agent.take();
         self.current_agent = Some(agent_inst);
+        let prev_module = self.current_module_id;
+        if let Some(&module_id) = self.agent_module.get(agent_name) {
+            self.current_module_id = module_id;
+        }
+        let prev_depth = self.call_depth;
+        self.call_depth = 0;
+        if self.debug_active {
+            self.debug_hook.on_call_enter(super::debug_hook::FrameInfo {
+                name: format!("{agent_name}.on {event_name}"),
+                location: super::debug_hook::SourceLocation {
+                    module_id: self.current_module_id,
+                    span: 0..0,
+                },
+            });
+        }
         self.evaluate_tools_for_turn().await?;
         let mut env = Environment::new();
         if let Some(p) = &handler.param {
             bind_value(&p.name, data, &mut env)?;
         }
         let result = self.exec_block(&handler.body, &mut env).await;
+        if self.debug_active {
+            self.debug_hook.on_call_exit();
+        }
+        self.call_depth = prev_depth;
+        self.current_module_id = prev_module;
         self.current_agent = prev;
         result.map(|_| ())
     }

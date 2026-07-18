@@ -70,6 +70,12 @@ impl Environment {
             .map(|s| s.keys().cloned().collect())
             .unwrap_or_default()
     }
+
+    /// Enumerate scopes from innermost (current block) to outermost (root),
+    /// for a debugger's nested "scopes"/"variables" tree.
+    pub fn scopes(&self) -> impl DoubleEndedIterator<Item = &HashMap<String, Value>> {
+        self.scopes.iter().rev()
+    }
 }
 
 #[cfg(test)]

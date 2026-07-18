@@ -7,7 +7,7 @@ use miette::Result;
 use std::path::PathBuf;
 
 use crate::runtime::context::{NativeEnv, RuntimeConfig, RuntimeContext};
-use crate::{lsp, pipeline, repl};
+use crate::{dap, lsp, pipeline, repl};
 
 #[derive(Parser)]
 #[command(
@@ -54,6 +54,10 @@ enum Commands {
         /// Print only failures and the final summary
         #[arg(long)]
         quiet: bool,
+        /// Debug the single test matched by --filter over the Debug Adapter
+        /// Protocol (stdio) instead of running it directly
+        #[arg(long)]
+        debug: bool,
     },
     /// Type-check an Keel program without executing
     Check {
@@ -100,6 +104,11 @@ enum Commands {
     },
     /// Start the Language Server Protocol server
     Lsp,
+    /// Run a Keel program under the Debug Adapter Protocol (stdio)
+    Dap {
+        /// Path to the .keel file
+        file: PathBuf,
+    },
 }
 
 pub async fn run() -> Result<()> {
@@ -152,17 +161,23 @@ pub async fn run() -> Result<()> {
             list,
             fail_fast,
             quiet,
+            debug,
         } => {
             let runtime = RuntimeContext::native_with_config(runtime_config);
-            pipeline::test_file_with_runtime(
-                &file,
-                runtime,
-                filter.as_deref(),
-                list,
-                fail_fast,
-                quiet,
-            )
-            .await
+            if debug {
+                let result = dap::debug_test_file(&file, runtime, filter.as_deref()).await;
+                exit_after_dap_session(result)
+            } else {
+                pipeline::test_file_with_runtime(
+                    &file,
+                    runtime,
+                    filter.as_deref(),
+                    list,
+                    fail_fast,
+                    quiet,
+                )
+                .await
+            }
         }
         Commands::Check { file, strict } => pipeline::check_file(&file, strict),
         Commands::Init { name } => init::project(name),
@@ -176,6 +191,28 @@ pub async fn run() -> Result<()> {
         Commands::Lsp => {
             lsp::start().await;
             Ok(())
+        }
+        Commands::Dap { file } => {
+            let runtime = RuntimeContext::native_with_config(runtime_config);
+            let result = dap::run_file(&file, runtime).await;
+            exit_after_dap_session(result)
+        }
+    }
+}
+
+/// `keel dap`/`keel test --debug` read from stdin in a loop racing against
+/// the interpreter via `tokio::select!`. When the interpreter finishes
+/// first, the stdin read Tokio dispatched to its blocking-thread pool is
+/// still in flight — it can't be cancelled, and returning normally from
+/// `main` blocks process exit on that thread until the DAP client closes
+/// its end of stdin. Exiting directly (the same technique the Ctrl-C
+/// watcher above uses) skips that wait entirely.
+fn exit_after_dap_session(result: Result<()>) -> ! {
+    match result {
+        Ok(()) => std::process::exit(0),
+        Err(err) => {
+            eprintln!("{err:?}");
+            std::process::exit(1);
         }
     }
 }
