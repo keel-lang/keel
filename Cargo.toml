@@ -47,8 +47,14 @@ exclude = ["target/", "docs/", ".claude/"]
 name = "keel"
 path = "src/main.rs"
 
+[features]
+# `keel-codegen` links LLVM (inkwell); everything else in the workspace stays
+# LLVM-free. See crates/keel-codegen/README.md for the toolchain requirement.
+build-backend = ["dep:keel-codegen"]
+
 [dependencies]
 keel-catalog = { path = "crates/keel-catalog" }
+keel-codegen = { path = "crates/keel-codegen", optional = true }
 keel-compiler = { path = "crates/keel-compiler" }
 keel-dap = { path = "crates/keel-dap" }
 keel-kir = { path = "crates/keel-kir" }

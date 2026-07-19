@@ -39,8 +39,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
 
+      # No --all-features here: `build-backend` (keel-codegen, LLVM) is
+      # exercised by its own job below so this job — and every ordinary
+      # contributor's `keel run`/`check`/`lsp` workflow — never needs LLVM
+      # installed (designs/llvm-compilation.md §2.2, §5 risks).
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Check documentation
         run: cargo doc --no-deps --document-private-items
@@ -61,3 +65,47 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  # Exercises the `build-backend` feature (keel-codegen, LLVM/inkwell) in
+  # isolation so the LLVM toolchain install never touches the `check` job
+  # above — see designs/llvm-compilation.md §2.2 and §5 risks, and the
+  # verified install recipe in designs/llvm-toolchain-spike.md.
+  build-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # LLVM 22 via apt.llvm.org's official install script — the same
+      # recipe proved working (object emission + link + run) for both
+      # platforms in designs/llvm-toolchain-spike.md. `llvm.sh` alone is not
+      # sufficient: llvm-sys statically links Polly, which needs the
+      # separate libpolly-*-dev package.
+      - name: Install LLVM 22
+        run: |
+          curl -fsSL https://apt.llvm.org/llvm.sh -o /tmp/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 22
+          sudo apt-get install -y libpolly-22-dev zlib1g-dev libzstd-dev
+
+      - name: Build workspace with build-backend
+        env:
+          LLVM_SYS_221_PREFIX: /usr/lib/llvm-22
+        run: cargo build --workspace --features build-backend
+
+      - name: Run Clippy (build-backend)
+        env:
+          LLVM_SYS_221_PREFIX: /usr/lib/llvm-22
+        run: cargo clippy --workspace --all-targets --features build-backend -- -D warnings
+
+      - name: Run tests (build-backend)
+        env:
+          LLVM_SYS_221_PREFIX: /usr/lib/llvm-22
+        run: cargo test --workspace --features build-backend
