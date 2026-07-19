@@ -51,6 +51,7 @@ pub(crate) fn lower_task_body(
     task: &TaskDecl,
     sig: &FuncSig,
     funcs: &HashMap<String, FuncSig>,
+    ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
 ) -> Result<KirFunction, LowerError> {
     let mut ctx = FnCtx::new();
@@ -61,7 +62,7 @@ pub(crate) fn lower_task_body(
         params.push(Param { local, ty: *ty });
     }
 
-    let body = super::stmt::lower_block(&task.body, &mut ctx, funcs, table, sig.ret)?;
+    let body = super::stmt::lower_block(&task.body, &mut ctx, funcs, ns_bindings, table, sig.ret)?;
 
     Ok(KirFunction {
         id: sig.func_id,

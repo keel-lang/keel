@@ -1,0 +1,4 @@
+fn <toplevel>() -> none {
+  io.show("hello")
+  log.info("started")
+}

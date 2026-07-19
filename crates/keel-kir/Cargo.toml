@@ -10,6 +10,7 @@ publish = false
 workspace = true
 
 [dependencies]
+keel-catalog = { path = "../keel-catalog" }
 keel-syntax = { path = "../keel-syntax" }
 
 [dev-dependencies]

@@ -1,0 +1,5 @@
+use std/io
+use std/log
+
+io.show("hello")
+log.info("started")

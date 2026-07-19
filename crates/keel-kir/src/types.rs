@@ -43,6 +43,40 @@ impl KirType {
     pub const fn is_numeric(self) -> bool {
         matches!(self, KirType::I64 | KirType::F64)
     }
+
+    /// Maps a catalog [`keel_catalog::builtins::TySpec`] to the equivalent
+    /// `KirType`, for the scalar subset a stdlib namespace method can take
+    /// or return in M1. `None` for anything needing boxing, containers, or
+    /// nullable (M2+) — callers reject those with a `LowerError`/
+    /// `VerifyError` naming the construct, not a panic.
+    #[must_use]
+    pub fn from_tyspec(spec: keel_catalog::builtins::TySpec) -> Option<KirType> {
+        use keel_catalog::builtins::TySpec;
+        match spec {
+            TySpec::Int => Some(KirType::I64),
+            TySpec::Float => Some(KirType::F64),
+            TySpec::Bool => Some(KirType::Bool),
+            TySpec::Str => Some(KirType::Str),
+            TySpec::None_ => Some(KirType::Unit),
+            TySpec::Datetime
+            | TySpec::Duration
+            | TySpec::Uuid
+            | TySpec::Dynamic
+            | TySpec::DbConnection
+            | TySpec::NullableStr
+            | TySpec::NullableInt
+            | TySpec::NullableFloat
+            | TySpec::NullableUuid
+            | TySpec::NullableDatetime
+            | TySpec::NullableDynamic
+            | TySpec::ListOfStr
+            | TySpec::ListOfInt
+            | TySpec::ListOfListOfStr
+            | TySpec::ListOfMapStrStr
+            | TySpec::ListOfMapStrDynamic
+            | TySpec::Unknown => None,
+        }
+    }
 }
 
 impl std::fmt::Display for KirType {

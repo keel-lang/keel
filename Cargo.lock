@@ -1467,6 +1467,7 @@ dependencies = [
 name = "keel-kir"
 version = "0.2.4"
 dependencies = [
+ "keel-catalog",
  "keel-syntax",
 ]
 

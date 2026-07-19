@@ -12,7 +12,7 @@
 
 use std::fmt;
 
-use crate::ir::{Block, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt};
+use crate::ir::{Block, CallTarget, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt};
 use crate::types::KirType;
 
 #[derive(Debug, Clone)]
@@ -223,34 +223,93 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
         Expr::Call {
             target, args, ty, ..
         } => {
-            check_func(program, *target)?;
-            let callee = &program.functions[*target];
-            if callee.ret != *ty {
-                return Err(format!(
-                    "call to `{}` has result type {ty} but the callee returns {}",
-                    callee.name, callee.ret
-                ));
-            }
-            if callee.params.len() != args.len() {
-                return Err(format!(
-                    "call to `{}` passes {} arg(s), callee takes {}",
-                    callee.name,
-                    args.len(),
-                    callee.params.len()
-                ));
-            }
-            for (arg, param) in args.iter().zip(&callee.params) {
+            for arg in args {
                 verify_expr(program, func, arg)?;
-                if arg.ty() != param.ty {
-                    return Err(format!(
-                        "call to `{}` passes {} where {} is expected",
-                        callee.name,
-                        arg.ty(),
-                        param.ty
-                    ));
+            }
+            match target {
+                CallTarget::Fn(id) => verify_fn_call(program, *id, args, *ty),
+                CallTarget::Ns { ns_id, method_id } => {
+                    verify_ns_call(*ns_id, *method_id, args, *ty)
                 }
             }
-            Ok(())
         }
     }
+}
+
+fn verify_fn_call(
+    program: &KirProgram,
+    id: FuncId,
+    args: &[Expr],
+    ty: KirType,
+) -> Result<(), String> {
+    check_func(program, id)?;
+    let callee = &program.functions[id];
+    if callee.ret != ty {
+        return Err(format!(
+            "call to `{}` has result type {ty} but the callee returns {}",
+            callee.name, callee.ret
+        ));
+    }
+    if callee.params.len() != args.len() {
+        return Err(format!(
+            "call to `{}` passes {} arg(s), callee takes {}",
+            callee.name,
+            args.len(),
+            callee.params.len()
+        ));
+    }
+    for (arg, param) in args.iter().zip(&callee.params) {
+        if arg.ty() != param.ty {
+            return Err(format!(
+                "call to `{}` passes {} where {} is expected",
+                callee.name,
+                arg.ty(),
+                param.ty
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Verifies a `CallTarget::Ns` call shape: `(ns_id, method_id)` must
+/// resolve to a real catalog method, arity must fit its param count, and
+/// the call's `ty` must match what the catalog declares (via
+/// `KirType::from_tyspec` — anything that maps to `None` there was already
+/// rejected at lowering time, so should never reach a verified program).
+fn verify_ns_call(ns_id: u16, method_id: u16, args: &[Expr], ty: KirType) -> Result<(), String> {
+    let builtin = keel_catalog::catalog()
+        .find(|m| {
+            keel_catalog::namespace_id(m.namespace) == Some(ns_id) && m.method_id == method_id
+        })
+        .ok_or_else(|| {
+            format!(
+                "CallTarget::Ns references an unknown method (ns_id={ns_id}, method_id={method_id})"
+            )
+        })?;
+
+    let required = builtin.params.iter().filter(|p| !p.optional).count();
+    if args.len() < required || args.len() > builtin.params.len() {
+        return Err(format!(
+            "call to `{}.{}` passes {} arg(s), method takes {required}-{}",
+            builtin.namespace,
+            builtin.name,
+            args.len(),
+            builtin.params.len()
+        ));
+    }
+
+    let keel_catalog::builtins::BuiltinResult::Fixed(spec) = builtin.result else {
+        return Err(format!(
+            "call to `{}.{}` has a runtime-context-dependent result type, not representable \
+             as a KirType yet",
+            builtin.namespace, builtin.name
+        ));
+    };
+    if KirType::from_tyspec(spec) != Some(ty) {
+        return Err(format!(
+            "call to `{}.{}` has result type {ty} but the catalog says {spec:?}",
+            builtin.namespace, builtin.name
+        ));
+    }
+    Ok(())
 }

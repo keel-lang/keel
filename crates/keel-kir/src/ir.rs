@@ -136,16 +136,28 @@ pub enum Expr {
         operand: Box<Expr>,
         ty: KirType,
     },
-    /// Direct call to a compiled Keel function — the only `CallTarget` M0
-    /// lowers to (no namespace dispatch, no value methods, no indirect
-    /// lambda calls yet; see `designs/llvm-compilation.md` §2.3
-    /// `CallTarget`).
+    /// A call to a compiled Keel function or a stdlib namespace method (see
+    /// [`CallTarget`]). Value methods and indirect lambda calls are not
+    /// lowered yet — see `designs/llvm-compilation.md` §2.3 `CallTarget`.
     Call {
-        target: FuncId,
+        target: CallTarget,
         args: Vec<Expr>,
         ty: KirType,
         span: SpanId,
     },
+}
+
+/// What an `Expr::Call` invokes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallTarget {
+    /// Direct call to another compiled Keel task.
+    Fn(FuncId),
+    /// Generic stdlib namespace dispatch: `io.show(...)`, `log.info(...)`.
+    /// `ns_id`/`method_id` are the stable ids from
+    /// `keel_catalog::specs::NAMESPACE_IDS`/`BuiltinMethod::method_id`,
+    /// resolved at lowering time — `keel-codegen` (M1+) compiles this to a
+    /// call into `keel_rt_call_ns(ns_id, method_id, ...)` (§2.7).
+    Ns { ns_id: u16, method_id: u16 },
 }
 
 impl Expr {
