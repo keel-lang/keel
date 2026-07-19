@@ -2,16 +2,15 @@
 //! (`designs/llvm-compilation.md` §2.2). The only crate in the workspace
 //! that links LLVM; gated behind the root crate's `build-backend` feature.
 //!
-//! # M1 walking-skeleton scope
+//! # M1 scope
 //!
-//! This is the narrowest vertical slice that proves the codegen/link/run
-//! loop end to end: scalar arithmetic on `int`/`float`/`bool` only, a single
-//! compiled function (no cross-function `Call`, no `if`/`while`/`for` — see
-//! `designs/llvm-compilation.md` §4 M1 and issue #133), no runtime, no I/O.
-//! `compile` emits a bare C-style `main` that runs the program's `toplevel`
-//! KIR function and exits with a computed value — see the module doc on
-//! [`func`] for exactly how, and why that's a temporary M1-only convention
-//! superseded once `keel_rt_start` lands (issue #134).
+//! Scalar arithmetic on `int`/`float`/`bool`, `if`/`else`, `while`, `for`
+//! over a range, and direct calls between compiled tasks (`CallTarget::Fn`)
+//! — still no runtime and no I/O (`CallTarget::Ns` namespace dispatch lands
+//! in #135). `compile` emits a bare C-style `main` that runs the program's
+//! `toplevel` KIR function and exits with a computed value — see the module
+//! doc on [`func`] for exactly how, and why that's a temporary M1-only
+//! convention superseded once `keel_rt_start` lands (issue #134).
 //!
 //! Entry point: [`compile`].
 
@@ -93,7 +92,24 @@ pub fn compile(program: &KirProgram, opts: &BuildOptions) -> Result<PathBuf, Cod
     let module = llvm_context.create_module("keel_program");
     let builder = llvm_context.create_builder();
 
-    func::emit_main(&llvm_context, &module, &builder, program)?;
+    // Declare every non-`toplevel` function up front (so forward/mutual/
+    // recursive calls resolve), then emit bodies, then `main` (which inlines
+    // `toplevel` — see `func.rs`'s module doc).
+    let functions = func::declare_functions(&llvm_context, &module, program)?;
+    for (id, kir_func) in program.functions.iter().enumerate() {
+        if id == program.toplevel {
+            continue;
+        }
+        let function_value = functions[id].expect("declared above");
+        func::emit_function(
+            &llvm_context,
+            &builder,
+            &functions,
+            kir_func,
+            function_value,
+        )?;
+    }
+    func::emit_main(&llvm_context, &module, &builder, &functions, program)?;
 
     module
         .verify()

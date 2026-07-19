@@ -1,11 +1,12 @@
-//! Expression codegen — M1 walking-skeleton scope: literals, locals,
-//! arithmetic/comparison/logical binary ops, unary `-`/`not`. `str` and
-//! calls are rejected (see `layout.rs` and issues #133/#135).
+//! Expression codegen: literals, locals, arithmetic/comparison/logical
+//! binary ops, unary `-`/`not`, and direct `CallTarget::Fn` calls between
+//! compiled Keel functions. `str` literals and `CallTarget::Ns` (namespace
+//! dispatch) are rejected — see `layout.rs` and issue #135.
 
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, ValueKind};
 use inkwell::{FloatPredicate, IntPredicate};
 
-use keel_kir::ir::{BinOp, Expr, UnOp};
+use keel_kir::ir::{BinOp, CallTarget, Expr, UnOp};
 use keel_kir::types::KirType;
 
 use crate::CodegenError;
@@ -52,9 +53,45 @@ pub(crate) fn emit_expr<'ctx>(
             op, left, right, ..
         } => emit_binop(fcx, *op, left, right),
         Expr::UnOp { op, operand, .. } => emit_unop(fcx, *op, operand),
-        Expr::Call { .. } => Err(CodegenError::Unsupported(
-            "function calls (issue #133)".to_string(),
-        )),
+        Expr::Call {
+            target, args, ty, ..
+        } => emit_call(fcx, *target, args, *ty),
+    }
+}
+
+fn emit_call<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    target: CallTarget,
+    args: &[Expr],
+    ty: KirType,
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let CallTarget::Fn(func_id) = target else {
+        return Err(CodegenError::Unsupported(
+            "namespace method calls (issue #135)".to_string(),
+        ));
+    };
+    let callee = fcx.functions[func_id]
+        .expect("declare_functions declares every non-toplevel FuncId before any body is emitted");
+
+    let mut arg_values: Vec<BasicMetadataValueEnum> = Vec::with_capacity(args.len());
+    for arg in args {
+        arg_values.push(emit_expr(fcx, arg)?.into());
+    }
+
+    let call = fcx
+        .builder
+        .build_call(callee, &arg_values, "call")
+        .map_err(llvm_err)?;
+
+    match call.try_as_basic_value() {
+        ValueKind::Basic(v) => Ok(v),
+        // A Unit-returning (void) call. `ty` is Unit too (verified KIR), so
+        // no caller ever inspects this value — the exit-code convention in
+        // `func.rs` and every other consumer branch on `ty` first.
+        ValueKind::Instruction(_) => {
+            debug_assert_eq!(ty, KirType::Unit);
+            Ok(fcx.context.bool_type().const_zero().into())
+        }
     }
 }
 
