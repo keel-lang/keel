@@ -28,15 +28,26 @@
 //! process stdout via `println!` (no injectable writer exists in the
 //! runtime today — out of scope to add here), capturing a single program's
 //! output requires redirecting fd 1 for the duration of that one call; see
-//! [`capture_stdout`]. This binary has two `#[tokio::test]` functions, and
-//! libtest runs them concurrently on separate OS threads by default; both
-//! acquire [`SEQUENTIAL_GUARD`] for their full duration so only one is ever
-//! executing at a time. That's required, not just tidy: libtest itself
-//! writes each test's `test <name> ... ok` status line to real stdout (fd 1)
-//! the moment that test function returns, so without the guard, that print
-//! can land in the middle of the other test's fd-1 redirect window and
-//! corrupt a captured program's output — exactly the kind of "conformance
-//! failure" this harness exists to catch, except spurious.
+//! [`capture_stdout`]. That's safe here specifically because this whole
+//! corpus runs from **one sequential test function** in **its own test
+//! binary process** (`tests/conformance/main.rs` — Cargo gives every
+//! `tests/*.rs`/`tests/<dir>/main.rs` file its own binary): no other test
+//! shares this process, and nothing here spawns concurrent programs, so
+//! fd 1 is never contended.
+//!
+//! This is a hard requirement, not just tidy structure: a second
+//! `#[tokio::test]` in this binary — even one that never touches fd 1
+//! itself — is enough to break it. libtest runs sibling tests concurrently
+//! by default and writes each one's `test <name> ... ok` status line to
+//! real stdout (fd 1) some time after that test's future resolves (the
+//! print is not synchronous with the function returning — it goes through
+//! libtest's own result-reporting path). A mutex serializing the two test
+//! *bodies* was tried and was not sufficient: it narrows the race but the
+//! delayed status print can still land inside this test's `capture_stdout`
+//! window regardless of body ordering. The only fully robust fix is what
+//! this file does now — exactly one `#[tokio::test]` in the binary, so
+//! there is only ever one status line, printed once, after everything here
+//! has already finished.
 //!
 //! Unix-only (`libc::dup`/`dup2`) — deferred for Windows, same as the rest
 //! of the native-backend work this issue is scaffolding for.
@@ -51,13 +62,6 @@ use std::time::Duration;
 
 use corpus::discover_corpus;
 use engine::{Engine, EngineError, EngineOutput};
-use tokio::sync::Mutex;
-
-/// Serializes the two `#[tokio::test]` functions in this binary so libtest's
-/// own per-test status print can never land during the other test's fd-1
-/// redirect window. See the module doc comment. `tokio::sync::Mutex` (not
-/// `std::sync::Mutex`) because the guard must stay held across `.await`.
-static SEQUENTIAL_GUARD: Mutex<()> = Mutex::const_new(());
 
 /// Per-program wall-clock budget. Generous enough for the mock LLM path and
 /// agent handshake overhead, tight enough that a genuinely hung program
@@ -177,18 +181,15 @@ fn skip_reason(stem: &str) -> Option<&'static str> {
 
 #[tokio::test]
 async fn interpreter_is_deterministic_across_the_corpus() {
-    let _guard = SEQUENTIAL_GUARD.lock().await;
-
     // KEEL_LLM=mock keeps `ai.*` deterministic and offline; KEEL_ONESHOT=1
     // makes agent programs exit after one idle window instead of serving
     // forever. Set once, process-wide — safe because this whole corpus runs
     // sequentially from this one test function in its own test-binary
-    // process (see the module doc comment).
+    // process (see the module doc comment), and nothing else in this
+    // process reads env vars concurrently.
     // SAFETY: process-wide env mutation is unsafe in general (data races with
     // concurrent readers), but this runs before any corpus program (hence
-    // any concurrent env reader) starts, and the only other test in this
-    // binary (`compiled_engine_reports_not_implemented`) never reads env
-    // vars — see its doc comment.
+    // any concurrent env reader) starts.
     unsafe {
         std::env::set_var("KEEL_LLM", "mock");
         std::env::set_var("KEEL_ONESHOT", "1");
@@ -237,21 +238,15 @@ async fn interpreter_is_deterministic_across_the_corpus() {
         failures.len(),
         failures.join("\n")
     );
-}
 
-/// Exercises the `Engine::Compiled` stub directly (not through the corpus
-/// loop above) so the "not implemented" contract has its own regression
-/// test independent of which examples happen to be skipped.
-///
-/// Calls `Engine::run` directly rather than going through `run_one` — that
-/// helper redirects fd 1 and changes the process cwd, which `Engine::Compiled`
-/// doesn't need. Still takes [`SEQUENTIAL_GUARD`] itself: this test's own
-/// completion print from libtest must not land inside the other test's fd-1
-/// redirect window either (see the module doc comment).
-#[tokio::test]
-async fn compiled_engine_reports_not_implemented() {
-    let _guard = SEQUENTIAL_GUARD.lock().await;
-
+    // Exercises the `Engine::Compiled` stub directly (not through the corpus
+    // loop above) so the "not implemented" contract has its own regression
+    // coverage independent of which examples happen to be skipped. Inlined
+    // into this same test function rather than a separate #[test] — see the
+    // module doc comment for why a second test in this binary isn't safe.
+    // Calls `Engine::run` directly rather than through `run_one`: that
+    // helper redirects fd 1 and changes the process cwd, which
+    // `Engine::Compiled` doesn't need.
     let fixtures = corpus::fixtures_dir();
     let path = fixtures.join("agent_lifecycle.keel");
     let err = Engine::Compiled
