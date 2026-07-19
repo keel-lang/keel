@@ -20,6 +20,7 @@ mod expr;
 mod func;
 mod layout;
 mod link;
+mod ns_call;
 mod stmt;
 
 use std::path::PathBuf;
@@ -112,6 +113,7 @@ pub fn compile(program: &KirProgram, opts: &BuildOptions) -> Result<PathBuf, Cod
         let function_value = functions[id].expect("declared above");
         func::emit_function(
             &llvm_context,
+            &module,
             &builder,
             &functions,
             kir_func,

@@ -1504,6 +1504,7 @@ dependencies = [
 name = "keel-rt-ffi"
 version = "0.2.4"
 dependencies = [
+ "keel-catalog",
  "keel-runtime",
  "keel-syntax",
  "miette",

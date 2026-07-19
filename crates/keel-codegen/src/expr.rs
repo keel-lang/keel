@@ -54,8 +54,11 @@ pub(crate) fn emit_expr<'ctx>(
         } => emit_binop(fcx, *op, left, right),
         Expr::UnOp { op, operand, .. } => emit_unop(fcx, *op, operand),
         Expr::Call {
-            target, args, ty, ..
-        } => emit_call(fcx, *target, args, *ty),
+            target,
+            args,
+            ty,
+            span,
+        } => emit_call(fcx, *target, args, *ty, *span),
     }
 }
 
@@ -64,11 +67,13 @@ fn emit_call<'ctx>(
     target: CallTarget,
     args: &[Expr],
     ty: KirType,
+    span: keel_kir::span_table::SpanId,
 ) -> Result<BasicValueEnum<'ctx>, CodegenError> {
-    let CallTarget::Fn(func_id) = target else {
-        return Err(CodegenError::Unsupported(
-            "namespace method calls (issue #135)".to_string(),
-        ));
+    let func_id = match target {
+        CallTarget::Fn(id) => id,
+        CallTarget::Ns { ns_id, method_id } => {
+            return crate::ns_call::emit_ns_call(fcx, ns_id, method_id, args, span);
+        }
     };
     let callee = fcx.functions[func_id]
         .expect("declare_functions declares every non-toplevel FuncId before any body is emitted");

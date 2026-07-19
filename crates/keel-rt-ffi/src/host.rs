@@ -3,9 +3,11 @@
 //! `designs/llvm-compilation.md` §2.7). Compiled code has no closures, tasks,
 //! or agents of its own to dispatch back into (that's still the
 //! interpreter's job for anything this milestone doesn't compile), so most
-//! methods are unreachable for now and `todo!()` — they gain real bodies as
-//! later issues wire specific namespace calls through `keel_rt_call_ns`
-//! (#135) and beyond.
+//! methods are unreachable for now and `todo!()`. Namespace-method dispatch
+//! (`call_namespace_method`, `register_namespace`) is real: it reuses the
+//! exact same `Namespace` closures the interpreter installs, via
+//! `keel_runtime::runtime::namespaces::install` — the "23 namespaces for
+//! free" seam §2.7 describes.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -20,21 +22,26 @@ use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
 /// `Host` implementation for compiled binaries. Holds the same
-/// `RuntimeContext` (env, clock, LLM, file system, …) the interpreter uses;
-/// everything else a compiled program needs is either resolved at compile
-/// time (direct `CallTarget::Fn` calls never reach `Host`) or not yet
-/// supported (namespace dispatch beyond #135, agents, closures).
+/// `RuntimeContext` (env, clock, LLM, file system, …) the interpreter uses,
+/// plus every stdlib namespace's method closures (installed at construction
+/// time, same as `Interpreter::new`). Everything else a compiled program
+/// needs is either resolved at compile time (direct `CallTarget::Fn` calls
+/// never reach `Host`) or not yet supported (agents, closures, tasks-by-name).
 pub struct CompiledHost {
     runtime: Arc<RuntimeContext>,
     live_agents: LiveAgents,
+    namespaces: HashMap<String, Namespace>,
 }
 
 impl CompiledHost {
     pub fn new(runtime: Arc<RuntimeContext>) -> Self {
-        Self {
+        let mut host = Self {
             runtime,
             live_agents: Arc::new(Mutex::new(HashMap::new())),
-        }
+            namespaces: HashMap::new(),
+        };
+        keel_runtime::runtime::namespaces::install(&mut host);
+        host
     }
 }
 
@@ -67,11 +74,28 @@ impl Host for CompiledHost {
 
     fn call_namespace_method<'a>(
         &'a mut self,
-        _ns: &'a str,
-        _method: &'a str,
-        _args: Vec<CallArgValue>,
+        ns: &'a str,
+        method: &'a str,
+        args: Vec<CallArgValue>,
     ) -> HostFuture<'a, Value> {
-        todo!("namespace dispatch lands in issue #135 (keel_rt_call_ns)")
+        // `@tools` capability gating (`Interpreter::call_namespace_method`,
+        // `call.rs`) is deliberately skipped here: it only ever applies
+        // inside an agent's turn, and compiled programs can't compile an
+        // agent yet (M3), so there is no context to gate. Revisit once
+        // agents land — enforcement must ride this same path per §2.7.
+        let Some(namespace) = self.namespaces.get(ns) else {
+            return Box::pin(async move {
+                Err(miette::miette!(
+                    "`{ns}` is not a registered stdlib namespace"
+                ))
+            });
+        };
+        let Some(closure) = namespace.methods.get(method).cloned() else {
+            return Box::pin(
+                async move { Err(miette::miette!("`{ns}` has no method `{method}`")) },
+            );
+        };
+        Box::pin(async move { closure(self, args).await })
     }
 
     fn start_agent<'a>(&'a mut self, _name: &'a str) -> HostFuture<'a, ()> {
@@ -179,8 +203,8 @@ impl Host for CompiledHost {
         todo!("prelude installation is not compiled yet")
     }
 
-    fn register_namespace(&mut self, _ns: Namespace) {
-        todo!("prelude installation is not compiled yet")
+    fn register_namespace(&mut self, ns: Namespace) {
+        self.namespaces.insert(ns.name.clone(), ns);
     }
 
     fn register_top_fn(&mut self, _name: &str, _f: BuiltinFn) {

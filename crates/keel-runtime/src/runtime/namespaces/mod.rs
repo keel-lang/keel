@@ -32,7 +32,14 @@ pub(crate) mod uuid;
 // tables moved there too; `namespace()` installs the matching executable
 // implementations below, cross-checked against the catalog in tests.
 
-pub(crate) fn install(host: &mut dyn Host) {
+/// Registers every stdlib namespace's method closures on `host` via
+/// [`Host::register_namespace`]. Registration only inserts each namespace
+/// into `host`'s own registry — it never calls a closure — so this is safe
+/// to run against any `Host` implementation, including one whose other
+/// methods aren't implemented yet (`keel-rt-ffi`'s `CompiledHost`, which
+/// reuses this exact set of closures per `designs/llvm-compilation.md`
+/// §2.7 instead of re-implementing 23 namespaces for the compiled path).
+pub fn install(host: &mut dyn Host) {
     for namespace in namespaces() {
         host.register_namespace(namespace);
     }

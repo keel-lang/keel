@@ -15,4 +15,7 @@ pub use providers::{
     BUILTIN_LLM_PROVIDERS, builtin_provider_prefix, is_builtin_llm_provider,
     provider_attribute_error,
 };
-pub use specs::{catalog, catalog_method, module_requires_capability, namespace_id};
+pub use specs::{
+    catalog, catalog_method, method_by_id, module_requires_capability, namespace_by_id,
+    namespace_id,
+};

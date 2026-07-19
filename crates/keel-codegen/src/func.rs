@@ -44,6 +44,7 @@ pub(crate) fn llvm_err(e: impl std::fmt::Display) -> CodegenError {
 /// Per-function codegen state, shared by every statement/expression walker.
 pub(crate) struct FuncCtx<'ctx, 'a> {
     pub(crate) context: &'ctx Context,
+    pub(crate) module: &'a Module<'ctx>,
     pub(crate) builder: &'a Builder<'ctx>,
     /// The LLVM function currently being emitted into — needed to attach
     /// new basic blocks (`if`/`while`/`for` wiring).
@@ -91,6 +92,7 @@ pub(crate) fn declare_functions<'ctx>(
 /// Emits `func`'s body into its already-declared `function_value`.
 pub(crate) fn emit_function<'ctx>(
     context: &'ctx Context,
+    module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     functions: &[Option<FunctionValue<'ctx>>],
     func: &KirFunction,
@@ -101,6 +103,7 @@ pub(crate) fn emit_function<'ctx>(
 
     let mut fcx = FuncCtx {
         context,
+        module,
         builder,
         function: function_value,
         functions,
@@ -144,6 +147,7 @@ pub(crate) fn emit_toplevel_function<'ctx>(
     let toplevel = &program.functions[program.toplevel];
     let mut fcx = FuncCtx {
         context,
+        module,
         builder,
         function: toplevel_fn,
         functions,
