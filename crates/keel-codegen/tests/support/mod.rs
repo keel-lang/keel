@@ -36,6 +36,7 @@ fn workspace_root() -> PathBuf {
 fn build_keel_rt_ffi_archive() -> PathBuf {
     let output = Command::new("cargo")
         .current_dir(workspace_root())
+        .env("CARGO_TERM_COLOR", "never")
         .args([
             "build",
             "-p",
@@ -75,12 +76,18 @@ fn build_keel_rt_ffi_archive() -> PathBuf {
 fn native_static_libs() -> Vec<String> {
     let output = Command::new("cargo")
         .current_dir(workspace_root())
+        // `CARGO_TERM_COLOR=always` (as CI sets globally) makes rustc wrap
+        // the last token of this diagnostic in an ANSI reset code (e.g.
+        // `-lc\x1b[0m`), which `cc`/`ld` then can't resolve as a library
+        // name — force color off regardless of the inherited environment.
+        .env("CARGO_TERM_COLOR", "never")
         .args([
             "rustc",
             "-p",
             "keel-rt-ffi",
             "--lib",
             "-q",
+            "--color=never",
             "--",
             "--print",
             "native-static-libs",
