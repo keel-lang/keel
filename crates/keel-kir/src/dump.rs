@@ -7,7 +7,7 @@
 
 use std::fmt::Write as _;
 
-use crate::ir::{BinOp, Block, Expr, FuncId, KirFunction, KirProgram, Stmt, UnOp};
+use crate::ir::{BinOp, Block, CallTarget, Expr, FuncId, KirFunction, KirProgram, Stmt, UnOp};
 
 /// Renders every function in `program`, in declaration order.
 #[must_use]
@@ -156,7 +156,7 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
             format!("({}{})", unop_symbol(*op), fmt_expr(program, func, operand))
         }
         Expr::Call { target, args, .. } => {
-            let name = fn_name(program, *target);
+            let name = call_target_name(program, *target);
             let args = args
                 .iter()
                 .map(|a| fmt_expr(program, func, a))
@@ -169,6 +169,21 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
 
 fn fn_name(program: &KirProgram, id: FuncId) -> &str {
     &program.functions[id].name
+}
+
+/// `foo` for a direct call, `namespace.method` for a namespace call —
+/// resolved back from `(ns_id, method_id)` via the catalog purely for dump
+/// readability (KIR itself only stores the numeric ids; see `ir::CallTarget`).
+fn call_target_name(program: &KirProgram, target: CallTarget) -> String {
+    match target {
+        CallTarget::Fn(id) => fn_name(program, id).to_string(),
+        CallTarget::Ns { ns_id, method_id } => keel_catalog::catalog()
+            .find(|m| {
+                keel_catalog::namespace_id(m.namespace) == Some(ns_id) && m.method_id == method_id
+            })
+            .map(|m| format!("{}.{}", m.namespace, m.name))
+            .unwrap_or_else(|| format!("ns#{ns_id}.method#{method_id}")),
+    }
 }
 
 fn binop_symbol(op: BinOp) -> &'static str {

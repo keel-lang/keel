@@ -1,17 +1,21 @@
-//! Expression lowering — the M0 scalar subset: literals, identifiers,
+//! Expression lowering — the M0 scalar subset (literals, identifiers,
 //! arithmetic/comparison/logical binary ops, unary `-`/`not`, and direct
-//! calls to other lowered tasks. Everything else (field/index access,
-//! method calls, casts, `if`/`when` as expressions, lambdas, compound
-//! literals, string interpolation, `?.`/`??`, ranges, pipelines, duration
-//! literals, enum variants) is rejected; see module docs on `lower/mod.rs`.
+//! calls to other lowered tasks) plus M1's stdlib namespace calls
+//! (`io.show(...)`, `log.info(...)` — see [`lower_call`]). Everything else
+//! (field/index access, value method calls, casts, `if`/`when` as
+//! expressions, lambdas, compound literals, string interpolation, `?.`/`??`,
+//! pipelines, duration literals, enum variants) is rejected; see module docs
+//! on `lower/mod.rs`.
 
 use std::collections::HashMap;
 
 use keel_syntax::ast::{self, SpannedExpr};
 use keel_syntax::lexer::Span;
 
+use keel_catalog::builtins::BuiltinResult;
+
 use super::{FnCtx, FuncSig, LowerError};
-use crate::ir::{self, Expr};
+use crate::ir::{self, CallTarget, Expr};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -94,6 +98,7 @@ pub(crate) fn lower_expr(
     expr: &SpannedExpr,
     ctx: &mut FnCtx,
     funcs: &HashMap<String, FuncSig>,
+    ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
 ) -> Result<Expr, LowerError> {
     match &expr.kind {
@@ -109,8 +114,8 @@ pub(crate) fn lower_expr(
             Ok(Expr::Local { id: local, ty })
         }
         ast::Expr::BinaryOp { left, op, right } => {
-            let left_e = lower_expr(left, ctx, funcs, table)?;
-            let right_e = lower_expr(right, ctx, funcs, table)?;
+            let left_e = lower_expr(left, ctx, funcs, ns_bindings, table)?;
+            let right_e = lower_expr(right, ctx, funcs, ns_bindings, table)?;
             let kir_op = convert_binop(*op);
             let ty = infer_binop_ty(kir_op, left_e.ty(), right_e.ty(), &expr.span)?;
             Ok(Expr::BinOp {
@@ -121,7 +126,7 @@ pub(crate) fn lower_expr(
             })
         }
         ast::Expr::UnaryOp { op, expr: operand } => {
-            let operand_e = lower_expr(operand, ctx, funcs, table)?;
+            let operand_e = lower_expr(operand, ctx, funcs, ns_bindings, table)?;
             let ty = match op {
                 ast::UnOp::Neg if operand_e.ty().is_numeric() => operand_e.ty(),
                 ast::UnOp::Not if operand_e.ty() == KirType::Bool => KirType::Bool,
@@ -148,7 +153,9 @@ pub(crate) fn lower_expr(
                 ty,
             })
         }
-        ast::Expr::Call { callee, args } => lower_call(callee, args, ctx, funcs, table, &expr.span),
+        ast::Expr::Call { callee, args } => {
+            lower_call(callee, args, ctx, funcs, ns_bindings, table, &expr.span)
+        }
         ast::Expr::FieldAccess(..) => {
             Err(LowerError::unsupported("field access", expr.span.clone()))
         }
@@ -174,8 +181,35 @@ pub(crate) fn lower_expr(
         ast::Expr::NullCoalesce(..) => Err(LowerError::unsupported("`??`", expr.span.clone())),
         ast::Expr::Pipeline(..) => Err(LowerError::unsupported("`|>` pipeline", expr.span.clone())),
         ast::Expr::Range(..) => Err(LowerError::unsupported("range", expr.span.clone())),
-        ast::Expr::MethodCall { .. } => {
-            Err(LowerError::unsupported("method call", expr.span.clone()))
+        ast::Expr::MethodCall {
+            object,
+            method,
+            args,
+        } => {
+            // Namespace call (`io.show(...)`): recognized only when `object`
+            // is a bare identifier bound by `use std/<name>` *and* not
+            // shadowed by a local — mirrors the checker's "lexical locals
+            // shadow globals" precedence (`db = db.connect(...)` rebinds
+            // `db` to a connection value; see `checker/expr.rs`). Anything
+            // else (a real value method call, `xs.map(f)`) isn't lowered
+            // yet — value methods land alongside the container ABI (M2+).
+            if let ast::Expr::Ident(obj_name) = &object.kind
+                && ctx.resolve(obj_name).is_none()
+                && let Some(namespace) = ns_bindings.get(obj_name)
+            {
+                lower_ns_call(
+                    namespace,
+                    method,
+                    args,
+                    ctx,
+                    funcs,
+                    ns_bindings,
+                    table,
+                    &expr.span,
+                )
+            } else {
+                Err(LowerError::unsupported("method call", expr.span.clone()))
+            }
         }
         ast::Expr::Cast { .. } => Err(LowerError::unsupported("`as` cast", expr.span.clone())),
         ast::Expr::IfExpr { .. } => Err(LowerError::unsupported(
@@ -212,17 +246,22 @@ fn lower_string_lit(parts: &[ast::StringPart], span: &Span) -> Result<Expr, Lowe
     }
 }
 
+/// Lowers a direct call to another lowered task. `namespace.method(...)`
+/// calls never reach here — the parser produces `ast::Expr::MethodCall` for
+/// all dot-call syntax, not `Call` with a field-access callee; see the
+/// `ast::Expr::MethodCall` arm in `lower_expr` for namespace-call lowering.
 fn lower_call(
     callee: &SpannedExpr,
     args: &[ast::CallArg],
     ctx: &mut FnCtx,
     funcs: &HashMap<String, FuncSig>,
+    ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
     call_span: &Span,
 ) -> Result<Expr, LowerError> {
     let ast::Expr::Ident(name) = &callee.kind else {
         return Err(LowerError::unsupported(
-            "indirect/method call (only direct calls to named tasks are supported)",
+            "indirect call (only direct calls to named tasks are supported)",
             callee.span.clone(),
         ));
     };
@@ -249,7 +288,7 @@ fn lower_call(
                 arg.value.span.clone(),
             ));
         }
-        let lowered = lower_expr(&arg.value, ctx, funcs, table)?;
+        let lowered = lower_expr(&arg.value, ctx, funcs, ns_bindings, table)?;
         if lowered.ty() != *expected_ty {
             return Err(LowerError::new(
                 format!(
@@ -263,9 +302,103 @@ fn lower_call(
     }
 
     Ok(Expr::Call {
-        target: sig.func_id,
+        target: CallTarget::Fn(sig.func_id),
         args: lowered_args,
         ty: sig.ret,
         span: table.intern(call_span.clone()),
+    })
+}
+
+/// Lowers a stdlib namespace call (`namespace.method(args)`) to
+/// `CallTarget::Ns`. Argument *types* are not checked against the catalog's
+/// declared params here (most of M1's catalog surface — including every
+/// method reachable from this issue's `io`/`log` scope — takes `dynamic`,
+/// which has no `KirType` until the boxing pass lands in M2/M3; `keel
+/// check` already validated the call before lowering ever sees it). Arity
+/// *is* checked, and named/spread arguments are rejected — no M1 namespace
+/// method in the scalar-subset surface needs them yet.
+///
+/// `namespace`/`method`/`call_span` push this one function over clippy's
+/// default argument-count threshold; the other five are the same lowering
+/// state every function in this module already threads (`ctx`, `funcs`,
+/// `ns_bindings`, `table`) plus the call's own arg list. Bundling all of it
+/// into a shared "lowering context" struct is a reasonable future
+/// refactor, but not one this issue's scope should force — see `lower_call`
+/// just above, at 7 params, one under the limit, using the same pattern.
+#[allow(clippy::too_many_arguments)]
+fn lower_ns_call(
+    namespace: &str,
+    method: &str,
+    args: &[ast::CallArg],
+    ctx: &mut FnCtx,
+    funcs: &HashMap<String, FuncSig>,
+    ns_bindings: &HashMap<String, String>,
+    table: &mut SpanTable,
+    call_span: &Span,
+) -> Result<Expr, LowerError> {
+    let builtin = keel_catalog::catalog_method(namespace, method).ok_or_else(|| {
+        LowerError::new(
+            format!("`{namespace}` has no method `{method}`"),
+            call_span.clone(),
+        )
+    })?;
+    let ns_id = keel_catalog::namespace_id(namespace)
+        .expect("ns_bindings only ever contains namespaces validated in lower_use");
+
+    let required = builtin.params.iter().filter(|p| !p.optional).count();
+    if args.len() < required || args.len() > builtin.params.len() {
+        return Err(LowerError::new(
+            format!(
+                "`{namespace}.{method}` takes {} argument(s), got {}",
+                if required == builtin.params.len() {
+                    required.to_string()
+                } else {
+                    format!("{required}-{}", builtin.params.len())
+                },
+                args.len()
+            ),
+            call_span.clone(),
+        ));
+    }
+
+    let mut lowered_args = Vec::with_capacity(args.len());
+    for arg in args {
+        if arg.name.is_some() || arg.spread {
+            return Err(LowerError::unsupported(
+                "named or spread arguments to a stdlib namespace call",
+                arg.value.span.clone(),
+            ));
+        }
+        lowered_args.push(lower_expr(&arg.value, ctx, funcs, ns_bindings, table)?);
+    }
+
+    let ty = result_ty_to_kir(builtin.result, call_span)?;
+
+    Ok(Expr::Call {
+        target: CallTarget::Ns {
+            ns_id,
+            method_id: builtin.method_id,
+        },
+        args: lowered_args,
+        ty,
+        span: table.intern(call_span.clone()),
+    })
+}
+
+/// Resolves a catalog method's declared result to a `KirType`, rejecting
+/// anything that needs boxing/context-dependent resolution (M2/M3 scope).
+fn result_ty_to_kir(result: BuiltinResult, span: &Span) -> Result<KirType, LowerError> {
+    let BuiltinResult::Fixed(spec) = result else {
+        return Err(LowerError::unsupported(
+            "a namespace method whose result type depends on runtime context (`as:`-typed \
+             extraction/classification, or otherwise dynamic — needs the boxing pass, M2/M3)",
+            span.clone(),
+        ));
+    };
+    KirType::from_tyspec(spec).ok_or_else(|| {
+        LowerError::unsupported(
+            &format!("a namespace method returning `{spec:?}` (needs M2+ types)"),
+            span.clone(),
+        )
     })
 }

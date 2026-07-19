@@ -154,3 +154,90 @@ x = add(1)
     );
     assert!(msg.contains("argument"), "unexpected message: {msg}");
 }
+
+#[test]
+fn unknown_std_module_is_rejected() {
+    let msg = lower_err("use std/bogus\n");
+    assert!(
+        msg.contains("unknown std module"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn file_path_use_import_is_rejected() {
+    let msg = lower_err("use \"./other.keel\"\n");
+    assert!(msg.contains("file-path"), "unexpected message: {msg}");
+}
+
+#[test]
+fn symbol_list_use_import_is_rejected() {
+    let msg = lower_err("use read from std/file\n");
+    assert!(msg.contains("symbol-list"), "unexpected message: {msg}");
+}
+
+#[test]
+fn unknown_namespace_method_is_rejected() {
+    let msg = lower_err(
+        r#"
+use std/io
+
+io.nonexistent("hi")
+"#,
+    );
+    assert!(msg.contains("has no method"), "unexpected message: {msg}");
+}
+
+#[test]
+fn namespace_call_wrong_arg_count_is_rejected() {
+    let msg = lower_err(
+        r#"
+use std/io
+
+io.show()
+"#,
+    );
+    assert!(msg.contains("argument"), "unexpected message: {msg}");
+}
+
+#[test]
+fn named_argument_to_namespace_call_is_rejected() {
+    let msg = lower_err(
+        r#"
+use std/io
+
+io.show(value: "hi")
+"#,
+    );
+    assert!(msg.contains("named or spread"), "unexpected message: {msg}");
+}
+
+#[test]
+fn namespace_method_with_dynamic_result_is_rejected() {
+    // `env.get` returns `TySpec::NullableStr`, which has no `KirType`
+    // equivalent until nullable types land (M2+).
+    let msg = lower_err(
+        r#"
+use std/env
+
+x = env.get("HOME")
+"#,
+    );
+    assert!(msg.contains("M2+ types"), "unexpected message: {msg}");
+}
+
+#[test]
+fn local_shadowing_a_namespace_binding_is_not_lowered_as_a_namespace_call() {
+    // Mirrors the checker's "lexical locals shadow globals" rule
+    // (`db = db.connect(...)` rebinds `db`) — once `io` is a local, `io.foo()`
+    // is an ordinary (unsupported) value method call, not a namespace call.
+    let msg = lower_err(
+        r#"
+use std/io
+
+io = 5
+io.show("hi")
+"#,
+    );
+    assert!(msg.contains("method call"), "unexpected message: {msg}");
+}

@@ -44,7 +44,7 @@ pub mod sugar;
 use std::collections::HashMap;
 use std::fmt;
 
-use keel_syntax::ast::{Binding, Decl, Program};
+use keel_syntax::ast::{Binding, Decl, Program, UseDecl, UseKind, UseSource};
 use keel_syntax::lexer::Span;
 
 use crate::ir::{FuncId, KirFunction, KirProgram, LocalId};
@@ -158,10 +158,13 @@ impl FnCtx {
 pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, LowerError> {
     let mut span_table = SpanTable::new(file_name);
     let mut funcs: HashMap<String, FuncSig> = HashMap::new();
+    let mut ns_bindings: HashMap<String, String> = HashMap::new();
     let mut task_order: Vec<&keel_syntax::ast::TaskDecl> = Vec::new();
 
-    // Pass 1: collect every task signature so calls resolve regardless of
-    // declaration order (forward references, mutual/self recursion).
+    // Pass 1: collect every task signature (so calls resolve regardless of
+    // declaration order — forward references, mutual/self recursion) and
+    // every `use std/<name>` namespace binding (so namespace calls resolve
+    // regardless of whether the `use` appears before or after they're used).
     for decl in &program.declarations {
         match &decl.kind {
             Decl::Task(task) => {
@@ -177,6 +180,9 @@ pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, L
                     },
                 );
             }
+            Decl::Use(use_decl) => {
+                lower_use(use_decl, &decl.span, &mut ns_bindings)?;
+            }
             Decl::Stmt(_) => {} // handled in pass 2 (toplevel)
             other => {
                 return Err(LowerError::unsupported(
@@ -187,11 +193,17 @@ pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, L
         }
     }
 
-    // Pass 2: lower each task body now that `funcs` is complete.
+    // Pass 2: lower each task body now that `funcs`/`ns_bindings` are complete.
     let mut functions: Vec<KirFunction> = Vec::with_capacity(task_order.len() + 1);
     for task in &task_order {
         let sig = &funcs[&task.name];
-        functions.push(decl::lower_task_body(task, sig, &funcs, &mut span_table)?);
+        functions.push(decl::lower_task_body(
+            task,
+            sig,
+            &funcs,
+            &ns_bindings,
+            &mut span_table,
+        )?);
     }
 
     // Toplevel: every `Decl::Stmt` compiles into one synthetic function,
@@ -205,6 +217,7 @@ pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, L
                 stmt,
                 &mut ctx,
                 &funcs,
+                &ns_bindings,
                 &mut span_table,
                 KirType::Unit,
             )?);
@@ -224,6 +237,47 @@ pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, L
         toplevel: toplevel_id,
         span_table,
     })
+}
+
+/// Lowers a `use` declaration into a `ns_bindings` entry (bound identifier
+/// -> stdlib namespace name), or rejects it. Only `use std/<name>` (flat
+/// stdlib module imports, no symbol lists, no relative-file imports) is in
+/// scope: M1's namespace-call lowering only needs to know which identifier
+/// a namespace is bound under, and multi-module/local-file lowering isn't
+/// wired up yet (`lower_program` still takes one file, not a `ModuleGraph`).
+fn lower_use(
+    use_decl: &UseDecl,
+    span: &Span,
+    ns_bindings: &mut HashMap<String, String>,
+) -> Result<(), LowerError> {
+    let UseKind::Module { source, alias } = &use_decl.kind else {
+        return Err(LowerError::unsupported(
+            "symbol-list `use ... from ...` import",
+            span.clone(),
+        ));
+    };
+    let UseSource::Module(segments) = source else {
+        return Err(LowerError::unsupported(
+            "file-path `use` import (multi-module lowering isn't wired up yet)",
+            span.clone(),
+        ));
+    };
+    if segments.len() != 2 || segments[0] != "std" {
+        return Err(LowerError::unsupported(
+            "a `use` path other than `std/<name>`",
+            span.clone(),
+        ));
+    }
+    let namespace = &segments[1];
+    if keel_catalog::namespace_id(namespace).is_none() {
+        return Err(LowerError::new(
+            format!("unknown std module `std/{namespace}`"),
+            span.clone(),
+        ));
+    }
+    let bound_name = alias.clone().unwrap_or_else(|| namespace.clone());
+    ns_bindings.insert(bound_name, namespace.clone());
+    Ok(())
 }
 
 fn decl_kind_name(decl: &Decl) -> &'static str {
