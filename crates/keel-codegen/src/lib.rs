@@ -6,11 +6,12 @@
 //!
 //! Scalar arithmetic on `int`/`float`/`bool`, `if`/`else`, `while`, `for`
 //! over a range, and direct calls between compiled tasks (`CallTarget::Fn`)
-//! — still no runtime and no I/O (`CallTarget::Ns` namespace dispatch lands
-//! in #135). `compile` emits a bare C-style `main` that runs the program's
-//! `toplevel` KIR function and exits with a computed value — see the module
-//! doc on [`func`] for exactly how, and why that's a temporary M1-only
-//! convention superseded once `keel_rt_start` lands (issue #134).
+//! — still no I/O (`CallTarget::Ns` namespace dispatch lands in #135). The
+//! program's `toplevel` KIR function compiles to a real `keel_user_toplevel`
+//! function (see the module doc on [`func`] for the bare-`int`-expression ->
+//! exit-code convention it still follows), and the emitted `main` just calls
+//! into `keel_rt_start` (from the separate `keel-rt-ffi` crate) to boot the
+//! runtime and invoke it — see [`BuildOptions::runtime_link_args`].
 //!
 //! Entry point: [`compile`].
 
@@ -30,6 +31,13 @@ use keel_kir::ir::KirProgram;
 #[derive(Debug, Clone)]
 pub struct BuildOptions {
     pub out_dir: PathBuf,
+    /// Extra `cc` arguments needed to link the emitted `main` (which calls
+    /// `keel_rt_start`) against `libkeel_rt.a` — the archive's path followed
+    /// by its `native-static-libs` (platform-specific system libs a Rust
+    /// staticlib needs; see `rustc --print native-static-libs`). `keel-codegen`
+    /// treats this as opaque link input and never depends on `keel-rt-ffi`
+    /// itself, per the dependency rule in `designs/llvm-compilation.md` §2.2.
+    pub runtime_link_args: Vec<String>,
 }
 
 /// Everything that can go wrong turning a [`KirProgram`] into a running
@@ -93,8 +101,9 @@ pub fn compile(program: &KirProgram, opts: &BuildOptions) -> Result<PathBuf, Cod
     let builder = llvm_context.create_builder();
 
     // Declare every non-`toplevel` function up front (so forward/mutual/
-    // recursive calls resolve), then emit bodies, then `main` (which inlines
-    // `toplevel` — see `func.rs`'s module doc).
+    // recursive calls resolve), then emit bodies, then `toplevel` itself
+    // (as `keel_user_toplevel`), then the trivial `main` that hands off to
+    // `keel_rt_start`.
     let functions = func::declare_functions(&llvm_context, &module, program)?;
     for (id, kir_func) in program.functions.iter().enumerate() {
         if id == program.toplevel {
@@ -109,7 +118,8 @@ pub fn compile(program: &KirProgram, opts: &BuildOptions) -> Result<PathBuf, Cod
             function_value,
         )?;
     }
-    func::emit_main(&llvm_context, &module, &builder, &functions, program)?;
+    func::emit_toplevel_function(&llvm_context, &module, &builder, &functions, program)?;
+    func::emit_main(&llvm_context, &module, &builder)?;
 
     module
         .verify()
@@ -120,7 +130,7 @@ pub fn compile(program: &KirProgram, opts: &BuildOptions) -> Result<PathBuf, Cod
     let obj_path = opts.out_dir.join("keel_program.o");
     let bin_path = opts.out_dir.join("keel_program");
     link::emit_object(&machine, &module, &obj_path)?;
-    link::link_binary(&obj_path, &bin_path)?;
+    link::link_binary(&obj_path, &bin_path, &opts.runtime_link_args)?;
 
     Ok(bin_path)
 }

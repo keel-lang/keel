@@ -1,0 +1,21 @@
+[package]
+name = "keel-rt-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Runtime linkage for keel-codegen-compiled binaries: boots the same RuntimeContext/tokio/event-loop the interpreter uses today."
+publish = false
+
+[lib]
+name = "keel_rt"
+crate-type = ["staticlib", "rlib"]
+
+[lints]
+workspace = true
+
+[dependencies]
+keel-runtime = { path = "../keel-runtime" }
+keel-syntax = { path = "../keel-syntax" }
+tokio = { workspace = true }
+miette = { workspace = true }
+parking_lot = { workspace = true }

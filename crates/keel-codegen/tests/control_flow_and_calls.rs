@@ -11,6 +11,9 @@ use std::process::Command;
 
 use keel_codegen::{BuildOptions, CodegenError};
 
+#[path = "support/mod.rs"]
+mod support;
+
 fn compile_and_run(source: &str) -> i32 {
     let (program, _named) =
         keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
@@ -19,6 +22,7 @@ fn compile_and_run(source: &str) -> i32 {
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {
         out_dir: out_dir.path().to_path_buf(),
+        runtime_link_args: support::runtime_link_args().clone(),
     };
     let bin = keel_codegen::compile(&kir, &opts).expect("compile must succeed");
 
@@ -34,6 +38,7 @@ fn compile_err(source: &str) -> CodegenError {
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {
         out_dir: out_dir.path().to_path_buf(),
+        runtime_link_args: support::runtime_link_args().clone(),
     };
     keel_codegen::compile(&kir, &opts).expect_err("compile must be rejected")
 }
@@ -213,15 +218,14 @@ classify(-5) + sum_upto(5) + sum_range(5) + quadruple(3)
 }
 
 #[test]
-fn return_in_top_level_code_is_still_rejected() {
+fn bare_return_in_top_level_code_exits_zero() {
     // Real top-level statements always lower to a Unit-returning function
-    // (keel-kir forces this); `main`'s exit-code convention only handles a
-    // bare trailing `int` expression, not `return` — see func.rs.
-    let err = compile_err("return\n");
-    assert!(
-        matches!(err, CodegenError::Unsupported(ref msg) if msg.contains("top-level")),
-        "unexpected error: {err}"
-    );
+    // (keel-kir forces this), so a bare top-level `return` never carries a
+    // value — `keel_user_toplevel` treats it as "stop now, exit 0" (see
+    // func.rs's module doc; issue #134 made toplevel a real function with
+    // its own exit-code convention instead of inlining into `main`).
+    let code = compile_and_run("return\n5\n");
+    assert_eq!(code, 0);
 }
 
 #[test]
