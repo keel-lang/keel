@@ -1,14 +1,19 @@
 //! Function emission.
 //!
-//! Every `KirFunction` except the synthetic `toplevel` one compiles to a
-//! real, separate LLVM function — `emit_function` — so `CallTarget::Fn`
-//! calls between them are ordinary LLVM `call` instructions. `toplevel`'s
-//! statements are still inlined directly into `main` (`emit_main`), exactly
-//! as in the M1 walking-skeleton (issue #132): real top-level Keel
-//! statements always lower to a `Unit`-returning function with no way to
-//! produce a computed exit code, so `main`'s "bare `int` expression ->
-//! process exit code" convention documented there is unchanged — it's
-//! replaced wholesale once `main` calls `keel_rt_start` (issue #134).
+//! Every `KirFunction`, including the synthetic `toplevel` one, compiles to
+//! a real, separate LLVM function — `emit_function` for ordinary functions,
+//! `emit_toplevel_function` for `toplevel` (named `keel_user_toplevel`, the
+//! symbol `keel-rt-ffi`'s `keel_rt_start` calls back into). `toplevel`'s KIR
+//! return type is always `Unit` (real top-level Keel statements have no
+//! `return <value>` to give one), so `keel_user_toplevel` keeps the M1
+//! "bare `int` expression -> process exit code" convention from the
+//! walking-skeleton (issue #132) as its *own* return value instead of
+//! `main`'s: a bare top-level `int` expression becomes the exit code, a bare
+//! `return` (with no value — the only form `keel_user_toplevel`'s KIR can
+//! contain) exits with code `0`, and falling off the end without either
+//! defaults to `0` too. `main` itself (`emit_main`) is now just a thin
+//! wrapper that calls `keel_rt_start` and returns its result — see
+//! `designs/llvm-compilation.md` §2.6 and issue #134.
 //!
 //! # Basic-block wiring
 //!
@@ -24,7 +29,7 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::BasicType;
-use inkwell::values::{BasicValueEnum, FunctionValue, PointerValue};
+use inkwell::values::{BasicValueEnum, FunctionValue, PointerValue, ValueKind};
 
 use keel_kir::ir::{KirFunction, KirProgram, LocalId};
 use keel_kir::types::KirType;
@@ -46,12 +51,13 @@ pub(crate) struct FuncCtx<'ctx, 'a> {
     /// Every non-`toplevel` `KirFunction`'s compiled `FunctionValue`,
     /// indexed by `FuncId`, resolved up front (before any body is emitted)
     /// so forward/mutual/recursive `CallTarget::Fn` calls resolve. The
-    /// `toplevel` slot is `None` — nothing ever calls it by `FuncId`.
+    /// `toplevel` slot is `None` — nothing ever calls it by `FuncId`
+    /// (`keel-rt-ffi` calls it by symbol name, `keel_user_toplevel`).
     pub(crate) functions: &'a [Option<FunctionValue<'ctx>>],
-    /// `true` while emitting `toplevel`'s statements inline into `main`.
-    /// `return` is rejected in that context (see the module doc) rather
-    /// than given ad hoc exit-code semantics.
-    pub(crate) is_toplevel_in_main: bool,
+    /// `true` while emitting `toplevel`'s body as `keel_user_toplevel`. A
+    /// bare `return` there (the only form `toplevel`'s KIR can contain —
+    /// see the module doc) means "exit 0 now" instead of `ret void`.
+    pub(crate) is_toplevel: bool,
     pub(crate) locals: HashMap<LocalId, PointerValue<'ctx>>,
 }
 
@@ -98,7 +104,7 @@ pub(crate) fn emit_function<'ctx>(
         builder,
         function: function_value,
         functions,
-        is_toplevel_in_main: false,
+        is_toplevel: false,
         locals: HashMap::new(),
     };
 
@@ -118,9 +124,11 @@ pub(crate) fn emit_function<'ctx>(
     finish_block(&fcx, func.ret)
 }
 
-/// Emits `main`, running `program.toplevel`'s statements directly in its
-/// body. See the module doc for the exit-code convention.
-pub(crate) fn emit_main<'ctx>(
+/// Emits `program.toplevel`'s body as a real function named
+/// `keel_user_toplevel` — the symbol `keel-rt-ffi`'s `keel_rt_start` calls
+/// back into once it has booted the runtime. See the module doc for the
+/// exit-code convention this function's `i32` return value follows.
+pub(crate) fn emit_toplevel_function<'ctx>(
     context: &'ctx Context,
     module: &Module<'ctx>,
     builder: &Builder<'ctx>,
@@ -128,31 +136,59 @@ pub(crate) fn emit_main<'ctx>(
     program: &KirProgram,
 ) -> Result<(), CodegenError> {
     let i32_type = context.i32_type();
-    let main_type = i32_type.fn_type(&[], false);
-    let main_fn = module.add_function("main", main_type, None);
-    let entry = context.append_basic_block(main_fn, "entry");
+    let fn_type = i32_type.fn_type(&[], false);
+    let toplevel_fn = module.add_function("keel_user_toplevel", fn_type, None);
+    let entry = context.append_basic_block(toplevel_fn, "entry");
     builder.position_at_end(entry);
 
     let toplevel = &program.functions[program.toplevel];
     let mut fcx = FuncCtx {
         context,
         builder,
-        function: main_fn,
+        function: toplevel_fn,
         functions,
-        is_toplevel_in_main: true,
+        is_toplevel: true,
         locals: HashMap::new(),
     };
     let last = stmt::emit_block(&mut fcx, &toplevel.body)?;
 
-    let exit_code = match last {
-        Some((BasicValueEnum::IntValue(v), KirType::I64)) => builder
-            .build_int_truncate(v, i32_type, "exit_code")
-            .map_err(llvm_err)?,
-        _ => i32_type.const_zero(),
-    };
     if !block_is_terminated(builder) {
+        let exit_code = match last {
+            Some((BasicValueEnum::IntValue(v), KirType::I64)) => builder
+                .build_int_truncate(v, i32_type, "exit_code")
+                .map_err(llvm_err)?,
+            _ => i32_type.const_zero(),
+        };
         builder.build_return(Some(&exit_code)).map_err(llvm_err)?;
     }
+    Ok(())
+}
+
+/// Emits `main` as a thin wrapper around `keel_rt_start` (defined in
+/// `keel-rt-ffi`, linked in via `BuildOptions::runtime_link_args`) — it boots
+/// the runtime and calls back into `keel_user_toplevel`, and `main` just
+/// propagates whatever it returns as the process exit code.
+pub(crate) fn emit_main<'ctx>(
+    context: &'ctx Context,
+    module: &Module<'ctx>,
+    builder: &Builder<'ctx>,
+) -> Result<(), CodegenError> {
+    let i32_type = context.i32_type();
+    let no_args_i32 = i32_type.fn_type(&[], false);
+
+    let main_fn = module.add_function("main", no_args_i32, None);
+    let entry = context.append_basic_block(main_fn, "entry");
+    builder.position_at_end(entry);
+
+    let rt_start_fn = module.add_function("keel_rt_start", no_args_i32, None);
+    let call = builder
+        .build_call(rt_start_fn, &[], "rt_start")
+        .map_err(llvm_err)?;
+    let result = match call.try_as_basic_value() {
+        ValueKind::Basic(v) => v,
+        ValueKind::Instruction(_) => unreachable!("keel_rt_start returns i32, never void"),
+    };
+    builder.build_return(Some(&result)).map_err(llvm_err)?;
     Ok(())
 }
 

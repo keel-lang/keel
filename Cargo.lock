@@ -1434,6 +1434,7 @@ dependencies = [
  "inkwell",
  "keel-kir",
  "keel-syntax",
+ "serde_json",
  "tempfile",
 ]
 
@@ -1497,6 +1498,17 @@ dependencies = [
  "tempfile",
  "tokio",
  "tower-lsp",
+]
+
+[[package]]
+name = "keel-rt-ffi"
+version = "0.2.4"
+dependencies = [
+ "keel-runtime",
+ "keel-syntax",
+ "miette",
+ "parking_lot",
+ "tokio",
 ]
 
 [[package]]

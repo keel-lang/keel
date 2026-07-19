@@ -230,10 +230,14 @@ fn emit_return<'ctx>(
     fcx: &mut FuncCtx<'ctx, '_>,
     value: Option<&keel_kir::ir::Expr>,
 ) -> Result<(), CodegenError> {
-    if fcx.is_toplevel_in_main {
-        return Err(CodegenError::Unsupported(
-            "`return` in top-level code (M1 walking-skeleton scope — put it in a task)".to_string(),
-        ));
+    if fcx.is_toplevel {
+        // `keel_kir`'s lowering never gives `toplevel` a `return <value>`
+        // (its KIR return type is always Unit), so `value` is always `None`
+        // here — a bare `return` in top-level code means "stop now, exit 0".
+        debug_assert!(value.is_none());
+        let zero = fcx.context.i32_type().const_zero();
+        fcx.builder.build_return(Some(&zero)).map_err(llvm_err)?;
+        return Ok(());
     }
     match value {
         Some(e) => {

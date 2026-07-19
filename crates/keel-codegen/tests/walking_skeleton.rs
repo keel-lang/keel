@@ -12,6 +12,9 @@ use std::process::Command;
 
 use keel_codegen::{BuildOptions, CodegenError};
 
+#[path = "support/mod.rs"]
+mod support;
+
 fn compile_and_run(source: &str) -> (i32, tempfile::TempDir) {
     let (program, _named) =
         keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
@@ -20,6 +23,7 @@ fn compile_and_run(source: &str) -> (i32, tempfile::TempDir) {
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {
         out_dir: out_dir.path().to_path_buf(),
+        runtime_link_args: support::runtime_link_args().clone(),
     };
     let bin = keel_codegen::compile(&kir, &opts).expect("compile must succeed");
 
@@ -38,6 +42,7 @@ fn compile_err(source: &str) -> CodegenError {
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {
         out_dir: out_dir.path().to_path_buf(),
+        runtime_link_args: support::runtime_link_args().clone(),
     };
     keel_codegen::compile(&kir, &opts).expect_err("compile must be rejected")
 }

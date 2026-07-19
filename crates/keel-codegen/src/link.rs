@@ -22,9 +22,21 @@ pub(crate) fn emit_object(
 }
 
 /// Links `obj` into an executable at `bin` via the system `cc` driver.
-pub(crate) fn link_binary(obj: &Path, bin: &Path) -> Result<(), CodegenError> {
+///
+/// `extra_args` carries whatever the caller needs beyond the object file
+/// itself — e.g. `libkeel_rt.a`'s path plus its `native-static-libs` (see
+/// `BuildOptions::runtime_link_args`). `keel-codegen` never hardcodes that
+/// list itself: it's platform-specific (macOS system frameworks vs. glibc's
+/// `-ldl -lpthread`, …) and the caller is expected to derive it (e.g. via
+/// `rustc --print native-static-libs`), not guess it.
+pub(crate) fn link_binary(
+    obj: &Path,
+    bin: &Path,
+    extra_args: &[String],
+) -> Result<(), CodegenError> {
     let output = Command::new("cc")
         .arg(obj)
+        .args(extra_args)
         .arg("-o")
         .arg(bin)
         .output()
