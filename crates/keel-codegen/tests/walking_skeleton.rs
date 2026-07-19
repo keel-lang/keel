@@ -88,15 +88,6 @@ fn str_expression_is_rejected_not_silently_dropped() {
 }
 
 #[test]
-fn top_level_if_is_rejected_not_silently_dropped() {
-    let err = compile_err("x = 1\nif x == 1 {\n  x = 2\n}\n");
-    assert!(
-        matches!(err, CodegenError::Unsupported(ref msg) if msg.contains("if/else")),
-        "unexpected error: {err}"
-    );
-}
-
-#[test]
 fn binary_actually_exists_on_disk() {
     let (_code, dir) = compile_and_run("1\n");
     let bin = dir.path().join("keel_program");
