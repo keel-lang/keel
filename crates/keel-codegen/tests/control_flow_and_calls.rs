@@ -9,7 +9,7 @@
 
 use std::process::Command;
 
-use keel_codegen::{BuildOptions, CodegenError};
+use keel_codegen::BuildOptions;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -28,19 +28,6 @@ fn compile_and_run(source: &str) -> i32 {
 
     let run = Command::new(&bin).output().expect("run compiled binary");
     run.status.code().expect("process exited via a signal")
-}
-
-fn compile_err(source: &str) -> CodegenError {
-    let (program, _named) =
-        keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
-    let kir = keel_kir::lower(&program, "t.keel").expect("fixture must lower to KIR");
-
-    let out_dir = tempfile::tempdir().expect("create temp out dir");
-    let opts = BuildOptions {
-        out_dir: out_dir.path().to_path_buf(),
-        runtime_link_args: support::runtime_link_args().clone(),
-    };
-    keel_codegen::compile(&kir, &opts).expect_err("compile must be rejected")
 }
 
 #[test]
@@ -228,12 +215,6 @@ fn bare_return_in_top_level_code_exits_zero() {
     assert_eq!(code, 0);
 }
 
-#[test]
-fn namespace_call_is_still_rejected() {
-    // CallTarget::Ns dispatch lands in #135 (keel_rt_call_ns).
-    let err = compile_err("use std/io\n\nio.show(\"hi\")\n");
-    assert!(
-        matches!(err, CodegenError::Unsupported(ref msg) if msg.contains("namespace method")),
-        "unexpected error: {err}"
-    );
-}
+// CallTarget::Ns dispatch (io.show/log.* wired through keel_rt_call_ns) is
+// covered by tests/namespace_calls.rs, which also proves byte-identical
+// output against the interpreter — the exit criterion for issue #135.

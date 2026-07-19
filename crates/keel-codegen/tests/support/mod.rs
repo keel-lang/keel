@@ -11,7 +11,7 @@
 //! runner.
 
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 pub fn runtime_link_args() -> &'static Vec<String> {
@@ -22,6 +22,67 @@ pub fn runtime_link_args() -> &'static Vec<String> {
         eprintln!("keel-codegen tests: runtime link args: {args:?}");
         args
     })
+}
+
+/// Runs `source` through the real interpreter (the `keel` binary, `keel run`)
+/// and returns its captured output — the independent, ground-truth
+/// comparison for "the compiled program's stdout is byte-identical to the
+/// interpreter's" tests. `KEEL_LLM=mock` matches this workspace's normal
+/// test convention even though these fixtures don't call `ai.*`.
+///
+/// Only `namespace_calls.rs` uses this (the other test binaries that
+/// `#[path]`-include this same module don't) — `allow(dead_code)` since each
+/// `tests/*.rs` file compiles its own copy of `support/mod.rs`.
+#[allow(dead_code)]
+pub fn run_interpreter(source: &str) -> Output {
+    let keel_bin = build_keel_binary();
+    let source_file = tempfile::Builder::new()
+        .suffix(".keel")
+        .tempfile()
+        .expect("create temp source file");
+    std::fs::write(source_file.path(), source).expect("write temp source");
+
+    Command::new(&keel_bin)
+        .arg("run")
+        .arg(source_file.path())
+        .env("KEEL_LLM", "mock")
+        .output()
+        .expect("spawn `keel run`")
+}
+
+#[allow(dead_code)]
+fn build_keel_binary() -> PathBuf {
+    let output = Command::new("cargo")
+        .current_dir(workspace_root())
+        .env("CARGO_TERM_COLOR", "never")
+        .args([
+            "build",
+            "-p",
+            "keel-lang",
+            "--bin",
+            "keel",
+            "--message-format=json",
+        ])
+        .output()
+        .expect("spawn `cargo build -p keel-lang --bin keel`");
+    assert!(
+        output.status.success(),
+        "building the `keel` binary failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Ok(msg) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if msg.get("reason").and_then(serde_json::Value::as_str) != Some("compiler-artifact") {
+            continue;
+        }
+        if let Some(exe) = msg.get("executable").and_then(serde_json::Value::as_str) {
+            return PathBuf::from(exe);
+        }
+    }
+    panic!("`cargo build -p keel-lang --bin keel` did not report an executable artifact");
 }
 
 fn workspace_root() -> PathBuf {

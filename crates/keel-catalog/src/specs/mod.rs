@@ -112,6 +112,26 @@ pub fn namespace_id(namespace: &str) -> Option<u16> {
         .map(|(_, id)| *id)
 }
 
+/// Reverse of [`namespace_id`] — the namespace name for a stable id.
+///
+/// Consumed by `keel-rt-ffi`'s `keel_rt_call_ns`, which only receives numeric
+/// ids across the FFI boundary and needs the name to dispatch through the
+/// existing (name-keyed) `Namespace.methods` registry.
+pub fn namespace_by_id(ns_id: u16) -> Option<&'static str> {
+    NAMESPACE_IDS
+        .iter()
+        .find(|(_, id)| *id == ns_id)
+        .map(|(name, _)| *name)
+}
+
+/// Reverse of [`BuiltinMethod::method_id`] — the method name for a
+/// `(namespace, method_id)` pair. See [`namespace_by_id`].
+pub fn method_by_id(namespace: &str, method_id: u16) -> Option<&'static str> {
+    catalog()
+        .find(|m| m.namespace == namespace && m.method_id == method_id)
+        .map(|m| m.name)
+}
+
 /// Modules whose entry points exercise authority over the world outside the
 /// process — network, filesystem, subprocesses, external services, ambient
 /// secrets, humans, and LLMs. Only these require an `@tools` capability.
