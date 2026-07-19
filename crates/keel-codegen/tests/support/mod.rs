@@ -19,6 +19,7 @@ pub fn runtime_link_args() -> &'static Vec<String> {
     ARGS.get_or_init(|| {
         let mut args = vec![build_keel_rt_ffi_archive().to_string_lossy().into_owned()];
         args.extend(native_static_libs());
+        eprintln!("keel-codegen tests: runtime link args: {args:?}");
         args
     })
 }
@@ -87,10 +88,15 @@ fn native_static_libs() -> Vec<String> {
         .output()
         .expect("spawn `cargo rustc -p keel-rt-ffi`");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    for line in stderr.lines() {
-        if let Some((_, rest)) = line.split_once("native-static-libs:") {
-            return rest.split_whitespace().map(str::to_string).collect();
-        }
+    // Read the rest of `stderr` as one blob rather than line-by-line: rustc's
+    // diagnostic renderer can wrap a long native-static-libs list across
+    // multiple physical lines (this list is much longer on Linux's glibc
+    // than on macOS), and splitting on `.lines()` would silently drop
+    // whatever landed on the continuation line. `split_whitespace` treats
+    // the wrap's newline like any other separator, so this is safe either
+    // way — it's the last thing `--print` emits, nothing structured follows.
+    if let Some((_, rest)) = stderr.split_once("native-static-libs:") {
+        return rest.split_whitespace().map(str::to_string).collect();
     }
     panic!("`cargo rustc -p keel-rt-ffi -- --print native-static-libs` gave no list:\n{stderr}");
 }
