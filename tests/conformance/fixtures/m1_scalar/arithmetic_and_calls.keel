@@ -1,0 +1,17 @@
+use std/io
+
+task square(n: int) -> int {
+  return n * n
+}
+
+task sum_upto(n: int) -> int {
+  total = 0
+  for i in 1..n {
+    total += i
+  }
+  return total
+}
+
+x = square(6)
+y = sum_upto(10)
+io.show(x + y)

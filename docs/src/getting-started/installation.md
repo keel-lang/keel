@@ -61,7 +61,7 @@ Commands:
   help   Print this message or the help of the given subcommand(s)
 ```
 
-`keel build` is listed because the verb is reserved for the future native/LLVM backend (see [`keel build`](../cli/build.md)), but v0.1 has no codegen yet — only a `--emit=kir` preview of the pipeline under construction. Use `keel run` or `keel check` for current workflows.
+`keel build` is listed because the verb is reserved for the future native/LLVM backend (see [`keel build`](../cli/build.md)), but the CLI itself doesn't produce a binary yet — only a `--emit=kir` preview of the pipeline under construction. Use `keel run` or `keel check` for current workflows.
 
 ## LLM setup
 

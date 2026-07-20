@@ -51,9 +51,19 @@
 //!
 //! Unix-only (`libc::dup`/`dup2`) — deferred for Windows, same as the rest
 //! of the native-backend work this issue is scaffolding for.
+//!
+//! The M1 interpreter-vs-compiled comparison (issue #136) is the one
+//! exception to "in-process, not a subprocess": it runs *both* engines as
+//! piped child processes (see `run_interpreter_subprocess_one` and
+//! `run_compiled_one`) rather than reusing this fd-1 dance, since mixing
+//! `capture_stdout` with the compiled engine's subprocess spawning in the
+//! same test lost the interpreter's captured output. The M0 corpus loop
+//! below is unaffected — it stays in-process, per the reasoning above.
 
 mod corpus;
 mod engine;
+#[cfg(feature = "build-backend")]
+mod runtime_link;
 
 use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::os::unix::io::AsRawFd as _;
@@ -61,6 +71,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use corpus::discover_corpus;
+#[cfg(feature = "build-backend")]
+use corpus::discover_m1_scalar_fixtures;
 use engine::{Engine, EngineError, EngineOutput};
 
 /// Per-program wall-clock budget. Generous enough for the mock LLM path and
@@ -132,6 +144,71 @@ async fn run_one(engine: Engine, path: &Path) -> Result<EngineOutput, EngineErro
     }
 }
 
+/// The interpreter-side counterpart to [`run_compiled_one`], used only by
+/// the M1 comparison below — spawns the already-built `keel` binary
+/// (`CARGO_BIN_EXE_keel`, set by Cargo for this integration-test target
+/// since the root package defines `[[bin]] name = "keel"`) as a piped child,
+/// rather than going through [`run_one`]'s in-process fd-1 capture.
+///
+/// This exists because mixing `run_one`'s fd-1 dup/dup2 dance with
+/// `run_compiled_one`'s subprocess-spawning in the same test lost the
+/// interpreter's captured output intermittently (and, once the big corpus
+/// loop below also ran in-process in the same test binary, *deterministically*):
+/// nothing here pinned down which tokio-internal timing caused it, and
+/// `capture_stdout`'s own doc comment already flags it as fragile to any
+/// shift in the process's async/fd state. Running the interpreter as a
+/// piped child too sidesteps the question entirely — same shape as
+/// `run_compiled_one`, and it never touches this process's fd 1.
+#[cfg(feature = "build-backend")]
+async fn run_interpreter_subprocess_one(path: &Path) -> Result<EngineOutput, EngineError> {
+    let path = path
+        .canonicalize()
+        .unwrap_or_else(|e| panic!("canonicalize {}: {e}", path.display()));
+    let workdir = tempfile::tempdir().expect("create isolated run workdir");
+
+    let mut cmd = tokio::process::Command::new(env!("CARGO_BIN_EXE_keel"));
+    cmd.arg("run")
+        .arg(&path)
+        .env("KEEL_LLM", "mock")
+        .env("KEEL_ONESHOT", "1")
+        .current_dir(workdir.path());
+
+    match tokio::time::timeout(PER_PROGRAM_TIMEOUT, cmd.output()).await {
+        Ok(Ok(output)) => Ok(EngineOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            exit_code: output.status.code().unwrap_or(1),
+        }),
+        Ok(Err(e)) => Err(EngineError::LoadFailed(format!("spawn `keel run`: {e}"))),
+        Err(_elapsed) => Err(EngineError::TimedOut(PER_PROGRAM_TIMEOUT)),
+    }
+}
+
+/// The `Engine::Compiled` analogue of [`run_one`] — same isolated-workdir
+/// and timeout treatment, but no fd-1 capture: `engine::run_compiled`
+/// captures the child's stdout itself via a piped `Command`, deliberately
+/// not sharing this process's stdio at all (see `engine.rs`'s module doc
+/// for why `run_one`'s fd-1 approach isn't used here). `workdir` becomes
+/// the child's cwd directly, so there's no `chdir`/restore dance on this
+/// process either.
+#[cfg(feature = "build-backend")]
+async fn run_compiled_one(path: &Path) -> Result<EngineOutput, EngineError> {
+    let path = path
+        .canonicalize()
+        .unwrap_or_else(|e| panic!("canonicalize {}: {e}", path.display()));
+    let workdir = tempfile::tempdir().expect("create isolated run workdir");
+
+    match tokio::time::timeout(
+        PER_PROGRAM_TIMEOUT,
+        engine::run_compiled(&path, Some(workdir.path())),
+    )
+    .await
+    {
+        Ok(Ok(output)) => Ok(output),
+        Ok(Err(engine_err)) => Err(engine_err),
+        Err(_elapsed) => Err(EngineError::TimedOut(PER_PROGRAM_TIMEOUT)),
+    }
+}
+
 /// Programs excluded from the corpus, one line each with a concrete reason.
 /// Categories: real network I/O, interactive stdin, outbound email,
 /// non-deterministic output (random/uuid/wall-clock), a real subprocess
@@ -195,6 +272,73 @@ async fn interpreter_is_deterministic_across_the_corpus() {
         std::env::set_var("KEEL_ONESHOT", "1");
     }
 
+    // Without the LLVM toolchain (`build-backend` off), `Engine::Compiled`
+    // stays a stub — exercise that contract directly (not through the
+    // corpus loop below) so it has its own regression coverage independent
+    // of which examples happen to be skipped. Calls `Engine::run` directly
+    // rather than through `run_one`: that helper redirects fd 1 and changes
+    // the process cwd, which this doesn't need.
+    #[cfg(not(feature = "build-backend"))]
+    {
+        let fixtures = corpus::fixtures_dir();
+        let path = fixtures.join("agent_lifecycle.keel");
+        let err = Engine::Compiled
+            .run(&path)
+            .await
+            .expect_err("Engine::Compiled has no backend yet");
+        assert!(matches!(err, EngineError::NotImplemented));
+    }
+
+    // Issue #136 (M1's own exit criterion): the compiled engine, run on a
+    // dedicated scalar-only fixture set (M1's scope — int/float/bool/str
+    // literals, arithmetic, if/while/for-over-ranges, direct task calls,
+    // io.show), must produce byte-identical stdout and exit codes to the
+    // interpreter. Both sides run as piped child processes here (see
+    // `run_interpreter_subprocess_one` and `run_compiled_one`) rather than
+    // going through `run_one`'s in-process fd-1 capture — that capture
+    // mechanism is documented as fragile to shifts in the process's
+    // async/fd state, and mixing it with `run_compiled_one`'s subprocess
+    // spawning in this same test lost the interpreter's captured output
+    // intermittently. Position relative to the corpus loop below no longer
+    // matters, since neither side of this comparison touches this
+    // process's fd 1 at all.
+    #[cfg(feature = "build-backend")]
+    {
+        let fixtures = discover_m1_scalar_fixtures();
+        assert!(
+            !fixtures.is_empty(),
+            "expected a non-empty M1-scalar conformance fixture set"
+        );
+
+        let mut m1_failures = Vec::new();
+        for entry in &fixtures {
+            let interpreted = run_interpreter_subprocess_one(&entry.path).await;
+            let compiled = run_compiled_one(&entry.path).await;
+            match (interpreted, compiled) {
+                (Ok(a), Ok(b)) if a == b => {}
+                (Ok(a), Ok(b)) => m1_failures.push(format!(
+                    "{}: compiled engine diverges from the interpreter:\n  interpreter: exit={} stdout={:?}\n  compiled:    exit={} stdout={:?}",
+                    entry.stem, a.exit_code, a.stdout, b.exit_code, b.stdout
+                )),
+                (Err(e), _) | (_, Err(e)) => {
+                    m1_failures.push(format!("{}: engine error: {e}", entry.stem));
+                }
+            }
+        }
+
+        eprintln!(
+            "conformance (M1 scalar, interpreter vs. compiled): {} run, {} failed",
+            fixtures.len(),
+            m1_failures.len()
+        );
+        assert!(
+            m1_failures.is_empty(),
+            "M1 conformance failures ({}):\n{}",
+            m1_failures.len(),
+            m1_failures.join("\n")
+        );
+    }
+
     let corpus = discover_corpus();
     assert!(
         !corpus.is_empty(),
@@ -238,20 +382,4 @@ async fn interpreter_is_deterministic_across_the_corpus() {
         failures.len(),
         failures.join("\n")
     );
-
-    // Exercises the `Engine::Compiled` stub directly (not through the corpus
-    // loop above) so the "not implemented" contract has its own regression
-    // coverage independent of which examples happen to be skipped. Inlined
-    // into this same test function rather than a separate #[test] — see the
-    // module doc comment for why a second test in this binary isn't safe.
-    // Calls `Engine::run` directly rather than through `run_one`: that
-    // helper redirects fd 1 and changes the process cwd, which
-    // `Engine::Compiled` doesn't need.
-    let fixtures = corpus::fixtures_dir();
-    let path = fixtures.join("agent_lifecycle.keel");
-    let err = Engine::Compiled
-        .run(&path)
-        .await
-        .expect_err("Engine::Compiled has no backend yet");
-    assert!(matches!(err, EngineError::NotImplemented));
 }

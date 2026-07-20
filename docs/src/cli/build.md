@@ -2,43 +2,53 @@
 
 <span class="badge badge-soon">Coming soon</span>
 
-> Status: `keel build` is the future entry point for the native/LLVM AOT backend (see the project's `designs/llvm-compilation.md`). It does not produce a binary yet. `--emit=kir` prints the mid-level IR for the scalar subset of the language, as a preview of the pipeline under construction; every other form of `keel build` errors. Use `keel run` to execute programs and `keel check` to type-check without running.
+> Status: `keel build` is the future entry point for the native/LLVM AOT backend (see the project's `designs/llvm-compilation.md`). The CLI does not produce a binary yet — `--emit=kir` prints the mid-level IR for the scalar subset of the language, as a preview of the pipeline under construction; every other form of `keel build` errors. Behind the scenes, that same scalar subset now compiles, links, and runs as a native binary end to end (proven by a dedicated conformance suite comparing its output against the interpreter's), but this isn't reachable from the CLI yet — only from the internal `keel-codegen`/`keel-rt-ffi` crates. Use `keel run` to execute programs and `keel check` to type-check without running.
 
 ## `--emit=kir`
 
-Type-checks a single-file program and prints its lowered mid-level IR (KIR) instead of compiling. Only the scalar subset lowers today: `int`/`float`/`bool`/`str` literals, arithmetic and comparison, `if`/`else`, `while`, `let`/assignment, task declarations with scalar parameters, direct calls between tasks, and `return`. Anything else — agents, structs, enums, containers, string interpolation, `for`, `when`, lambdas, generics — is rejected by name rather than silently dropped or approximated.
+Type-checks a single-file program and prints its lowered mid-level IR (KIR) instead of compiling. The scalar subset lowers today: `int`/`float`/`bool`/`str` literals, arithmetic and comparison, `if`/`else`, `while`, `for`-over-ranges, `let`/assignment, task declarations with scalar parameters, direct calls between tasks, calls into std namespaces (`io.show`, `log.*`, …), and `return`. Anything else — agents, structs, enums, containers, string interpolation, `when`, lambdas, generics, `try`/`catch` — is rejected by name rather than silently dropped or approximated.
 
 ```keel
-task add(a: int, b: int) -> int {
-  return a + b
+use std/io
+
+task sum_upto(n: int) -> int {
+  total = 0
+  for i in 1..n {
+    total += i
+  }
+  return total
 }
 
-x = add(2, 3)
+io.show(sum_upto(5))
 ```
 
 ```bash
-keel build add.keel --emit=kir
+keel build sum.keel --emit=kir
 ```
 
 ```
-fn add(a: int, b: int) -> int {
-  return (a + b)
+fn sum_upto(n: int) -> int {
+  let total: int = 0
+  for i in 1..n {
+    total = (total + i)
+  }
+  return total
 }
 
 fn <toplevel>() -> none {
-  let x: int = add(2, 3)
+  io.show(sum_upto(5))
 }
 ```
 
-Real programs use namespaces, agents, and structured data — none of which lower yet, so pointing `--emit=kir` at `examples/hello_world.keel` (or almost any other shipped example) currently errors by design:
+Real programs use agents and structured data, neither of which lower yet, so pointing `--emit=kir` at `examples/hello_world.keel` (or almost any other shipped example) currently errors by design:
 
 ```bash
 keel build examples/hello_world.keel --emit=kir
 ```
 
 ```
-Error:   × KIR lowering error at 396..406: `use declaration` is not supported by the
-  │ scalar-subset KIR lowering (M0)
+Error:   × KIR lowering error at 419..1039: `agent declaration` is not supported by
+  │ the scalar-subset KIR lowering (M0)
 ```
 
 ## Without `--emit`
@@ -53,4 +63,4 @@ Error:   × native codegen not yet implemented — `keel build` is the future LL
   │ level IR, or use `keel run` to execute examples/hello_world.keel
 ```
 
-`keel build` is present in the CLI because the verb is reserved for the native backend, but no codegen exists yet — only the KIR lowering step above.
+`keel build` is present in the CLI because the verb is reserved for the native backend. Codegen exists now (see the status note above) but is not yet wired to this command — only the KIR lowering step above is reachable today.

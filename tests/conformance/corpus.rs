@@ -24,6 +24,25 @@ pub fn fixtures_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/conformance/fixtures")
 }
 
+/// M1-scalar-only fixtures (issue #136) — nested under `fixtures/` so
+/// [`discover_corpus`]'s flat, non-recursive listing never picks them up:
+/// they run under a separate comparison (interpreter vs. compiled), not the
+/// interpreter-vs-interpreter determinism loop the rest of the corpus does.
+/// Only used when the compiled engine actually exists.
+#[cfg(feature = "build-backend")]
+pub fn m1_scalar_fixtures_dir() -> PathBuf {
+    fixtures_dir().join("m1_scalar")
+}
+
+/// Discovers the M1-scalar-only fixture set, sorted by stem.
+#[cfg(feature = "build-backend")]
+pub fn discover_m1_scalar_fixtures() -> Vec<CorpusEntry> {
+    let mut entries = Vec::new();
+    collect_flat_keel_files(&m1_scalar_fixtures_dir(), &mut entries);
+    entries.sort_by(|a, b| a.stem.cmp(&b.stem));
+    entries
+}
+
 /// Discovers the corpus, sorted by stem for stable, reproducible test
 /// output.
 pub fn discover_corpus() -> Vec<CorpusEntry> {

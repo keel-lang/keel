@@ -293,7 +293,7 @@
     {
       "name": "keel build",
       "status": "in progress",
-      "notes": "Native/LLVM AOT backend (designs/llvm-compilation.md); `--emit=kir` previews the scalar-subset mid-level IR, no codegen yet"
+      "notes": "Native/LLVM AOT backend (designs/llvm-compilation.md); `--emit=kir` previews the scalar-subset mid-level IR; codegen for that same subset compiles/links/runs internally (M1) but isn't wired to this CLI command yet"
     },
     {
       "name": "keel dap",

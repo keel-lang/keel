@@ -1,0 +1,13 @@
+use std/io
+
+task is_positive(n: float) -> bool {
+  return n > 0.0
+}
+
+a = 3.5
+b = -2.0
+flag = is_positive(a) and not is_positive(b)
+
+io.show("hello")
+io.show(flag)
+io.show(a + b)
