@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program, alongside the first groundwork slice of the native LLVM backend.
+%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program, alongside the native LLVM backend now compiling, linking, and running scalar Keel programs that match the interpreter byte for byte.
 
 ### Added
 
@@ -55,6 +55,8 @@ Known D0 gaps (see `docs/src/guide/debugging.md`): code inside `Async.spawn` run
   ```
 
 - **Interpreter-vs-interpreter conformance harness (`tests/conformance/`, also M0).** A new `cargo test --test conformance` runs the interpreter twice over every runnable `examples/*.keel` program plus a small curated fixture set, in-process (not by shelling out), and asserts the two runs produce byte-identical stdout and exit codes — the merge-gate infrastructure `designs/llvm-compilation.md` calls for once a second (compiled) engine exists. An `Engine` enum already has a stubbed `Compiled` variant so wiring in the real backend later doesn't change the harness's shape. Programs needing real network/email/interactive input, or with inherently non-deterministic output (random/uuid/wall-clock/concurrent-broadcast-ordering), are excluded via an explicit skip list with a one-line reason each.
+
+- **The native/LLVM backend now compiles, links, and runs a scalar-only Keel program end to end (M1 of `designs/llvm-compilation.md`).** Three new crates carry a program from KIR to a running binary: `keel-codegen` walks KIR (int/float/bool/str literals and arithmetic, comparisons, `if`/`while`/`for`-over-ranges, direct task calls, and calls into std namespaces) to LLVM IR via `inkwell` and links it against a small native runtime; `keel-rt-ffi` is that runtime, providing a `KeelBox` value ABI (`Arc<Value>` behind an opaque pointer with `keel_retain`/`keel_release`), a `keel_rt_call_ns` dispatch entry point that resolves the catalog's stable `ns_id`/`method_id` pairs back to namespace and method names and routes through the exact same namespace closures (`io.show`, `log.*`, …) the interpreter already uses, and the `keel_rt_start` handshake that boots a Tokio runtime under the compiled binary's synchronous entry point. `keel-catalog` gained the reverse `ns_id`→name and `method_id`→name lookups this dispatch needs. A new scalar-only fixture set (`tests/conformance/fixtures/m1_scalar/`) is compiled and run as a piped subprocess and diffed byte-for-byte against the interpreter running the same program in a second subprocess — `cargo test --test conformance --features build-backend` is now the merge gate proving the native backend stays semantically identical to the interpreter as it grows. The CLI surface is unchanged for now: `keel build` still only supports `--emit=kir`; wiring it to emit and run a real binary is follow-up work outside this milestone's exit criterion (a scalar-only example compiles, links, runs, and matches the interpreter — which the conformance suite now proves).
 
 ### Changed
 
