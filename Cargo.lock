@@ -1432,6 +1432,7 @@ name = "keel-codegen"
 version = "0.2.4"
 dependencies = [
  "inkwell",
+ "keel-compiler",
  "keel-kir",
  "keel-syntax",
  "serde_json",
@@ -1469,6 +1470,7 @@ name = "keel-kir"
 version = "0.2.4"
 dependencies = [
  "keel-catalog",
+ "keel-compiler",
  "keel-syntax",
 ]
 

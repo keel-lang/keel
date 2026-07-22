@@ -14,6 +14,25 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 use std::sync::OnceLock;
 
+/// Parses, type-checks, and lowers `source` to KIR — the same
+/// check-then-lower shape every real caller of `keel_kir::lower` uses (see
+/// `keel-kir`'s `lower::lower_program` doc: lowering consumes an already
+/// type-checked program's `CheckArtifacts`, it does not check for itself).
+/// Shared here since all three `tests/*.rs` files in this crate that
+/// `#[path]`-include this module previously duplicated these two lines
+/// inline with no checking step at all.
+pub fn parse_check_and_lower(source: &str) -> keel_kir::ir::KirProgram {
+    let (program, _named) =
+        keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
+    let (diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    assert!(
+        diagnostics.is_empty(),
+        "fixture must type-check cleanly: {diagnostics:?}"
+    );
+    keel_kir::lower(&program, "t.keel", &artifacts).expect("fixture must lower to KIR")
+}
+
 pub fn runtime_link_args() -> &'static Vec<String> {
     static ARGS: OnceLock<Vec<String>> = OnceLock::new();
     ARGS.get_or_init(|| {

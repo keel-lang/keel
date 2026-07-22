@@ -3,9 +3,19 @@
 //! scalar subset fails loudly with a `LowerError`, rather than silently
 //! dropping/approximating it.
 
+/// Pins what `keel-kir`'s own lowering rejects, independent of the type
+/// checker: several fixtures below (structs, generics, agents, …) are
+/// perfectly valid Keel the checker accepts today — it's the scalar-subset
+/// *lowering* that hasn't caught up to the full language yet. So this
+/// deliberately ignores the checker's diagnostics rather than gating on
+/// them; `artifacts` is still needed (lowering's signature requires it) but
+/// its accuracy on a program the checker rejects isn't this test's concern.
 fn lower_err(source: &str) -> String {
     let (program, _named) = keel_syntax::parse_source(source, "t.keel").expect("must parse");
-    let err = keel_kir::lower(&program, "t.keel").expect_err("must be rejected by M0 lowering");
+    let (_diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    let err = keel_kir::lower(&program, "t.keel", &artifacts)
+        .expect_err("must be rejected by M0 lowering");
     err.to_string()
 }
 

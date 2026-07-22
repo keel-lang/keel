@@ -14,6 +14,7 @@ keel-kir = { path = "../keel-kir" }
 inkwell = { version = "0.9.0", features = ["llvm22-1"] }
 
 [dev-dependencies]
+keel-compiler = { path = "../keel-compiler" }
 keel-syntax = { path = "../keel-syntax" }
 tempfile = { workspace = true }
 serde_json = { workspace = true }

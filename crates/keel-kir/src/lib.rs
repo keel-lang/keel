@@ -17,6 +17,7 @@ pub mod passes;
 pub mod span_table;
 pub mod types;
 
+use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::Program;
 
 use ir::KirProgram;
@@ -62,13 +63,21 @@ impl From<passes::verify::VerifyError> for KirError {
 /// consumer today.
 ///
 /// `file_name` is used only for the span table (diagnostics, dumps) — it
-/// does not need to be a real path.
+/// does not need to be a real path. `artifacts` is the resolved-type table
+/// from running the checker over the same program (e.g.
+/// `keel_compiler::types::checker::check_program_with_artifacts`) —
+/// callers must check it for errors before calling this; lowering does not
+/// re-check.
 ///
 /// # Errors
 ///
 /// See [`KirError`].
-pub fn lower(program: &Program, file_name: &str) -> Result<KirProgram, KirError> {
-    let program = lower::lower_program(program, file_name)?;
+pub fn lower(
+    program: &Program,
+    file_name: &str,
+    artifacts: &CheckArtifacts,
+) -> Result<KirProgram, KirError> {
+    let program = lower::lower_program(program, file_name, artifacts)?;
     let program = mono::monomorphize(program);
     let program = passes::boxing::insert_boxing(program);
     let program = passes::rc::insert_rc(program);
