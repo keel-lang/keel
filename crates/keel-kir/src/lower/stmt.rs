@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 
+use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::{self, Node};
 
 use super::{FnCtx, FuncSig, LowerError, binding_ident, ty_expr_to_kir};
@@ -17,6 +18,7 @@ use crate::types::KirType;
 use super::expr::lower_expr;
 
 /// Lowers a `{ ... }` block in its own child scope.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_block(
     block: &ast::Block,
     ctx: &mut FnCtx,
@@ -24,11 +26,20 @@ pub(crate) fn lower_block(
     ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
     ret_ty: KirType,
+    artifacts: &CheckArtifacts,
 ) -> Result<Block, LowerError> {
     ctx.push_scope();
     let mut out = Vec::with_capacity(block.len());
     for stmt in block {
-        out.push(lower_stmt(stmt, ctx, funcs, ns_bindings, table, ret_ty)?);
+        out.push(lower_stmt(
+            stmt,
+            ctx,
+            funcs,
+            ns_bindings,
+            table,
+            ret_ty,
+            artifacts,
+        )?);
     }
     ctx.pop_scope();
     Ok(out)
@@ -38,6 +49,7 @@ pub(crate) fn lower_block(
 /// need block scoping (`if`/`while` bodies) go through [`lower_block`]; the
 /// synthetic top-level function lowers its statements directly into the
 /// function's single root scope.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn lower_stmt(
     stmt: &Node<ast::Stmt>,
     ctx: &mut FnCtx,
@@ -45,11 +57,12 @@ pub(crate) fn lower_stmt(
     ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
     ret_ty: KirType,
+    artifacts: &CheckArtifacts,
 ) -> Result<ir::Stmt, LowerError> {
     match &stmt.kind {
         ast::Stmt::Let { binding, ty, value } => {
             let name = binding_ident(binding, &stmt.span)?;
-            let init = lower_expr(value, ctx, funcs, ns_bindings, table)?;
+            let init = lower_expr(value, ctx, funcs, ns_bindings, table, artifacts)?;
             let declared_ty = init.ty();
             if let Some(annotation) = ty {
                 let annotated = ty_expr_to_kir(annotation)?;
@@ -75,7 +88,7 @@ pub(crate) fn lower_stmt(
                 LowerError::new(format!("unknown identifier `{name}`"), name_span.clone())
             })?;
             let local_ty = ctx.locals[local].ty;
-            let rhs_expr = lower_expr(rhs, ctx, funcs, ns_bindings, table)?;
+            let rhs_expr = lower_expr(rhs, ctx, funcs, ns_bindings, table, artifacts)?;
             let op = super::expr::convert_binop(*op);
             let result_ty = super::expr::infer_binop_ty(op, local_ty, rhs_expr.ty(), &stmt.span)?;
             if result_ty != local_ty {
@@ -107,7 +120,7 @@ pub(crate) fn lower_stmt(
             Ok(ir::Stmt::Return(None))
         }
         ast::Stmt::Return(Some(value)) => {
-            let expr = lower_expr(value, ctx, funcs, ns_bindings, table)?;
+            let expr = lower_expr(value, ctx, funcs, ns_bindings, table, artifacts)?;
             if expr.ty() != ret_ty {
                 return Err(LowerError::new(
                     format!(
@@ -124,16 +137,17 @@ pub(crate) fn lower_stmt(
             then_body,
             else_body,
         } => {
-            let cond_expr = lower_expr(cond, ctx, funcs, ns_bindings, table)?;
+            let cond_expr = lower_expr(cond, ctx, funcs, ns_bindings, table, artifacts)?;
             if cond_expr.ty() != KirType::Bool {
                 return Err(LowerError::new(
                     format!("`if` condition is `{}`, expected `bool`", cond_expr.ty()),
                     cond.span.clone(),
                 ));
             }
-            let then_branch = lower_block(then_body, ctx, funcs, ns_bindings, table, ret_ty)?;
+            let then_branch =
+                lower_block(then_body, ctx, funcs, ns_bindings, table, ret_ty, artifacts)?;
             let else_branch = match else_body {
-                Some(body) => lower_block(body, ctx, funcs, ns_bindings, table, ret_ty)?,
+                Some(body) => lower_block(body, ctx, funcs, ns_bindings, table, ret_ty, artifacts)?,
                 None => Vec::new(),
             };
             Ok(ir::Stmt::If {
@@ -143,14 +157,14 @@ pub(crate) fn lower_stmt(
             })
         }
         ast::Stmt::While { cond, body } => {
-            let cond_expr = lower_expr(cond, ctx, funcs, ns_bindings, table)?;
+            let cond_expr = lower_expr(cond, ctx, funcs, ns_bindings, table, artifacts)?;
             if cond_expr.ty() != KirType::Bool {
                 return Err(LowerError::new(
                     format!("`while` condition is `{}`, expected `bool`", cond_expr.ty()),
                     cond.span.clone(),
                 ));
             }
-            let body = lower_block(body, ctx, funcs, ns_bindings, table, ret_ty)?;
+            let body = lower_block(body, ctx, funcs, ns_bindings, table, ret_ty, artifacts)?;
             Ok(ir::Stmt::While {
                 cond: cond_expr,
                 body,
@@ -162,6 +176,7 @@ pub(crate) fn lower_stmt(
             funcs,
             ns_bindings,
             table,
+            artifacts,
         )?)),
         ast::Stmt::SelfAssign { .. } => Err(LowerError::unsupported(
             "self.field assignment",
@@ -188,14 +203,14 @@ pub(crate) fn lower_stmt(
             };
             // Bounds are evaluated once, before `var` exists, so they lower
             // in the enclosing scope and cannot reference the loop variable.
-            let low = lower_expr(start, ctx, funcs, ns_bindings, table)?;
+            let low = lower_expr(start, ctx, funcs, ns_bindings, table, artifacts)?;
             if low.ty() != KirType::I64 {
                 return Err(LowerError::new(
                     format!("`for` range start is `{}`, expected `int`", low.ty()),
                     start.span.clone(),
                 ));
             }
-            let high = lower_expr(end, ctx, funcs, ns_bindings, table)?;
+            let high = lower_expr(end, ctx, funcs, ns_bindings, table, artifacts)?;
             if high.ty() != KirType::I64 {
                 return Err(LowerError::new(
                     format!("`for` range end is `{}`, expected `int`", high.ty()),
@@ -204,7 +219,7 @@ pub(crate) fn lower_stmt(
             }
             ctx.push_scope();
             let var = ctx.declare(name, KirType::I64);
-            let body = lower_block(body, ctx, funcs, ns_bindings, table, ret_ty)?;
+            let body = lower_block(body, ctx, funcs, ns_bindings, table, ret_ty, artifacts)?;
             ctx.pop_scope();
             Ok(ir::Stmt::ForIndex {
                 var,

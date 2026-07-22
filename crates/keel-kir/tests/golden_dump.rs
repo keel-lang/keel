@@ -17,7 +17,13 @@ fn fixtures_dir() -> PathBuf {
 fn dump_for(keel_source: &str, file_name: &str) -> String {
     let (program, _named) =
         keel_syntax::parse_source(keel_source, file_name).expect("fixture must parse");
-    let kir = keel_kir::lower(&program, file_name).expect("fixture must lower to KIR");
+    let (diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    assert!(
+        diagnostics.is_empty(),
+        "golden fixture must type-check cleanly: {diagnostics:?}"
+    );
+    let kir = keel_kir::lower(&program, file_name, &artifacts).expect("fixture must lower to KIR");
     keel_kir::dump::dump(&kir)
 }
 

@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 keel-catalog = { path = "../keel-catalog" }
+keel-compiler = { path = "../keel-compiler" }
 keel-syntax = { path = "../keel-syntax" }
 
 [dev-dependencies]

@@ -149,7 +149,15 @@ pub async fn run_compiled(
 
     let (program, _named) = keel_syntax::parse_source(&source, &name)
         .map_err(|e| EngineError::LoadFailed(format!("parse: {e:?}")))?;
-    let kir = keel_kir::lower(&program, &name)
+    let (diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    if !diagnostics.is_empty() {
+        return Err(EngineError::LoadFailed(format!(
+            "{} type error(s) in a corpus program that is expected to be clean",
+            diagnostics.len()
+        )));
+    }
+    let kir = keel_kir::lower(&program, &name, &artifacts)
         .map_err(|e| EngineError::LoadFailed(format!("lower to KIR: {e}")))?;
 
     let out_dir = tempfile::tempdir()

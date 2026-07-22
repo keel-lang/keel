@@ -368,8 +368,16 @@ pub fn build_file(path: &Path, emit: Option<&str>) -> Result<()> {
                 ));
             }
             let entry = checked.graph.entry();
-            let kir =
-                keel_kir::lower(&entry.program, &entry.name).map_err(|e| miette::miette!("{e}"))?;
+            let (diagnostics, artifacts) =
+                crate::types::checker::check_program_with_artifacts(&entry.program, false);
+            if !diagnostics.is_empty() {
+                return Err(miette::miette!(
+                    "{} type error(s) — cannot lower a program with type errors to KIR",
+                    diagnostics.len()
+                ));
+            }
+            let kir = keel_kir::lower(&entry.program, &entry.name, &artifacts)
+                .map_err(|e| miette::miette!("{e}"))?;
             print!("{}", keel_kir::dump::dump(&kir));
             Ok(())
         }

@@ -12,9 +12,7 @@ use keel_codegen::BuildOptions;
 mod support;
 
 fn compile_and_run(source: &str) -> std::process::Output {
-    let (program, _named) =
-        keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
-    let kir = keel_kir::lower(&program, "t.keel").expect("fixture must lower to KIR");
+    let kir = support::parse_check_and_lower(source);
 
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {

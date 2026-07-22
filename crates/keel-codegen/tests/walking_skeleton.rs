@@ -16,9 +16,7 @@ use keel_codegen::{BuildOptions, CodegenError};
 mod support;
 
 fn compile_and_run(source: &str) -> (i32, tempfile::TempDir) {
-    let (program, _named) =
-        keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
-    let kir = keel_kir::lower(&program, "t.keel").expect("fixture must lower to KIR");
+    let kir = support::parse_check_and_lower(source);
 
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {
@@ -35,9 +33,7 @@ fn compile_and_run(source: &str) -> (i32, tempfile::TempDir) {
 }
 
 fn compile_err(source: &str) -> CodegenError {
-    let (program, _named) =
-        keel_syntax::parse_source(source, "t.keel").expect("fixture must parse");
-    let kir = keel_kir::lower(&program, "t.keel").expect("fixture must lower to KIR");
+    let kir = support::parse_check_and_lower(source);
 
     let out_dir = tempfile::tempdir().expect("create temp out dir");
     let opts = BuildOptions {
@@ -56,7 +52,26 @@ fn int_arithmetic_becomes_the_exit_code() {
 
 #[test]
 fn let_and_augmented_assign_become_the_exit_code() {
-    let (code, _dir) = compile_and_run("n = 5\nn += 3\nn * 2\n");
+    // A bare top-level `n = 5\nn += 3` (no function) type-checks fine at
+    // runtime but is rejected by `keel check`/`keel run` today — a
+    // pre-existing checker bug (`check_body` gives every top-level
+    // `Decl::Stmt` its own fresh `Scope`, so a later statement can't see an
+    // earlier one's binding for augmented-assignment purposes; tracked
+    // separately, not a codegen/KIR concern). Wrapping in a function keeps
+    // this test green without depending on that bug being fixed, and still
+    // exercises Let/AugAssign/BinOp/call/exit-code exactly as before —
+    // `control_flow_and_calls.rs` already established the bare-call-as-
+    // exit-code convention this relies on.
+    let (code, _dir) = compile_and_run(
+        r#"
+task run() -> int {
+  n = 5
+  n += 3
+  return n * 2
+}
+run()
+"#,
+    );
     assert_eq!(code, 16);
 }
 

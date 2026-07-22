@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::TaskDecl;
 
 use super::{FnCtx, FuncSig, LowerError, binding_ident, ty_expr_to_kir};
@@ -53,6 +54,7 @@ pub(crate) fn lower_task_body(
     funcs: &HashMap<String, FuncSig>,
     ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
+    artifacts: &CheckArtifacts,
 ) -> Result<KirFunction, LowerError> {
     let mut ctx = FnCtx::new();
     let mut params = Vec::with_capacity(task.params.len());
@@ -62,7 +64,15 @@ pub(crate) fn lower_task_body(
         params.push(Param { local, ty: *ty });
     }
 
-    let body = super::stmt::lower_block(&task.body, &mut ctx, funcs, ns_bindings, table, sig.ret)?;
+    let body = super::stmt::lower_block(
+        &task.body,
+        &mut ctx,
+        funcs,
+        ns_bindings,
+        table,
+        sig.ret,
+        artifacts,
+    )?;
 
     Ok(KirFunction {
         id: sig.func_id,

@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::{self, SpannedExpr};
 use keel_syntax::lexer::Span;
 
@@ -40,8 +41,9 @@ pub(crate) fn convert_binop(op: ast::BinOp) -> ir::BinOp {
 /// Structural type inference for a binary op, given both operands' already-
 /// known KIR types. Mirrors the scalar slice of the real type checker's
 /// binary-op rules (`crates/keel-compiler/src/types/checker.rs`) closely
-/// enough for M0; see the `#109` seam note in `lower/mod.rs` for why this is
-/// local inference rather than a `CheckArtifacts` lookup.
+/// enough for M0/M1; see the `CheckArtifacts` note in `lower/mod.rs` for why
+/// this stays local structural inference rather than a `CheckArtifacts`
+/// lookup.
 pub(crate) fn infer_binop_ty(
     op: ir::BinOp,
     left: KirType,
@@ -100,6 +102,7 @@ pub(crate) fn lower_expr(
     funcs: &HashMap<String, FuncSig>,
     ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
+    artifacts: &CheckArtifacts,
 ) -> Result<Expr, LowerError> {
     match &expr.kind {
         ast::Expr::Integer(v) => Ok(Expr::ConstInt(*v)),
@@ -114,8 +117,8 @@ pub(crate) fn lower_expr(
             Ok(Expr::Local { id: local, ty })
         }
         ast::Expr::BinaryOp { left, op, right } => {
-            let left_e = lower_expr(left, ctx, funcs, ns_bindings, table)?;
-            let right_e = lower_expr(right, ctx, funcs, ns_bindings, table)?;
+            let left_e = lower_expr(left, ctx, funcs, ns_bindings, table, artifacts)?;
+            let right_e = lower_expr(right, ctx, funcs, ns_bindings, table, artifacts)?;
             let kir_op = convert_binop(*op);
             let ty = infer_binop_ty(kir_op, left_e.ty(), right_e.ty(), &expr.span)?;
             Ok(Expr::BinOp {
@@ -126,7 +129,7 @@ pub(crate) fn lower_expr(
             })
         }
         ast::Expr::UnaryOp { op, expr: operand } => {
-            let operand_e = lower_expr(operand, ctx, funcs, ns_bindings, table)?;
+            let operand_e = lower_expr(operand, ctx, funcs, ns_bindings, table, artifacts)?;
             let ty = match op {
                 ast::UnOp::Neg if operand_e.ty().is_numeric() => operand_e.ty(),
                 ast::UnOp::Not if operand_e.ty() == KirType::Bool => KirType::Bool,
@@ -153,9 +156,16 @@ pub(crate) fn lower_expr(
                 ty,
             })
         }
-        ast::Expr::Call { callee, args } => {
-            lower_call(callee, args, ctx, funcs, ns_bindings, table, &expr.span)
-        }
+        ast::Expr::Call { callee, args } => lower_call(
+            callee,
+            args,
+            ctx,
+            funcs,
+            ns_bindings,
+            table,
+            artifacts,
+            &expr.span,
+        ),
         ast::Expr::FieldAccess(..) => {
             Err(LowerError::unsupported("field access", expr.span.clone()))
         }
@@ -205,6 +215,7 @@ pub(crate) fn lower_expr(
                     funcs,
                     ns_bindings,
                     table,
+                    artifacts,
                     &expr.span,
                 )
             } else {
@@ -250,6 +261,7 @@ fn lower_string_lit(parts: &[ast::StringPart], span: &Span) -> Result<Expr, Lowe
 /// calls never reach here — the parser produces `ast::Expr::MethodCall` for
 /// all dot-call syntax, not `Call` with a field-access callee; see the
 /// `ast::Expr::MethodCall` arm in `lower_expr` for namespace-call lowering.
+#[allow(clippy::too_many_arguments)]
 fn lower_call(
     callee: &SpannedExpr,
     args: &[ast::CallArg],
@@ -257,6 +269,7 @@ fn lower_call(
     funcs: &HashMap<String, FuncSig>,
     ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
+    artifacts: &CheckArtifacts,
     call_span: &Span,
 ) -> Result<Expr, LowerError> {
     let ast::Expr::Ident(name) = &callee.kind else {
@@ -288,7 +301,7 @@ fn lower_call(
                 arg.value.span.clone(),
             ));
         }
-        let lowered = lower_expr(&arg.value, ctx, funcs, ns_bindings, table)?;
+        let lowered = lower_expr(&arg.value, ctx, funcs, ns_bindings, table, artifacts)?;
         if lowered.ty() != *expected_ty {
             return Err(LowerError::new(
                 format!(
@@ -334,6 +347,7 @@ fn lower_ns_call(
     funcs: &HashMap<String, FuncSig>,
     ns_bindings: &HashMap<String, String>,
     table: &mut SpanTable,
+    artifacts: &CheckArtifacts,
     call_span: &Span,
 ) -> Result<Expr, LowerError> {
     let builtin = keel_catalog::catalog_method(namespace, method).ok_or_else(|| {
@@ -369,7 +383,14 @@ fn lower_ns_call(
                 arg.value.span.clone(),
             ));
         }
-        lowered_args.push(lower_expr(&arg.value, ctx, funcs, ns_bindings, table)?);
+        lowered_args.push(lower_expr(
+            &arg.value,
+            ctx,
+            funcs,
+            ns_bindings,
+            table,
+            artifacts,
+        )?);
     }
 
     let ty = result_ty_to_kir(builtin.result, call_span)?;

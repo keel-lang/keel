@@ -17,25 +17,27 @@
 //! one already-`keel check`ed [`Program`], not a `ModuleGraph`. The CLI
 //! (`src/pipeline.rs`) passes the entry module only.
 //!
-//! # The `#109` seam
+//! # `CheckArtifacts`
 //!
 //! `designs/llvm-compilation.md` §2.2 specifies
 //! `lib.rs: lower(ModuleGraph, CheckArtifacts) -> KirProgram` — consuming
 //! the type checker's per-expression `Ty` table (`CheckArtifacts::expr_types`,
-//! added by issue #109's `check_program_with_artifacts`). That plumbing does
-//! not exist yet in this tree, so `lower_program` below infers scalar types
-//! itself: task signatures come from AST type annotations
-//! (`decl::signature_of`), and expression types are propagated structurally
-//! (literal -> obvious type; binary op -> `expr::infer_binop_ty`; identifier
-//! -> the type its declaring `let`/param recorded).
+//! added by issue #109's `check_program_with_artifacts`/PR #122). `lower_program`
+//! takes `&CheckArtifacts` and threads it through every lowering function, but
+//! the M0/M1 scalar subset still gets its `KirType`s from structural bottom-up
+//! inference (literal -> obvious type; binary op -> `expr::infer_binop_ty`;
+//! identifier -> the type its declaring `let`/param recorded) rather than
+//! artifact lookups — that inference is provably correct and conformance-
+//! tested for everything it currently covers, so replacing it would be
+//! churn with no behavior change. `artifacts` becomes load-bearing starting
+//! with constructs that need the checker's own resolution (an anonymous
+//! struct literal's target type, a nullable's inner type, …) — see
+//! `designs/llvm-compilation.md` §4 M2's per-feature issues.
 //!
-// TODO(#109): once `CheckArtifacts` lands, replace the local inference in
-// `expr.rs`/`stmt.rs`/`decl.rs` with lookups into `artifacts.expr_types`
-// (keyed by `Span`), and change this function's signature to take
-// `&ModuleGraph` + `&CheckArtifacts` instead of `&Program`. The two-pass
-// signature-collection structure below (collect all task signatures, then
-// lower bodies) stays either way — it's what makes forward/mutual calls
-// resolve.
+//! Multi-module lowering is still out of scope: `lower_program` takes one
+//! already-`keel check`ed [`Program`] (plus the `CheckArtifacts` from
+//! checking that same program), not a `ModuleGraph`. The CLI
+//! (`src/pipeline.rs`) passes the entry module only.
 pub mod decl;
 pub mod expr;
 pub mod stmt;
@@ -44,6 +46,7 @@ pub mod sugar;
 use std::collections::HashMap;
 use std::fmt;
 
+use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::{Binding, Decl, Program, UseDecl, UseKind, UseSource};
 use keel_syntax::lexer::Span;
 
@@ -155,7 +158,11 @@ impl FnCtx {
 ///
 /// Returns a [`LowerError`] at the first AST construct outside the M0
 /// scalar subset, or the first local scalar-inference mismatch.
-pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, LowerError> {
+pub fn lower_program(
+    program: &Program,
+    file_name: &str,
+    artifacts: &CheckArtifacts,
+) -> Result<KirProgram, LowerError> {
     let mut span_table = SpanTable::new(file_name);
     let mut funcs: HashMap<String, FuncSig> = HashMap::new();
     let mut ns_bindings: HashMap<String, String> = HashMap::new();
@@ -203,6 +210,7 @@ pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, L
             &funcs,
             &ns_bindings,
             &mut span_table,
+            artifacts,
         )?);
     }
 
@@ -220,6 +228,7 @@ pub fn lower_program(program: &Program, file_name: &str) -> Result<KirProgram, L
                 &ns_bindings,
                 &mut span_table,
                 KirType::Unit,
+                artifacts,
             )?);
         }
     }

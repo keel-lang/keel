@@ -1,10 +1,10 @@
 //! `KirType` — the lowered type vocabulary KIR expressions carry.
 //!
-//! M0 lowers the scalar subset only (see `designs/llvm-compilation.md` §4,
-//! M0), so only the unboxed-scalar variants are reachable from `lower/`
+//! M0/M1 lower the scalar subset only (see `designs/llvm-compilation.md`
+//! §4), so only the unboxed-scalar variants are reachable from `lower/`
 //! today. The remaining variants sketched in the design doc's `KirType`
 //! (§2.3) — containers, structs, enums, nullable, func, boxed `dynamic`,
-//! opaque handles — are deliberately not modeled yet; adding them is M1+
+//! opaque handles — are deliberately not modeled yet; adding them is M2+
 //! work, done alongside the lowering support that produces them.
 
 /// A KIR-level type. Every KIR expression carries one.
@@ -75,6 +75,40 @@ impl KirType {
             | TySpec::ListOfMapStrStr
             | TySpec::ListOfMapStrDynamic
             | TySpec::Unknown => None,
+        }
+    }
+
+    /// Maps the checker's resolved [`keel_compiler::types::ty::Ty`] (from
+    /// `CheckArtifacts::expr_types`) to the equivalent `KirType`, for the
+    /// scalar subset this crate lowers today. `None` for anything needing
+    /// containers, structs, enums, nullable, or boxing — callers reject
+    /// those with a `LowerError`/`VerifyError` naming the construct, same
+    /// policy as [`Self::from_tyspec`].
+    #[must_use]
+    pub fn from_ty(ty: &keel_compiler::types::ty::Ty) -> Option<KirType> {
+        use keel_compiler::types::ty::Ty;
+        match ty {
+            Ty::Int => Some(KirType::I64),
+            Ty::Float => Some(KirType::F64),
+            Ty::Bool => Some(KirType::Bool),
+            Ty::Str => Some(KirType::Str),
+            Ty::None_ => Some(KirType::Unit),
+            Ty::Duration
+            | Ty::Datetime
+            | Ty::Uuid
+            | Ty::List(_)
+            | Ty::Map(_, _)
+            | Ty::Set(_)
+            | Ty::Struct { .. }
+            | Ty::Tuple(_)
+            | Ty::Func(_, _)
+            | Ty::Enum(_, _)
+            | Ty::DbConnection
+            | Ty::Dynamic
+            | Ty::Error
+            | Ty::Unresolved(_)
+            | Ty::Unknown(_)
+            | Ty::Nullable(_) => None,
         }
     }
 }
