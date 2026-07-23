@@ -1,0 +1,8 @@
+fn greet(name: str, greeting: str) -> str {
+  return (((greeting + ", ") + name) + "!")
+}
+
+fn <toplevel>() -> none {
+  let with_greeting: str = greet("Ada", "Hi")
+  let without_greeting: str = greet("Ada", "Hello")
+}

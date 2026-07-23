@@ -592,3 +592,46 @@ task f() -> int {
         "unexpected message: {msg}"
     );
 }
+
+#[test]
+fn non_default_parameter_after_a_defaulted_one_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(a: int = 1, b: int) -> int {
+  return a + b
+}
+"#,
+    );
+    assert!(
+        msg.contains("defaults must be trailing"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn call_omitting_a_non_default_argument_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+x = f()
+"#,
+    );
+    assert!(msg.contains("takes"), "unexpected message: {msg}");
+}
+
+#[test]
+fn call_with_too_many_arguments_is_still_rejected() {
+    let msg = lower_err(
+        r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+x = f(1, 2, 3)
+"#,
+    );
+    assert!(msg.contains("takes"), "unexpected message: {msg}");
+}

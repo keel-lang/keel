@@ -1,0 +1,6 @@
+task greet(name: str, greeting: str = "Hello") -> str {
+  return greeting + ", " + name + "!"
+}
+
+with_greeting = greet("Ada", "Hi")
+without_greeting = greet("Ada")
