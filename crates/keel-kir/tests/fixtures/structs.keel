@@ -1,0 +1,13 @@
+type Order {
+  id: str
+  status: str
+  amount: float
+}
+
+task process_order(o: Order) -> Order {
+  return { ...o, status: "filled" }
+}
+
+pending: Order = { id: "ord-42", status: "pending", amount: 250.0 }
+filled = process_order(pending)
+result = filled.status

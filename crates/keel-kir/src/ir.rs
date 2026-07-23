@@ -22,6 +22,9 @@ pub type FuncId = usize;
 /// scoping rule — see `AGENTS.md` / `feedback_keel_assignment_scoping`).
 pub type LocalId = usize;
 
+/// Index into `KirProgram::structs`.
+pub type StructId = usize;
+
 /// A whole lowered program (currently: a single file's tasks + its
 /// top-level statements — multi-module lowering is deferred until the
 /// `keel-compiler` `ModuleGraph`/`CheckArtifacts` seam lands, see `lib.rs`).
@@ -33,7 +36,43 @@ pub struct KirProgram {
     /// The function compiling the file's top-level statements (mirrors
     /// `Interpreter::execute`'s treatment of top-level code).
     pub toplevel: FuncId,
+    /// Every named struct type (`type X { .. }`) declared in the file, in
+    /// declaration order. Anonymous struct shapes (`{x: 1, y: 2}` with no
+    /// resolvable named-type context) aren't interned yet — deferred until
+    /// an M2 fixture actually needs one; see `lower/mod.rs`'s struct-
+    /// resolution doc.
+    pub structs: Vec<StructLayout>,
     pub span_table: SpanTable,
+}
+
+/// A named struct type's compiled layout: field order + `KirType` per
+/// field, fixed at KIR-lowering time (`designs/llvm-compilation.md` §2.3 —
+/// tag/layout values are decided here, not left to codegen).
+#[derive(Debug, Clone)]
+pub struct StructLayout {
+    pub id: StructId,
+    pub name: String,
+    /// Declaration order — struct literals are matched against this by
+    /// field *name* (not literal-source order, matching the checker's
+    /// structural assignability rule) and rebuilt in this order.
+    pub fields: Vec<(String, KirType)>,
+}
+
+impl StructLayout {
+    /// Index of `name` in `fields`, if this struct has such a field.
+    #[must_use]
+    pub fn field_index(&self, name: &str) -> Option<usize> {
+        self.fields.iter().position(|(n, _)| n == name)
+    }
+
+    /// A struct needs heap allocation + RC (a `ptr` in the value ABI) if any
+    /// field is itself heap-typed — recursively, so a struct-of-a-struct-
+    /// with-a-string-field is heap too. Everything else (all-scalar fields)
+    /// is a plain by-value LLVM aggregate, same treatment as tuples (§1.1).
+    #[must_use]
+    pub fn is_heap(&self, program: &KirProgram) -> bool {
+        self.fields.iter().any(|(_, ty)| ty.is_heap(program))
+    }
 }
 
 /// One lowered task (or the synthetic top-level function).
@@ -145,6 +184,23 @@ pub enum Expr {
         ty: KirType,
         span: SpanId,
     },
+    /// Builds a named struct value. `fields` are in the struct's declared
+    /// field order (`StructLayout::fields`), already matched/reordered from
+    /// the literal's (possibly different) source order and, for a spread-
+    /// update, already resolved to each field's final value (overridden or
+    /// copied from the base) — see `lower/expr.rs`'s struct-literal lowering
+    /// doc for why this needs an expected-type context to build at all.
+    MakeStruct {
+        struct_id: StructId,
+        fields: Vec<Expr>,
+    },
+    /// `base.field` on a struct-typed `base` — `field_index` is resolved at
+    /// lowering time via `StructLayout::field_index`.
+    FieldGet {
+        base: Box<Expr>,
+        field_index: usize,
+        ty: KirType,
+    },
 }
 
 /// What an `Expr::Call` invokes.
@@ -172,7 +228,9 @@ impl Expr {
             Expr::Local { ty, .. }
             | Expr::BinOp { ty, .. }
             | Expr::UnOp { ty, .. }
-            | Expr::Call { ty, .. } => *ty,
+            | Expr::Call { ty, .. }
+            | Expr::FieldGet { ty, .. } => *ty,
+            Expr::MakeStruct { struct_id, .. } => KirType::Struct(*struct_id),
         }
     }
 }

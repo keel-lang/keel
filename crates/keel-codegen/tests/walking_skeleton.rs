@@ -10,7 +10,7 @@
 use std::path::Path;
 use std::process::Command;
 
-use keel_codegen::{BuildOptions, CodegenError};
+use keel_codegen::BuildOptions;
 
 #[path = "support/mod.rs"]
 mod support;
@@ -30,17 +30,6 @@ fn compile_and_run(source: &str) -> (i32, tempfile::TempDir) {
         run.status.code().expect("process exited via a signal"),
         out_dir,
     )
-}
-
-fn compile_err(source: &str) -> CodegenError {
-    let kir = support::parse_check_and_lower(source);
-
-    let out_dir = tempfile::tempdir().expect("create temp out dir");
-    let opts = BuildOptions {
-        out_dir: out_dir.path().to_path_buf(),
-        runtime_link_args: support::runtime_link_args().clone(),
-    };
-    keel_codegen::compile(&kir, &opts).expect_err("compile must be rejected")
 }
 
 #[test]
@@ -99,12 +88,14 @@ fn empty_program_compiles_and_exits_zero() {
 }
 
 #[test]
-fn str_expression_is_rejected_not_silently_dropped() {
-    let err = compile_err("\"hi\"\n");
-    assert!(
-        matches!(err, CodegenError::Unsupported(ref msg) if msg.contains("str")),
-        "unexpected error: {err}"
-    );
+fn bare_str_expression_compiles_and_exits_zero() {
+    // `str` is a full general expression now (M2 needs it for struct
+    // fields — see `layout.rs`'s module doc): a bare top-level string
+    // literal is no longer rejected, it just isn't `int`-typed, so the
+    // exit-code convention falls through to 0, same as the float/bool case
+    // below.
+    let (code, _dir) = compile_and_run("\"hi\"\n");
+    assert_eq!(code, 0);
 }
 
 #[test]

@@ -1,11 +1,13 @@
 //! `KirType` — the lowered type vocabulary KIR expressions carry.
 //!
 //! M0/M1 lower the scalar subset only (see `designs/llvm-compilation.md`
-//! §4), so only the unboxed-scalar variants are reachable from `lower/`
-//! today. The remaining variants sketched in the design doc's `KirType`
-//! (§2.3) — containers, structs, enums, nullable, func, boxed `dynamic`,
-//! opaque handles — are deliberately not modeled yet; adding them is M2+
-//! work, done alongside the lowering support that produces them.
+//! §4); M2 adds named structs. The remaining variants sketched in the
+//! design doc's `KirType` (§2.3) — containers, anonymous struct shapes,
+//! enums, nullable, func, boxed `dynamic`, opaque handles — are
+//! deliberately not modeled yet; adding them is later-M2+ work, done
+//! alongside the lowering support that produces them.
+
+use crate::ir::{KirProgram, StructId};
 
 /// A KIR-level type. Every KIR expression carries one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,10 +25,18 @@ pub enum KirType {
     /// literals and `+` concatenation are simple enough to lower now without
     /// the container ABI landing first.
     Str,
+    /// A named struct type (`type X { .. }`) — see `KirProgram::structs` for
+    /// the field layout this id indexes. Anonymous shapes have no `KirType`
+    /// yet (deferred, see `ir.rs`'s `StructLayout` doc).
+    Struct(StructId),
 }
 
 impl KirType {
-    /// Pretty name used by `dump.rs` and diagnostics.
+    /// Pretty name used by `dump.rs` and diagnostics. Doesn't have access to
+    /// `KirProgram::structs`, so a struct type prints as the generic
+    /// `"struct"` here — call sites that can name the actual struct (lowering
+    /// error messages, which already have the name in hand; `dump.rs`, which
+    /// carries the whole program) do so directly instead of through this.
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
@@ -35,6 +45,7 @@ impl KirType {
             KirType::Bool => "bool",
             KirType::Unit => "none",
             KirType::Str => "str",
+            KirType::Struct(_) => "struct",
         }
     }
 
@@ -42,6 +53,19 @@ impl KirType {
     #[must_use]
     pub const fn is_numeric(self) -> bool {
         matches!(self, KirType::I64 | KirType::F64)
+    }
+
+    /// `true` for types the value ABI represents as a `ptr` to RC'd heap
+    /// data — `str` today, plus a struct whose layout contains a heap field
+    /// anywhere (recursively, via `StructLayout::is_heap`). Everything else
+    /// is a plain by-value scalar/aggregate.
+    #[must_use]
+    pub fn is_heap(self, program: &KirProgram) -> bool {
+        match self {
+            KirType::Str => true,
+            KirType::Struct(id) => program.structs[id].is_heap(program),
+            KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit => false,
+        }
     }
 
     /// Maps a catalog [`keel_catalog::builtins::TySpec`] to the equivalent

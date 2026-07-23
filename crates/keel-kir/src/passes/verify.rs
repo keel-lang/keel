@@ -12,7 +12,9 @@
 
 use std::fmt;
 
-use crate::ir::{Block, CallTarget, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt};
+use crate::ir::{
+    Block, CallTarget, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt, StructId,
+};
 use crate::types::KirType;
 
 #[derive(Debug, Clone)]
@@ -97,6 +99,16 @@ fn check_func(program: &KirProgram, id: FuncId) -> Result<(), String> {
         return Err(format!(
             "FuncId {id} out of range ({} functions)",
             program.functions.len()
+        ));
+    }
+    Ok(())
+}
+
+fn check_struct(program: &KirProgram, id: StructId) -> Result<(), String> {
+    if id >= program.structs.len() {
+        return Err(format!(
+            "StructId {id} out of range ({} structs)",
+            program.structs.len()
         ));
     }
     Ok(())
@@ -232,6 +244,59 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
                     verify_ns_call(*ns_id, *method_id, args, *ty)
                 }
             }
+        }
+        Expr::MakeStruct { struct_id, fields } => {
+            check_struct(program, *struct_id)?;
+            let layout = &program.structs[*struct_id];
+            if layout.fields.len() != fields.len() {
+                return Err(format!(
+                    "`{}` literal has {} field(s), struct declares {}",
+                    layout.name,
+                    fields.len(),
+                    layout.fields.len()
+                ));
+            }
+            for (field, (name, declared_ty)) in fields.iter().zip(&layout.fields) {
+                verify_expr(program, func, field)?;
+                if field.ty() != *declared_ty {
+                    return Err(format!(
+                        "`{}.{name}` is declared {declared_ty} but the literal supplies {}",
+                        layout.name,
+                        field.ty()
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Expr::FieldGet {
+            base,
+            field_index,
+            ty,
+        } => {
+            verify_expr(program, func, base)?;
+            let KirType::Struct(struct_id) = base.ty() else {
+                return Err(format!(
+                    "field-get base is {}, expected a struct",
+                    base.ty()
+                ));
+            };
+            check_struct(program, struct_id)?;
+            let layout = &program.structs[struct_id];
+            if *field_index >= layout.fields.len() {
+                return Err(format!(
+                    "field-get index {field_index} out of range for `{}` ({} fields)",
+                    layout.name,
+                    layout.fields.len()
+                ));
+            }
+            let declared_ty = layout.fields[*field_index].1;
+            if declared_ty != *ty {
+                return Err(format!(
+                    "field-get on `{}.{}` claims type {ty} but the field is {declared_ty}",
+                    layout.name, layout.fields[*field_index].0
+                ));
+            }
+            Ok(())
         }
     }
 }

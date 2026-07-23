@@ -46,6 +46,9 @@ pub(crate) struct FuncCtx<'ctx, 'a> {
     pub(crate) context: &'ctx Context,
     pub(crate) module: &'a Module<'ctx>,
     pub(crate) builder: &'a Builder<'ctx>,
+    /// The whole program — needed by `layout::llvm_type`/`struct_layout_type`
+    /// to resolve a `KirType::Struct`'s field layout.
+    pub(crate) program: &'a KirProgram,
     /// The LLVM function currently being emitted into — needed to attach
     /// new basic blocks (`if`/`while`/`for` wiring).
     pub(crate) function: FunctionValue<'ctx>,
@@ -78,11 +81,13 @@ pub(crate) fn declare_functions<'ctx>(
         let param_types = func
             .params
             .iter()
-            .map(|p| crate::layout::llvm_type(context, p.ty).map(Into::into))
+            .map(|p| crate::layout::llvm_type(context, program, p.ty).map(Into::into))
             .collect::<Result<Vec<_>, _>>()?;
         let fn_type = match func.ret {
             KirType::Unit => context.void_type().fn_type(&param_types, false),
-            other => crate::layout::llvm_type(context, other)?.fn_type(&param_types, false),
+            other => {
+                crate::layout::llvm_type(context, program, other)?.fn_type(&param_types, false)
+            }
         };
         functions[id] = Some(module.add_function(&func.name, fn_type, None));
     }
@@ -95,6 +100,7 @@ pub(crate) fn emit_function<'ctx>(
     module: &Module<'ctx>,
     builder: &Builder<'ctx>,
     functions: &[Option<FunctionValue<'ctx>>],
+    program: &KirProgram,
     func: &KirFunction,
     function_value: FunctionValue<'ctx>,
 ) -> Result<(), CodegenError> {
@@ -105,6 +111,7 @@ pub(crate) fn emit_function<'ctx>(
         context,
         module,
         builder,
+        program,
         function: function_value,
         functions,
         is_toplevel: false,
@@ -112,7 +119,7 @@ pub(crate) fn emit_function<'ctx>(
     };
 
     for (i, param) in func.params.iter().enumerate() {
-        let ty = crate::layout::llvm_type(context, param.ty)?;
+        let ty = crate::layout::llvm_type(context, program, param.ty)?;
         let ptr = builder
             .build_alloca(ty, &format!("local.{}", param.local))
             .map_err(llvm_err)?;
@@ -149,6 +156,7 @@ pub(crate) fn emit_toplevel_function<'ctx>(
         context,
         module,
         builder,
+        program,
         function: toplevel_fn,
         functions,
         is_toplevel: true,

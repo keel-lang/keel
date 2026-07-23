@@ -31,10 +31,10 @@ fn llvm_err(e: impl std::fmt::Display) -> CodegenError {
 }
 
 /// Returns `module`'s existing declaration of `name`, or declares one with
-/// `make_ty()`. Every `CallTarget::Ns` site in a program shares these few
-/// runtime-provided functions, so this avoids redeclaring (and LLVM
-/// silently renaming) them per call site.
-fn declare_or_get<'ctx>(
+/// `make_ty()`. Every call site needing a given runtime-provided (or, for
+/// `malloc`, libc-provided) function shares this one declaration, so this
+/// avoids redeclaring (and LLVM silently renaming) it per call site.
+pub(crate) fn declare_or_get<'ctx>(
     module: &Module<'ctx>,
     name: &str,
     make_ty: impl FnOnce() -> FunctionType<'ctx>,
@@ -64,16 +64,12 @@ fn emit_box_arg<'ctx>(
 ) -> Result<PointerValue<'ctx>, CodegenError> {
     let ptr_type = fcx.context.ptr_type(AddressSpace::default());
     match arg.ty() {
-        KirType::Str => {
-            let Expr::ConstStr(s) = arg else {
-                return Err(CodegenError::Unsupported(
-                    "non-constant `str` argument to a namespace call (M1 scope: `str` has no \
-                     locals or operations yet, only literals)"
-                        .to_string(),
-                ));
-            };
-            emit_box_str_const(fcx, s)
-        }
+        // Every `str` value is already a boxed `*const Value` (`KeelBox`) by
+        // construction (`expr::emit_expr`'s `ConstStr`/`FieldGet`/etc. — see
+        // `layout.rs`'s module doc), so no extra boxing is needed here,
+        // unlike the scalar cases below (which store an unboxed LLVM
+        // primitive and box it fresh at this call boundary).
+        KirType::Str => Ok(emit_expr(fcx, arg)?.into_pointer_value()),
         KirType::I64 => {
             let v = emit_expr(fcx, arg)?.into_int_value();
             let f = declare_or_get(fcx.module, "keel_box_int", || {
@@ -104,10 +100,15 @@ fn emit_box_arg<'ctx>(
         KirType::Unit => Err(CodegenError::Unsupported(
             "unit-typed argument to a namespace call".to_string(),
         )),
+        KirType::Struct(_) => Err(CodegenError::Unsupported(
+            "struct-typed argument to a namespace call (marshaling a struct into a boxed \
+             Value::Struct is a later-M2/M3 concern — see designs/llvm-compilation.md §2.4)"
+                .to_string(),
+        )),
     }
 }
 
-fn emit_box_str_const<'ctx>(
+pub(crate) fn emit_box_str_const<'ctx>(
     fcx: &FuncCtx<'ctx, '_>,
     s: &str,
 ) -> Result<PointerValue<'ctx>, CodegenError> {
