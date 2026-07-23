@@ -58,7 +58,7 @@ fn call_box_fn<'ctx>(
     }
 }
 
-fn emit_box_arg<'ctx>(
+pub(crate) fn emit_box_arg<'ctx>(
     fcx: &FuncCtx<'ctx, '_>,
     arg: &Expr,
 ) -> Result<PointerValue<'ctx>, CodegenError> {
@@ -110,6 +110,10 @@ fn emit_box_arg<'ctx>(
              Value is a later-M2/M3 concern)"
                 .to_string(),
         )),
+        // A `list[T]` value is already a boxed `*const Value` (`Value::List`,
+        // same representation `keel_rt_call_ns`/every `keel_list_*` expects)
+        // — no extra boxing needed, same as `Str`.
+        KirType::List(_) => Ok(emit_expr(fcx, arg)?.into_pointer_value()),
     }
 }
 

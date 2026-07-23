@@ -46,6 +46,7 @@ fn fmt_ty(program: &KirProgram, ty: KirType) -> String {
     match ty {
         KirType::Struct(id) => program.structs[id].name.clone(),
         KirType::Enum(id) => program.enums[id].name.clone(),
+        KirType::List(id) => format!("list[{}]", fmt_ty(program, program.lists[id])),
         other => other.to_string(),
     }
 }
@@ -152,6 +153,20 @@ fn dump_stmt(
             indent(out, depth);
             out.push_str("}\n");
         }
+        Stmt::ForEach {
+            var, list, body, ..
+        } => {
+            let v = &func.locals[*var];
+            let _ = writeln!(
+                out,
+                "for {} in {} {{",
+                v.name,
+                fmt_expr(program, func, list)
+            );
+            dump_block(out, program, func, body, depth + 1);
+            indent(out, depth);
+            out.push_str("}\n");
+        }
         Stmt::Return(None) => {
             out.push_str("return\n");
         }
@@ -227,6 +242,13 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
             let layout = &program.enums[*enum_id];
             format!("{}.{}", layout.name, layout.variants[*variant_index])
         }
+        Expr::Index { list, index, .. } => {
+            format!(
+                "{}[{}]",
+                fmt_expr(program, func, list),
+                fmt_expr(program, func, index)
+            )
+        }
     }
 }
 
@@ -246,6 +268,15 @@ fn call_target_name(program: &KirProgram, target: CallTarget) -> String {
             })
             .map(|m| format!("{}.{}", m.namespace, m.name))
             .unwrap_or_else(|| format!("ns#{ns_id}.method#{method_id}")),
+        CallTarget::Rt(rt_fn) => format!("rt.{}", rt_fn_name(rt_fn)),
+    }
+}
+
+fn rt_fn_name(rt_fn: crate::ir::RtFn) -> &'static str {
+    match rt_fn {
+        crate::ir::RtFn::ListNew => "list_new",
+        crate::ir::RtFn::ListPush => "list_push",
+        crate::ir::RtFn::ListLen => "list_len",
     }
 }
 

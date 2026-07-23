@@ -1,13 +1,14 @@
 //! Expression lowering — the M0 scalar subset (literals, identifiers,
 //! arithmetic/comparison/logical binary ops, unary `-`/`not`, and direct
 //! calls to other lowered tasks) plus M1's stdlib namespace calls
-//! (`io.show(...)`, `log.info(...)` — see [`lower_call`]) and M2's named-
-//! struct literals, spread-update, field access, and simple-enum variant
-//! construction (`Priority.low`). Everything else (index access, value
-//! method calls, casts, `if`/`when` as expressions, lambdas, list/set/tuple
+//! (`io.show(...)`, `log.info(...)` — see [`lower_call`]), M2's named-
+//! struct literals, spread-update, field access, simple-enum variant
+//! construction (`Priority.low`), and `list[T]` literals/`push`/`len`/
+//! indexing (`T` restricted to int/float/bool/str — see [`lower_list_lit`]).
+//! Everything else (casts, `if`/`when` as expressions, lambdas, set/tuple
 //! literals, string interpolation, `?.`/`??`, pipelines, duration literals,
-//! rich (payload-carrying) enum variants) is rejected; see module docs on
-//! `lower/mod.rs`.
+//! rich (payload-carrying) enum variants, non-list method calls/indexing)
+//! is rejected; see module docs on `lower/mod.rs`.
 
 use std::collections::HashMap;
 
@@ -225,7 +226,7 @@ pub(crate) fn lower_expr(
              `return`, or call argument)",
             expr.span.clone(),
         )),
-        ast::Expr::ListLit(_) => Err(LowerError::unsupported("list literal", expr.span.clone())),
+        ast::Expr::ListLit(items) => lower_list_lit(items, &expr.span, ctx, lcx, table),
         ast::Expr::SetLit(_) => Err(LowerError::unsupported("set literal", expr.span.clone())),
         ast::Expr::TupleLit(_) => Err(LowerError::unsupported("tuple literal", expr.span.clone())),
         ast::Expr::NullCoalesce(..) => Err(LowerError::unsupported("`??`", expr.span.clone())),
@@ -247,9 +248,14 @@ pub(crate) fn lower_expr(
                 && ctx.resolve(obj_name).is_none()
                 && let Some(namespace) = lcx.ns_bindings.get(obj_name)
             {
-                lower_ns_call(namespace, method, args, ctx, lcx, table, &expr.span)
-            } else {
-                Err(LowerError::unsupported("method call", expr.span.clone()))
+                return lower_ns_call(namespace, method, args, ctx, lcx, table, &expr.span);
+            }
+            let object_e = lower_expr(object, ctx, lcx, table)?;
+            match object_e.ty() {
+                KirType::List(_) => {
+                    lower_list_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
+                }
+                _ => Err(LowerError::unsupported("method call", expr.span.clone())),
             }
         }
         ast::Expr::Cast { .. } => Err(LowerError::unsupported("`as` cast", expr.span.clone())),
@@ -262,7 +268,31 @@ pub(crate) fn lower_expr(
             expr.span.clone(),
         )),
         ast::Expr::Lambda { .. } => Err(LowerError::unsupported("lambda", expr.span.clone())),
-        ast::Expr::Index { .. } => Err(LowerError::unsupported("index access", expr.span.clone())),
+        ast::Expr::Index { object, index } => {
+            let object_e = lower_expr(object, ctx, lcx, table)?;
+            let KirType::List(list_id) = object_e.ty() else {
+                return Err(LowerError::unsupported(
+                    "index access on a non-list value (strings/maps land in a later M2 issue)",
+                    expr.span.clone(),
+                ));
+            };
+            let index_e = lower_expr(index, ctx, lcx, table)?;
+            if index_e.ty() != KirType::I64 {
+                return Err(LowerError::new(
+                    format!(
+                        "list index is `{}`, expected `int`",
+                        describe_ty(index_e.ty(), lcx)
+                    ),
+                    index.span.clone(),
+                ));
+            }
+            let elem_ty = lcx.lists.borrow()[list_id];
+            Ok(Expr::Index {
+                list: Box::new(object_e),
+                index: Box::new(index_e),
+                ty: elem_ty,
+            })
+        }
         ast::Expr::Duration { .. } => Err(LowerError::unsupported(
             "duration literal",
             expr.span.clone(),
@@ -610,4 +640,138 @@ fn result_ty_to_kir(result: BuiltinResult, span: &Span) -> Result<KirType, Lower
             span.clone(),
         )
     })
+}
+
+/// Lowers `[e0, e1, ...]` to a chain of `CallTarget::Rt` calls — `keel_list_
+/// new()` then a `keel_list_push` per element, folded left-to-right (no
+/// dedicated `MakeStruct`-style construction node needed: the container ABI
+/// is "opaque to codegen, every operation a runtime call" by design,
+/// `designs/llvm-compilation.md` §2.7, and push already is one).
+///
+/// Every element must share one `KirType`, restricted to int/float/bool/str
+/// (`is_list_element_ty`) — a struct/enum element needs `Value` marshaling
+/// that doesn't exist yet. An empty literal is rejected too: with no
+/// elements there's nothing to infer the element type from, and this crate
+/// doesn't consult the checker's own inference for it (see `lower/mod.rs`'s
+/// `CheckArtifacts` doc).
+fn lower_list_lit(
+    items: &[SpannedExpr],
+    span: &Span,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    let [first, rest @ ..] = items else {
+        return Err(LowerError::unsupported(
+            "empty list literal (element type can't be inferred without an annotation)",
+            span.clone(),
+        ));
+    };
+    let first_e = lower_expr(first, ctx, lcx, table)?;
+    let elem_ty = first_e.ty();
+    if !super::is_list_element_ty(elem_ty) {
+        return Err(LowerError::unsupported(
+            "list element type other than int/float/bool/str (struct/enum elements need \
+             Value marshaling, a later M2/M3 concern)",
+            first.span.clone(),
+        ));
+    }
+
+    let mut elements = Vec::with_capacity(items.len());
+    elements.push(first_e);
+    for item in rest {
+        let item_e = lower_expr(item, ctx, lcx, table)?;
+        if item_e.ty() != elem_ty {
+            return Err(LowerError::new(
+                format!(
+                    "list literal has mixed element types: `{}` and `{}`",
+                    describe_ty(elem_ty, lcx),
+                    describe_ty(item_e.ty(), lcx)
+                ),
+                item.span.clone(),
+            ));
+        }
+        elements.push(item_e);
+    }
+
+    let list_id = super::intern_list(lcx.lists, elem_ty);
+    let list_ty = KirType::List(list_id);
+    let span_id = table.intern(span.clone());
+    let mut acc = Expr::Call {
+        target: CallTarget::Rt(ir::RtFn::ListNew),
+        args: Vec::new(),
+        ty: list_ty,
+        span: span_id,
+    };
+    for element in elements {
+        acc = Expr::Call {
+            target: CallTarget::Rt(ir::RtFn::ListPush),
+            args: vec![acc, element],
+            ty: list_ty,
+            span: span_id,
+        };
+    }
+    Ok(acc)
+}
+
+/// Lowers a value method call on a `list[T]`-typed receiver (`xs.push(v)`,
+/// `xs.len()`) — the only container value methods lowered so far.
+fn lower_list_method_call(
+    object_e: Expr,
+    method: &str,
+    args: &[ast::CallArg],
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    call_span: &Span,
+) -> Result<Expr, LowerError> {
+    let KirType::List(list_id) = object_e.ty() else {
+        unreachable!("caller only invokes lower_list_method_call on a KirType::List receiver");
+    };
+    for arg in args {
+        if arg.name.is_some() || arg.spread {
+            return Err(LowerError::unsupported(
+                "named or spread arguments to a list method call",
+                arg.value.span.clone(),
+            ));
+        }
+    }
+
+    let elem_ty = lcx.lists.borrow()[list_id];
+    let span_id = table.intern(call_span.clone());
+    match method {
+        "push" => {
+            let [arg] = args else {
+                return Err(LowerError::new(
+                    format!("`push` takes 1 argument, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            };
+            let elem_e = lower_expr_expecting(&arg.value, elem_ty, ctx, lcx, table)?;
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::ListPush),
+                args: vec![object_e, elem_e],
+                ty: KirType::List(list_id),
+                span: span_id,
+            })
+        }
+        "len" | "count" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`{method}` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::ListLen),
+                args: vec![object_e],
+                ty: KirType::I64,
+                span: span_id,
+            })
+        }
+        other => Err(LowerError::unsupported(
+            &format!("list method `{other}` (only `push`/`len`/`count` are lowered so far)"),
+            call_span.clone(),
+        )),
+    }
 }

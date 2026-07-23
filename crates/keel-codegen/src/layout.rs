@@ -45,6 +45,7 @@ pub(crate) fn llvm_type<'ctx>(
             }
         }
         KirType::Enum(_) => Ok(context.i32_type().into()),
+        KirType::List(_) => Ok(context.ptr_type(AddressSpace::default()).into()),
     }
 }
 

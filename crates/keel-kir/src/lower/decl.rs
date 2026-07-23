@@ -19,6 +19,7 @@ pub(crate) fn signature_of(
     task: &TaskDecl,
     structs_by_name: &HashMap<String, StructId>,
     enums_by_name: &HashMap<String, EnumId>,
+    lists: &std::cell::RefCell<Vec<KirType>>,
 ) -> Result<(Vec<KirType>, KirType), LowerError> {
     if !task.type_params.is_empty() {
         return Err(LowerError::unsupported(
@@ -41,10 +42,15 @@ pub(crate) fn signature_of(
             ));
         }
         binding_ident(&param.name, &param.name_span)?; // rejects destructuring params
-        params.push(ty_expr_to_kir(&param.ty, structs_by_name, enums_by_name)?);
+        params.push(ty_expr_to_kir(
+            &param.ty,
+            structs_by_name,
+            enums_by_name,
+            lists,
+        )?);
     }
     let ret = match &task.return_type {
-        Some(ty) => ty_expr_to_kir(ty, structs_by_name, enums_by_name)?,
+        Some(ty) => ty_expr_to_kir(ty, structs_by_name, enums_by_name, lists)?,
         None => KirType::Unit,
     };
     Ok((params, ret))

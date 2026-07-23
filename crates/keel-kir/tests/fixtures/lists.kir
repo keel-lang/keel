@@ -1,0 +1,16 @@
+fn sum(xs: list[int]) -> int {
+  let total: int = 0
+  for x in xs {
+    total = (total + x)
+  }
+  return total
+}
+
+fn <toplevel>() -> none {
+  let a: list[int] = rt.list_push(rt.list_push(rt.list_push(rt.list_new(), 1), 2), 3)
+  let b: list[int] = a
+  let a: list[int] = rt.list_push(a, 4)
+  let count: int = rt.list_len(a)
+  let first: int = a[0]
+  let result: int = sum(a)
+}

@@ -124,6 +124,16 @@ fn check_enum(program: &KirProgram, id: EnumId) -> Result<(), String> {
     Ok(())
 }
 
+fn check_list(program: &KirProgram, id: crate::ir::ListId) -> Result<(), String> {
+    if id >= program.lists.len() {
+        return Err(format!(
+            "ListId {id} out of range ({} lists)",
+            program.lists.len()
+        ));
+    }
+    Ok(())
+}
+
 fn verify_block(program: &KirProgram, func: &KirFunction, block: &Block) -> Result<(), String> {
     for stmt in block {
         verify_stmt(program, func, stmt)?;
@@ -200,6 +210,32 @@ fn verify_stmt(program: &KirProgram, func: &KirFunction, stmt: &Stmt) -> Result<
             }
             verify_block(program, func, body)
         }
+        Stmt::ForEach {
+            var,
+            elem_ty,
+            list,
+            body,
+        } => {
+            check_local(func, *var)?;
+            verify_expr(program, func, list)?;
+            let KirType::List(list_id) = list.ty() else {
+                return Err(format!("for-each list is {}, expected a list", list.ty()));
+            };
+            check_list(program, list_id)?;
+            let declared_elem = program.lists[list_id];
+            if declared_elem != *elem_ty {
+                return Err(format!(
+                    "for-each elem_ty claims {elem_ty} but the list holds {declared_elem}"
+                ));
+            }
+            let var_ty = func.locals[*var].ty;
+            if var_ty != *elem_ty {
+                return Err(format!(
+                    "for-each loop variable {var} is {var_ty}, expected {elem_ty}"
+                ));
+            }
+            verify_block(program, func, body)
+        }
         Stmt::Return(None) => {
             if func.ret != KirType::Unit {
                 return Err(format!(
@@ -253,6 +289,7 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
                 CallTarget::Ns { ns_id, method_id } => {
                     verify_ns_call(*ns_id, *method_id, args, *ty)
                 }
+                CallTarget::Rt(rt_fn) => verify_rt_call(program, *rt_fn, args, *ty),
             }
         }
         Expr::MakeStruct { struct_id, fields } => {
@@ -319,6 +356,24 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
                     "MakeEnum variant index {variant_index} out of range for `{}` ({} variants)",
                     layout.name,
                     layout.variants.len()
+                ));
+            }
+            Ok(())
+        }
+        Expr::Index { list, index, ty } => {
+            verify_expr(program, func, list)?;
+            verify_expr(program, func, index)?;
+            if index.ty() != KirType::I64 {
+                return Err(format!("index is {}, expected int", index.ty()));
+            }
+            let KirType::List(list_id) = list.ty() else {
+                return Err(format!("index base is {}, expected a list", list.ty()));
+            };
+            check_list(program, list_id)?;
+            let declared_elem = program.lists[list_id];
+            if declared_elem != *ty {
+                return Err(format!(
+                    "index claims type {ty} but the list holds {declared_elem}"
                 ));
             }
             Ok(())
@@ -402,4 +457,69 @@ fn verify_ns_call(ns_id: u16, method_id: u16, args: &[Expr], ty: KirType) -> Res
         ));
     }
     Ok(())
+}
+
+/// Verifies a `CallTarget::Rt` call shape against the arity/type each
+/// `RtFn` variant declares (`keel-codegen`'s `rt_call.rs` implements the
+/// matching codegen side).
+fn verify_rt_call(
+    program: &KirProgram,
+    rt_fn: crate::ir::RtFn,
+    args: &[Expr],
+    ty: KirType,
+) -> Result<(), String> {
+    use crate::ir::RtFn;
+    match rt_fn {
+        RtFn::ListNew => {
+            if !args.is_empty() {
+                return Err(format!("rt.list_new takes 0 args, got {}", args.len()));
+            }
+            let KirType::List(list_id) = ty else {
+                return Err(format!("rt.list_new result is {ty}, expected a list"));
+            };
+            check_list(program, list_id)
+        }
+        RtFn::ListPush => {
+            let [list, elem] = args else {
+                return Err(format!("rt.list_push takes 2 args, got {}", args.len()));
+            };
+            let KirType::List(list_id) = list.ty() else {
+                return Err(format!(
+                    "rt.list_push base is {}, expected a list",
+                    list.ty()
+                ));
+            };
+            check_list(program, list_id)?;
+            let elem_ty = program.lists[list_id];
+            if elem.ty() != elem_ty {
+                return Err(format!(
+                    "rt.list_push element is {} but the list holds {elem_ty}",
+                    elem.ty()
+                ));
+            }
+            if ty != list.ty() {
+                return Err(format!(
+                    "rt.list_push result is {ty} but the base list is {}",
+                    list.ty()
+                ));
+            }
+            Ok(())
+        }
+        RtFn::ListLen => {
+            let [list] = args else {
+                return Err(format!("rt.list_len takes 1 arg, got {}", args.len()));
+            };
+            let KirType::List(list_id) = list.ty() else {
+                return Err(format!(
+                    "rt.list_len base is {}, expected a list",
+                    list.ty()
+                ));
+            };
+            check_list(program, list_id)?;
+            if ty != KirType::I64 {
+                return Err(format!("rt.list_len result is {ty}, expected int"));
+            }
+            Ok(())
+        }
+    }
 }

@@ -67,6 +67,7 @@ pub(crate) fn emit_expr<'ctx>(
             .i32_type()
             .const_int(*variant_index as u64, false)
             .into()),
+        Expr::Index { list, index, ty } => crate::rt_call::emit_index(fcx, list, index, *ty),
     }
 }
 
@@ -151,6 +152,7 @@ fn emit_call<'ctx>(
         CallTarget::Ns { ns_id, method_id } => {
             return crate::ns_call::emit_ns_call(fcx, ns_id, method_id, args, span);
         }
+        CallTarget::Rt(rt_fn) => return crate::rt_call::emit_rt_call(fcx, rt_fn, args),
     };
     let callee = fcx.functions[func_id]
         .expect("declare_functions declares every non-toplevel FuncId before any body is emitted");
@@ -343,7 +345,9 @@ fn emit_binop<'ctx>(
             };
             Ok(result)
         }
-        KirType::Unit | KirType::Struct(_) => Err(unreachable_combo(op, operand_ty)),
+        KirType::Unit | KirType::Struct(_) | KirType::List(_) => {
+            Err(unreachable_combo(op, operand_ty))
+        }
     }
 }
 
