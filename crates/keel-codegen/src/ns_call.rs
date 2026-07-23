@@ -105,6 +105,11 @@ fn emit_box_arg<'ctx>(
              Value::Struct is a later-M2/M3 concern — see designs/llvm-compilation.md §2.4)"
                 .to_string(),
         )),
+        KirType::Enum(_) => Err(CodegenError::Unsupported(
+            "enum-typed argument to a namespace call (marshaling an enum tag into a boxed \
+             Value is a later-M2/M3 concern)"
+                .to_string(),
+        )),
     }
 }
 

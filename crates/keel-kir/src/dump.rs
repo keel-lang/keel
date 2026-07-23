@@ -24,7 +24,10 @@ pub fn dump(program: &KirProgram) -> String {
             .join(", ");
         let _ = writeln!(out, "struct {} {{ {fields} }}", s.name);
     }
-    if !program.structs.is_empty() {
+    for e in &program.enums {
+        let _ = writeln!(out, "enum {} {{ {} }}", e.name, e.variants.join(", "));
+    }
+    if !program.structs.is_empty() || !program.enums.is_empty() {
         out.push('\n');
     }
     for (i, func) in program.functions.iter().enumerate() {
@@ -42,6 +45,7 @@ pub fn dump(program: &KirProgram) -> String {
 fn fmt_ty(program: &KirProgram, ty: KirType) -> String {
     match ty {
         KirType::Struct(id) => program.structs[id].name.clone(),
+        KirType::Enum(id) => program.enums[id].name.clone(),
         other => other.to_string(),
     }
 }
@@ -215,6 +219,13 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
             };
             let field_name = &program.structs[*struct_id].fields[*field_index].0;
             format!("{}.{field_name}", fmt_expr(program, func, base))
+        }
+        Expr::MakeEnum {
+            enum_id,
+            variant_index,
+        } => {
+            let layout = &program.enums[*enum_id];
+            format!("{}.{}", layout.name, layout.variants[*variant_index])
         }
     }
 }

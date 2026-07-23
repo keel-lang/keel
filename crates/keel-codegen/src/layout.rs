@@ -8,7 +8,8 @@
 //! struct (`KirType::Struct`) is `ptr` too, when it has a heap field
 //! (`StructLayout::is_heap`) — an all-scalar struct would be a by-value
 //! LLVM aggregate, but that path isn't wired up yet (every M2 fixture uses
-//! a struct with at least one `str` field).
+//! a struct with at least one `str` field). A simple enum (`KirType::Enum`)
+//! is a plain by-value `i32` tag — no heap allocation or RC, unlike `Struct`.
 
 use inkwell::AddressSpace;
 use inkwell::context::Context;
@@ -43,6 +44,7 @@ pub(crate) fn llvm_type<'ctx>(
                 )))
             }
         }
+        KirType::Enum(_) => Ok(context.i32_type().into()),
     }
 }
 

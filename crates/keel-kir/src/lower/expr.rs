@@ -2,10 +2,11 @@
 //! arithmetic/comparison/logical binary ops, unary `-`/`not`, and direct
 //! calls to other lowered tasks) plus M1's stdlib namespace calls
 //! (`io.show(...)`, `log.info(...)` — see [`lower_call`]) and M2's named-
-//! struct literals, spread-update, and field access. Everything else (index
-//! access, value method calls, casts, `if`/`when` as expressions, lambdas,
-//! list/set/tuple literals, string interpolation, `?.`/`??`, pipelines,
-//! duration literals, enum variants) is rejected; see module docs on
+//! struct literals, spread-update, field access, and simple-enum variant
+//! construction (`Priority.low`). Everything else (index access, value
+//! method calls, casts, `if`/`when` as expressions, lambdas, list/set/tuple
+//! literals, string interpolation, `?.`/`??`, pipelines, duration literals,
+//! rich (payload-carrying) enum variants) is rejected; see module docs on
 //! `lower/mod.rs`.
 
 use std::collections::HashMap;
@@ -156,6 +157,29 @@ pub(crate) fn lower_expr(
         }
         ast::Expr::Call { callee, args } => lower_call(callee, args, ctx, lcx, table, &expr.span),
         ast::Expr::FieldAccess(base, field) => {
+            // Enum-variant construction (`Priority.low`): unlike struct field
+            // access, `base` here is a *type name*, not a value — mirrors
+            // the checker's "lexical locals shadow globals" precedence
+            // (`NameKind::Enum` short-circuit in `checker/expr.rs`) so a
+            // local that happens to shadow an enum's name still resolves as
+            // a value, not a variant.
+            if let ast::Expr::Ident(name) = &base.kind
+                && ctx.resolve(name).is_none()
+                && let Some(enum_id) = lcx.enums_by_name.get(name).copied()
+            {
+                let layout = &lcx.enum_layouts[enum_id];
+                let variant_index = layout.variant_index(field).ok_or_else(|| {
+                    LowerError::new(
+                        format!("enum `{}` has no variant `{field}`", layout.name),
+                        expr.span.clone(),
+                    )
+                })?;
+                return Ok(Expr::MakeEnum {
+                    enum_id,
+                    variant_index,
+                });
+            }
+
             let base_e = lower_expr(base, ctx, lcx, table)?;
             let KirType::Struct(struct_id) = base_e.ty() else {
                 return Err(LowerError::unsupported(

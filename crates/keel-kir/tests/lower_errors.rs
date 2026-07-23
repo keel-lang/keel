@@ -347,10 +347,13 @@ p: Point = { ...make(), x: 3 }
 }
 
 #[test]
-fn non_struct_type_declaration_is_rejected() {
-    let msg = lower_err("type Color = red | green | blue\n");
+fn type_alias_declaration_is_rejected() {
+    // `type Color = red | green | blue` is a simple enum, not an alias — and
+    // is no longer rejected as of #146 (see `enum_when` fixtures). Aliases
+    // (`type Timestamp = datetime`) remain unsupported.
+    let msg = lower_err("type Timestamp = datetime\n");
     assert!(
-        msg.contains("non-struct type declaration"),
+        msg.contains("rich enum or type-alias declaration"),
         "unexpected message: {msg}"
     );
 }
@@ -360,6 +363,127 @@ fn generic_struct_type_is_rejected() {
     let msg = lower_err("type Box[T] { value: int }\n");
     assert!(
         msg.contains("generic struct type"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn rich_enum_type_declaration_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Action =
+  | reply { to: str }
+  | archive
+"#,
+    );
+    assert!(
+        msg.contains("rich enum or type-alias declaration"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn generic_enum_type_is_rejected() {
+    let msg = lower_err("type Pair[T] = a | b\n");
+    assert!(
+        msg.contains("generic enum type"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn unknown_enum_variant_in_construction_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Priority = low | medium | high
+
+task f() -> Priority {
+  return Priority.urgent
+}
+"#,
+    );
+    assert!(
+        msg.contains("has no variant `urgent`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn when_over_a_non_identifier_subject_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Priority = low | medium | high
+
+task make() -> Priority {
+  return Priority.low
+}
+
+task f() -> str {
+  when make() {
+    low => { return "low" }
+    medium => { return "medium" }
+    high => { return "high" }
+  }
+}
+"#,
+    );
+    assert!(
+        msg.contains("non-identifier subject"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn when_arm_guard_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(n: int) -> str {
+  when n {
+    x where x > 0 => { return "positive" }
+    _ => { return "other" }
+  }
+}
+"#,
+    );
+    assert!(msg.contains("arm guard"), "unexpected message: {msg}");
+}
+
+#[test]
+fn identifier_pattern_on_a_non_enum_scrutinee_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(n: int) -> str {
+  when n {
+    x => { return "bound" }
+    _ => { return "other" }
+  }
+}
+"#,
+    );
+    assert!(
+        msg.contains("identifier pattern on a non-enum scrutinee"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn when_expression_position_is_still_rejected() {
+    // `when` as a value-producing expression (`x = when ... {...}`) isn't
+    // lowered yet — only the statement form (each arm terminating via
+    // `return`) is, see `lower/stmt.rs`'s `lower_when_stmt` doc.
+    let msg = lower_err(
+        r#"
+task grade(score: str) -> str {
+  result = when score {
+    "A" => "excellent"
+    _ => "needs work"
+  }
+  return result
+}
+"#,
+    );
+    assert!(
+        msg.contains("when` expression"),
         "unexpected message: {msg}"
     );
 }

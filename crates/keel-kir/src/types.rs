@@ -7,7 +7,7 @@
 //! deliberately not modeled yet; adding them is later-M2+ work, done
 //! alongside the lowering support that produces them.
 
-use crate::ir::{KirProgram, StructId};
+use crate::ir::{EnumId, KirProgram, StructId};
 
 /// A KIR-level type. Every KIR expression carries one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +29,12 @@ pub enum KirType {
     /// the field layout this id indexes. Anonymous shapes have no `KirType`
     /// yet (deferred, see `ir.rs`'s `StructLayout` doc).
     Struct(StructId),
+    /// A simple (unit-variant) enum type (`type Priority = low | medium |
+    /// high`) — see `KirProgram::enums` for the variant list this id
+    /// indexes. Rich (payload-carrying) variants have no `KirType` yet
+    /// (deferred, see `ir.rs`'s `EnumLayout` doc). By-value `i32` tag — no
+    /// heap allocation or RC, unlike `Struct`.
+    Enum(EnumId),
 }
 
 impl KirType {
@@ -46,6 +52,7 @@ impl KirType {
             KirType::Unit => "none",
             KirType::Str => "str",
             KirType::Struct(_) => "struct",
+            KirType::Enum(_) => "enum",
         }
     }
 
@@ -64,7 +71,7 @@ impl KirType {
         match self {
             KirType::Str => true,
             KirType::Struct(id) => program.structs[id].is_heap(program),
-            KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit => false,
+            KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit | KirType::Enum(_) => false,
         }
     }
 
