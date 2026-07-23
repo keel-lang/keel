@@ -1,11 +1,13 @@
 //! Statement lowering — the M0 scalar subset plus M1's `for`-over-ranges
-//! and M2's named-struct literals in `let`/`return` position, plus `when` as
+//! and M2's named-struct literals in `let`/`return` position, `when` as
 //! a statement (over a simple-enum or a str/int scrutinee with a wildcard
-//! arm — see [`lower_when_stmt`]): `let`/assign, `if`/`else`, `while`,
-//! `for x in a..b`, `return`, `when`, and bare expression statements.
-//! Everything else (`try`/`catch`, `raise`, `assert`, `break`/`continue`,
-//! `self.field = ...`, `for` with a `where` filter or a non-range iterable)
-//! is rejected; see module docs on `lower/mod.rs`.
+//! arm — see [`lower_when_stmt`]), and `for x in xs` over a `list[T]`
+//! (lowered to [`keel_kir::ir::Stmt::ForEach`]): `let`/assign, `if`/`else`,
+//! `while`, `for x in a..b`, `for x in xs`, `return`, `when`, and bare
+//! expression statements. Everything else (`try`/`catch`, `raise`, `assert`,
+//! `break`/`continue`, `self.field = ...`, `for` with a `where` filter or a
+//! non-range, non-list iterable) is rejected; see module docs on
+//! `lower/mod.rs`.
 
 use keel_syntax::ast::{self, Node};
 use keel_syntax::lexer::Span;
@@ -54,7 +56,12 @@ pub(crate) fn lower_stmt(
             // `CheckArtifacts` doc) resolve to the *named* struct the
             // annotation calls for.
             let init = if let Some(annotation) = ty {
-                let expected = ty_expr_to_kir(annotation, lcx.structs_by_name, lcx.enums_by_name)?;
+                let expected = ty_expr_to_kir(
+                    annotation,
+                    lcx.structs_by_name,
+                    lcx.enums_by_name,
+                    lcx.lists,
+                )?;
                 lower_expr_expecting(value, expected, ctx, lcx, table)?
             } else if let ast::Expr::StructSpreadUpdate { base, .. } = &value.kind {
                 // No annotation, but the spread's own base already carries a
@@ -170,10 +177,27 @@ pub(crate) fn lower_stmt(
             }
             let name = binding_ident(binding, &stmt.span)?;
             let ast::Expr::Range(start, end) = &iter.kind else {
-                return Err(LowerError::unsupported(
-                    "`for` over a non-range iterable (container ABI lands in M2)",
-                    iter.span.clone(),
-                ));
+                // Not a range literal — try a `list[T]` iterable instead of
+                // rejecting outright.
+                let iter_e = lower_expr(iter, ctx, lcx, table)?;
+                let KirType::List(list_id) = iter_e.ty() else {
+                    return Err(LowerError::unsupported(
+                        "`for` over a non-range, non-list iterable (maps/sets land in a later \
+                         M2 issue)",
+                        iter.span.clone(),
+                    ));
+                };
+                let elem_ty = lcx.lists.borrow()[list_id];
+                ctx.push_scope();
+                let var = ctx.declare(name, elem_ty);
+                let body = lower_block(body, ctx, lcx, table, ret_ty)?;
+                ctx.pop_scope();
+                return Ok(ir::Stmt::ForEach {
+                    var,
+                    elem_ty,
+                    list: iter_e,
+                    body,
+                });
             };
             // Bounds are evaluated once, before `var` exists, so they lower
             // in the enclosing scope and cannot reference the loop variable.

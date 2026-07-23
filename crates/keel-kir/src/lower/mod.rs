@@ -51,7 +51,7 @@ use keel_syntax::ast::{Binding, Decl, Program, TypeDef, UseDecl, UseKind, UseSou
 use keel_syntax::lexer::Span;
 
 use crate::ir::{
-    EnumId, EnumLayout, FuncId, KirFunction, KirProgram, LocalId, StructId, StructLayout,
+    EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, StructId, StructLayout,
 };
 use crate::span_table::SpanTable;
 use crate::types::KirType;
@@ -113,6 +113,9 @@ pub(crate) struct LowerCtx<'a> {
     pub(crate) struct_layouts: &'a [StructLayout],
     pub(crate) enums_by_name: &'a HashMap<String, EnumId>,
     pub(crate) enum_layouts: &'a [EnumLayout],
+    /// See `lower_program`'s `lists` local for why this needs interior
+    /// mutability (structurally discovered, not pre-declared).
+    pub(crate) lists: &'a std::cell::RefCell<Vec<KirType>>,
     /// Not consumed yet — #145 (named structs) resolves everything through
     /// context-threaded expected types instead (see `expr::lower_expr_expecting`).
     /// Becomes load-bearing for a construct the checker must resolve and
@@ -207,6 +210,14 @@ pub fn lower_program(
     let mut struct_decls: Vec<&keel_syntax::ast::TypeDecl> = Vec::new();
     let mut enums_by_name: HashMap<String, EnumId> = HashMap::new();
     let mut enum_layouts: Vec<EnumLayout> = Vec::new();
+    // `list[T]` shapes are structurally interned (see `ir.rs`'s `ListId`
+    // doc) as they're *discovered* while lowering type annotations and list
+    // literals throughout the whole program — unlike `structs_by_name`/
+    // `enums_by_name` (built once, up front, from declarations), there's no
+    // separate "declaration" pass to collect these from. `RefCell` keeps
+    // `LowerCtx` otherwise fully immutable/shared (see its doc) while still
+    // letting every lowering function grow this table via `intern_list`.
+    let lists: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
 
     // Pass 1a: reserve a `StructId` for every named struct declaration
     // before resolving any field types, so a field can reference another
@@ -268,7 +279,7 @@ pub fn lower_program(
         for field in ast_fields {
             fields.push((
                 field.name.clone(),
-                ty_expr_to_kir(&field.ty, &structs_by_name, &enums_by_name)?,
+                ty_expr_to_kir(&field.ty, &structs_by_name, &enums_by_name, &lists)?,
             ));
         }
         struct_layouts.push(StructLayout {
@@ -285,7 +296,8 @@ pub fn lower_program(
     for decl in &program.declarations {
         match &decl.kind {
             Decl::Task(task) => {
-                let (params, ret) = decl::signature_of(task, &structs_by_name, &enums_by_name)?;
+                let (params, ret) =
+                    decl::signature_of(task, &structs_by_name, &enums_by_name, &lists)?;
                 let func_id = task_order.len();
                 task_order.push(task);
                 funcs.insert(
@@ -318,6 +330,7 @@ pub fn lower_program(
         struct_layouts: &struct_layouts,
         enums_by_name: &enums_by_name,
         enum_layouts: &enum_layouts,
+        lists: &lists,
         artifacts,
     };
 
@@ -358,6 +371,7 @@ pub fn lower_program(
         toplevel: toplevel_id,
         structs: struct_layouts,
         enums: enum_layouts,
+        lists: lists.into_inner(),
         span_table,
     })
 }
@@ -426,6 +440,7 @@ pub(crate) fn ty_expr_to_kir(
     ty: &keel_syntax::ast::Node<keel_syntax::ast::TypeExpr>,
     structs_by_name: &HashMap<String, StructId>,
     enums_by_name: &HashMap<String, EnumId>,
+    lists: &std::cell::RefCell<Vec<KirType>>,
 ) -> Result<KirType, LowerError> {
     use keel_syntax::ast::TypeExpr;
     match &ty.kind {
@@ -449,7 +464,22 @@ pub(crate) fn ty_expr_to_kir(
             }
         },
         TypeExpr::Nullable(_) => Err(LowerError::unsupported("nullable type", ty.span.clone())),
-        TypeExpr::List(_) => Err(LowerError::unsupported("list type", ty.span.clone())),
+        TypeExpr::List(inner) => {
+            // `TypeExpr::List` boxes a bare `TypeExpr`, not a `Node<TypeExpr>`
+            // (no span of its own — see `keel-syntax`'s `ast::ty::TypeExpr`),
+            // so diagnostics about the element type fall back to the whole
+            // `list[...]` annotation's span.
+            let inner_node = keel_syntax::ast::Node::new((**inner).clone(), ty.span.clone());
+            let elem_ty = ty_expr_to_kir(&inner_node, structs_by_name, enums_by_name, lists)?;
+            if !is_list_element_ty(elem_ty) {
+                return Err(LowerError::unsupported(
+                    "list element type other than int/float/bool/str (struct/enum elements \
+                     need Value marshaling, a later M2/M3 concern)",
+                    ty.span.clone(),
+                ));
+            }
+            Ok(KirType::List(intern_list(lists, elem_ty)))
+        }
         TypeExpr::Map(_, _) => Err(LowerError::unsupported("map type", ty.span.clone())),
         TypeExpr::Set(_) => Err(LowerError::unsupported("set type", ty.span.clone())),
         TypeExpr::Struct(_) => Err(LowerError::unsupported(
@@ -462,6 +492,31 @@ pub(crate) fn ty_expr_to_kir(
         TypeExpr::Dynamic => Err(LowerError::unsupported("dynamic type", ty.span.clone())),
         TypeExpr::SelfType => Err(LowerError::unsupported("`self` type", ty.span.clone())),
     }
+}
+
+/// `true` for the element types a `list[T]` can hold today — int/float/
+/// bool/str, the same set `emit_box_arg`/`rt_call::unbox_value` in
+/// `keel-codegen` can marshal to/from a boxed `Value` without needing
+/// struct/enum `Value` conversion (a later M2/M3 concern).
+pub(crate) fn is_list_element_ty(ty: KirType) -> bool {
+    matches!(
+        ty,
+        KirType::I64 | KirType::F64 | KirType::Bool | KirType::Str
+    )
+}
+
+/// Interns `elem` into `lists`, returning its `ListId` — reuses an existing
+/// entry for a structurally-identical element type rather than minting a
+/// fresh one (`list[int]` written twice in a program is one `ListId`, not
+/// two; see `ir.rs`'s `ListId` doc on why this differs from `StructId`/
+/// `EnumId`'s nominal, declaration-order interning).
+pub(crate) fn intern_list(lists: &std::cell::RefCell<Vec<KirType>>, elem: KirType) -> ListId {
+    let mut lists = lists.borrow_mut();
+    if let Some(id) = lists.iter().position(|t| *t == elem) {
+        return id;
+    }
+    lists.push(elem);
+    lists.len() - 1
 }
 
 /// Extracts the plain identifier a `Binding` names, rejecting destructuring

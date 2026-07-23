@@ -21,6 +21,7 @@ mod func;
 mod layout;
 mod link;
 mod ns_call;
+mod rt_call;
 mod stmt;
 
 use std::path::PathBuf;

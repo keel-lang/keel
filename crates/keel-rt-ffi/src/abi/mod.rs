@@ -79,6 +79,124 @@ pub unsafe extern "C" fn keel_str_eq(a: *const Value, b: *const Value) -> u8 {
     u8::from(a == b)
 }
 
+/// Unboxes an `int` — `keel-codegen` only ever calls this (and its
+/// `keel_unbox_float`/`keel_unbox_bool` siblings) on a box it knows (from
+/// the expression's `KirType`) holds that scalar kind.
+///
+/// # Safety
+///
+/// `ptr` must be a live `KeelBox` (see [`borrow`]) whose `Value` is
+/// `Value::Integer`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_unbox_int(ptr: *const Value) -> i64 {
+    let Value::Integer(v) = (unsafe { &*ptr }) else {
+        unreachable!("keel-codegen only calls keel_unbox_int on int-typed (Value::Integer) boxes");
+    };
+    *v
+}
+
+/// Unboxes a `float`. See [`keel_unbox_int`].
+///
+/// # Safety
+///
+/// `ptr` must be a live `KeelBox` whose `Value` is `Value::Float`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_unbox_float(ptr: *const Value) -> f64 {
+    let Value::Float(v) = (unsafe { &*ptr }) else {
+        unreachable!(
+            "keel-codegen only calls keel_unbox_float on float-typed (Value::Float) boxes"
+        );
+    };
+    *v
+}
+
+/// Unboxes a `bool` (`0`/`1`, matching [`keel_box_bool`]'s convention). See
+/// [`keel_unbox_int`].
+///
+/// # Safety
+///
+/// `ptr` must be a live `KeelBox` whose `Value` is `Value::Bool`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_unbox_bool(ptr: *const Value) -> u8 {
+    let Value::Bool(v) = (unsafe { &*ptr }) else {
+        unreachable!("keel-codegen only calls keel_unbox_bool on bool-typed (Value::Bool) boxes");
+    };
+    u8::from(*v)
+}
+
+/// Builds an empty list. See [`keel_box_int`] for ownership.
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_list_new() -> *const Value {
+    Arc::into_raw(Arc::new(Value::List(Vec::new())))
+}
+
+/// Returns a **fresh** list with `elem` appended, leaving `list` and `elem`
+/// untouched (a deliberate always-clone, not a real copy-on-write: `Arc::
+/// make_mut`-style in-place mutation would only be sound with accurate
+/// strong counts, which needs the retain-on-alias/release-on-scope-exit RC
+/// pass `designs/llvm-compilation.md` §2.3 describes and this codebase does
+/// not implement yet — see `keel-codegen`'s module docs. Always-cloning
+/// matches the interpreter's own `Value::List` "push" method exactly
+/// (`interpreter/methods.rs`: `let mut result = items.clone(); result.push(..)`),
+/// so this is semantically identical, just not the eventual perf
+/// optimization). See [`keel_box_int`] for the returned reference's
+/// ownership; `list`/`elem` are borrowed, not consumed.
+///
+/// # Safety
+///
+/// `list` must be a live `KeelBox` whose `Value` is `Value::List`; `elem`
+/// must be a live `KeelBox` (any variant — it becomes one of the list's
+/// elements as-is).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_list_push(list: *const Value, elem: *const Value) -> *const Value {
+    let Value::List(items) = (unsafe { &*list }) else {
+        unreachable!("keel-codegen only calls keel_list_push on a KirType::List value");
+    };
+    let mut items = items.clone();
+    items.push(unsafe { borrow(elem) });
+    boxed(Value::List(items))
+}
+
+/// Returns a list's element count.
+///
+/// # Safety
+///
+/// `list` must be a live `KeelBox` whose `Value` is `Value::List`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_list_len(list: *const Value) -> i64 {
+    let Value::List(items) = (unsafe { &*list }) else {
+        unreachable!("keel-codegen only calls keel_list_len on a KirType::List value");
+    };
+    items.len() as i64
+}
+
+/// Returns the element at `index` as a **borrowed-then-retained** `KeelBox`
+/// (the caller owns the returned reference, same convention as every other
+/// `keel_box_*`/`keel_list_*` return). Exits the process with a clear
+/// message on out-of-bounds — the interpreter *raises* (`NullError`-style,
+/// catchable), but the compiled result/raise calling convention (§2.5)
+/// isn't wired up yet (#150); this is an explicit placeholder, not a
+/// silent divergence into undefined behavior.
+///
+/// # Safety
+///
+/// `list` must be a live `KeelBox` whose `Value` is `Value::List`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_list_get(list: *const Value, index: i64) -> *const Value {
+    let Value::List(items) = (unsafe { &*list }) else {
+        unreachable!("keel-codegen only calls keel_list_get on a KirType::List value");
+    };
+    let Ok(idx) = usize::try_from(index) else {
+        eprintln!("index {index} out of bounds (length {})", items.len());
+        std::process::exit(1);
+    };
+    let Some(item) = items.get(idx) else {
+        eprintln!("index {index} out of bounds (length {})", items.len());
+        std::process::exit(1);
+    };
+    boxed(item.clone())
+}
+
 /// Reads a `KeelBox`'s value without consuming the caller's reference —
 /// used to marshal namespace-call arguments (`const KeelBox**`, i.e.
 /// borrowed) into owned `Value`s.

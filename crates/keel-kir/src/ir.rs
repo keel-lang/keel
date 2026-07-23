@@ -28,6 +28,12 @@ pub type StructId = usize;
 /// Index into `KirProgram::enums`.
 pub type EnumId = usize;
 
+/// Index into `KirProgram::lists` — a *structural* intern id (unlike
+/// `StructId`/`EnumId`, which are nominal: two declarations with identical
+/// shape are still distinct types). `list[int]` written anywhere in the
+/// program is the same `ListId` — see `lower/mod.rs`'s list-interning doc.
+pub type ListId = usize;
+
 /// A whole lowered program (currently: a single file's tasks + its
 /// top-level statements — multi-module lowering is deferred until the
 /// `keel-compiler` `ModuleGraph`/`CheckArtifacts` seam lands, see `lib.rs`).
@@ -50,6 +56,12 @@ pub struct KirProgram {
     /// carrying) variants aren't modeled yet — deferred to a follow-up
     /// issue; see `lower/mod.rs`'s enum-resolution doc.
     pub enums: Vec<EnumLayout>,
+    /// Every distinct list element type interned so far (structural, not
+    /// declaration order — see `ListId`'s doc). Only int/float/bool/str
+    /// elements are modeled; a struct/enum element needs `Value`
+    /// marshaling that doesn't exist yet (deferred, see `lower/expr.rs`'s
+    /// list-literal lowering doc).
+    pub lists: Vec<KirType>,
     pub span_table: SpanTable,
 }
 
@@ -176,6 +188,17 @@ pub enum Stmt {
         high: Expr,
         body: Block,
     },
+    /// `for x in xs { ... }` over a `list[T]` — indexed internally
+    /// (`keel_list_len`/`keel_list_get`, see `keel-codegen`'s `emit_for_each`)
+    /// rather than a real iterator, so this is a distinct shape from
+    /// `ForIndex` (whose `var` is always `I64`, a range bound). `var` is
+    /// rebound each iteration to the *unboxed* element value (`elem_ty`).
+    ForEach {
+        var: LocalId,
+        elem_ty: KirType,
+        list: Expr,
+        body: Block,
+    },
     /// `return expr` / bare `return`.
     Return(Option<Expr>),
     /// Expression evaluated for its side effect (e.g. a bare call).
@@ -236,6 +259,15 @@ pub enum Expr {
         enum_id: EnumId,
         variant_index: usize,
     },
+    /// `xs[i]` on a `list[T]`-typed `xs` — bounds-checked at runtime
+    /// (`keel_list_get`); `ty` is the already-unboxed element type. See
+    /// `keel-rt-ffi`'s `keel_list_get` doc for the current (pre-#150)
+    /// out-of-bounds behavior.
+    Index {
+        list: Box<Expr>,
+        index: Box<Expr>,
+        ty: KirType,
+    },
 }
 
 /// What an `Expr::Call` invokes.
@@ -249,6 +281,24 @@ pub enum CallTarget {
     /// resolved at lowering time — `keel-codegen` (M1+) compiles this to a
     /// call into `keel_rt_call_ns(ns_id, method_id, ...)` (§2.7).
     Ns { ns_id: u16, method_id: u16 },
+    /// A typed runtime-ABI call — container primitives today (§2.7: "opaque
+    /// to codegen... synchronous `CallTarget::Rt` calls into the container
+    /// ABI from day one"), never inline LLVM logic.
+    Rt(RtFn),
+}
+
+/// One `keel-rt-ffi` container-ABI entry point. Each maps to exactly one
+/// `#[no_mangle]` symbol in `keel-rt-ffi`'s `abi/mod.rs` — see
+/// `keel-codegen`'s `rt_call.rs` for the symbol/signature each one declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RtFn {
+    /// `keel_list_new() -> list` — builds an empty list.
+    ListNew,
+    /// `keel_list_push(list, elem) -> list'` — always clones (see
+    /// `keel-rt-ffi`'s doc on why this isn't real copy-on-write yet).
+    ListPush,
+    /// `keel_list_len(list) -> int`.
+    ListLen,
 }
 
 impl Expr {
@@ -267,6 +317,7 @@ impl Expr {
             | Expr::FieldGet { ty, .. } => *ty,
             Expr::MakeStruct { struct_id, .. } => KirType::Struct(*struct_id),
             Expr::MakeEnum { enum_id, .. } => KirType::Enum(*enum_id),
+            Expr::Index { ty, .. } => *ty,
         }
     }
 }

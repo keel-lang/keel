@@ -1,13 +1,14 @@
 //! `KirType` — the lowered type vocabulary KIR expressions carry.
 //!
 //! M0/M1 lower the scalar subset only (see `designs/llvm-compilation.md`
-//! §4); M2 adds named structs. The remaining variants sketched in the
-//! design doc's `KirType` (§2.3) — containers, anonymous struct shapes,
-//! enums, nullable, func, boxed `dynamic`, opaque handles — are
-//! deliberately not modeled yet; adding them is later-M2+ work, done
-//! alongside the lowering support that produces them.
+//! §4); M2 adds named structs, simple enums, and `list[T]` (int/float/bool/
+//! str elements only). The remaining variants sketched in the design doc's
+//! `KirType` (§2.3) — map/set, anonymous struct shapes, rich enum variants,
+//! nullable, func, boxed `dynamic`, opaque handles — are deliberately not
+//! modeled yet; adding them is later-M2+ work, done alongside the lowering
+//! support that produces them.
 
-use crate::ir::{EnumId, KirProgram, StructId};
+use crate::ir::{EnumId, KirProgram, ListId, StructId};
 
 /// A KIR-level type. Every KIR expression carries one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,6 +36,11 @@ pub enum KirType {
     /// (deferred, see `ir.rs`'s `EnumLayout` doc). By-value `i32` tag — no
     /// heap allocation or RC, unlike `Struct`.
     Enum(EnumId),
+    /// `list[T]` (`T` restricted to int/float/bool/str — see
+    /// `KirProgram::lists`'s doc) — a `ptr` to an RC'd, always-clone-on-
+    /// mutation `Value::List` (opaque to codegen; every operation is a
+    /// `CallTarget::Rt` runtime call, `designs/llvm-compilation.md` §2.7).
+    List(ListId),
 }
 
 impl KirType {
@@ -53,6 +59,7 @@ impl KirType {
             KirType::Str => "str",
             KirType::Struct(_) => "struct",
             KirType::Enum(_) => "enum",
+            KirType::List(_) => "list",
         }
     }
 
@@ -71,6 +78,7 @@ impl KirType {
         match self {
             KirType::Str => true,
             KirType::Struct(id) => program.structs[id].is_heap(program),
+            KirType::List(_) => true,
             KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit | KirType::Enum(_) => false,
         }
     }

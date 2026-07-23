@@ -20,26 +20,28 @@ fn lower_err(source: &str) -> String {
 }
 
 #[test]
-fn for_over_list_param_is_rejected_at_signature() {
-    // `for` over a range lowers now (see golden fixture `for_range.kir`);
-    // this pins that a `list[int]` param is still rejected — at the
-    // signature, before the for-loop body is ever reached.
+fn list_of_struct_element_type_is_rejected() {
+    // `list[int]` lowers now (see golden fixture `lists.kir`, #147) — this
+    // pins that a struct-element list is still rejected at the type
+    // annotation (struct/enum elements need `Value` marshaling that
+    // doesn't exist yet).
     let msg = lower_err(
         r#"
-task sum(xs: list[int]) -> int {
-  total = 0
-  for x in xs {
-    total += x
-  }
-  return total
+type Point { x: int, y: int }
+
+task f(xs: list[Point]) -> int {
+  return 0
 }
 "#,
     );
-    assert!(msg.contains("list type"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("list element type other than int/float/bool/str"),
+        "unexpected message: {msg}"
+    );
 }
 
 #[test]
-fn for_over_non_range_iterable_is_rejected() {
+fn for_over_non_range_non_list_iterable_is_rejected() {
     let msg = lower_err(
         r#"
 task f(n: int) -> int {
@@ -50,7 +52,7 @@ task f(n: int) -> int {
 "#,
     );
     assert!(
-        msg.contains("non-range iterable"),
+        msg.contains("non-range, non-list iterable"),
         "unexpected message: {msg}"
     );
 }
@@ -484,6 +486,109 @@ task grade(score: str) -> str {
     );
     assert!(
         msg.contains("when` expression"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn empty_list_literal_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  xs = []
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("empty list literal"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn list_literal_with_mixed_element_types_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  xs = [1, "two"]
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("mixed element types"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn unknown_list_method_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  xs = [1, 2, 3]
+  ys = xs.reverse()
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("list method"), "unexpected message: {msg}");
+}
+
+#[test]
+fn list_push_wrong_arg_count_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  xs = [1, 2, 3]
+  ys = xs.push(1, 2)
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("`push`"), "unexpected message: {msg}");
+}
+
+#[test]
+fn list_push_wrong_element_type_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  xs = [1, 2, 3]
+  ys = xs.push("four")
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("expected"), "unexpected message: {msg}");
+}
+
+#[test]
+fn non_int_list_index_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  xs = [1, 2, 3]
+  return xs["0"]
+}
+"#,
+    );
+    assert!(msg.contains("list index"), "unexpected message: {msg}");
+}
+
+#[test]
+fn index_access_on_a_non_list_value_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  x = 1
+  return x[0]
+}
+"#,
+    );
+    assert!(
+        msg.contains("index access on a non-list value"),
         "unexpected message: {msg}"
     );
 }

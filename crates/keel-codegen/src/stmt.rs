@@ -82,6 +82,15 @@ fn emit_stmt<'ctx>(
             emit_for_index(fcx, *var, low, high, body)?;
             Ok(None)
         }
+        Stmt::ForEach {
+            var,
+            elem_ty,
+            list,
+            body,
+        } => {
+            emit_for_each(fcx, *var, *elem_ty, list, body)?;
+            Ok(None)
+        }
         Stmt::Return(value) => {
             emit_return(fcx, value.as_ref())?;
             Ok(None)
@@ -217,6 +226,90 @@ fn emit_for_index<'ctx>(
             .build_int_add(cur, i64_type.const_int(1, false), "for.next")
             .map_err(llvm_err)?;
         fcx.builder.build_store(var_ptr, next).map_err(llvm_err)?;
+        fcx.builder
+            .build_unconditional_branch(cond_bb)
+            .map_err(llvm_err)?;
+    }
+
+    fcx.builder.position_at_end(end_bb);
+    Ok(())
+}
+
+/// `for var in xs { body }` over a `list[T]` — an internal `i64` index
+/// counter (never itself a KIR local, so it can't collide with a user
+/// binding) drives `keel_list_len`/`keel_list_get` each iteration; `var`'s
+/// `alloca` is re-stored with the unboxed element every pass, same
+/// re-initialize-on-reach rationale as [`emit_for_index`].
+fn emit_for_each<'ctx>(
+    fcx: &mut FuncCtx<'ctx, '_>,
+    var: keel_kir::ir::LocalId,
+    elem_ty: KirType,
+    list: &keel_kir::ir::Expr,
+    body: &Block,
+) -> Result<(), CodegenError> {
+    let list_ptr = expr::emit_expr(fcx, list)?.into_pointer_value();
+    let len = crate::rt_call::emit_list_len(fcx, list_ptr)?;
+
+    let i64_type = fcx.context.i64_type();
+    let idx_ptr = fcx
+        .builder
+        .build_alloca(i64_type, "foreach.idx")
+        .map_err(llvm_err)?;
+    fcx.builder
+        .build_store(idx_ptr, i64_type.const_zero())
+        .map_err(llvm_err)?;
+
+    let elem_ty_llvm = layout::llvm_type(fcx.context, fcx.program, elem_ty)?;
+    let var_ptr = fcx
+        .builder
+        .build_alloca(elem_ty_llvm, &format!("local.{var}"))
+        .map_err(llvm_err)?;
+    fcx.locals.insert(var, var_ptr);
+
+    let cond_bb = fcx.context.append_basic_block(fcx.function, "foreach.cond");
+    let body_bb = fcx.context.append_basic_block(fcx.function, "foreach.body");
+    let end_bb = fcx.context.append_basic_block(fcx.function, "foreach.end");
+
+    fcx.builder
+        .build_unconditional_branch(cond_bb)
+        .map_err(llvm_err)?;
+
+    fcx.builder.position_at_end(cond_bb);
+    let idx = fcx
+        .builder
+        .build_load(i64_type, idx_ptr, "foreach.idx.cur")
+        .map_err(llvm_err)?
+        .into_int_value();
+    let cond_v = fcx
+        .builder
+        .build_int_compare(IntPredicate::SLT, idx, len, "foreach.test")
+        .map_err(llvm_err)?;
+    fcx.builder
+        .build_conditional_branch(cond_v, body_bb, end_bb)
+        .map_err(llvm_err)?;
+
+    fcx.builder.position_at_end(body_bb);
+    let idx = fcx
+        .builder
+        .build_load(i64_type, idx_ptr, "foreach.idx.cur")
+        .map_err(llvm_err)?
+        .into_int_value();
+    let elem_boxed = crate::rt_call::emit_list_get(fcx, list_ptr, idx)?;
+    let elem_v = crate::rt_call::unbox_value(fcx, elem_boxed, elem_ty)?;
+    fcx.builder.build_store(var_ptr, elem_v).map_err(llvm_err)?;
+
+    emit_block(fcx, body)?;
+    if !block_is_terminated(fcx.builder) {
+        let idx = fcx
+            .builder
+            .build_load(i64_type, idx_ptr, "foreach.idx.cur")
+            .map_err(llvm_err)?
+            .into_int_value();
+        let next = fcx
+            .builder
+            .build_int_add(idx, i64_type.const_int(1, false), "foreach.idx.next")
+            .map_err(llvm_err)?;
+        fcx.builder.build_store(idx_ptr, next).map_err(llvm_err)?;
         fcx.builder
             .build_unconditional_branch(cond_bb)
             .map_err(llvm_err)?;

@@ -1,0 +1,14 @@
+task sum(xs: list[int]) -> int {
+  total = 0
+  for x in xs {
+    total += x
+  }
+  return total
+}
+
+a = [1, 2, 3]
+b = a
+a = a.push(4)
+count = a.len()
+first = a[0]
+result = sum(a)
