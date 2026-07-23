@@ -4,11 +4,10 @@
 
 use std::collections::HashMap;
 
-use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::TaskDecl;
 
-use super::{FnCtx, FuncSig, LowerError, binding_ident, ty_expr_to_kir};
-use crate::ir::{KirFunction, Param};
+use super::{FnCtx, FuncSig, LowerCtx, LowerError, binding_ident, ty_expr_to_kir};
+use crate::ir::{KirFunction, Param, StructId};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -16,7 +15,10 @@ use crate::types::KirType;
 /// Rejects generics, variadics, and default params — none are in the M0
 /// scalar subset (generics need `mono.rs`; variadics/defaults need the
 /// container ABI and desugaring `sugar.rs` doesn't do yet).
-pub(crate) fn signature_of(task: &TaskDecl) -> Result<(Vec<KirType>, KirType), LowerError> {
+pub(crate) fn signature_of(
+    task: &TaskDecl,
+    structs_by_name: &HashMap<String, StructId>,
+) -> Result<(Vec<KirType>, KirType), LowerError> {
     if !task.type_params.is_empty() {
         return Err(LowerError::unsupported(
             "generic task",
@@ -38,10 +40,10 @@ pub(crate) fn signature_of(task: &TaskDecl) -> Result<(Vec<KirType>, KirType), L
             ));
         }
         binding_ident(&param.name, &param.name_span)?; // rejects destructuring params
-        params.push(ty_expr_to_kir(&param.ty)?);
+        params.push(ty_expr_to_kir(&param.ty, structs_by_name)?);
     }
     let ret = match &task.return_type {
-        Some(ty) => ty_expr_to_kir(ty)?,
+        Some(ty) => ty_expr_to_kir(ty, structs_by_name)?,
         None => KirType::Unit,
     };
     Ok((params, ret))
@@ -51,10 +53,8 @@ pub(crate) fn signature_of(task: &TaskDecl) -> Result<(Vec<KirType>, KirType), L
 pub(crate) fn lower_task_body(
     task: &TaskDecl,
     sig: &FuncSig,
-    funcs: &HashMap<String, FuncSig>,
-    ns_bindings: &HashMap<String, String>,
+    lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    artifacts: &CheckArtifacts,
 ) -> Result<KirFunction, LowerError> {
     let mut ctx = FnCtx::new();
     let mut params = Vec::with_capacity(task.params.len());
@@ -64,15 +64,7 @@ pub(crate) fn lower_task_body(
         params.push(Param { local, ty: *ty });
     }
 
-    let body = super::stmt::lower_block(
-        &task.body,
-        &mut ctx,
-        funcs,
-        ns_bindings,
-        table,
-        sig.ret,
-        artifacts,
-    )?;
+    let body = super::stmt::lower_block(&task.body, &mut ctx, lcx, table, sig.ret)?;
 
     Ok(KirFunction {
         id: sig.func_id,

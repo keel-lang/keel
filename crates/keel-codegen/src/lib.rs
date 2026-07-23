@@ -116,6 +116,7 @@ pub fn compile(program: &KirProgram, opts: &BuildOptions) -> Result<PathBuf, Cod
             &module,
             &builder,
             &functions,
+            program,
             kir_func,
             function_value,
         )?;

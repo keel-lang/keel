@@ -1,0 +1,11 @@
+struct Order { id: str, status: str, amount: float }
+
+fn process_order(o: Order) -> Order {
+  return Order { id: o.id, status: "filled", amount: o.amount }
+}
+
+fn <toplevel>() -> none {
+  let pending: Order = Order { id: "ord-42", status: "pending", amount: 250.0 }
+  let filled: Order = process_order(pending)
+  let result: str = filled.status
+}

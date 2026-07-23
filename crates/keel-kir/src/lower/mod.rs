@@ -47,10 +47,10 @@ use std::collections::HashMap;
 use std::fmt;
 
 use keel_compiler::types::artifacts::CheckArtifacts;
-use keel_syntax::ast::{Binding, Decl, Program, UseDecl, UseKind, UseSource};
+use keel_syntax::ast::{Binding, Decl, Program, TypeDef, UseDecl, UseKind, UseSource};
 use keel_syntax::lexer::Span;
 
-use crate::ir::{FuncId, KirFunction, KirProgram, LocalId};
+use crate::ir::{FuncId, KirFunction, KirProgram, LocalId, StructId, StructLayout};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -96,6 +96,37 @@ pub(crate) struct FuncSig {
     pub(crate) func_id: FuncId,
     pub(crate) params: Vec<KirType>,
     pub(crate) ret: KirType,
+}
+
+/// Shared, read-only lowering state threaded through every lowering
+/// function (bundled into one struct rather than growing the parameter
+/// list further — M2's per-feature issues each add another whole-program
+/// lookup table; structs here, more to come). `table: &mut SpanTable`
+/// (mutable) and `ctx: &mut FnCtx` (per-function, mutable) stay separate
+/// parameters — only immutable, whole-program state lives here.
+pub(crate) struct LowerCtx<'a> {
+    pub(crate) funcs: &'a HashMap<String, FuncSig>,
+    pub(crate) ns_bindings: &'a HashMap<String, String>,
+    pub(crate) structs_by_name: &'a HashMap<String, StructId>,
+    pub(crate) struct_layouts: &'a [StructLayout],
+    /// Not consumed yet — #145 (named structs) resolves everything through
+    /// context-threaded expected types instead (see `expr::lower_expr_expecting`).
+    /// Becomes load-bearing for a construct the checker must resolve and
+    /// lowering can't (an anonymous struct literal, a nullable's inner type,
+    /// …) — see the module doc's `CheckArtifacts` section.
+    #[allow(dead_code)]
+    pub(crate) artifacts: &'a CheckArtifacts,
+}
+
+/// Describes `ty` for a diagnostic message. Same as `KirType`'s own
+/// `Display` for scalars, but resolves a struct id to its declared name —
+/// `KirType` alone can't do this (no `KirProgram` access, see `types.rs`'s
+/// `name()` doc), but lowering always has `lcx.struct_layouts` in hand.
+pub(crate) fn describe_ty(ty: KirType, lcx: &LowerCtx<'_>) -> String {
+    match ty {
+        KirType::Struct(id) => format!("struct {}", lcx.struct_layouts[id].name),
+        other => other.to_string(),
+    }
 }
 
 /// Per-function lowering state: the locals table under construction and a
@@ -167,15 +198,64 @@ pub fn lower_program(
     let mut funcs: HashMap<String, FuncSig> = HashMap::new();
     let mut ns_bindings: HashMap<String, String> = HashMap::new();
     let mut task_order: Vec<&keel_syntax::ast::TaskDecl> = Vec::new();
+    let mut structs_by_name: HashMap<String, StructId> = HashMap::new();
+    let mut struct_decls: Vec<&keel_syntax::ast::TypeDecl> = Vec::new();
 
-    // Pass 1: collect every task signature (so calls resolve regardless of
+    // Pass 1a: reserve a `StructId` for every named struct declaration
+    // before resolving any field types, so a field can reference another
+    // struct regardless of declaration order (forward references) — same
+    // rationale as task signatures resolving before bodies. Only
+    // `TypeDef::Struct` is in scope here; `SimpleEnum`/`RichEnum` land in a
+    // later M2 issue, `Alias` isn't scoped yet either.
+    for decl in &program.declarations {
+        if let Decl::Type(type_decl) = &decl.kind {
+            let TypeDef::Struct(_) = &type_decl.def else {
+                return Err(LowerError::unsupported(
+                    "non-struct type declaration (enums/aliases land in a later M2 issue)",
+                    decl.span.clone(),
+                ));
+            };
+            if !type_decl.type_params.is_empty() {
+                return Err(LowerError::unsupported(
+                    "generic struct type",
+                    type_decl.name_span.clone(),
+                ));
+            }
+            let id = struct_decls.len();
+            structs_by_name.insert(type_decl.name.clone(), id);
+            struct_decls.push(type_decl);
+        }
+    }
+
+    // Pass 1b: resolve each struct's field types now that every struct name
+    // in the file is known.
+    let mut struct_layouts: Vec<StructLayout> = Vec::with_capacity(struct_decls.len());
+    for (id, type_decl) in struct_decls.iter().enumerate() {
+        let TypeDef::Struct(ast_fields) = &type_decl.def else {
+            unreachable!("struct_decls only ever holds TypeDef::Struct entries, filtered above")
+        };
+        let mut fields = Vec::with_capacity(ast_fields.len());
+        for field in ast_fields {
+            fields.push((
+                field.name.clone(),
+                ty_expr_to_kir(&field.ty, &structs_by_name)?,
+            ));
+        }
+        struct_layouts.push(StructLayout {
+            id,
+            name: type_decl.name.clone(),
+            fields,
+        });
+    }
+
+    // Pass 2: collect every task signature (so calls resolve regardless of
     // declaration order — forward references, mutual/self recursion) and
     // every `use std/<name>` namespace binding (so namespace calls resolve
     // regardless of whether the `use` appears before or after they're used).
     for decl in &program.declarations {
         match &decl.kind {
             Decl::Task(task) => {
-                let (params, ret) = decl::signature_of(task)?;
+                let (params, ret) = decl::signature_of(task, &structs_by_name)?;
                 let func_id = task_order.len();
                 task_order.push(task);
                 funcs.insert(
@@ -190,7 +270,8 @@ pub fn lower_program(
             Decl::Use(use_decl) => {
                 lower_use(use_decl, &decl.span, &mut ns_bindings)?;
             }
-            Decl::Stmt(_) => {} // handled in pass 2 (toplevel)
+            Decl::Type(_) => {} // already handled in pass 1a/1b
+            Decl::Stmt(_) => {} // handled in pass 3 (toplevel)
             other => {
                 return Err(LowerError::unsupported(
                     decl_kind_name(other),
@@ -200,18 +281,19 @@ pub fn lower_program(
         }
     }
 
-    // Pass 2: lower each task body now that `funcs`/`ns_bindings` are complete.
+    let lcx = LowerCtx {
+        funcs: &funcs,
+        ns_bindings: &ns_bindings,
+        structs_by_name: &structs_by_name,
+        struct_layouts: &struct_layouts,
+        artifacts,
+    };
+
+    // Pass 3: lower each task body now that `lcx` is complete.
     let mut functions: Vec<KirFunction> = Vec::with_capacity(task_order.len() + 1);
     for task in &task_order {
         let sig = &funcs[&task.name];
-        functions.push(decl::lower_task_body(
-            task,
-            sig,
-            &funcs,
-            &ns_bindings,
-            &mut span_table,
-            artifacts,
-        )?);
+        functions.push(decl::lower_task_body(task, sig, &lcx, &mut span_table)?);
     }
 
     // Toplevel: every `Decl::Stmt` compiles into one synthetic function,
@@ -224,11 +306,9 @@ pub fn lower_program(
             body.push(stmt::lower_stmt(
                 stmt,
                 &mut ctx,
-                &funcs,
-                &ns_bindings,
+                &lcx,
                 &mut span_table,
                 KirType::Unit,
-                artifacts,
             )?);
         }
     }
@@ -244,6 +324,7 @@ pub fn lower_program(
     Ok(KirProgram {
         functions,
         toplevel: toplevel_id,
+        structs: struct_layouts,
         span_table,
     })
 }
@@ -304,9 +385,12 @@ fn decl_kind_name(decl: &Decl) -> &'static str {
 }
 
 /// Converts a parsed type annotation to a `KirType`, rejecting every
-/// variant outside the M0 scalar subset.
+/// variant outside the M0/M1/M2-so-far subset. `structs_by_name` resolves a
+/// bare `Named` type to a declared struct — checked after the built-in
+/// scalar names, so a struct can't shadow a reserved type name.
 pub(crate) fn ty_expr_to_kir(
     ty: &keel_syntax::ast::Node<keel_syntax::ast::TypeExpr>,
+    structs_by_name: &HashMap<String, StructId>,
 ) -> Result<KirType, LowerError> {
     use keel_syntax::ast::TypeExpr;
     match &ty.kind {
@@ -316,10 +400,15 @@ pub(crate) fn ty_expr_to_kir(
             "bool" => Ok(KirType::Bool),
             "str" => Ok(KirType::Str),
             "none" => Ok(KirType::Unit),
-            other => Err(LowerError::unsupported(
-                &format!("named type `{other}`"),
-                ty.span.clone(),
-            )),
+            other => structs_by_name.get(other).map_or_else(
+                || {
+                    Err(LowerError::unsupported(
+                        &format!("named type `{other}`"),
+                        ty.span.clone(),
+                    ))
+                },
+                |id| Ok(KirType::Struct(*id)),
+            ),
         },
         TypeExpr::Nullable(_) => Err(LowerError::unsupported("nullable type", ty.span.clone())),
         TypeExpr::List(_) => Err(LowerError::unsupported("list type", ty.span.clone())),

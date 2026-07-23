@@ -1,22 +1,22 @@
 //! Expression lowering — the M0 scalar subset (literals, identifiers,
 //! arithmetic/comparison/logical binary ops, unary `-`/`not`, and direct
 //! calls to other lowered tasks) plus M1's stdlib namespace calls
-//! (`io.show(...)`, `log.info(...)` — see [`lower_call`]). Everything else
-//! (field/index access, value method calls, casts, `if`/`when` as
-//! expressions, lambdas, compound literals, string interpolation, `?.`/`??`,
-//! pipelines, duration literals, enum variants) is rejected; see module docs
-//! on `lower/mod.rs`.
+//! (`io.show(...)`, `log.info(...)` — see [`lower_call`]) and M2's named-
+//! struct literals, spread-update, and field access. Everything else (index
+//! access, value method calls, casts, `if`/`when` as expressions, lambdas,
+//! list/set/tuple literals, string interpolation, `?.`/`??`, pipelines,
+//! duration literals, enum variants) is rejected; see module docs on
+//! `lower/mod.rs`.
 
 use std::collections::HashMap;
 
-use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::{self, SpannedExpr};
 use keel_syntax::lexer::Span;
 
 use keel_catalog::builtins::BuiltinResult;
 
-use super::{FnCtx, FuncSig, LowerError};
-use crate::ir::{self, CallTarget, Expr};
+use super::{FnCtx, LowerCtx, LowerError, describe_ty};
+use crate::ir::{self, CallTarget, Expr, StructId};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -99,10 +99,8 @@ pub(crate) fn infer_binop_ty(
 pub(crate) fn lower_expr(
     expr: &SpannedExpr,
     ctx: &mut FnCtx,
-    funcs: &HashMap<String, FuncSig>,
-    ns_bindings: &HashMap<String, String>,
+    lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    artifacts: &CheckArtifacts,
 ) -> Result<Expr, LowerError> {
     match &expr.kind {
         ast::Expr::Integer(v) => Ok(Expr::ConstInt(*v)),
@@ -117,8 +115,8 @@ pub(crate) fn lower_expr(
             Ok(Expr::Local { id: local, ty })
         }
         ast::Expr::BinaryOp { left, op, right } => {
-            let left_e = lower_expr(left, ctx, funcs, ns_bindings, table, artifacts)?;
-            let right_e = lower_expr(right, ctx, funcs, ns_bindings, table, artifacts)?;
+            let left_e = lower_expr(left, ctx, lcx, table)?;
+            let right_e = lower_expr(right, ctx, lcx, table)?;
             let kir_op = convert_binop(*op);
             let ty = infer_binop_ty(kir_op, left_e.ty(), right_e.ty(), &expr.span)?;
             Ok(Expr::BinOp {
@@ -129,7 +127,7 @@ pub(crate) fn lower_expr(
             })
         }
         ast::Expr::UnaryOp { op, expr: operand } => {
-            let operand_e = lower_expr(operand, ctx, funcs, ns_bindings, table, artifacts)?;
+            let operand_e = lower_expr(operand, ctx, lcx, table)?;
             let ty = match op {
                 ast::UnOp::Neg if operand_e.ty().is_numeric() => operand_e.ty(),
                 ast::UnOp::Not if operand_e.ty() == KirType::Bool => KirType::Bool,
@@ -156,18 +154,29 @@ pub(crate) fn lower_expr(
                 ty,
             })
         }
-        ast::Expr::Call { callee, args } => lower_call(
-            callee,
-            args,
-            ctx,
-            funcs,
-            ns_bindings,
-            table,
-            artifacts,
-            &expr.span,
-        ),
-        ast::Expr::FieldAccess(..) => {
-            Err(LowerError::unsupported("field access", expr.span.clone()))
+        ast::Expr::Call { callee, args } => lower_call(callee, args, ctx, lcx, table, &expr.span),
+        ast::Expr::FieldAccess(base, field) => {
+            let base_e = lower_expr(base, ctx, lcx, table)?;
+            let KirType::Struct(struct_id) = base_e.ty() else {
+                return Err(LowerError::unsupported(
+                    "field access on a non-struct value (containers/dynamic land in a later \
+                     M2 issue)",
+                    expr.span.clone(),
+                ));
+            };
+            let layout = &lcx.struct_layouts[struct_id];
+            let field_index = layout.field_index(field).ok_or_else(|| {
+                LowerError::new(
+                    format!("struct `{}` has no field `{field}`", layout.name),
+                    expr.span.clone(),
+                )
+            })?;
+            let ty = layout.fields[field_index].1;
+            Ok(Expr::FieldGet {
+                base: Box::new(base_e),
+                field_index,
+                ty,
+            })
         }
         ast::Expr::NullFieldAccess(..) => Err(LowerError::unsupported(
             "null-safe field access",
@@ -178,11 +187,18 @@ pub(crate) fn lower_expr(
             Err(LowerError::unsupported("self access", expr.span.clone()))
         }
         ast::Expr::SelfRef => Err(LowerError::unsupported("self reference", expr.span.clone())),
-        ast::Expr::StructLit(_) => {
-            Err(LowerError::unsupported("struct literal", expr.span.clone()))
-        }
+        // No expected-type context here (that's `lower_expr_expecting`'s
+        // job) — an anonymous struct literal with nothing pinning it to a
+        // named struct isn't modeled yet (deferred until an M2 fixture
+        // needs one; see `ir.rs`'s `StructLayout` doc).
+        ast::Expr::StructLit(_) => Err(LowerError::unsupported(
+            "struct literal outside a known-struct-typed position (a `let` annotation, \
+             `return`, or call argument)",
+            expr.span.clone(),
+        )),
         ast::Expr::StructSpreadUpdate { .. } => Err(LowerError::unsupported(
-            "struct spread update",
+            "struct spread-update outside a known-struct-typed position (a `let` annotation, \
+             `return`, or call argument)",
             expr.span.clone(),
         )),
         ast::Expr::ListLit(_) => Err(LowerError::unsupported("list literal", expr.span.clone())),
@@ -205,19 +221,9 @@ pub(crate) fn lower_expr(
             // yet — value methods land alongside the container ABI (M2+).
             if let ast::Expr::Ident(obj_name) = &object.kind
                 && ctx.resolve(obj_name).is_none()
-                && let Some(namespace) = ns_bindings.get(obj_name)
+                && let Some(namespace) = lcx.ns_bindings.get(obj_name)
             {
-                lower_ns_call(
-                    namespace,
-                    method,
-                    args,
-                    ctx,
-                    funcs,
-                    ns_bindings,
-                    table,
-                    artifacts,
-                    &expr.span,
-                )
+                lower_ns_call(namespace, method, args, ctx, lcx, table, &expr.span)
             } else {
                 Err(LowerError::unsupported("method call", expr.span.clone()))
             }
@@ -244,6 +250,189 @@ pub(crate) fn lower_expr(
     }
 }
 
+/// Lowers `expr` against a known expected type — used only where the
+/// surrounding syntax pins a concrete type (a `let` annotation, `return`, a
+/// call argument), so a struct literal or spread-update (which the checker
+/// always types as an unnamed structural shape — see `lower/mod.rs`'s
+/// `CheckArtifacts` doc) can resolve to the *named* struct that context
+/// calls for. Falls through to ordinary bottom-up [`lower_expr`] for every
+/// other expression kind, then checks its type matches.
+pub(crate) fn lower_expr_expecting(
+    expr: &SpannedExpr,
+    expected: KirType,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    if let KirType::Struct(struct_id) = expected {
+        match &expr.kind {
+            ast::Expr::StructLit(fields) => {
+                return lower_struct_lit(fields, struct_id, &expr.span, ctx, lcx, table);
+            }
+            ast::Expr::StructSpreadUpdate { base, overrides } => {
+                return lower_struct_spread(base, overrides, struct_id, ctx, lcx, table);
+            }
+            _ => {}
+        }
+    }
+    let lowered = lower_expr(expr, ctx, lcx, table)?;
+    if lowered.ty() != expected {
+        return Err(LowerError::new(
+            format!(
+                "expected `{}`, got `{}`",
+                describe_ty(expected, lcx),
+                describe_ty(lowered.ty(), lcx)
+            ),
+            expr.span.clone(),
+        ));
+    }
+    Ok(lowered)
+}
+
+/// Lowers a struct literal (`{field: value, ...}`) against its expected
+/// struct type — matches fields by *name*, not literal source order
+/// (mirrors the checker's structural assignability rule,
+/// `crates/keel-compiler/src/types/checker.rs`), and rebuilds them in the
+/// struct's declared field order.
+fn lower_struct_lit(
+    lit_fields: &[(ast::MapLitKey, SpannedExpr)],
+    struct_id: StructId,
+    span: &Span,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    let layout = &lcx.struct_layouts[struct_id];
+
+    let mut by_name: HashMap<&str, &SpannedExpr> = HashMap::with_capacity(lit_fields.len());
+    for (key, value) in lit_fields {
+        let name = key.as_str().ok_or_else(|| {
+            LowerError::unsupported("non-identifier struct-literal key", value.span.clone())
+        })?;
+        if by_name.insert(name, value).is_some() {
+            return Err(LowerError::new(
+                format!("duplicate field `{name}` in struct literal"),
+                value.span.clone(),
+            ));
+        }
+    }
+
+    let mut fields = Vec::with_capacity(layout.fields.len());
+    for (field_name, field_ty) in &layout.fields {
+        let value = by_name.remove(field_name.as_str()).ok_or_else(|| {
+            LowerError::new(
+                format!("missing field `{field_name}` for struct `{}`", layout.name),
+                span.clone(),
+            )
+        })?;
+        fields.push(lower_expr_expecting(value, *field_ty, ctx, lcx, table)?);
+    }
+    if let Some((extra_name, extra_value)) = by_name.into_iter().next() {
+        return Err(LowerError::new(
+            format!("struct `{}` has no field `{extra_name}`", layout.name),
+            extra_value.span.clone(),
+        ));
+    }
+
+    Ok(Expr::MakeStruct { struct_id, fields })
+}
+
+/// Resolves the `(LocalId, KirType)` a spread-update's `base` already
+/// carries. `base` must be a plain identifier: reading a non-overridden
+/// field means reading `base` again, which is only safe when that's a
+/// side-effect-free variable read, not an arbitrary expression (a call
+/// could have side effects, and KIR's tree-shaped `Expr` has no let-binding
+/// to evaluate an arbitrary `base` once and reuse the result). Every M2
+/// fixture spreads an already-bound struct value, so this covers the exit
+/// criterion; a general expression base is deferred, not silently
+/// mis-evaluated.
+///
+/// Shared by [`lower_struct_spread`] (which also needs the struct id to
+/// build the result) and `lower_stmt`'s `Let` arm (which uses this to infer
+/// the expected type for `x = { ...base, .. }` with no explicit
+/// annotation — the common case, since the type is already pinned by
+/// `base` and an annotation would be redundant).
+pub(crate) fn struct_spread_base(
+    base: &SpannedExpr,
+    ctx: &FnCtx,
+) -> Result<(crate::ir::LocalId, KirType), LowerError> {
+    let ast::Expr::Ident(base_name) = &base.kind else {
+        return Err(LowerError::unsupported(
+            "struct spread-update over a non-identifier base expression",
+            base.span.clone(),
+        ));
+    };
+    let base_local = ctx.resolve(base_name).ok_or_else(|| {
+        LowerError::new(
+            format!("unknown identifier `{base_name}`"),
+            base.span.clone(),
+        )
+    })?;
+    Ok((base_local, ctx.locals[base_local].ty))
+}
+
+/// Lowers `{ ...base, field: value, ... }` against its expected struct
+/// type: copies every non-overridden field from `base`, takes overridden
+/// ones from `overrides`, and rebuilds in declared field order (same as
+/// [`lower_struct_lit`]).
+fn lower_struct_spread(
+    base: &SpannedExpr,
+    overrides: &[(String, SpannedExpr)],
+    struct_id: StructId,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    let (base_local, base_ty) = struct_spread_base(base, ctx)?;
+    if base_ty != KirType::Struct(struct_id) {
+        return Err(LowerError::new(
+            format!(
+                "spread-update base is `{}`, expected struct `{}`",
+                describe_ty(base_ty, lcx),
+                lcx.struct_layouts[struct_id].name
+            ),
+            base.span.clone(),
+        ));
+    }
+
+    let mut overrides_by_name: HashMap<&str, &SpannedExpr> =
+        HashMap::with_capacity(overrides.len());
+    for (name, value) in overrides {
+        if overrides_by_name.insert(name.as_str(), value).is_some() {
+            return Err(LowerError::new(
+                format!("duplicate field `{name}` in spread-update"),
+                value.span.clone(),
+            ));
+        }
+    }
+
+    let layout = &lcx.struct_layouts[struct_id];
+    let mut fields = Vec::with_capacity(layout.fields.len());
+    for (index, (field_name, field_ty)) in layout.fields.iter().enumerate() {
+        let field_expr = if let Some(value) = overrides_by_name.remove(field_name.as_str()) {
+            lower_expr_expecting(value, *field_ty, ctx, lcx, table)?
+        } else {
+            Expr::FieldGet {
+                base: Box::new(Expr::Local {
+                    id: base_local,
+                    ty: base_ty,
+                }),
+                field_index: index,
+                ty: *field_ty,
+            }
+        };
+        fields.push(field_expr);
+    }
+    if let Some((extra_name, extra_value)) = overrides_by_name.into_iter().next() {
+        return Err(LowerError::new(
+            format!("struct `{}` has no field `{extra_name}`", layout.name),
+            extra_value.span.clone(),
+        ));
+    }
+
+    Ok(Expr::MakeStruct { struct_id, fields })
+}
+
 /// String interpolation is sugar (desugars to concat calls per §2.3) and is
 /// deferred past M0; only a single non-interpolated literal segment lowers.
 fn lower_string_lit(parts: &[ast::StringPart], span: &Span) -> Result<Expr, LowerError> {
@@ -261,15 +450,12 @@ fn lower_string_lit(parts: &[ast::StringPart], span: &Span) -> Result<Expr, Lowe
 /// calls never reach here — the parser produces `ast::Expr::MethodCall` for
 /// all dot-call syntax, not `Call` with a field-access callee; see the
 /// `ast::Expr::MethodCall` arm in `lower_expr` for namespace-call lowering.
-#[allow(clippy::too_many_arguments)]
 fn lower_call(
     callee: &SpannedExpr,
     args: &[ast::CallArg],
     ctx: &mut FnCtx,
-    funcs: &HashMap<String, FuncSig>,
-    ns_bindings: &HashMap<String, String>,
+    lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    artifacts: &CheckArtifacts,
     call_span: &Span,
 ) -> Result<Expr, LowerError> {
     let ast::Expr::Ident(name) = &callee.kind else {
@@ -278,7 +464,7 @@ fn lower_call(
             callee.span.clone(),
         ));
     };
-    let sig = funcs.get(name).ok_or_else(|| {
+    let sig = lcx.funcs.get(name).ok_or_else(|| {
         LowerError::new(format!("unknown function `{name}`"), callee.span.clone())
     })?;
 
@@ -301,17 +487,13 @@ fn lower_call(
                 arg.value.span.clone(),
             ));
         }
-        let lowered = lower_expr(&arg.value, ctx, funcs, ns_bindings, table, artifacts)?;
-        if lowered.ty() != *expected_ty {
-            return Err(LowerError::new(
-                format!(
-                    "argument to `{name}` is `{}`, expected `{expected_ty}`",
-                    lowered.ty()
-                ),
-                arg.value.span.clone(),
-            ));
-        }
-        lowered_args.push(lowered);
+        lowered_args.push(lower_expr_expecting(
+            &arg.value,
+            *expected_ty,
+            ctx,
+            lcx,
+            table,
+        )?);
     }
 
     Ok(Expr::Call {
@@ -330,24 +512,13 @@ fn lower_call(
 /// check` already validated the call before lowering ever sees it). Arity
 /// *is* checked, and named/spread arguments are rejected — no M1 namespace
 /// method in the scalar-subset surface needs them yet.
-///
-/// `namespace`/`method`/`call_span` push this one function over clippy's
-/// default argument-count threshold; the other five are the same lowering
-/// state every function in this module already threads (`ctx`, `funcs`,
-/// `ns_bindings`, `table`) plus the call's own arg list. Bundling all of it
-/// into a shared "lowering context" struct is a reasonable future
-/// refactor, but not one this issue's scope should force — see `lower_call`
-/// just above, at 7 params, one under the limit, using the same pattern.
-#[allow(clippy::too_many_arguments)]
 fn lower_ns_call(
     namespace: &str,
     method: &str,
     args: &[ast::CallArg],
     ctx: &mut FnCtx,
-    funcs: &HashMap<String, FuncSig>,
-    ns_bindings: &HashMap<String, String>,
+    lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    artifacts: &CheckArtifacts,
     call_span: &Span,
 ) -> Result<Expr, LowerError> {
     let builtin = keel_catalog::catalog_method(namespace, method).ok_or_else(|| {
@@ -383,14 +554,7 @@ fn lower_ns_call(
                 arg.value.span.clone(),
             ));
         }
-        lowered_args.push(lower_expr(
-            &arg.value,
-            ctx,
-            funcs,
-            ns_bindings,
-            table,
-            artifacts,
-        )?);
+        lowered_args.push(lower_expr(&arg.value, ctx, lcx, table)?);
     }
 
     let ty = result_ty_to_kir(builtin.result, call_span)?;

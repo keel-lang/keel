@@ -148,7 +148,7 @@ task f() -> int {
 }
 "#,
     );
-    assert!(msg.contains("annotated"), "unexpected message: {msg}");
+    assert!(msg.contains("expected"), "unexpected message: {msg}");
 }
 
 #[test]
@@ -250,4 +250,116 @@ io.show("hi")
 "#,
     );
     assert!(msg.contains("method call"), "unexpected message: {msg}");
+}
+
+#[test]
+fn struct_literal_missing_a_field_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+p: Point = { x: 1 }
+"#,
+    );
+    assert!(
+        msg.contains("missing field `y`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn struct_literal_with_an_unknown_field_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+p: Point = { x: 1, y: 2, z: 3 }
+"#,
+    );
+    assert!(
+        msg.contains("has no field `z`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn struct_literal_field_type_mismatch_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+p: Point = { x: 1, y: "two" }
+"#,
+    );
+    assert!(msg.contains("expected"), "unexpected message: {msg}");
+}
+
+#[test]
+fn field_access_on_a_non_struct_value_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  x = 1
+  return x.y
+}
+"#,
+    );
+    assert!(
+        msg.contains("field access on a non-struct value"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn field_access_on_an_unknown_field_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+task f(p: Point) -> int {
+  return p.z
+}
+"#,
+    );
+    assert!(
+        msg.contains("has no field `z`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn struct_spread_update_over_a_non_identifier_base_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+task make() -> Point {
+  return { x: 1, y: 2 }
+}
+
+p: Point = { ...make(), x: 3 }
+"#,
+    );
+    assert!(
+        msg.contains("non-identifier base"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn non_struct_type_declaration_is_rejected() {
+    let msg = lower_err("type Color = red | green | blue\n");
+    assert!(
+        msg.contains("non-struct type declaration"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn generic_struct_type_is_rejected() {
+    let msg = lower_err("type Box[T] { value: int }\n");
+    assert!(
+        msg.contains("generic struct type"),
+        "unexpected message: {msg}"
+    );
 }

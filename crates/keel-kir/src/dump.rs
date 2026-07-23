@@ -8,11 +8,25 @@
 use std::fmt::Write as _;
 
 use crate::ir::{BinOp, Block, CallTarget, Expr, FuncId, KirFunction, KirProgram, Stmt, UnOp};
+use crate::types::KirType;
 
-/// Renders every function in `program`, in declaration order.
+/// Renders every struct declaration, then every function in `program`, in
+/// declaration order.
 #[must_use]
 pub fn dump(program: &KirProgram) -> String {
     let mut out = String::new();
+    for s in &program.structs {
+        let fields = s
+            .fields
+            .iter()
+            .map(|(name, ty)| format!("{name}: {}", fmt_ty(program, *ty)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let _ = writeln!(out, "struct {} {{ {fields} }}", s.name);
+    }
+    if !program.structs.is_empty() {
+        out.push('\n');
+    }
     for (i, func) in program.functions.iter().enumerate() {
         if i > 0 {
             out.push('\n');
@@ -22,17 +36,32 @@ pub fn dump(program: &KirProgram) -> String {
     out
 }
 
+/// Renders `ty` for the dump — same as `KirType`'s own `Display` for
+/// scalars, but resolves a struct id to its declared name (`KirType` alone
+/// can't, see `types.rs`'s `name()` doc; this function has `program` in hand).
+fn fmt_ty(program: &KirProgram, ty: KirType) -> String {
+    match ty {
+        KirType::Struct(id) => program.structs[id].name.clone(),
+        other => other.to_string(),
+    }
+}
+
 fn dump_function(out: &mut String, program: &KirProgram, func: &KirFunction) {
     let params = func
         .params
         .iter()
         .map(|p| {
             let name = &func.locals[p.local].name;
-            format!("{name}: {}", p.ty)
+            format!("{name}: {}", fmt_ty(program, p.ty))
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let _ = writeln!(out, "fn {}({params}) -> {} {{", func.name, func.ret);
+    let _ = writeln!(
+        out,
+        "fn {}({params}) -> {} {{",
+        func.name,
+        fmt_ty(program, func.ret)
+    );
     dump_block(out, program, func, &func.body, 1);
     out.push_str("}\n");
 }
@@ -70,7 +99,7 @@ fn dump_stmt(
                 out,
                 "let {}: {} = {}",
                 l.name,
-                l.ty,
+                fmt_ty(program, l.ty),
                 fmt_expr(program, func, init)
             );
         }
@@ -163,6 +192,29 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{name}({args})")
+        }
+        Expr::MakeStruct { struct_id, fields } => {
+            let layout = &program.structs[*struct_id];
+            let fields = layout
+                .fields
+                .iter()
+                .zip(fields)
+                .map(|((name, _), value)| format!("{name}: {}", fmt_expr(program, func, value)))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("{} {{ {fields} }}", layout.name)
+        }
+        Expr::FieldGet {
+            base, field_index, ..
+        } => {
+            let Expr::Local { ty, .. } = base.as_ref() else {
+                return format!("{}.#{field_index}", fmt_expr(program, func, base));
+            };
+            let KirType::Struct(struct_id) = ty else {
+                return format!("{}.#{field_index}", fmt_expr(program, func, base));
+            };
+            let field_name = &program.structs[*struct_id].fields[*field_index].0;
+            format!("{}.{field_name}", fmt_expr(program, func, base))
         }
     }
 }

@@ -1,12 +1,11 @@
 //! Expression codegen: literals, locals, arithmetic/comparison/logical
-//! binary ops, unary `-`/`not`, and direct `CallTarget::Fn` calls between
-//! compiled Keel functions. `str` literals and `CallTarget::Ns` (namespace
-//! dispatch) are rejected — see `layout.rs` and issue #135.
+//! binary ops, unary `-`/`not`, direct `CallTarget::Fn` calls between
+//! compiled Keel functions, and M2's named-struct construction/field access.
 
-use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, ValueKind};
-use inkwell::{FloatPredicate, IntPredicate};
+use inkwell::values::{BasicMetadataValueEnum, BasicValueEnum, PointerValue, ValueKind};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate};
 
-use keel_kir::ir::{BinOp, CallTarget, Expr, UnOp};
+use keel_kir::ir::{BinOp, CallTarget, Expr, StructId, UnOp};
 use keel_kir::types::KirType;
 
 use crate::CodegenError;
@@ -38,15 +37,13 @@ pub(crate) fn emit_expr<'ctx>(
             .bool_type()
             .const_int(u64::from(*v), false)
             .into()),
-        Expr::ConstStr(_) => Err(CodegenError::Unsupported(
-            "str literal (issue #135)".to_string(),
-        )),
+        Expr::ConstStr(s) => Ok(crate::ns_call::emit_box_str_const(fcx, s)?.into()),
         Expr::Local { id, .. } => {
             let ptr = *fcx
                 .locals
                 .get(id)
                 .expect("verified KIR: local declared before use (passes::verify)");
-            let ty = layout::llvm_type(fcx.context, expr.ty())?;
+            let ty = layout::llvm_type(fcx.context, fcx.program, expr.ty())?;
             fcx.builder.build_load(ty, ptr, "load").map_err(llvm_err)
         }
         Expr::BinOp {
@@ -59,7 +56,82 @@ pub(crate) fn emit_expr<'ctx>(
             ty,
             span,
         } => emit_call(fcx, *target, args, *ty, *span),
+        Expr::MakeStruct { struct_id, fields } => emit_make_struct(fcx, *struct_id, fields),
+        Expr::FieldGet {
+            base,
+            field_index,
+            ty,
+        } => emit_field_get(fcx, base, *field_index, *ty),
     }
+}
+
+/// Allocates a fresh heap struct (via `malloc`, leaked for process lifetime
+/// — same precedent M1 set for `KeelBox` retain/release, see
+/// `keel-rt-ffi`'s `abi/rc.rs` doc) and stores every field through a `GEP`.
+/// `layout::llvm_type`/`struct_layout_type` already reject an all-scalar
+/// struct (by-value codegen isn't wired up), so every `struct_id` reaching
+/// here is heap-typed.
+fn emit_make_struct<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    struct_id: StructId,
+    fields: &[Expr],
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let layout_ty = layout::struct_layout_type(fcx.context, fcx.program, struct_id)?;
+    let size = layout_ty
+        .size_of()
+        .expect("a struct built from sized field types always has a known size");
+
+    let ptr_type = fcx.context.ptr_type(AddressSpace::default());
+    let malloc_fn = crate::ns_call::declare_or_get(fcx.module, "malloc", || {
+        ptr_type.fn_type(&[fcx.context.i64_type().into()], false)
+    });
+    let call = fcx
+        .builder
+        .build_call(malloc_fn, &[size.into()], "struct_alloc")
+        .map_err(llvm_err)?;
+    let ptr = match call.try_as_basic_value() {
+        ValueKind::Basic(v) => v.into_pointer_value(),
+        ValueKind::Instruction(_) => unreachable!("malloc returns a pointer, never void"),
+    };
+
+    for (i, field) in fields.iter().enumerate() {
+        let value = emit_expr(fcx, field)?;
+        let field_index = u32::try_from(i).expect("struct field count fits u32");
+        let field_ptr = fcx
+            .builder
+            .build_struct_gep(layout_ty, ptr, field_index, "field_ptr")
+            .map_err(llvm_err)?;
+        fcx.builder
+            .build_store(field_ptr, value)
+            .map_err(llvm_err)?;
+    }
+
+    Ok(ptr.into())
+}
+
+fn emit_field_get<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    base: &Expr,
+    field_index: usize,
+    ty: KirType,
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let KirType::Struct(struct_id) = base.ty() else {
+        return Err(CodegenError::Llvm(format!(
+            "field-get base is {} — keel-kir's verify pass should have rejected this",
+            base.ty()
+        )));
+    };
+    let base_ptr: PointerValue = emit_expr(fcx, base)?.into_pointer_value();
+    let layout_ty = layout::struct_layout_type(fcx.context, fcx.program, struct_id)?;
+    let field_index = u32::try_from(field_index).expect("struct field count fits u32");
+    let field_ptr = fcx
+        .builder
+        .build_struct_gep(layout_ty, base_ptr, field_index, "field_ptr")
+        .map_err(llvm_err)?;
+    let field_llvm_ty = layout::llvm_type(fcx.context, fcx.program, ty)?;
+    fcx.builder
+        .build_load(field_llvm_ty, field_ptr, "field_load")
+        .map_err(llvm_err)
 }
 
 fn emit_call<'ctx>(
@@ -218,9 +290,10 @@ fn emit_binop<'ctx>(
             Ok(result)
         }
         KirType::Str => Err(CodegenError::Unsupported(
-            "str concatenation/comparison (issue #135)".to_string(),
+            "str concatenation/comparison (string interpolation lands in a later M2 issue)"
+                .to_string(),
         )),
-        KirType::Unit => Err(unreachable_combo(op, operand_ty)),
+        KirType::Unit | KirType::Struct(_) => Err(unreachable_combo(op, operand_ty)),
     }
 }
 

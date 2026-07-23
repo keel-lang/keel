@@ -42,7 +42,7 @@ fn emit_stmt<'ctx>(
     match stmt {
         Stmt::Let { local, init } => {
             let value = expr::emit_expr(fcx, init)?;
-            let ty = layout::llvm_type(fcx.context, init.ty())?;
+            let ty = layout::llvm_type(fcx.context, fcx.program, init.ty())?;
             let ptr = fcx
                 .builder
                 .build_alloca(ty, &format!("local.{local}"))
