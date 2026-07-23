@@ -50,7 +50,9 @@ use keel_compiler::types::artifacts::CheckArtifacts;
 use keel_syntax::ast::{Binding, Decl, Program, TypeDef, UseDecl, UseKind, UseSource};
 use keel_syntax::lexer::Span;
 
-use crate::ir::{FuncId, KirFunction, KirProgram, LocalId, StructId, StructLayout};
+use crate::ir::{
+    EnumId, EnumLayout, FuncId, KirFunction, KirProgram, LocalId, StructId, StructLayout,
+};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -109,6 +111,8 @@ pub(crate) struct LowerCtx<'a> {
     pub(crate) ns_bindings: &'a HashMap<String, String>,
     pub(crate) structs_by_name: &'a HashMap<String, StructId>,
     pub(crate) struct_layouts: &'a [StructLayout],
+    pub(crate) enums_by_name: &'a HashMap<String, EnumId>,
+    pub(crate) enum_layouts: &'a [EnumLayout],
     /// Not consumed yet — #145 (named structs) resolves everything through
     /// context-threaded expected types instead (see `expr::lower_expr_expecting`).
     /// Becomes load-bearing for a construct the checker must resolve and
@@ -125,6 +129,7 @@ pub(crate) struct LowerCtx<'a> {
 pub(crate) fn describe_ty(ty: KirType, lcx: &LowerCtx<'_>) -> String {
     match ty {
         KirType::Struct(id) => format!("struct {}", lcx.struct_layouts[id].name),
+        KirType::Enum(id) => format!("enum {}", lcx.enum_layouts[id].name),
         other => other.to_string(),
     }
 }
@@ -200,35 +205,60 @@ pub fn lower_program(
     let mut task_order: Vec<&keel_syntax::ast::TaskDecl> = Vec::new();
     let mut structs_by_name: HashMap<String, StructId> = HashMap::new();
     let mut struct_decls: Vec<&keel_syntax::ast::TypeDecl> = Vec::new();
+    let mut enums_by_name: HashMap<String, EnumId> = HashMap::new();
+    let mut enum_layouts: Vec<EnumLayout> = Vec::new();
 
     // Pass 1a: reserve a `StructId` for every named struct declaration
     // before resolving any field types, so a field can reference another
     // struct regardless of declaration order (forward references) — same
-    // rationale as task signatures resolving before bodies. Only
-    // `TypeDef::Struct` is in scope here; `SimpleEnum`/`RichEnum` land in a
-    // later M2 issue, `Alias` isn't scoped yet either.
+    // rationale as task signatures resolving before bodies. A simple enum
+    // has no forward-reference problem (variants are bare names, not
+    // types), so it's fully built here in one step rather than needing a
+    // reserve-then-resolve split like structs. `RichEnum`/`Alias` aren't
+    // scoped yet — rich (payload-carrying) variants are a follow-up issue
+    // (see `ir.rs`'s `KirProgram::enums` doc).
     for decl in &program.declarations {
         if let Decl::Type(type_decl) = &decl.kind {
-            let TypeDef::Struct(_) = &type_decl.def else {
-                return Err(LowerError::unsupported(
-                    "non-struct type declaration (enums/aliases land in a later M2 issue)",
-                    decl.span.clone(),
-                ));
-            };
-            if !type_decl.type_params.is_empty() {
-                return Err(LowerError::unsupported(
-                    "generic struct type",
-                    type_decl.name_span.clone(),
-                ));
+            match &type_decl.def {
+                TypeDef::Struct(_) => {
+                    if !type_decl.type_params.is_empty() {
+                        return Err(LowerError::unsupported(
+                            "generic struct type",
+                            type_decl.name_span.clone(),
+                        ));
+                    }
+                    let id = struct_decls.len();
+                    structs_by_name.insert(type_decl.name.clone(), id);
+                    struct_decls.push(type_decl);
+                }
+                TypeDef::SimpleEnum(variants) => {
+                    if !type_decl.type_params.is_empty() {
+                        return Err(LowerError::unsupported(
+                            "generic enum type",
+                            type_decl.name_span.clone(),
+                        ));
+                    }
+                    let id = enum_layouts.len();
+                    enums_by_name.insert(type_decl.name.clone(), id);
+                    enum_layouts.push(EnumLayout {
+                        id,
+                        name: type_decl.name.clone(),
+                        variants: variants.clone(),
+                    });
+                }
+                TypeDef::RichEnum(_) | TypeDef::Alias(_) => {
+                    return Err(LowerError::unsupported(
+                        "rich enum or type-alias declaration (rich/payload-carrying variants \
+                         land in a later M2/M3 issue; aliases aren't scoped yet)",
+                        decl.span.clone(),
+                    ));
+                }
             }
-            let id = struct_decls.len();
-            structs_by_name.insert(type_decl.name.clone(), id);
-            struct_decls.push(type_decl);
         }
     }
 
-    // Pass 1b: resolve each struct's field types now that every struct name
-    // in the file is known.
+    // Pass 1b: resolve each struct's field types now that every struct and
+    // enum name in the file is known.
     let mut struct_layouts: Vec<StructLayout> = Vec::with_capacity(struct_decls.len());
     for (id, type_decl) in struct_decls.iter().enumerate() {
         let TypeDef::Struct(ast_fields) = &type_decl.def else {
@@ -238,7 +268,7 @@ pub fn lower_program(
         for field in ast_fields {
             fields.push((
                 field.name.clone(),
-                ty_expr_to_kir(&field.ty, &structs_by_name)?,
+                ty_expr_to_kir(&field.ty, &structs_by_name, &enums_by_name)?,
             ));
         }
         struct_layouts.push(StructLayout {
@@ -255,7 +285,7 @@ pub fn lower_program(
     for decl in &program.declarations {
         match &decl.kind {
             Decl::Task(task) => {
-                let (params, ret) = decl::signature_of(task, &structs_by_name)?;
+                let (params, ret) = decl::signature_of(task, &structs_by_name, &enums_by_name)?;
                 let func_id = task_order.len();
                 task_order.push(task);
                 funcs.insert(
@@ -286,6 +316,8 @@ pub fn lower_program(
         ns_bindings: &ns_bindings,
         structs_by_name: &structs_by_name,
         struct_layouts: &struct_layouts,
+        enums_by_name: &enums_by_name,
+        enum_layouts: &enum_layouts,
         artifacts,
     };
 
@@ -325,6 +357,7 @@ pub fn lower_program(
         functions,
         toplevel: toplevel_id,
         structs: struct_layouts,
+        enums: enum_layouts,
         span_table,
     })
 }
@@ -385,12 +418,14 @@ fn decl_kind_name(decl: &Decl) -> &'static str {
 }
 
 /// Converts a parsed type annotation to a `KirType`, rejecting every
-/// variant outside the M0/M1/M2-so-far subset. `structs_by_name` resolves a
-/// bare `Named` type to a declared struct — checked after the built-in
-/// scalar names, so a struct can't shadow a reserved type name.
+/// variant outside the M0/M1/M2-so-far subset. `structs_by_name`/
+/// `enums_by_name` resolve a bare `Named` type to a declared struct or enum
+/// — checked after the built-in scalar names, so neither can shadow a
+/// reserved type name.
 pub(crate) fn ty_expr_to_kir(
     ty: &keel_syntax::ast::Node<keel_syntax::ast::TypeExpr>,
     structs_by_name: &HashMap<String, StructId>,
+    enums_by_name: &HashMap<String, EnumId>,
 ) -> Result<KirType, LowerError> {
     use keel_syntax::ast::TypeExpr;
     match &ty.kind {
@@ -400,15 +435,18 @@ pub(crate) fn ty_expr_to_kir(
             "bool" => Ok(KirType::Bool),
             "str" => Ok(KirType::Str),
             "none" => Ok(KirType::Unit),
-            other => structs_by_name.get(other).map_or_else(
-                || {
+            other => {
+                if let Some(id) = structs_by_name.get(other) {
+                    Ok(KirType::Struct(*id))
+                } else if let Some(id) = enums_by_name.get(other) {
+                    Ok(KirType::Enum(*id))
+                } else {
                     Err(LowerError::unsupported(
                         &format!("named type `{other}`"),
                         ty.span.clone(),
                     ))
-                },
-                |id| Ok(KirType::Struct(*id)),
-            ),
+                }
+            }
         },
         TypeExpr::Nullable(_) => Err(LowerError::unsupported("nullable type", ty.span.clone())),
         TypeExpr::List(_) => Err(LowerError::unsupported("list type", ty.span.clone())),

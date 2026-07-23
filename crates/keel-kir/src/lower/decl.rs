@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use keel_syntax::ast::TaskDecl;
 
 use super::{FnCtx, FuncSig, LowerCtx, LowerError, binding_ident, ty_expr_to_kir};
-use crate::ir::{KirFunction, Param, StructId};
+use crate::ir::{EnumId, KirFunction, Param, StructId};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -18,6 +18,7 @@ use crate::types::KirType;
 pub(crate) fn signature_of(
     task: &TaskDecl,
     structs_by_name: &HashMap<String, StructId>,
+    enums_by_name: &HashMap<String, EnumId>,
 ) -> Result<(Vec<KirType>, KirType), LowerError> {
     if !task.type_params.is_empty() {
         return Err(LowerError::unsupported(
@@ -40,10 +41,10 @@ pub(crate) fn signature_of(
             ));
         }
         binding_ident(&param.name, &param.name_span)?; // rejects destructuring params
-        params.push(ty_expr_to_kir(&param.ty, structs_by_name)?);
+        params.push(ty_expr_to_kir(&param.ty, structs_by_name, enums_by_name)?);
     }
     let ret = match &task.return_type {
-        Some(ty) => ty_expr_to_kir(ty, structs_by_name)?,
+        Some(ty) => ty_expr_to_kir(ty, structs_by_name, enums_by_name)?,
         None => KirType::Unit,
     };
     Ok((params, ret))

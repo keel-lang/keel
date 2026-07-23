@@ -25,6 +25,9 @@ pub type LocalId = usize;
 /// Index into `KirProgram::structs`.
 pub type StructId = usize;
 
+/// Index into `KirProgram::enums`.
+pub type EnumId = usize;
+
 /// A whole lowered program (currently: a single file's tasks + its
 /// top-level statements — multi-module lowering is deferred until the
 /// `keel-compiler` `ModuleGraph`/`CheckArtifacts` seam lands, see `lib.rs`).
@@ -42,6 +45,11 @@ pub struct KirProgram {
     /// an M2 fixture actually needs one; see `lower/mod.rs`'s struct-
     /// resolution doc.
     pub structs: Vec<StructLayout>,
+    /// Every simple (unit-variant) enum type (`type Priority = low | medium |
+    /// high`) declared in the file, in declaration order. Rich (payload-
+    /// carrying) variants aren't modeled yet — deferred to a follow-up
+    /// issue; see `lower/mod.rs`'s enum-resolution doc.
+    pub enums: Vec<EnumLayout>,
     pub span_table: SpanTable,
 }
 
@@ -72,6 +80,26 @@ impl StructLayout {
     #[must_use]
     pub fn is_heap(&self, program: &KirProgram) -> bool {
         self.fields.iter().any(|(_, ty)| ty.is_heap(program))
+    }
+}
+
+/// A simple enum type's compiled layout: variant names in declaration order,
+/// where a variant's position *is* its runtime tag (fixed at KIR-lowering
+/// time, same rationale as `StructLayout`). Values are a plain by-value
+/// `i32` — no payload, no heap allocation, no RC.
+#[derive(Debug, Clone)]
+pub struct EnumLayout {
+    pub id: EnumId,
+    pub name: String,
+    pub variants: Vec<String>,
+}
+
+impl EnumLayout {
+    /// Index of `name` in `variants` (its runtime tag), if this enum has
+    /// such a variant.
+    #[must_use]
+    pub fn variant_index(&self, name: &str) -> Option<usize> {
+        self.variants.iter().position(|v| v == name)
     }
 }
 
@@ -201,6 +229,13 @@ pub enum Expr {
         field_index: usize,
         ty: KirType,
     },
+    /// Builds a simple-enum value (`Priority.low`) — just its runtime tag,
+    /// resolved at lowering time via `EnumLayout::variant_index`. No payload
+    /// (rich variants aren't modeled yet).
+    MakeEnum {
+        enum_id: EnumId,
+        variant_index: usize,
+    },
 }
 
 /// What an `Expr::Call` invokes.
@@ -231,6 +266,7 @@ impl Expr {
             | Expr::Call { ty, .. }
             | Expr::FieldGet { ty, .. } => *ty,
             Expr::MakeStruct { struct_id, .. } => KirType::Struct(*struct_id),
+            Expr::MakeEnum { enum_id, .. } => KirType::Enum(*enum_id),
         }
     }
 }

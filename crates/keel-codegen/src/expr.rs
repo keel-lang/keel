@@ -62,6 +62,11 @@ pub(crate) fn emit_expr<'ctx>(
             field_index,
             ty,
         } => emit_field_get(fcx, base, *field_index, *ty),
+        Expr::MakeEnum { variant_index, .. } => Ok(fcx
+            .context
+            .i32_type()
+            .const_int(*variant_index as u64, false)
+            .into()),
     }
 }
 
@@ -289,10 +294,55 @@ fn emit_binop<'ctx>(
             };
             Ok(result)
         }
-        KirType::Str => Err(CodegenError::Unsupported(
-            "str concatenation/comparison (string interpolation lands in a later M2 issue)"
-                .to_string(),
-        )),
+        KirType::Str => match op {
+            BinOp::Eq | BinOp::Neq => {
+                let l = lv.into_pointer_value();
+                let r = rv.into_pointer_value();
+                let ptr_type = fcx.context.ptr_type(AddressSpace::default());
+                let i8_type = fcx.context.i8_type();
+                let f = crate::ns_call::declare_or_get(fcx.module, "keel_str_eq", || {
+                    i8_type.fn_type(&[ptr_type.into(), ptr_type.into()], false)
+                });
+                let call = b
+                    .build_call(f, &[l.into(), r.into()], "str_eq")
+                    .map_err(llvm_err)?;
+                let eq = match call.try_as_basic_value() {
+                    ValueKind::Basic(v) => v.into_int_value(),
+                    ValueKind::Instruction(_) => {
+                        unreachable!("keel_str_eq returns a u8, never void")
+                    }
+                };
+                let eq_bool = b
+                    .build_int_truncate(eq, fcx.context.bool_type(), "str_eq_bool")
+                    .map_err(llvm_err)?;
+                Ok(if op == BinOp::Eq {
+                    eq_bool.into()
+                } else {
+                    b.build_not(eq_bool, "str_ne_bool")
+                        .map_err(llvm_err)?
+                        .into()
+                })
+            }
+            _ => Err(CodegenError::Unsupported(
+                "str concatenation (string interpolation lands in a later M2 issue)".to_string(),
+            )),
+        },
+        KirType::Enum(_) => {
+            let l = lv.into_int_value();
+            let r = rv.into_int_value();
+            let result: BasicValueEnum = match op {
+                BinOp::Eq => b
+                    .build_int_compare(IntPredicate::EQ, l, r, "eeq")
+                    .map_err(llvm_err)?
+                    .into(),
+                BinOp::Neq => b
+                    .build_int_compare(IntPredicate::NE, l, r, "ene")
+                    .map_err(llvm_err)?
+                    .into(),
+                _ => return Err(unreachable_combo(op, operand_ty)),
+            };
+            Ok(result)
+        }
         KirType::Unit | KirType::Struct(_) => Err(unreachable_combo(op, operand_ty)),
     }
 }

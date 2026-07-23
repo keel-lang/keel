@@ -13,7 +13,7 @@
 use std::fmt;
 
 use crate::ir::{
-    Block, CallTarget, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt, StructId,
+    Block, CallTarget, EnumId, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt, StructId,
 };
 use crate::types::KirType;
 
@@ -109,6 +109,16 @@ fn check_struct(program: &KirProgram, id: StructId) -> Result<(), String> {
         return Err(format!(
             "StructId {id} out of range ({} structs)",
             program.structs.len()
+        ));
+    }
+    Ok(())
+}
+
+fn check_enum(program: &KirProgram, id: EnumId) -> Result<(), String> {
+    if id >= program.enums.len() {
+        return Err(format!(
+            "EnumId {id} out of range ({} enums)",
+            program.enums.len()
         ));
     }
     Ok(())
@@ -294,6 +304,21 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
                 return Err(format!(
                     "field-get on `{}.{}` claims type {ty} but the field is {declared_ty}",
                     layout.name, layout.fields[*field_index].0
+                ));
+            }
+            Ok(())
+        }
+        Expr::MakeEnum {
+            enum_id,
+            variant_index,
+        } => {
+            check_enum(program, *enum_id)?;
+            let layout = &program.enums[*enum_id];
+            if *variant_index >= layout.variants.len() {
+                return Err(format!(
+                    "MakeEnum variant index {variant_index} out of range for `{}` ({} variants)",
+                    layout.name,
+                    layout.variants.len()
                 ));
             }
             Ok(())

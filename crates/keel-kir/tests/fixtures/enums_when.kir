@@ -1,0 +1,32 @@
+enum Priority { low, medium, high }
+
+fn label(p: Priority) -> str {
+  if (p == Priority.low) {
+    return "low priority"
+  } else {
+    if (p == Priority.medium) {
+      return "medium priority"
+    } else {
+      if true {
+        return "high priority"
+      }
+    }
+  }
+}
+
+fn grade(score: str) -> str {
+  if (score == "A") {
+    return "excellent"
+  } else {
+    if (score == "B") {
+      return "good"
+    } else {
+      if true {
+        return "needs work"
+      }
+    }
+  }
+}
+
+fn <toplevel>() -> none {
+}

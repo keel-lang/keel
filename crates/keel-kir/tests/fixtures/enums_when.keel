@@ -1,0 +1,17 @@
+type Priority = low | medium | high
+
+task label(p: Priority) -> str {
+  when p {
+    low => { return "low priority" }
+    medium => { return "medium priority" }
+    high => { return "high priority" }
+  }
+}
+
+task grade(score: str) -> str {
+  when score {
+    "A" => { return "excellent" }
+    "B" => { return "good" }
+    _ => { return "needs work" }
+  }
+}

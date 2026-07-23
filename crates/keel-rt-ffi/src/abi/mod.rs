@@ -61,6 +61,24 @@ pub unsafe extern "C" fn keel_box_str(ptr: *const u8, len: usize) -> *const Valu
     Arc::into_raw(Arc::new(Value::String(s)))
 }
 
+/// Compares two boxed strings for equality without consuming either
+/// caller's reference — backs `keel-codegen`'s `str == str` / `str != str`
+/// (`when` over a `str` scrutinee, or any other string comparison).
+/// Returns `1` for equal, `0` otherwise.
+///
+/// # Safety
+///
+/// `a` and `b` must each be a live `KeelBox` (see [`borrow`]) whose
+/// underlying `Value` is `Value::String` — always true for a `str`-typed
+/// KIR expression, which is the only thing `keel-codegen` ever passes here.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_str_eq(a: *const Value, b: *const Value) -> u8 {
+    let (Value::String(a), Value::String(b)) = (unsafe { &*a }, unsafe { &*b }) else {
+        unreachable!("keel-codegen only calls keel_str_eq on str-typed (Value::String) operands");
+    };
+    u8::from(a == b)
+}
+
 /// Reads a `KeelBox`'s value without consuming the caller's reference —
 /// used to marshal namespace-call arguments (`const KeelBox**`, i.e.
 /// borrowed) into owned `Value`s.
