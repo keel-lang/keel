@@ -230,8 +230,10 @@ pub(crate) fn lower_stmt(
         ast::Stmt::When { subject, arms } => {
             lower_when_stmt(subject, arms, ctx, lcx, table, ret_ty, &stmt.span)
         }
-        ast::Stmt::TryCatch { .. } => Err(LowerError::unsupported("try/catch", stmt.span.clone())),
-        ast::Stmt::Raise(_) => Err(LowerError::unsupported("raise", stmt.span.clone())),
+        ast::Stmt::TryCatch { body, catches } => {
+            lower_try_catch(body, catches, ctx, lcx, table, ret_ty, &stmt.span)
+        }
+        ast::Stmt::Raise(message) => lower_raise(message, ctx, lcx, table),
         ast::Stmt::Assert { .. } => Err(LowerError::unsupported("assert", stmt.span.clone())),
         ast::Stmt::Break => Err(LowerError::unsupported("break", stmt.span.clone())),
         ast::Stmt::Continue => Err(LowerError::unsupported("continue", stmt.span.clone())),
@@ -455,4 +457,96 @@ fn lower_pattern_test(
             stmt_span.clone(),
         )),
     }
+}
+
+/// Lowers `raise expr` to the synthetic `UserRaised { message: str }`
+/// struct's construction (reusing `Expr::MakeStruct` wholesale — see
+/// `ir.rs`'s `Stmt::Raise` doc). `expr` must already be `Str`-typed; the
+/// interpreter's non-`str` `Display`-coercion path (`raise 42` becomes
+/// `"42"`) is a later M2/M3 concern.
+fn lower_raise(
+    message: &ast::SpannedExpr,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<ir::Stmt, LowerError> {
+    let message_e = lower_expr(message, ctx, lcx, table)?;
+    if message_e.ty() != KirType::Str {
+        return Err(LowerError::new(
+            format!(
+                "`raise` of a `{}` value (only a `str` message is supported; the interpreter's \
+                 non-`str` `Display`-coercion path is a later M2/M3 concern)",
+                super::describe_ty(message_e.ty(), lcx)
+            ),
+            message.span.clone(),
+        ));
+    }
+    let struct_id = lcx
+        .user_raised_struct_id
+        .expect("program_uses_raise_or_try found this Stmt::Raise, so the synthetic struct exists");
+    let span = table.intern(message.span.clone());
+    Ok(ir::Stmt::Raise {
+        error: ir::Expr::MakeStruct {
+            struct_id,
+            fields: vec![message_e],
+        },
+        span,
+    })
+}
+
+/// Lowers `try { body } catch binder: Ty { handler }`. Only a single catch
+/// clause of type `Error` or `UserRaised` is supported — both bind the same
+/// synthetic `UserRaised` shape, since `raise` only ever produces one (see
+/// `ir.rs`'s `Stmt::TryCatch` doc); multiple clauses, or a clause over any
+/// other type name, are rejected rather than silently only-partially
+/// modeled.
+fn lower_try_catch(
+    body: &ast::Block,
+    catches: &[ast::CatchClause],
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    ret_ty: KirType,
+    stmt_span: &Span,
+) -> Result<ir::Stmt, LowerError> {
+    let [catch] = catches else {
+        return Err(LowerError::unsupported(
+            "multiple catch clauses (only a single `catch e: Error` or `catch e: UserRaised` \
+             clause is supported until per-namespace error kinds are modeled, a later M2/M3 \
+             concern)",
+            stmt_span.clone(),
+        ));
+    };
+    let ast::TypeExpr::Named(caught_name) = &catch.ty.kind else {
+        return Err(LowerError::unsupported(
+            "catch clause over a non-named type",
+            catch.ty.span.clone(),
+        ));
+    };
+    if caught_name != "Error" && caught_name != "UserRaised" {
+        return Err(LowerError::unsupported(
+            "catch clause over an error type other than `Error`/`UserRaised` (per-namespace \
+             error kinds — FileError, HttpError, … — aren't modeled by the compiled backend \
+             yet, a later M2/M3 concern)",
+            catch.ty.span.clone(),
+        ));
+    }
+    let struct_id = lcx.user_raised_struct_id.expect(
+        "program_uses_raise_or_try found this Stmt::TryCatch, so the synthetic struct exists",
+    );
+
+    let body = lower_block(body, ctx, lcx, table, ret_ty)?;
+
+    let binder_ty = KirType::Struct(struct_id);
+    ctx.push_scope();
+    let binder = ctx.declare(&catch.name, binder_ty);
+    let handler = lower_block(&catch.body, ctx, lcx, table, ret_ty)?;
+    ctx.pop_scope();
+
+    Ok(ir::Stmt::TryCatch {
+        body,
+        binder,
+        binder_ty,
+        handler,
+    })
 }

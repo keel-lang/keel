@@ -170,6 +170,7 @@ fn emit_call<'ctx>(
     };
     let callee = fcx.functions[func_id]
         .expect("declare_functions declares every non-toplevel FuncId before any body is emitted");
+    let callee_can_raise = fcx.program.functions[func_id].can_raise;
 
     let mut arg_values: Vec<BasicMetadataValueEnum> = Vec::with_capacity(args.len());
     for arg in args {
@@ -181,15 +182,22 @@ fn emit_call<'ctx>(
         .build_call(callee, &arg_values, "call")
         .map_err(llvm_err)?;
 
-    match call.try_as_basic_value() {
-        ValueKind::Basic(v) => Ok(v),
+    let result = match call.try_as_basic_value() {
+        ValueKind::Basic(v) => v,
         // A Unit-returning (void) call. `ty` is Unit too (verified KIR), so
         // no caller ever inspects this value — the exit-code convention in
         // `func.rs` and every other consumer branch on `ty` first.
         ValueKind::Instruction(_) => {
             debug_assert_eq!(ty, KirType::Unit);
-            Ok(fcx.context.bool_type().const_zero().into())
+            debug_assert!(!callee_can_raise, "a can_raise callee never returns void");
+            return Ok(fcx.context.bool_type().const_zero().into());
         }
+    };
+
+    if callee_can_raise {
+        crate::raise::emit_call_result_branch(fcx, result, ty)
+    } else {
+        Ok(result)
     }
 }
 

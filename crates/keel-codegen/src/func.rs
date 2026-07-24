@@ -25,6 +25,7 @@
 
 use std::collections::HashMap;
 
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -63,6 +64,23 @@ pub(crate) struct FuncCtx<'ctx, 'a> {
     /// see the module doc) means "exit 0 now" instead of `ret void`.
     pub(crate) is_toplevel: bool,
     pub(crate) locals: HashMap<LocalId, PointerValue<'ctx>>,
+    /// This function's own logical return type (`KirFunction::ret`) — needed
+    /// by `raise.rs`'s `emit_ok_return` to box a `return`/fallthrough value
+    /// into the result-ABI's payload slot.
+    pub(crate) ret_ty: KirType,
+    /// Whether this function returns the result-ABI wrapper instead of a
+    /// plain `ret_ty`-typed value (`KirFunction::can_raise` — see its doc
+    /// and `designs/llvm-compilation.md` §2.5). Always `false` for
+    /// `toplevel` (`lower_program` rejects a `can_raise` toplevel).
+    pub(crate) can_raise: bool,
+    /// Stack of currently active `try` scopes in this function, innermost
+    /// last: `(handler basic block, catch binder's already-allocated
+    /// `alloca`)`. A `can_raise` call's `is_err` branch
+    /// (`expr.rs`'s `emit_call`) jumps to the top entry's handler block
+    /// (storing the error payload into its binder first) if non-empty, or
+    /// propagates via this function's own error return otherwise — see
+    /// `stmt.rs`'s `emit_try_catch`.
+    pub(crate) catch_stack: Vec<(BasicBlock<'ctx>, PointerValue<'ctx>)>,
 }
 
 /// Declares (signature only, no body) every `KirFunction` except
@@ -83,10 +101,14 @@ pub(crate) fn declare_functions<'ctx>(
             .iter()
             .map(|p| crate::layout::llvm_type(context, program, p.ty).map(Into::into))
             .collect::<Result<Vec<_>, _>>()?;
-        let fn_type = match func.ret {
-            KirType::Unit => context.void_type().fn_type(&param_types, false),
-            other => {
-                crate::layout::llvm_type(context, program, other)?.fn_type(&param_types, false)
+        let fn_type = if func.can_raise {
+            crate::raise::result_abi_type(context).fn_type(&param_types, false)
+        } else {
+            match func.ret {
+                KirType::Unit => context.void_type().fn_type(&param_types, false),
+                other => {
+                    crate::layout::llvm_type(context, program, other)?.fn_type(&param_types, false)
+                }
             }
         };
         functions[id] = Some(module.add_function(&func.name, fn_type, None));
@@ -116,6 +138,9 @@ pub(crate) fn emit_function<'ctx>(
         functions,
         is_toplevel: false,
         locals: HashMap::new(),
+        ret_ty: func.ret,
+        can_raise: func.can_raise,
+        catch_stack: Vec::new(),
     };
 
     for (i, param) in func.params.iter().enumerate() {
@@ -161,6 +186,12 @@ pub(crate) fn emit_toplevel_function<'ctx>(
         functions,
         is_toplevel: true,
         locals: HashMap::new(),
+        ret_ty: KirType::Unit,
+        // `lower_program` rejects a `can_raise` toplevel (an uncaught raise
+        // reaching the top level is a later M2/M3 concern — see its doc) —
+        // this is always `false` in practice, never read.
+        can_raise: false,
+        catch_stack: Vec::new(),
     };
     let last = stmt::emit_block(&mut fcx, &toplevel.body)?;
 
@@ -218,12 +249,21 @@ pub(crate) fn block_is_terminated(builder: &Builder) -> bool {
 /// task to return (this crate does not re-derive that guarantee — see
 /// AGENTS.md "trust internal invariants"), so `unreachable` is the correct
 /// terminator for a scalar-returning function's fallthrough: a well-typed
-/// program never actually reaches it.
+/// program never actually reaches it. A `can_raise` function's `ret_ty ==
+/// Unit` fallthrough still needs a real value, though — its LLVM return
+/// type is the result-ABI struct, not `void` — so that case emits the
+/// success branch instead of a bare `ret void`.
 fn finish_block(fcx: &FuncCtx, ret_ty: KirType) -> Result<(), CodegenError> {
     if block_is_terminated(fcx.builder) {
         return Ok(());
     }
-    if ret_ty == KirType::Unit {
+    if fcx.can_raise {
+        if ret_ty == KirType::Unit {
+            crate::raise::emit_ok_return(fcx, KirType::Unit, None)?;
+        } else {
+            fcx.builder.build_unreachable().map_err(llvm_err)?;
+        }
+    } else if ret_ty == KirType::Unit {
         fcx.builder.build_return(None).map_err(llvm_err)?;
     } else {
         fcx.builder.build_unreachable().map_err(llvm_err)?;

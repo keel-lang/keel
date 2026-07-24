@@ -267,6 +267,51 @@ fn verify_stmt(program: &KirProgram, func: &KirFunction, stmt: &Stmt) -> Result<
             Ok(())
         }
         Stmt::Expr(expr) => verify_expr(program, func, expr),
+        Stmt::Raise { error, .. } => {
+            verify_expr(program, func, error)?;
+            let KirType::Struct(struct_id) = error.ty() else {
+                return Err(format!("raise error is {}, expected a struct", error.ty()));
+            };
+            check_struct(program, struct_id)?;
+            verify_user_raised_shape(program, struct_id)
+        }
+        Stmt::TryCatch {
+            body,
+            binder,
+            binder_ty,
+            handler,
+        } => {
+            check_local(func, *binder)?;
+            verify_block(program, func, body)?;
+            let declared = func.locals[*binder].ty;
+            if declared != *binder_ty {
+                return Err(format!(
+                    "catch binder {binder} is declared {declared} but binder_ty claims {binder_ty}"
+                ));
+            }
+            let KirType::Struct(struct_id) = *binder_ty else {
+                return Err(format!("catch binder_ty is {binder_ty}, expected a struct"));
+            };
+            check_struct(program, struct_id)?;
+            verify_user_raised_shape(program, struct_id)?;
+            verify_block(program, func, handler)
+        }
+    }
+}
+
+/// Both `Stmt::Raise`'s constructed error value and `Stmt::TryCatch`'s
+/// binder must be the synthetic `UserRaised { message: str }` shape (see
+/// `ir.rs`'s `Stmt::TryCatch` doc) — checked structurally rather than by a
+/// hardcoded id, since `verify` has no `LowerCtx` to compare against.
+fn verify_user_raised_shape(program: &KirProgram, struct_id: StructId) -> Result<(), String> {
+    let layout = &program.structs[struct_id];
+    match layout.fields.as_slice() {
+        [(name, KirType::Str)] if name == "message" => Ok(()),
+        _ => Err(format!(
+            "struct `{}` used as a raise/catch error value doesn't have the expected \
+             `{{ message: str }}` shape",
+            layout.name
+        )),
     }
 }
 
