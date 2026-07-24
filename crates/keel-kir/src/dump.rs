@@ -62,9 +62,10 @@ fn dump_function(out: &mut String, program: &KirProgram, func: &KirFunction) {
         })
         .collect::<Vec<_>>()
         .join(", ");
+    let can_raise = if func.can_raise { " can_raise" } else { "" };
     let _ = writeln!(
         out,
-        "fn {}({params}) -> {} {{",
+        "fn {}({params}) -> {}{can_raise} {{",
         func.name,
         fmt_ty(program, func.ret)
     );
@@ -176,6 +177,24 @@ fn dump_stmt(
         }
         Stmt::Expr(expr) => {
             let _ = writeln!(out, "{}", fmt_expr(program, func, expr));
+        }
+        Stmt::Raise { error, .. } => {
+            let _ = writeln!(out, "raise {}", fmt_expr(program, func, error));
+        }
+        Stmt::TryCatch {
+            body,
+            binder,
+            binder_ty,
+            handler,
+        } => {
+            let name = &func.locals[*binder].name;
+            let _ = writeln!(out, "try {{");
+            dump_block(out, program, func, body, depth + 1);
+            indent(out, depth);
+            let _ = writeln!(out, "}} catch {}: {} {{", name, fmt_ty(program, *binder_ty));
+            dump_block(out, program, func, handler, depth + 1);
+            indent(out, depth);
+            out.push_str("}\n");
         }
     }
 }

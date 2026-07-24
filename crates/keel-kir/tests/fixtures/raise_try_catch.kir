@@ -1,0 +1,21 @@
+struct UserRaised { message: str }
+
+fn a() -> int can_raise {
+  raise UserRaised { message: "boom" }
+}
+
+fn b() -> int can_raise {
+  return a()
+}
+
+fn c() -> int {
+  try {
+    let result: int = b()
+    return result
+  } catch e: UserRaised {
+    return (-1)
+  }
+}
+
+fn <toplevel>() -> none {
+}

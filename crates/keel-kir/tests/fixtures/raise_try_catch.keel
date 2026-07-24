@@ -1,0 +1,16 @@
+task a() -> int {
+  raise "boom"
+}
+
+task b() -> int {
+  return a()
+}
+
+task c() -> int {
+  try {
+    result = b()
+    return result
+  } catch e: Error {
+    return -1
+  }
+}

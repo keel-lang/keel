@@ -134,6 +134,19 @@ pub struct KirFunction {
     pub name: String,
     pub params: Vec<Param>,
     pub ret: KirType,
+    /// Whether this function's compiled signature returns the result-ABI
+    /// wrapper (`{ i1 is_err, T success, UserRaised error }`) instead of a
+    /// plain `ret`-typed value — set by the whole-program `can_raise`
+    /// fixpoint (`lower/mod.rs`'s `compute_can_raise`) over `CallTarget::Fn`
+    /// call sites only (`designs/llvm-compilation.md` §2.5). A function is
+    /// `can_raise` iff it directly executes `Stmt::Raise`, or makes an
+    /// uncaught call (not inside a matching `Stmt::TryCatch`) to another
+    /// `can_raise` function. `CallTarget::Ns`/`CallTarget::Rt` calls don't
+    /// participate — no M1/M2 namespace method actually produces `is_err`
+    /// yet, so propagating through them would mark nearly every task
+    /// `can_raise` and cascade to the toplevel entry point's fixed `-> i32`
+    /// ABI; a later M2/M3 concern once a namespace method needs it.
+    pub can_raise: bool,
     /// Every local this function declares, including params (params occupy
     /// the first `params.len()` slots, in order) and every `let`-introduced
     /// shadow. Declaration order = `LocalId` order.
@@ -213,6 +226,34 @@ pub enum Stmt {
     Return(Option<Expr>),
     /// Expression evaluated for its side effect (e.g. a bare call).
     Expr(Expr),
+    /// `raise expr` — `error` is already the constructed synthetic
+    /// `UserRaised { message: str }` value (an `Expr::MakeStruct`, reusing
+    /// that lowering/codegen wholesale rather than inventing a parallel
+    /// error-construction path; see `lower/stmt.rs`). `expr` itself must
+    /// already be `Str`-typed (the interpreter's non-`str` `Display`-
+    /// coercion path is a later M2/M3 concern). Always terminates the
+    /// current function with the result-ABI's error branch — the enclosing
+    /// function is therefore always `can_raise`.
+    Raise {
+        error: Expr,
+        span: SpanId,
+    },
+    /// `try { body } catch binder: Error|UserRaised { handler }` — only a
+    /// single catch clause of type `Error` or `UserRaised` is supported
+    /// (both bind the same synthetic `UserRaised { message: str }` shape,
+    /// since `raise` only ever produces `UserRaised`); this collapses
+    /// "caught" to "lexically inside this try's body" with no type lattice
+    /// to evaluate. `binder_ty` is always `KirType::Struct(id)` for the
+    /// synthetic `UserRaised` layout — carried directly (same convention as
+    /// `ForEach`'s `elem_ty`) so codegen never needs a `func.locals` lookup
+    /// to allocate the binder. Multiple catch clauses, and clauses over any
+    /// other error type name, are rejected at lowering.
+    TryCatch {
+        body: Block,
+        binder: LocalId,
+        binder_ty: KirType,
+        handler: Block,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -114,6 +114,9 @@ pub(crate) fn lower_task_body(
         name: task.name.clone(),
         params,
         ret: sig.ret,
+        // Placeholder — `lower_program`'s `compute_can_raise` fills in the
+        // real value once every function's body is lowered.
+        can_raise: false,
         locals: ctx.locals,
         body,
     })

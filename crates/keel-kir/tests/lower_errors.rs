@@ -723,3 +723,107 @@ task f(p: Point) -> str {
         "unexpected message: {msg}"
     );
 }
+
+#[test]
+fn multiple_catch_clauses_are_rejected() {
+    // Only a single `catch e: Error`/`catch e: UserRaised` clause is
+    // supported — both bind the same synthetic `UserRaised` shape, since
+    // `raise` only ever produces one; per-namespace error kinds (a second,
+    // distinct clause could meaningfully match) aren't modeled yet.
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  try {
+    raise "x"
+  } catch e: UserRaised {
+    return 1
+  } catch e: Error {
+    return 2
+  }
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("multiple catch clauses"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn catch_clause_over_a_non_error_type_is_rejected() {
+    // Per-namespace error kinds (FileError, HttpError, ...) aren't modeled
+    // by the compiled backend yet — only `Error`/`UserRaised` bind the
+    // synthetic shape this issue's `raise` produces.
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  try {
+    raise "x"
+  } catch e: FileError {
+    return 1
+  }
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("error type other than `Error`/`UserRaised`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn raise_of_a_non_str_value_is_rejected() {
+    // The interpreter's non-`str` `Display`-coercion path (`raise 42`
+    // becomes `"42"`) is a later M2/M3 concern — only a `str` message
+    // lowers in this issue.
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  raise 42
+}
+"#,
+    );
+    assert!(msg.contains("`raise` of a"), "unexpected message: {msg}");
+}
+
+#[test]
+fn a_can_raise_task_returning_a_struct_is_rejected() {
+    // The result-ABI's success payload is uniformly boxed via
+    // `keel_box_*`/`unbox_value` — struct/enum/nullable return types need
+    // `Value` marshaling that doesn't exist yet.
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+task f() -> Point {
+  raise "x"
+}
+"#,
+    );
+    assert!(
+        msg.contains("can raise and returns"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn an_uncaught_raise_reaching_the_top_level_is_rejected() {
+    // Propagating past the top level would need to change
+    // `keel_user_toplevel`'s fixed `-> i32` entry-point signature — a later
+    // M2/M3 concern; wrap in `try`/`catch` instead.
+    let msg = lower_err(
+        r#"
+task a() -> int {
+  raise "x"
+}
+
+x = a()
+"#,
+    );
+    assert!(
+        msg.contains("reaches the top level"),
+        "unexpected message: {msg}"
+    );
+}

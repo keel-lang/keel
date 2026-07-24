@@ -22,6 +22,7 @@ mod layout;
 mod link;
 mod ns_call;
 mod nullable;
+mod raise;
 mod rt_call;
 mod stmt;
 

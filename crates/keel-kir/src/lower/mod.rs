@@ -51,8 +51,8 @@ use keel_syntax::ast::{Binding, Decl, Program, TypeDef, UseDecl, UseKind, UseSou
 use keel_syntax::lexer::Span;
 
 use crate::ir::{
-    EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, NullableId, StructId,
-    StructLayout,
+    Block, EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, NullableId,
+    StructId, StructLayout,
 };
 use crate::span_table::SpanTable;
 use crate::types::KirType;
@@ -133,6 +133,13 @@ pub(crate) struct LowerCtx<'a> {
     /// …) — see the module doc's `CheckArtifacts` section.
     #[allow(dead_code)]
     pub(crate) artifacts: &'a CheckArtifacts,
+    /// The synthetic `UserRaised { message: str }` struct's id, if the
+    /// program uses `raise`/`try`/`catch` anywhere (`lower_program`'s Pass
+    /// 1c) — `None` otherwise. `Stmt::Raise`/`Stmt::TryCatch` lowering
+    /// (`lower/stmt.rs`) only ever runs when this is `Some`, since their
+    /// AST counterparts can't be reached in a program the scan found none
+    /// in.
+    pub(crate) user_raised_struct_id: Option<StructId>,
 }
 
 /// Describes `ty` for a diagnostic message. Same as `KirType`'s own
@@ -307,6 +314,24 @@ pub fn lower_program(
         });
     }
 
+    // Pass 1c: register the synthetic `UserRaised { message: str }` struct
+    // — the shape every caught error binds to (`raise` only ever produces
+    // `UserRaised`; `catch e: Error` and `catch e: UserRaised` both bind
+    // it) — only if the program actually uses `raise`/`try`/`catch`
+    // anywhere. Unconditionally registering it would add a phantom struct
+    // to every program's golden dump, including ones that never raise.
+    let user_raised_struct_id: Option<StructId> = if program_uses_raise_or_try(program) {
+        let id = struct_layouts.len();
+        struct_layouts.push(StructLayout {
+            id,
+            name: "UserRaised".to_string(),
+            fields: vec![("message".to_string(), KirType::Str)],
+        });
+        Some(id)
+    } else {
+        None
+    };
+
     // Pass 2: collect every task signature (so calls resolve regardless of
     // declaration order — forward references, mutual/self recursion) and
     // every `use std/<name>` namespace binding (so namespace calls resolve
@@ -363,6 +388,7 @@ pub fn lower_program(
             nullables: &nullables,
             param_defaults: &empty_param_defaults,
             artifacts,
+            user_raised_struct_id,
         };
         for task in &task_order {
             let sig = &funcs[&task.name];
@@ -383,6 +409,7 @@ pub fn lower_program(
         nullables: &nullables,
         param_defaults: &param_defaults,
         artifacts,
+        user_raised_struct_id,
     };
 
     // Pass 3: lower each task body now that `lcx` is complete.
@@ -413,9 +440,28 @@ pub fn lower_program(
         name: "<toplevel>".to_string(),
         params: Vec::new(),
         ret: KirType::Unit,
+        // Placeholder — `compute_can_raise` fills in the real value for
+        // every function below, once every body (and thus every
+        // `Stmt::Raise`/`CallTarget::Fn` call site) is known.
+        can_raise: false,
         locals: ctx.locals,
         body,
     });
+
+    compute_can_raise(&mut functions)?;
+    if functions[toplevel_id].can_raise {
+        return Err(LowerError::new(
+            "an uncaught `raise` (or call to a function that can raise) reaches the top level \
+             — wrap it in `try`/`catch` (propagating past the top level, changing \
+             `keel_user_toplevel`'s fixed entry-point signature, is a later M2/M3 concern)"
+                .to_string(),
+            program
+                .declarations
+                .last()
+                .map(|d| d.span.clone())
+                .unwrap_or(0..0),
+        ));
+    }
 
     Ok(KirProgram {
         functions,
@@ -426,6 +472,167 @@ pub fn lower_program(
         nullables: nullables.into_inner(),
         span_table,
     })
+}
+
+/// Computes `can_raise` for every function, mutating it in place: a
+/// function is `can_raise` iff it directly executes `Stmt::Raise` outside
+/// any of its own `try` bodies, or makes an uncaught `CallTarget::Fn` call
+/// (same condition) to another `can_raise` function — a fixpoint over the
+/// call graph, since that "another function" may itself only be known
+/// `can_raise` from a later function in declaration order (forward/mutual
+/// recursion). A full re-scan per round (rather than a worklist) is simplest
+/// and plenty fast for these program sizes; converges in at most
+/// `functions.len()` rounds. Also rejects a `can_raise` function whose
+/// return type isn't one the result-ABI's uniformly-boxed payload
+/// representation models (`raise.rs`'s `emit_box_result_value`, on the
+/// `keel-codegen` side): `Struct`/`Enum`/`Nullable` need `Value` marshaling
+/// that doesn't exist yet, a later M2/M3 concern (the synthetic
+/// `UserRaised` struct itself is fine — it's never a function's own `ret`).
+fn compute_can_raise(functions: &mut [KirFunction]) -> Result<(), LowerError> {
+    let mut can_raise = vec![false; functions.len()];
+    loop {
+        let mut changed = false;
+        for (i, f) in functions.iter().enumerate() {
+            if !can_raise[i] && block_escapes_uncaught(&f.body, 0, &can_raise) {
+                can_raise[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for (f, cr) in functions.iter_mut().zip(can_raise) {
+        f.can_raise = cr;
+        if cr
+            && matches!(
+                f.ret,
+                KirType::Struct(_) | KirType::Enum(_) | KirType::Nullable(_)
+            )
+        {
+            return Err(LowerError::new(
+                format!(
+                    "task `{}` can raise and returns `{}` — only int/float/bool/str/list/none \
+                     return types are modeled for a can-raise function yet (struct/enum/nullable \
+                     need `Value` marshaling, a later M2/M3 concern)",
+                    f.name, f.ret
+                ),
+                0..0,
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Whether any statement in `block` escapes this function uncaught (see
+/// `compute_can_raise`) — `try_depth` counts how many of this function's own
+/// enclosing `try` bodies (not the AST's lexical nesting depth in general,
+/// just `Stmt::TryCatch.body` specifically) the current position is inside;
+/// `0` means "not caught by anything in this function," so a `raise`/an
+/// uncaught call there really does need this function's own `can_raise`.
+fn block_escapes_uncaught(block: &Block, try_depth: usize, can_raise: &[bool]) -> bool {
+    block
+        .iter()
+        .any(|s| stmt_escapes_uncaught(s, try_depth, can_raise))
+}
+
+fn stmt_escapes_uncaught(stmt: &crate::ir::Stmt, try_depth: usize, can_raise: &[bool]) -> bool {
+    use crate::ir::Stmt;
+    match stmt {
+        Stmt::Raise { .. } => try_depth == 0,
+        Stmt::TryCatch { body, handler, .. } => {
+            // `body`'s own raises/calls are caught by *this* try (this
+            // function's `catch` clause is always `Error`/`UserRaised` —
+            // see `ir.rs`'s `Stmt::TryCatch` doc — so every error this
+            // function itself raises or receives is absorbed here); a
+            // failure that already escaped an inner, nested try (deeper
+            // `try_depth`) still stops right here too. `handler` runs at the
+            // *current* depth — it isn't itself protected by the try it's
+            // attached to.
+            block_escapes_uncaught(body, try_depth + 1, can_raise)
+                || block_escapes_uncaught(handler, try_depth, can_raise)
+        }
+        Stmt::Let { init, .. } => expr_escapes_uncaught(init, try_depth, can_raise),
+        Stmt::Assign { value, .. } => expr_escapes_uncaught(value, try_depth, can_raise),
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+        } => {
+            expr_escapes_uncaught(cond, try_depth, can_raise)
+                || block_escapes_uncaught(then_branch, try_depth, can_raise)
+                || block_escapes_uncaught(else_branch, try_depth, can_raise)
+        }
+        Stmt::While { cond, body } => {
+            expr_escapes_uncaught(cond, try_depth, can_raise)
+                || block_escapes_uncaught(body, try_depth, can_raise)
+        }
+        Stmt::ForIndex {
+            low, high, body, ..
+        } => {
+            expr_escapes_uncaught(low, try_depth, can_raise)
+                || expr_escapes_uncaught(high, try_depth, can_raise)
+                || block_escapes_uncaught(body, try_depth, can_raise)
+        }
+        Stmt::ForEach { list, body, .. } => {
+            expr_escapes_uncaught(list, try_depth, can_raise)
+                || block_escapes_uncaught(body, try_depth, can_raise)
+        }
+        Stmt::Return(Some(e)) => expr_escapes_uncaught(e, try_depth, can_raise),
+        Stmt::Return(None) => false,
+        Stmt::Expr(e) => expr_escapes_uncaught(e, try_depth, can_raise),
+    }
+}
+
+/// Whether `expr` (or anything nested inside it) is a `CallTarget::Fn` call
+/// to an already-known `can_raise` function, at `try_depth == 0`. Recurses
+/// into every `Expr` variant's own sub-expressions — a `can_raise` call
+/// buried inside a `BinOp`/argument list/etc. still needs this function's
+/// own result-ABI, and still needs its `is_err` branch checked at codegen
+/// time regardless of how deeply nested it is (`keel-codegen`'s
+/// `emit_call` does this inline, so no restriction on *where* a `can_raise`
+/// call may appear is needed here beyond the try-depth check itself).
+fn expr_escapes_uncaught(expr: &crate::ir::Expr, try_depth: usize, can_raise: &[bool]) -> bool {
+    use crate::ir::Expr;
+    match expr {
+        Expr::ConstInt(_)
+        | Expr::ConstFloat(_)
+        | Expr::ConstBool(_)
+        | Expr::ConstStr(_)
+        | Expr::Local { .. }
+        | Expr::MakeEnum { .. }
+        | Expr::NullLit { .. } => false,
+        Expr::UnOp { operand, .. } => expr_escapes_uncaught(operand, try_depth, can_raise),
+        Expr::NullSome { value, .. } => expr_escapes_uncaught(value, try_depth, can_raise),
+        Expr::BinOp { left, right, .. } => {
+            expr_escapes_uncaught(left, try_depth, can_raise)
+                || expr_escapes_uncaught(right, try_depth, can_raise)
+        }
+        Expr::NullCoalesce {
+            nullable, fallback, ..
+        } => {
+            expr_escapes_uncaught(nullable, try_depth, can_raise)
+                || expr_escapes_uncaught(fallback, try_depth, can_raise)
+        }
+        Expr::Index { list, index, .. } => {
+            expr_escapes_uncaught(list, try_depth, can_raise)
+                || expr_escapes_uncaught(index, try_depth, can_raise)
+        }
+        Expr::FieldGet { base, .. } | Expr::NullFieldGet { base, .. } => {
+            expr_escapes_uncaught(base, try_depth, can_raise)
+        }
+        Expr::MakeStruct { fields, .. } => fields
+            .iter()
+            .any(|f| expr_escapes_uncaught(f, try_depth, can_raise)),
+        Expr::Call { target, args, .. } => {
+            let self_escapes =
+                try_depth == 0 && matches!(target, crate::ir::CallTarget::Fn(id) if can_raise[*id]);
+            self_escapes
+                || args
+                    .iter()
+                    .any(|a| expr_escapes_uncaught(a, try_depth, can_raise))
+        }
+    }
 }
 
 /// Lowers a `use` declaration into a `ns_bindings` entry (bound identifier
@@ -480,6 +687,52 @@ fn decl_kind_name(decl: &Decl) -> &'static str {
         Decl::Agent(_) => "agent declaration",
         Decl::Use(_) => "use declaration",
         Decl::Stmt(_) => "statement",
+    }
+}
+
+/// Whether `program` uses `raise`/`try`/`catch` anywhere in a task body or
+/// a top-level statement — gates whether the synthetic `UserRaised` struct
+/// (see `lower_program`'s Pass 1c) is registered at all.
+fn program_uses_raise_or_try(program: &Program) -> bool {
+    program.declarations.iter().any(|decl| match &decl.kind {
+        Decl::Task(task) => block_uses_raise_or_try(&task.body),
+        Decl::Stmt(stmt) => stmt_uses_raise_or_try(&stmt.kind),
+        Decl::Type(_)
+        | Decl::Interface(_)
+        | Decl::Impl(_)
+        | Decl::Test(_)
+        | Decl::Extern(_)
+        | Decl::Agent(_)
+        | Decl::Use(_) => false,
+    })
+}
+
+fn block_uses_raise_or_try(block: &keel_syntax::ast::Block) -> bool {
+    block.iter().any(|stmt| stmt_uses_raise_or_try(&stmt.kind))
+}
+
+fn stmt_uses_raise_or_try(stmt: &keel_syntax::ast::Stmt) -> bool {
+    use keel_syntax::ast::Stmt;
+    match stmt {
+        Stmt::Raise(_) | Stmt::TryCatch { .. } => true,
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        } => {
+            block_uses_raise_or_try(then_body)
+                || else_body.as_ref().is_some_and(block_uses_raise_or_try)
+        }
+        Stmt::While { body, .. } | Stmt::For { body, .. } => block_uses_raise_or_try(body),
+        Stmt::When { arms, .. } => arms.iter().any(|arm| block_uses_raise_or_try(&arm.body)),
+        Stmt::Let { .. }
+        | Stmt::SelfAssign { .. }
+        | Stmt::Return(_)
+        | Stmt::AugAssign { .. }
+        | Stmt::Assert { .. }
+        | Stmt::Break
+        | Stmt::Continue
+        | Stmt::Expr(_) => false,
     }
 }
 

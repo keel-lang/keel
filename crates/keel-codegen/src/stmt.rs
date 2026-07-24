@@ -95,6 +95,19 @@ fn emit_stmt<'ctx>(
             emit_return(fcx, value.as_ref())?;
             Ok(None)
         }
+        Stmt::Raise { error, .. } => {
+            crate::raise::emit_raise(fcx, error)?;
+            Ok(None)
+        }
+        Stmt::TryCatch {
+            body,
+            binder,
+            binder_ty,
+            handler,
+        } => {
+            emit_try_catch(fcx, body, *binder, *binder_ty, handler)?;
+            Ok(None)
+        }
     }
 }
 
@@ -332,6 +345,14 @@ fn emit_return<'ctx>(
         fcx.builder.build_return(Some(&zero)).map_err(llvm_err)?;
         return Ok(());
     }
+    if fcx.can_raise {
+        let ret_ty = fcx.ret_ty;
+        let v = match value {
+            Some(e) => Some(expr::emit_expr(fcx, e)?),
+            None => None,
+        };
+        return crate::raise::emit_ok_return(fcx, ret_ty, v);
+    }
     match value {
         Some(e) => {
             let v = expr::emit_expr(fcx, e)?;
@@ -341,5 +362,50 @@ fn emit_return<'ctx>(
             fcx.builder.build_return(None).map_err(llvm_err)?;
         }
     }
+    Ok(())
+}
+
+/// `try { body } catch binder: binder_ty { handler }`. `body`'s own
+/// `can_raise` call sites (`expr.rs`'s `emit_call`) check
+/// `fcx.catch_stack`'s top entry — pushed here, before `body` is emitted,
+/// so nested calls see it — and branch to `handler_bb` on error, having
+/// already stored the payload into the binder's `alloca`; a normal
+/// (non-erroring) `body` falls through to `merge_bb`, skipping the handler
+/// entirely.
+fn emit_try_catch<'ctx>(
+    fcx: &mut FuncCtx<'ctx, '_>,
+    body: &Block,
+    binder: keel_kir::ir::LocalId,
+    binder_ty: KirType,
+    handler: &Block,
+) -> Result<(), CodegenError> {
+    let binder_llvm_ty = layout::llvm_type(fcx.context, fcx.program, binder_ty)?;
+    let binder_ptr = fcx
+        .builder
+        .build_alloca(binder_llvm_ty, &format!("local.{binder}"))
+        .map_err(llvm_err)?;
+    fcx.locals.insert(binder, binder_ptr);
+
+    let handler_bb = fcx.context.append_basic_block(fcx.function, "try.catch");
+    let merge_bb = fcx.context.append_basic_block(fcx.function, "try.merge");
+
+    fcx.catch_stack.push((handler_bb, binder_ptr));
+    emit_block(fcx, body)?;
+    fcx.catch_stack.pop();
+    if !block_is_terminated(fcx.builder) {
+        fcx.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(llvm_err)?;
+    }
+
+    fcx.builder.position_at_end(handler_bb);
+    emit_block(fcx, handler)?;
+    if !block_is_terminated(fcx.builder) {
+        fcx.builder
+            .build_unconditional_branch(merge_bb)
+            .map_err(llvm_err)?;
+    }
+
+    fcx.builder.position_at_end(merge_bb);
     Ok(())
 }
