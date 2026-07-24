@@ -116,6 +116,13 @@ pub(crate) struct LowerCtx<'a> {
     /// See `lower_program`'s `lists` local for why this needs interior
     /// mutability (structurally discovered, not pre-declared).
     pub(crate) lists: &'a std::cell::RefCell<Vec<KirType>>,
+    /// Each task's per-parameter default-value expression (`None` for a
+    /// parameter with no default), indexed by `FuncId`, parallel to that
+    /// task's own param list. Lowered once per declaration in a separate,
+    /// param-free scope — see `lower_program`'s pass 2c — not per call site;
+    /// [`crate::lower::expr::lower_call`] clones the stored `Expr` into each
+    /// call that omits a trailing arg.
+    pub(crate) param_defaults: &'a HashMap<FuncId, Vec<Option<crate::ir::Expr>>>,
     /// Not consumed yet — #145 (named structs) resolves everything through
     /// context-threaded expected types instead (see `expr::lower_expr_expecting`).
     /// Becomes load-bearing for a construct the checker must resolve and
@@ -323,6 +330,36 @@ pub fn lower_program(
         }
     }
 
+    // Pass 2c: lower each task's parameter default-value expressions, now
+    // that every task signature and namespace binding is known (in case a
+    // default references either). Done via a bootstrap `LowerCtx` with an
+    // empty `param_defaults` — a default expression may not itself omit a
+    // defaulted argument of another call (an obscure case none of this
+    // codebase's examples need); everything else about default expressions
+    // (calls, namespace methods, literals) resolves normally. Each default
+    // is lowered once, in a fresh param-free `FnCtx`, not per call site.
+    let empty_param_defaults: HashMap<FuncId, Vec<Option<crate::ir::Expr>>> = HashMap::new();
+    let mut param_defaults: HashMap<FuncId, Vec<Option<crate::ir::Expr>>> = HashMap::new();
+    {
+        let bootstrap_lcx = LowerCtx {
+            funcs: &funcs,
+            ns_bindings: &ns_bindings,
+            structs_by_name: &structs_by_name,
+            struct_layouts: &struct_layouts,
+            enums_by_name: &enums_by_name,
+            enum_layouts: &enum_layouts,
+            lists: &lists,
+            param_defaults: &empty_param_defaults,
+            artifacts,
+        };
+        for task in &task_order {
+            let sig = &funcs[&task.name];
+            let defaults =
+                decl::lower_param_defaults(task, &sig.params, &bootstrap_lcx, &mut span_table)?;
+            param_defaults.insert(sig.func_id, defaults);
+        }
+    }
+
     let lcx = LowerCtx {
         funcs: &funcs,
         ns_bindings: &ns_bindings,
@@ -331,6 +368,7 @@ pub fn lower_program(
         enums_by_name: &enums_by_name,
         enum_layouts: &enum_layouts,
         lists: &lists,
+        param_defaults: &param_defaults,
         artifacts,
     };
 

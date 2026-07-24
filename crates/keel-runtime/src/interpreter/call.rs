@@ -165,6 +165,14 @@ impl Interpreter {
             } else if let Some(v) = positional.get(pos_idx) {
                 pos_idx += 1;
                 (*v).clone()
+            } else if let Some(default) = &p.default {
+                // Mirrors `start_agent`'s state-field defaults: a fresh,
+                // param-free scope (a default may not reference the task's
+                // own other parameters).
+                let mut tmp_env = Environment::new();
+                match self.eval_expr(default, &mut tmp_env).await? {
+                    ExprFlow::Value(v) | ExprFlow::Return(v) => v,
+                }
             } else {
                 Value::None
             };

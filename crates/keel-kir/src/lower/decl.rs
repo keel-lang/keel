@@ -7,14 +7,16 @@ use std::collections::HashMap;
 use keel_syntax::ast::TaskDecl;
 
 use super::{FnCtx, FuncSig, LowerCtx, LowerError, binding_ident, ty_expr_to_kir};
-use crate::ir::{EnumId, KirFunction, Param, StructId};
+use crate::ir::{EnumId, Expr, KirFunction, Param, StructId};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
 /// Extracts `(param_types, return_type)` from a task's AST signature.
-/// Rejects generics, variadics, and default params — none are in the M0
-/// scalar subset (generics need `mono.rs`; variadics/defaults need the
-/// container ABI and desugaring `sugar.rs` doesn't do yet).
+/// Rejects generics and variadics — neither is in the M0 scalar subset
+/// (generics need `mono.rs`; variadics need the container ABI). Default
+/// parameter values are allowed here (just their *type*, matching the
+/// declared param) — see [`lower_param_defaults`] for lowering the default
+/// *expressions* themselves.
 pub(crate) fn signature_of(
     task: &TaskDecl,
     structs_by_name: &HashMap<String, StructId>,
@@ -27,6 +29,7 @@ pub(crate) fn signature_of(
             task.name_span.clone(),
         ));
     }
+    let mut seen_default = false;
     let mut params = Vec::with_capacity(task.params.len());
     for param in &task.params {
         if param.variadic {
@@ -35,9 +38,15 @@ pub(crate) fn signature_of(
                 param.name_span.clone(),
             ));
         }
+        // Call-site omitted-arg filling (`lower_call`) only fills a
+        // *trailing* run of defaulted params — the checker doesn't enforce
+        // this ordering itself, so KIR does, rather than silently mis-
+        // filling a non-trailing default.
         if param.default.is_some() {
+            seen_default = true;
+        } else if seen_default {
             return Err(LowerError::unsupported(
-                "default parameter value",
+                "a non-default parameter after a defaulted one (defaults must be trailing)",
                 param.name_span.clone(),
             ));
         }
@@ -54,6 +63,31 @@ pub(crate) fn signature_of(
         None => KirType::Unit,
     };
     Ok((params, ret))
+}
+
+/// Lowers each parameter's default-value expression (if any) against the
+/// parameter's own declared type, once per declaration — not per call site,
+/// see `lower/mod.rs`'s `param_defaults` doc. Uses a fresh, param-free
+/// `FnCtx`: a default expression may not reference the task's own other
+/// parameters (none of this codebase's examples need that, and it would
+/// otherwise need per-call-site re-lowering instead of a lower-once cache).
+pub(crate) fn lower_param_defaults(
+    task: &TaskDecl,
+    sig_params: &[KirType],
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Vec<Option<Expr>>, LowerError> {
+    let mut ctx = FnCtx::new();
+    task.params
+        .iter()
+        .zip(sig_params)
+        .map(|(param, ty)| match &param.default {
+            Some(expr) => Ok(Some(super::expr::lower_expr_expecting(
+                expr, *ty, &mut ctx, lcx, table,
+            )?)),
+            None => Ok(None),
+        })
+        .collect()
 }
 
 /// Lowers a task's body given its already-computed signature.

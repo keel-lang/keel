@@ -521,19 +521,25 @@ fn lower_call(
     let sig = lcx.funcs.get(name).ok_or_else(|| {
         LowerError::new(format!("unknown function `{name}`"), callee.span.clone())
     })?;
+    let defaults = &lcx.param_defaults[&sig.func_id];
+    let required = defaults.iter().filter(|d| d.is_none()).count();
 
-    if args.len() != sig.params.len() {
+    if args.len() > sig.params.len() || args.len() < required {
         return Err(LowerError::new(
             format!(
                 "`{name}` takes {} argument(s), got {}",
-                sig.params.len(),
+                if required == sig.params.len() {
+                    required.to_string()
+                } else {
+                    format!("{required}-{}", sig.params.len())
+                },
                 args.len()
             ),
             call_span.clone(),
         ));
     }
 
-    let mut lowered_args = Vec::with_capacity(args.len());
+    let mut lowered_args = Vec::with_capacity(sig.params.len());
     for (arg, expected_ty) in args.iter().zip(&sig.params) {
         if arg.name.is_some() || arg.spread {
             return Err(LowerError::unsupported(
@@ -548,6 +554,17 @@ fn lower_call(
             lcx,
             table,
         )?);
+    }
+    // Every param beyond the supplied args is missing one — the arity check
+    // above already proved each has a default (`lower_param_defaults` clones
+    // the same pre-lowered `Expr` into every omitting call site, since KIR
+    // `Expr` trees aren't shared/interned).
+    for default in &defaults[args.len()..] {
+        lowered_args.push(
+            default
+                .clone()
+                .expect("arity check above proved every trailing param here has a default"),
+        );
     }
 
     Ok(Expr::Call {
