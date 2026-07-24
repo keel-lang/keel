@@ -11,6 +11,8 @@ use keel_kir::types::KirType;
 use crate::CodegenError;
 use crate::func::FuncCtx;
 use crate::layout;
+use crate::ns_call::declare_or_get;
+use crate::rt_call::call_ptr_fn;
 
 fn llvm_err(e: impl std::fmt::Display) -> CodegenError {
     CodegenError::Llvm(e.to_string())
@@ -309,6 +311,15 @@ fn emit_binop<'ctx>(
             Ok(result)
         }
         KirType::Str => match op {
+            BinOp::Add => {
+                let l = lv.into_pointer_value();
+                let r = rv.into_pointer_value();
+                let ptr_type = fcx.context.ptr_type(AddressSpace::default());
+                let f = declare_or_get(fcx.module, "keel_str_concat", || {
+                    ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false)
+                });
+                call_ptr_fn(fcx, f, &[l.into(), r.into()])
+            }
             BinOp::Eq | BinOp::Neq => {
                 let l = lv.into_pointer_value();
                 let r = rv.into_pointer_value();
@@ -337,9 +348,7 @@ fn emit_binop<'ctx>(
                         .into()
                 })
             }
-            _ => Err(CodegenError::Unsupported(
-                "str concatenation (string interpolation lands in a later M2 issue)".to_string(),
-            )),
+            _ => Err(unreachable_combo(op, operand_ty)),
         },
         KirType::Enum(_) => {
             let l = lv.into_int_value();

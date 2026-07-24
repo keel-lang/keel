@@ -302,6 +302,9 @@ fn rt_fn_name(rt_fn: crate::ir::RtFn) -> &'static str {
         crate::ir::RtFn::ListNew => "list_new",
         crate::ir::RtFn::ListPush => "list_push",
         crate::ir::RtFn::ListLen => "list_len",
+        crate::ir::RtFn::IntToStr => "int_to_str",
+        crate::ir::RtFn::FloatToStr => "float_to_str",
+        crate::ir::RtFn::BoolToStr => "bool_to_str",
     }
 }
 

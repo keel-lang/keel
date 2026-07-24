@@ -1,0 +1,10 @@
+fn total_line(x: int, y: int) -> str {
+  return ("total: " + rt.int_to_str((x + y)))
+}
+
+fn <toplevel>() -> none {
+  let name: str = "Ada"
+  let pi: float = 3.5
+  let ready: bool = true
+  let greeting: str = ((((("Hello, " + name) + "! pi=") + rt.float_to_str(pi)) + " ready=") + rt.bool_to_str(ready))
+}

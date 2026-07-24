@@ -7,11 +7,14 @@
 //! (`T` restricted to int/float/bool/str — see [`lower_list_lit`]), and
 //! nullable `?.`/`??`/a `none` literal against a known expected nullable
 //! type (inner restricted to int/float/bool/str/list/struct — see
-//! `lower/mod.rs`'s `is_nullable_inner_ty`). Everything else (casts, `if`/
-//! `when` as expressions, lambdas, set/tuple literals, string
-//! interpolation, `!`/`!.` null-assert, pipelines, duration literals, rich
-//! (payload-carrying) enum variants, non-list method calls/indexing) is
-//! rejected; see module docs on `lower/mod.rs`.
+//! `lower/mod.rs`'s `is_nullable_inner_ty`), and string interpolation
+//! (desugars to `str` concatenation plus a per-slot to-string runtime call —
+//! slots restricted to int/float/bool/str, format specs deferred — see
+//! [`lower_string_lit`]). Everything else (casts, `if`/`when` as
+//! expressions, lambdas, set/tuple literals, `!`/`!.` null-assert,
+//! pipelines, duration literals, rich (payload-carrying) enum variants,
+//! non-list method calls/indexing) is rejected; see module docs on
+//! `lower/mod.rs`.
 
 use std::collections::HashMap;
 
@@ -119,7 +122,7 @@ pub(crate) fn lower_expr(
         ast::Expr::Integer(v) => Ok(Expr::ConstInt(*v)),
         ast::Expr::Float(v) => Ok(Expr::ConstFloat(*v)),
         ast::Expr::Bool(v) => Ok(Expr::ConstBool(*v)),
-        ast::Expr::StringLit(parts) => lower_string_lit(parts, &expr.span),
+        ast::Expr::StringLit(parts) => lower_string_lit(parts, &expr.span, ctx, lcx, table),
         ast::Expr::Ident(name) => {
             let local = ctx.resolve(name).ok_or_else(|| {
                 LowerError::new(format!("unknown identifier `{name}`"), expr.span.clone())
@@ -578,17 +581,83 @@ fn lower_struct_spread(
     Ok(Expr::MakeStruct { struct_id, fields })
 }
 
-/// String interpolation is sugar (desugars to concat calls per §2.3) and is
-/// deferred past M0; only a single non-interpolated literal segment lowers.
-fn lower_string_lit(parts: &[ast::StringPart], span: &Span) -> Result<Expr, LowerError> {
-    match parts {
-        [ast::StringPart::Literal(s)] => Ok(Expr::ConstStr(s.clone())),
-        [] => Ok(Expr::ConstStr(String::new())),
-        _ => Err(LowerError::unsupported(
-            "string interpolation",
-            span.clone(),
-        )),
+/// Desugars a (possibly interpolated) string literal to a chain of `+`
+/// (`str` concatenation, `BinOp::Add`) over its literal segments and
+/// interpolation slots (§2.3: "string interpolation → concat calls") — an
+/// `int`/`float`/`bool`-typed slot is first converted via the matching
+/// `RtFn::*ToStr` runtime call; a `str`-typed slot is spliced in as-is.
+/// Slots with a format spec (`{expr:spec}`) and slots of any other type
+/// (struct/enum-to-string is a later M2/M3 concern — coordinate with
+/// #145/#146 rather than block on them) are rejected, not silently dropped.
+fn lower_string_lit(
+    parts: &[ast::StringPart],
+    span: &Span,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    if parts.is_empty() {
+        return Ok(Expr::ConstStr(String::new()));
     }
+
+    let span_id = table.intern(span.clone());
+    let mut acc: Option<Expr> = None;
+    for part in parts {
+        let piece = match part {
+            ast::StringPart::Literal(s) => Expr::ConstStr(s.clone()),
+            ast::StringPart::ParseError(raw) => {
+                return Err(LowerError::new(
+                    format!("invalid expression in string interpolation: `{raw}`"),
+                    span.clone(),
+                ));
+            }
+            ast::StringPart::Interpolation(e, spec) => {
+                if spec.is_some() {
+                    return Err(LowerError::unsupported(
+                        "string-interpolation format spec (`{expr:spec}`)",
+                        e.span.clone(),
+                    ));
+                }
+                let lowered = lower_expr(e, ctx, lcx, table)?;
+                let rt_fn = match lowered.ty() {
+                    KirType::Str => None,
+                    KirType::I64 => Some(ir::RtFn::IntToStr),
+                    KirType::F64 => Some(ir::RtFn::FloatToStr),
+                    KirType::Bool => Some(ir::RtFn::BoolToStr),
+                    other => {
+                        return Err(LowerError::new(
+                            format!(
+                                "interpolating a `{}` value is not supported by the scalar-subset \
+                                 KIR lowering (M0) (only int/float/bool/str values may be \
+                                 interpolated — struct/enum to-string is a later M2/M3 concern)",
+                                describe_ty(other, lcx)
+                            ),
+                            e.span.clone(),
+                        ));
+                    }
+                };
+                match rt_fn {
+                    None => lowered,
+                    Some(rt_fn) => Expr::Call {
+                        target: CallTarget::Rt(rt_fn),
+                        args: vec![lowered],
+                        ty: KirType::Str,
+                        span: span_id,
+                    },
+                }
+            }
+        };
+        acc = Some(match acc {
+            None => piece,
+            Some(prev) => Expr::BinOp {
+                op: ir::BinOp::Add,
+                left: Box::new(prev),
+                right: Box::new(piece),
+                ty: KirType::Str,
+            },
+        });
+    }
+    Ok(acc.expect("parser never produces an empty StringPart list"))
 }
 
 /// Lowers a direct call to another lowered task. `namespace.method(...)`
