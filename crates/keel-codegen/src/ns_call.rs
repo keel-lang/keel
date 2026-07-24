@@ -114,6 +114,11 @@ pub(crate) fn emit_box_arg<'ctx>(
         // same representation `keel_rt_call_ns`/every `keel_list_*` expects)
         // — no extra boxing needed, same as `Str`.
         KirType::List(_) => Ok(emit_expr(fcx, arg)?.into_pointer_value()),
+        KirType::Nullable(_) => Err(CodegenError::Unsupported(
+            "nullable-typed argument to a namespace call (unwrap via `??` first — marshaling a \
+             nullable into a boxed Value is a later-M2/M3 concern)"
+                .to_string(),
+        )),
     }
 }
 

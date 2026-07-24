@@ -68,6 +68,18 @@ pub(crate) fn emit_expr<'ctx>(
             .const_int(*variant_index as u64, false)
             .into()),
         Expr::Index { list, index, ty } => crate::rt_call::emit_index(fcx, list, index, *ty),
+        Expr::NullLit { ty } => crate::nullable::emit_null_lit(fcx, *ty),
+        Expr::NullSome { value, ty } => crate::nullable::emit_null_some(fcx, value, *ty),
+        Expr::NullCoalesce {
+            nullable,
+            fallback,
+            ty,
+        } => crate::nullable::emit_null_coalesce(fcx, nullable, fallback, *ty),
+        Expr::NullFieldGet {
+            base,
+            field_index,
+            ty,
+        } => crate::nullable::emit_null_field_get(fcx, base, *field_index, *ty),
     }
 }
 
@@ -345,7 +357,7 @@ fn emit_binop<'ctx>(
             };
             Ok(result)
         }
-        KirType::Unit | KirType::Struct(_) | KirType::List(_) => {
+        KirType::Unit | KirType::Struct(_) | KirType::List(_) | KirType::Nullable(_) => {
             Err(unreachable_combo(op, operand_ty))
         }
     }

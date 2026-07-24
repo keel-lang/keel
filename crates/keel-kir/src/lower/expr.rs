@@ -3,12 +3,15 @@
 //! calls to other lowered tasks) plus M1's stdlib namespace calls
 //! (`io.show(...)`, `log.info(...)` — see [`lower_call`]), M2's named-
 //! struct literals, spread-update, field access, simple-enum variant
-//! construction (`Priority.low`), and `list[T]` literals/`push`/`len`/
-//! indexing (`T` restricted to int/float/bool/str — see [`lower_list_lit`]).
-//! Everything else (casts, `if`/`when` as expressions, lambdas, set/tuple
-//! literals, string interpolation, `?.`/`??`, pipelines, duration literals,
-//! rich (payload-carrying) enum variants, non-list method calls/indexing)
-//! is rejected; see module docs on `lower/mod.rs`.
+//! construction (`Priority.low`), `list[T]` literals/`push`/`len`/indexing
+//! (`T` restricted to int/float/bool/str — see [`lower_list_lit`]), and
+//! nullable `?.`/`??`/a `none` literal against a known expected nullable
+//! type (inner restricted to int/float/bool/str/list/struct — see
+//! `lower/mod.rs`'s `is_nullable_inner_ty`). Everything else (casts, `if`/
+//! `when` as expressions, lambdas, set/tuple literals, string
+//! interpolation, `!`/`!.` null-assert, pipelines, duration literals, rich
+//! (payload-carrying) enum variants, non-list method calls/indexing) is
+//! rejected; see module docs on `lower/mod.rs`.
 
 use std::collections::HashMap;
 
@@ -66,7 +69,15 @@ pub(crate) fn infer_binop_ty(
             }
         }
         Eq | Neq => {
-            if left == right {
+            if matches!(left, KirType::Nullable(_)) || matches!(right, KirType::Nullable(_)) {
+                Err(LowerError::new(
+                    format!(
+                        "cannot compare nullable `{left}` and `{right}` for equality \
+                         (unwrap via `??` first)"
+                    ),
+                    span.clone(),
+                ))
+            } else if left == right {
                 Ok(KirType::Bool)
             } else {
                 Err(LowerError::new(
@@ -203,10 +214,37 @@ pub(crate) fn lower_expr(
                 ty,
             })
         }
-        ast::Expr::NullFieldAccess(..) => Err(LowerError::unsupported(
-            "null-safe field access",
-            expr.span.clone(),
-        )),
+        ast::Expr::NullFieldAccess(base, field) => {
+            let base_e = lower_expr(base, ctx, lcx, table)?;
+            let KirType::Nullable(nullable_id) = base_e.ty() else {
+                return Err(LowerError::unsupported(
+                    "`?.` on a non-nullable value (only a nullable-struct receiver is lowered \
+                     so far)",
+                    expr.span.clone(),
+                ));
+            };
+            let KirType::Struct(struct_id) = lcx.nullables.borrow()[nullable_id] else {
+                return Err(LowerError::unsupported(
+                    "`?.` on a nullable non-struct value (str/list/scalar field access isn't \
+                     meaningful — only a nullable struct has fields)",
+                    expr.span.clone(),
+                ));
+            };
+            let layout = &lcx.struct_layouts[struct_id];
+            let field_index = layout.field_index(field).ok_or_else(|| {
+                LowerError::new(
+                    format!("struct `{}` has no field `{field}`", layout.name),
+                    expr.span.clone(),
+                )
+            })?;
+            let field_ty = layout.fields[field_index].1;
+            let ty = KirType::Nullable(super::intern_nullable(lcx.nullables, field_ty));
+            Ok(Expr::NullFieldGet {
+                base: Box::new(base_e),
+                field_index,
+                ty,
+            })
+        }
         ast::Expr::NullAssert(_) => Err(LowerError::unsupported("null-assert", expr.span.clone())),
         ast::Expr::SelfAccess { .. } => {
             Err(LowerError::unsupported("self access", expr.span.clone()))
@@ -229,7 +267,22 @@ pub(crate) fn lower_expr(
         ast::Expr::ListLit(items) => lower_list_lit(items, &expr.span, ctx, lcx, table),
         ast::Expr::SetLit(_) => Err(LowerError::unsupported("set literal", expr.span.clone())),
         ast::Expr::TupleLit(_) => Err(LowerError::unsupported("tuple literal", expr.span.clone())),
-        ast::Expr::NullCoalesce(..) => Err(LowerError::unsupported("`??`", expr.span.clone())),
+        ast::Expr::NullCoalesce(nullable, fallback) => {
+            let nullable_e = lower_expr(nullable, ctx, lcx, table)?;
+            let KirType::Nullable(nullable_id) = nullable_e.ty() else {
+                return Err(LowerError::unsupported(
+                    "`??` on a non-nullable left-hand side",
+                    expr.span.clone(),
+                ));
+            };
+            let inner_ty = lcx.nullables.borrow()[nullable_id];
+            let fallback_e = lower_expr_expecting(fallback, inner_ty, ctx, lcx, table)?;
+            Ok(Expr::NullCoalesce {
+                nullable: Box::new(nullable_e),
+                fallback: Box::new(fallback_e),
+                ty: inner_ty,
+            })
+        }
         ast::Expr::Pipeline(..) => Err(LowerError::unsupported("`|>` pipeline", expr.span.clone())),
         ast::Expr::Range(..) => Err(LowerError::unsupported("range", expr.span.clone())),
         ast::Expr::MethodCall {
@@ -328,6 +381,44 @@ pub(crate) fn lower_expr_expecting(
             }
             _ => {}
         }
+    }
+    // `none` has no type of its own to infer bottom-up (`lower_expr` rejects
+    // it outright) — the checker only accepts a bare `none` literal where an
+    // expected nullable type already pins one (a param default, a `let`
+    // annotation, a call argument, a nullable struct field), so this is the
+    // only place it resolves.
+    if let KirType::Nullable(id) = expected {
+        if matches!(expr.kind, ast::Expr::None_) {
+            return Ok(Expr::NullLit { ty: expected });
+        }
+        // The checker allows passing a non-nullable `T` wherever `T?` is
+        // expected (widening, one-directional — the other way needs `?.`/
+        // `??`/an assert). Bottom-up lowering already handles anything
+        // that's *already* `Nullable(inner)`-typed (an identifier bound
+        // `T?`, `?.`/`??` results, …) as well as a plain `inner`-typed value
+        // that needs wrapping; a raw struct literal assigned directly to a
+        // nullable-struct position isn't supported yet (every M2 fixture
+        // binds the struct to a name first).
+        let inner_ty = lcx.nullables.borrow()[id];
+        let lowered = lower_expr(expr, ctx, lcx, table)?;
+        if lowered.ty() == expected {
+            return Ok(lowered);
+        }
+        if lowered.ty() == inner_ty {
+            return Ok(Expr::NullSome {
+                value: Box::new(lowered),
+                ty: expected,
+            });
+        }
+        return Err(LowerError::new(
+            format!(
+                "expected `{}` or `{}`, got `{}`",
+                describe_ty(expected, lcx),
+                describe_ty(inner_ty, lcx),
+                describe_ty(lowered.ty(), lcx)
+            ),
+            expr.span.clone(),
+        ));
     }
     let lowered = lower_expr(expr, ctx, lcx, table)?;
     if lowered.ty() != expected {

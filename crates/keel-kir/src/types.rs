@@ -8,7 +8,7 @@
 //! modeled yet; adding them is later-M2+ work, done alongside the lowering
 //! support that produces them.
 
-use crate::ir::{EnumId, KirProgram, ListId, StructId};
+use crate::ir::{EnumId, KirProgram, ListId, NullableId, StructId};
 
 /// A KIR-level type. Every KIR expression carries one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +41,18 @@ pub enum KirType {
     /// mutation `Value::List` (opaque to codegen; every operation is a
     /// `CallTarget::Rt` runtime call, `designs/llvm-compilation.md` §2.7).
     List(ListId),
+    /// `T?` (inner restricted to int/float/bool/str/list/struct — see
+    /// `KirProgram::nullables`'s doc and `lower::is_nullable_inner_ty`). Per
+    /// §1.1's representation split: a nullable *struct* is the same `ptr` as
+    /// the non-nullable struct, with a null pointer meaning `none` (a native
+    /// struct record is never `Value`-boxed, so null costs nothing extra); a
+    /// nullable str/list is also the same `ptr`, but `none` is a boxed
+    /// `Value::None` instead (str/list are already boxed `*const Value`
+    /// pointers with no null-pointer bit to spare — see `keel-rt-ffi`'s
+    /// `keel_box_none`/`keel_is_none`); a nullable scalar (int/float/bool)
+    /// has no pointer to repurpose at all, so it's an explicit
+    /// `{ i1 has_value, T }` pair, by value.
+    Nullable(NullableId),
 }
 
 impl KirType {
@@ -60,6 +72,7 @@ impl KirType {
             KirType::Struct(_) => "struct",
             KirType::Enum(_) => "enum",
             KirType::List(_) => "list",
+            KirType::Nullable(_) => "nullable",
         }
     }
 
@@ -80,6 +93,14 @@ impl KirType {
             KirType::Struct(id) => program.structs[id].is_heap(program),
             KirType::List(_) => true,
             KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit | KirType::Enum(_) => false,
+            // A nullable scalar is a by-value `{ i1, T }` pair, not a
+            // pointer — everything else nullable wraps a `ptr` (see
+            // `KirType::Nullable`'s doc). `is_nullable_inner_ty` guarantees
+            // no other inner type is ever interned.
+            KirType::Nullable(id) => !matches!(
+                program.nullables[id],
+                KirType::I64 | KirType::F64 | KirType::Bool
+            ),
         }
     }
 

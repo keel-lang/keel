@@ -1,0 +1,17 @@
+struct Email { subject: str }
+
+fn greet(email: Email?) -> str {
+  return (email?.subject ?? "(none)")
+}
+
+fn pick(n: int?) -> int {
+  return (n ?? 0)
+}
+
+fn <toplevel>() -> none {
+  let some_email: Email = Email { subject: "hello" }
+  let greeted: str = greet(some_email)
+  let greeted_default: str = greet(none)
+  let picked: int = pick(5)
+  let picked_default: int = pick(none)
+}

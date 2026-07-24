@@ -46,6 +46,27 @@ pub(crate) fn llvm_type<'ctx>(
         }
         KirType::Enum(_) => Ok(context.i32_type().into()),
         KirType::List(_) => Ok(context.ptr_type(AddressSpace::default()).into()),
+        KirType::Nullable(id) => match program.nullables[id] {
+            // A nullable scalar has no spare pointer bit to steal, so it's
+            // an explicit `{ i1 has_value, T }` pair, by value.
+            KirType::I64 | KirType::F64 | KirType::Bool => {
+                let inner = llvm_type(context, program, program.nullables[id])?;
+                Ok(context
+                    .struct_type(&[context.bool_type().into(), inner], false)
+                    .into())
+            }
+            // A nullable struct/str/list is the same `ptr` as the
+            // non-nullable type — `none` is a null pointer for a struct, or
+            // a boxed `Value::None` for str/list (see `KirType::Nullable`'s
+            // doc); either way the LLVM-level representation is identical.
+            KirType::Struct(_) | KirType::Str | KirType::List(_) => {
+                Ok(context.ptr_type(AddressSpace::default()).into())
+            }
+            other => Err(CodegenError::Unsupported(format!(
+                "nullable `{other}` (only int/float/bool/str/list/struct inner types are \
+                 modeled — `is_nullable_inner_ty` should have rejected this at lowering time)"
+            ))),
+        },
     }
 }
 

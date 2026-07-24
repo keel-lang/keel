@@ -1,0 +1,17 @@
+type Email {
+  subject: str
+}
+
+task greet(email: Email? = none) -> str {
+  return email?.subject ?? "(none)"
+}
+
+task pick(n: int? = none) -> int {
+  return n ?? 0
+}
+
+some_email: Email = { subject: "hello" }
+greeted = greet(some_email)
+greeted_default = greet()
+picked = pick(5)
+picked_default = pick()

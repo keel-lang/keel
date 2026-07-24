@@ -635,3 +635,71 @@ x = f(1, 2, 3)
     );
     assert!(msg.contains("takes"), "unexpected message: {msg}");
 }
+
+#[test]
+fn null_safe_field_access_on_a_non_nullable_value_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Email { subject: str }
+
+task f(email: Email) -> str? {
+  return email?.subject
+}
+"#,
+    );
+    assert!(
+        msg.contains("non-nullable value"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn null_coalesce_on_a_non_nullable_left_hand_side_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  return 1 ?? 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("non-nullable left-hand side"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn nullable_enum_inner_type_is_rejected() {
+    let msg = lower_err(
+        r#"
+type Priority = low | medium | high
+
+task f(p: Priority? = none) -> Priority {
+  return p ?? Priority.low
+}
+"#,
+    );
+    assert!(
+        msg.contains("nullable inner type"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn equality_comparison_between_nullable_values_is_rejected() {
+    // `T?` has no single-value representation to compare bitwise/structurally
+    // for scalar inner types (the `{i1, T}` pair) — scope this issue to the
+    // nullable-value operators (`?.`, `??`) only; unwrap via `??` before
+    // comparing.
+    let msg = lower_err(
+        r#"
+task f(a: int? = none, b: int? = none) -> bool {
+  return a == b
+}
+"#,
+    );
+    assert!(
+        msg.contains("cannot compare nullable"),
+        "unexpected message: {msg}"
+    );
+}

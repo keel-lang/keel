@@ -144,15 +144,20 @@ pub(crate) fn unbox_value<'ctx>(
             Ok(b.into())
         }
         KirType::Str | KirType::List(_) => Ok(boxed.into()),
-        KirType::Unit | KirType::Struct(_) | KirType::Enum(_) => Err(CodegenError::Unsupported(
-            "a list element type other than int/float/bool/str (struct/enum elements need \
-             Value marshaling, a later M2/M3 concern)"
-                .to_string(),
-        )),
+        KirType::Unit | KirType::Struct(_) | KirType::Enum(_) | KirType::Nullable(_) => {
+            Err(CodegenError::Unsupported(
+                "a list element type other than int/float/bool/str (struct/enum/nullable \
+                 elements need Value marshaling, a later M2/M3 concern)"
+                    .to_string(),
+            ))
+        }
     }
 }
 
-fn call_ptr_fn<'ctx>(
+/// Calls a runtime-ABI function that always returns a `ptr` (a boxed
+/// `KeelBox` or similar), never void. Shared beyond this module's own
+/// `keel_list_*` calls by [`crate::nullable`] (`keel_box_none`).
+pub(crate) fn call_ptr_fn<'ctx>(
     fcx: &FuncCtx<'ctx, '_>,
     f: inkwell::values::FunctionValue<'ctx>,
     args: &[inkwell::values::BasicMetadataValueEnum<'ctx>],
@@ -169,7 +174,10 @@ fn call_ptr_fn<'ctx>(
     }
 }
 
-fn call_scalar_fn<'ctx>(
+/// Calls a runtime-ABI function that always returns a scalar, never void.
+/// Shared beyond this module's own `keel_unbox_*` calls by
+/// [`crate::nullable`] (`keel_is_none`).
+pub(crate) fn call_scalar_fn<'ctx>(
     fcx: &FuncCtx<'ctx, '_>,
     f: inkwell::values::FunctionValue<'ctx>,
     args: &[inkwell::values::BasicMetadataValueEnum<'ctx>],
