@@ -61,6 +61,42 @@ pub(crate) fn emit_rt_call<'ctx>(
                 ValueKind::Instruction(_) => unreachable!("keel_list_len returns i64, never void"),
             }
         }
+        RtFn::IntToStr => {
+            let [value] = args else {
+                unreachable!("verified KIR: RtFn::IntToStr always takes exactly 1 arg");
+            };
+            let v = crate::expr::emit_expr(fcx, value)?.into_int_value();
+            let f = declare_or_get(fcx.module, "keel_int_to_str", || {
+                ptr_type.fn_type(&[fcx.context.i64_type().into()], false)
+            });
+            call_ptr_fn(fcx, f, &[v.into()])
+        }
+        RtFn::FloatToStr => {
+            let [value] = args else {
+                unreachable!("verified KIR: RtFn::FloatToStr always takes exactly 1 arg");
+            };
+            let v = crate::expr::emit_expr(fcx, value)?.into_float_value();
+            let f = declare_or_get(fcx.module, "keel_float_to_str", || {
+                ptr_type.fn_type(&[fcx.context.f64_type().into()], false)
+            });
+            call_ptr_fn(fcx, f, &[v.into()])
+        }
+        RtFn::BoolToStr => {
+            let [value] = args else {
+                unreachable!("verified KIR: RtFn::BoolToStr always takes exactly 1 arg");
+            };
+            let v = crate::expr::emit_expr(fcx, value)?.into_int_value();
+            // `keel_bool_to_str` takes a `u8` (see abi/mod.rs) — Bool is `i1`
+            // on the LLVM side (layout.rs), so widen it first.
+            let v8 = fcx
+                .builder
+                .build_int_z_extend(v, fcx.context.i8_type(), "bool_to_u8")
+                .map_err(llvm_err)?;
+            let f = declare_or_get(fcx.module, "keel_bool_to_str", || {
+                ptr_type.fn_type(&[fcx.context.i8_type().into()], false)
+            });
+            call_ptr_fn(fcx, f, &[v8.into()])
+        }
     }
 }
 

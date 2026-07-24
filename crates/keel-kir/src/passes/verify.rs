@@ -616,5 +616,29 @@ fn verify_rt_call(
             }
             Ok(())
         }
+        RtFn::IntToStr | RtFn::FloatToStr | RtFn::BoolToStr => {
+            let [value] = args else {
+                return Err(format!(
+                    "rt.{{int,float,bool}}_to_str takes 1 arg, got {}",
+                    args.len()
+                ));
+            };
+            let expected_arg_ty = match rt_fn {
+                RtFn::IntToStr => KirType::I64,
+                RtFn::FloatToStr => KirType::F64,
+                RtFn::BoolToStr => KirType::Bool,
+                _ => unreachable!("outer match already narrowed to the *ToStr arms"),
+            };
+            if value.ty() != expected_arg_ty {
+                return Err(format!(
+                    "rt.*_to_str argument is {} but this variant expects {expected_arg_ty}",
+                    value.ty()
+                ));
+            }
+            if ty != KirType::Str {
+                return Err(format!("rt.*_to_str result is {ty}, expected str"));
+            }
+            Ok(())
+        }
     }
 }

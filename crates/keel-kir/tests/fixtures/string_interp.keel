@@ -1,0 +1,8 @@
+task total_line(x: int, y: int) -> str {
+  return "total: {x + y}"
+}
+
+name = "Ada"
+pi = 3.5
+ready = true
+greeting = "Hello, {name}! pi={pi} ready={ready}"

@@ -348,6 +348,13 @@ pub enum RtFn {
     ListPush,
     /// `keel_list_len(list) -> int`.
     ListLen,
+    /// `keel_int_to_str(int) -> str` — one interpolation slot's to-string
+    /// conversion (`designs/llvm-compilation.md` §2.3).
+    IntToStr,
+    /// `keel_float_to_str(float) -> str`. See [`RtFn::IntToStr`].
+    FloatToStr,
+    /// `keel_bool_to_str(bool) -> str`. See [`RtFn::IntToStr`].
+    BoolToStr,
 }
 
 impl Expr {

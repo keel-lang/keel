@@ -105,6 +105,55 @@ pub unsafe extern "C" fn keel_str_eq(a: *const Value, b: *const Value) -> u8 {
     u8::from(a == b)
 }
 
+/// Concatenates two boxed strings without consuming either caller's
+/// reference — backs `keel-codegen`'s `str + str` (plain concatenation and
+/// desugared string interpolation both lower to this same operator; see
+/// `keel-kir`'s `lower_string_lit`). Returns a **fresh** boxed string; `a`
+/// and `b` are untouched, matching `keel_list_push`'s always-clone
+/// convention. See [`keel_box_int`] for the returned reference's ownership.
+///
+/// # Safety
+///
+/// `a` and `b` must each be a live `KeelBox` whose underlying `Value` is
+/// `Value::String` — always true for a `str`-typed KIR expression, which is
+/// the only thing `keel-codegen` ever passes here.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_str_concat(a: *const Value, b: *const Value) -> *const Value {
+    let (Value::String(a), Value::String(b)) = (unsafe { &*a }, unsafe { &*b }) else {
+        unreachable!(
+            "keel-codegen only calls keel_str_concat on str-typed (Value::String) operands"
+        );
+    };
+    boxed(Value::String(format!("{a}{b}")))
+}
+
+/// Converts an `int` to its boxed `str` representation, matching the
+/// interpreter's `Value::Integer` `Display` impl exactly (`{n}`) — backs a
+/// scalar string-interpolation slot's to-string conversion. See
+/// [`keel_box_int`] for the returned reference's ownership.
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_int_to_str(v: i64) -> *const Value {
+    boxed(Value::String(v.to_string()))
+}
+
+/// Converts a `float` to its boxed `str` representation, matching the
+/// interpreter's `Value::Float` `Display` impl exactly (`{n}`, Rust's
+/// shortest round-tripping representation — same formatting the
+/// interpreter's own `write!(f, "{n}")` produces). See [`keel_int_to_str`].
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_float_to_str(v: f64) -> *const Value {
+    boxed(Value::String(v.to_string()))
+}
+
+/// Converts a `bool` (`0`/nonzero, matching [`keel_box_bool`]'s convention)
+/// to its boxed `str` representation (`"true"`/`"false"`), matching the
+/// interpreter's `Value::Bool` `Display` impl exactly. See
+/// [`keel_int_to_str`].
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_bool_to_str(v: u8) -> *const Value {
+    boxed(Value::String((v != 0).to_string()))
+}
+
 /// Unboxes an `int` — `keel-codegen` only ever calls this (and its
 /// `keel_unbox_float`/`keel_unbox_bool` siblings) on a box it knows (from
 /// the expression's `KirType`) holds that scalar kind.

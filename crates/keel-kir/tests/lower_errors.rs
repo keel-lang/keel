@@ -86,21 +86,6 @@ task f() -> int {
 }
 
 #[test]
-fn string_interpolation_is_rejected() {
-    let msg = lower_err(
-        r#"
-task greet(name: str) -> str {
-  return "hi {name}"
-}
-"#,
-    );
-    assert!(
-        msg.contains("string interpolation"),
-        "unexpected message: {msg}"
-    );
-}
-
-#[test]
 fn struct_literal_is_rejected() {
     let msg = lower_err(
         r#"
@@ -700,6 +685,41 @@ task f(a: int? = none, b: int? = none) -> bool {
     );
     assert!(
         msg.contains("cannot compare nullable"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn string_interpolation_format_spec_is_rejected() {
+    // `{expr:spec}` alignment/precision formatting is a distinct feature
+    // from the concat-chain desugaring this issue implements — deferred,
+    // not silently ignored.
+    let msg = lower_err(
+        r#"
+task f(pi: float) -> str {
+  return "{pi:.2f}"
+}
+"#,
+    );
+    assert!(msg.contains("format spec"), "unexpected message: {msg}");
+}
+
+#[test]
+fn string_interpolation_of_a_struct_value_is_rejected() {
+    // Struct/enum-to-string needs `Value` marshaling that doesn't exist
+    // yet (coordinate with #145/#146 rather than block on them) — only
+    // int/float/bool/str slots lower in this issue.
+    let msg = lower_err(
+        r#"
+type Point { x: int, y: int }
+
+task f(p: Point) -> str {
+  return "point: {p}"
+}
+"#,
+    );
+    assert!(
+        msg.contains("struct/enum to-string"),
         "unexpected message: {msg}"
     );
 }
