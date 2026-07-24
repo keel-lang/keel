@@ -47,6 +47,7 @@ fn fmt_ty(program: &KirProgram, ty: KirType) -> String {
         KirType::Struct(id) => program.structs[id].name.clone(),
         KirType::Enum(id) => program.enums[id].name.clone(),
         KirType::List(id) => format!("list[{}]", fmt_ty(program, program.lists[id])),
+        KirType::Nullable(id) => format!("{}?", fmt_ty(program, program.nullables[id])),
         other => other.to_string(),
     }
 }
@@ -248,6 +249,30 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
                 fmt_expr(program, func, list),
                 fmt_expr(program, func, index)
             )
+        }
+        Expr::NullLit { .. } => "none".to_string(),
+        Expr::NullSome { value, .. } => fmt_expr(program, func, value),
+        Expr::NullCoalesce {
+            nullable, fallback, ..
+        } => format!(
+            "({} ?? {})",
+            fmt_expr(program, func, nullable),
+            fmt_expr(program, func, fallback)
+        ),
+        Expr::NullFieldGet {
+            base, field_index, ..
+        } => {
+            let Expr::Local { ty, .. } = base.as_ref() else {
+                return format!("{}?.#{field_index}", fmt_expr(program, func, base));
+            };
+            let KirType::Nullable(nullable_id) = ty else {
+                return format!("{}?.#{field_index}", fmt_expr(program, func, base));
+            };
+            let KirType::Struct(struct_id) = program.nullables[*nullable_id] else {
+                return format!("{}?.#{field_index}", fmt_expr(program, func, base));
+            };
+            let field_name = &program.structs[struct_id].fields[*field_index].0;
+            format!("{}?.{field_name}", fmt_expr(program, func, base))
         }
     }
 }

@@ -51,7 +51,8 @@ use keel_syntax::ast::{Binding, Decl, Program, TypeDef, UseDecl, UseKind, UseSou
 use keel_syntax::lexer::Span;
 
 use crate::ir::{
-    EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, StructId, StructLayout,
+    EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, NullableId, StructId,
+    StructLayout,
 };
 use crate::span_table::SpanTable;
 use crate::types::KirType;
@@ -116,6 +117,8 @@ pub(crate) struct LowerCtx<'a> {
     /// See `lower_program`'s `lists` local for why this needs interior
     /// mutability (structurally discovered, not pre-declared).
     pub(crate) lists: &'a std::cell::RefCell<Vec<KirType>>,
+    /// Same interior-mutability rationale as `lists`, for `T?` shapes.
+    pub(crate) nullables: &'a std::cell::RefCell<Vec<KirType>>,
     /// Each task's per-parameter default-value expression (`None` for a
     /// parameter with no default), indexed by `FuncId`, parallel to that
     /// task's own param list. Lowered once per declaration in a separate,
@@ -225,6 +228,8 @@ pub fn lower_program(
     // `LowerCtx` otherwise fully immutable/shared (see its doc) while still
     // letting every lowering function grow this table via `intern_list`.
     let lists: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
+    // Same structural-interning rationale as `lists`, for `T?` shapes.
+    let nullables: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
 
     // Pass 1a: reserve a `StructId` for every named struct declaration
     // before resolving any field types, so a field can reference another
@@ -286,7 +291,13 @@ pub fn lower_program(
         for field in ast_fields {
             fields.push((
                 field.name.clone(),
-                ty_expr_to_kir(&field.ty, &structs_by_name, &enums_by_name, &lists)?,
+                ty_expr_to_kir(
+                    &field.ty,
+                    &structs_by_name,
+                    &enums_by_name,
+                    &lists,
+                    &nullables,
+                )?,
             ));
         }
         struct_layouts.push(StructLayout {
@@ -304,7 +315,7 @@ pub fn lower_program(
         match &decl.kind {
             Decl::Task(task) => {
                 let (params, ret) =
-                    decl::signature_of(task, &structs_by_name, &enums_by_name, &lists)?;
+                    decl::signature_of(task, &structs_by_name, &enums_by_name, &lists, &nullables)?;
                 let func_id = task_order.len();
                 task_order.push(task);
                 funcs.insert(
@@ -349,6 +360,7 @@ pub fn lower_program(
             enums_by_name: &enums_by_name,
             enum_layouts: &enum_layouts,
             lists: &lists,
+            nullables: &nullables,
             param_defaults: &empty_param_defaults,
             artifacts,
         };
@@ -368,6 +380,7 @@ pub fn lower_program(
         enums_by_name: &enums_by_name,
         enum_layouts: &enum_layouts,
         lists: &lists,
+        nullables: &nullables,
         param_defaults: &param_defaults,
         artifacts,
     };
@@ -410,6 +423,7 @@ pub fn lower_program(
         structs: struct_layouts,
         enums: enum_layouts,
         lists: lists.into_inner(),
+        nullables: nullables.into_inner(),
         span_table,
     })
 }
@@ -479,6 +493,7 @@ pub(crate) fn ty_expr_to_kir(
     structs_by_name: &HashMap<String, StructId>,
     enums_by_name: &HashMap<String, EnumId>,
     lists: &std::cell::RefCell<Vec<KirType>>,
+    nullables: &std::cell::RefCell<Vec<KirType>>,
 ) -> Result<KirType, LowerError> {
     use keel_syntax::ast::TypeExpr;
     match &ty.kind {
@@ -501,14 +516,38 @@ pub(crate) fn ty_expr_to_kir(
                 }
             }
         },
-        TypeExpr::Nullable(_) => Err(LowerError::unsupported("nullable type", ty.span.clone())),
+        TypeExpr::Nullable(inner) => {
+            // Same no-own-span situation as `TypeExpr::List` below.
+            let inner_node = keel_syntax::ast::Node::new((**inner).clone(), ty.span.clone());
+            let inner_ty = ty_expr_to_kir(
+                &inner_node,
+                structs_by_name,
+                enums_by_name,
+                lists,
+                nullables,
+            )?;
+            if !is_nullable_inner_ty(inner_ty) {
+                return Err(LowerError::unsupported(
+                    "nullable inner type other than int/float/bool/str/list/struct (enum and \
+                     nested-nullable inner types are a later M2/M3 concern)",
+                    ty.span.clone(),
+                ));
+            }
+            Ok(KirType::Nullable(intern_nullable(nullables, inner_ty)))
+        }
         TypeExpr::List(inner) => {
             // `TypeExpr::List` boxes a bare `TypeExpr`, not a `Node<TypeExpr>`
             // (no span of its own — see `keel-syntax`'s `ast::ty::TypeExpr`),
             // so diagnostics about the element type fall back to the whole
             // `list[...]` annotation's span.
             let inner_node = keel_syntax::ast::Node::new((**inner).clone(), ty.span.clone());
-            let elem_ty = ty_expr_to_kir(&inner_node, structs_by_name, enums_by_name, lists)?;
+            let elem_ty = ty_expr_to_kir(
+                &inner_node,
+                structs_by_name,
+                enums_by_name,
+                lists,
+                nullables,
+            )?;
             if !is_list_element_ty(elem_ty) {
                 return Err(LowerError::unsupported(
                     "list element type other than int/float/bool/str (struct/enum elements \
@@ -555,6 +594,37 @@ pub(crate) fn intern_list(lists: &std::cell::RefCell<Vec<KirType>>, elem: KirTyp
     }
     lists.push(elem);
     lists.len() - 1
+}
+
+/// `true` for the inner types a nullable (`T?`) can wrap today —
+/// int/float/bool/str/list/struct, per §1.1's representation split (see
+/// `KirType::Nullable`'s doc). `enum`/`none`/nested-nullable inner types are
+/// a later M2/M3 concern, rejected with a clear message rather than
+/// silently building a bad representation.
+pub(crate) fn is_nullable_inner_ty(ty: KirType) -> bool {
+    matches!(
+        ty,
+        KirType::I64
+            | KirType::F64
+            | KirType::Bool
+            | KirType::Str
+            | KirType::List(_)
+            | KirType::Struct(_)
+    )
+}
+
+/// Interns `inner` into `nullables`, returning its `NullableId` — same
+/// structural (not declaration-order) interning as [`intern_list`].
+pub(crate) fn intern_nullable(
+    nullables: &std::cell::RefCell<Vec<KirType>>,
+    inner: KirType,
+) -> NullableId {
+    let mut nullables = nullables.borrow_mut();
+    if let Some(id) = nullables.iter().position(|t| *t == inner) {
+        return id;
+    }
+    nullables.push(inner);
+    nullables.len() - 1
 }
 
 /// Extracts the plain identifier a `Binding` names, rejecting destructuring

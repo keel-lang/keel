@@ -134,6 +134,16 @@ fn check_list(program: &KirProgram, id: crate::ir::ListId) -> Result<(), String>
     Ok(())
 }
 
+fn check_nullable(program: &KirProgram, id: crate::ir::NullableId) -> Result<(), String> {
+    if id >= program.nullables.len() {
+        return Err(format!(
+            "NullableId {id} out of range ({} nullables)",
+            program.nullables.len()
+        ));
+    }
+    Ok(())
+}
+
 fn verify_block(program: &KirProgram, func: &KirFunction, block: &Block) -> Result<(), String> {
     for stmt in block {
         verify_stmt(program, func, stmt)?;
@@ -374,6 +384,91 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
             if declared_elem != *ty {
                 return Err(format!(
                     "index claims type {ty} but the list holds {declared_elem}"
+                ));
+            }
+            Ok(())
+        }
+        Expr::NullLit { ty } => {
+            let KirType::Nullable(id) = ty else {
+                return Err(format!("NullLit claims non-nullable type {ty}"));
+            };
+            check_nullable(program, *id)
+        }
+        Expr::NullSome { value, ty } => {
+            verify_expr(program, func, value)?;
+            let KirType::Nullable(id) = ty else {
+                return Err(format!("NullSome claims non-nullable type {ty}"));
+            };
+            check_nullable(program, *id)?;
+            let inner = program.nullables[*id];
+            if value.ty() != inner {
+                return Err(format!(
+                    "NullSome wraps a {} value but claims inner type {inner}",
+                    value.ty()
+                ));
+            }
+            Ok(())
+        }
+        Expr::NullCoalesce {
+            nullable,
+            fallback,
+            ty,
+        } => {
+            verify_expr(program, func, nullable)?;
+            verify_expr(program, func, fallback)?;
+            let KirType::Nullable(id) = nullable.ty() else {
+                return Err(format!(
+                    "`??` left-hand side is {}, expected a nullable",
+                    nullable.ty()
+                ));
+            };
+            check_nullable(program, id)?;
+            let inner = program.nullables[id];
+            if inner != *ty {
+                return Err(format!(
+                    "`??` claims type {ty} but the nullable's inner type is {inner}"
+                ));
+            }
+            if fallback.ty() != *ty {
+                return Err(format!("`??` fallback is {}, expected {ty}", fallback.ty()));
+            }
+            Ok(())
+        }
+        Expr::NullFieldGet {
+            base,
+            field_index,
+            ty,
+        } => {
+            verify_expr(program, func, base)?;
+            let KirType::Nullable(base_nullable_id) = base.ty() else {
+                return Err(format!("`?.` base is {}, expected a nullable", base.ty()));
+            };
+            check_nullable(program, base_nullable_id)?;
+            let KirType::Struct(struct_id) = program.nullables[base_nullable_id] else {
+                return Err(format!(
+                    "`?.` base's nullable inner type is {}, expected a struct",
+                    program.nullables[base_nullable_id]
+                ));
+            };
+            check_struct(program, struct_id)?;
+            let layout = &program.structs[struct_id];
+            if *field_index >= layout.fields.len() {
+                return Err(format!(
+                    "`?.` field index {field_index} out of range for `{}` ({} fields)",
+                    layout.name,
+                    layout.fields.len()
+                ));
+            }
+            let field_ty = layout.fields[*field_index].1;
+            let KirType::Nullable(result_nullable_id) = ty else {
+                return Err(format!("`?.` claims non-nullable type {ty}"));
+            };
+            check_nullable(program, *result_nullable_id)?;
+            let declared = program.nullables[*result_nullable_id];
+            if declared != field_ty {
+                return Err(format!(
+                    "`?.` on `{}.{}` claims inner type {declared} but the field is {field_ty}",
+                    layout.name, layout.fields[*field_index].0
                 ));
             }
             Ok(())

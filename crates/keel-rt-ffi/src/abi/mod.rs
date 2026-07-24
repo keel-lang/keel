@@ -44,6 +44,32 @@ pub extern "C" fn keel_box_bool(v: u8) -> *const Value {
     Arc::into_raw(Arc::new(Value::Bool(v != 0)))
 }
 
+/// Boxes `none` — the `none` sentinel for a pointer-typed nullable (`str?`/
+/// `list[T]?`), whose non-null values are already boxed `*const Value`
+/// pointers (`Value::String`/`Value::List`) with no null-pointer bit to
+/// spare. A nullable *struct* doesn't need this: a native struct record is
+/// never `Value`-boxed, so a plain null pointer already means `none` there
+/// (`designs/llvm-compilation.md` §1.1) — see [`keel_is_none`] for the
+/// matching check. See [`keel_box_int`] for ownership.
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_box_none() -> *const Value {
+    Arc::into_raw(Arc::new(Value::None))
+}
+
+/// Reports whether a boxed pointer-typed nullable (`str?`/`list[T]?`) is
+/// `none` — the counterpart check to [`keel_box_none`]. Never called on a
+/// nullable *struct* (a null pointer there is checked directly, no runtime
+/// call needed).
+///
+/// # Safety
+///
+/// `ptr` must be a live `KeelBox` (see [`borrow`]) — any variant, since
+/// checking is exactly "is this variant `Value::None`".
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_is_none(ptr: *const Value) -> u8 {
+    u8::from(matches!(unsafe { &*ptr }, Value::None))
+}
+
 /// Boxes a UTF-8 string constant, copying `len` bytes starting at `ptr` into
 /// an owned `Value::String`. See [`keel_box_int`] for ownership.
 ///

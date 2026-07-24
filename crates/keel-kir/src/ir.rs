@@ -34,6 +34,11 @@ pub type EnumId = usize;
 /// program is the same `ListId` — see `lower/mod.rs`'s list-interning doc.
 pub type ListId = usize;
 
+/// Index into `KirProgram::nullables` — a *structural* intern id, same
+/// rationale as `ListId`: `int?` written anywhere in the program is the same
+/// `NullableId`.
+pub type NullableId = usize;
+
 /// A whole lowered program (currently: a single file's tasks + its
 /// top-level statements — multi-module lowering is deferred until the
 /// `keel-compiler` `ModuleGraph`/`CheckArtifacts` seam lands, see `lib.rs`).
@@ -62,6 +67,11 @@ pub struct KirProgram {
     /// marshaling that doesn't exist yet (deferred, see `lower/expr.rs`'s
     /// list-literal lowering doc).
     pub lists: Vec<KirType>,
+    /// Every distinct nullable inner type interned so far (structural, not
+    /// declaration order — see `NullableId`'s doc). Only int/float/bool/str/
+    /// list/struct inner types are modeled — see
+    /// `lower::is_nullable_inner_ty`.
+    pub nullables: Vec<KirType>,
     pub span_table: SpanTable,
 }
 
@@ -268,6 +278,45 @@ pub enum Expr {
         index: Box<Expr>,
         ty: KirType,
     },
+    /// The `none` value of a nullable type (`ty` is always `KirType::
+    /// Nullable(_)`) — only reachable via a `none` literal lowered against an
+    /// already-known expected nullable type (`lower_expr_expecting`; `none`
+    /// has no type of its own to infer bottom-up). Codegen builds the
+    /// representation matching `ty`'s inner type (§1.1: null pointer for a
+    /// nullable struct, a boxed `Value::None` for a nullable str/list, an
+    /// `{ i1 false, T }` pair for a nullable scalar).
+    NullLit {
+        ty: KirType,
+    },
+    /// Widens a plain, known-present `inner`-typed value into `ty`'s
+    /// (`KirType::Nullable(inner)`) "some" representation — the checker
+    /// allows passing a non-nullable `T` wherever `T?` is expected (`SPEC.md`
+    /// §4's nullable-safety rule is one-directional: unwrapping the *other*
+    /// way needs `?.`/`??`/an assert). A pointer-typed inner is already the
+    /// right bits (no wrapping, just a relabeled `KirType`); a scalar inner
+    /// becomes an `{ i1 true, T }` pair.
+    NullSome {
+        value: Box<Expr>,
+        ty: KirType,
+    },
+    /// `nullable ?? fallback` — short-circuits: `fallback` is only evaluated
+    /// when `nullable` is `none` (§2.3: "`?.`/`??` → explicit branches").
+    /// `ty` is `nullable`'s unwrapped inner type (== `fallback`'s type).
+    NullCoalesce {
+        nullable: Box<Expr>,
+        fallback: Box<Expr>,
+        ty: KirType,
+    },
+    /// `base?.field` — `base` is a nullable-struct-typed expression;
+    /// short-circuits to `none` without touching the field when `base` is
+    /// `none`. `ty` is `KirType::Nullable(field_ty)` (the field's own type,
+    /// re-wrapped) — resolved at lowering time via `StructLayout::
+    /// field_index`, same as `FieldGet`.
+    NullFieldGet {
+        base: Box<Expr>,
+        field_index: usize,
+        ty: KirType,
+    },
 }
 
 /// What an `Expr::Call` invokes.
@@ -317,7 +366,11 @@ impl Expr {
             | Expr::FieldGet { ty, .. } => *ty,
             Expr::MakeStruct { struct_id, .. } => KirType::Struct(*struct_id),
             Expr::MakeEnum { enum_id, .. } => KirType::Enum(*enum_id),
-            Expr::Index { ty, .. } => *ty,
+            Expr::Index { ty, .. }
+            | Expr::NullLit { ty }
+            | Expr::NullSome { ty, .. }
+            | Expr::NullCoalesce { ty, .. }
+            | Expr::NullFieldGet { ty, .. } => *ty,
         }
     }
 }

@@ -22,6 +22,7 @@ pub(crate) fn signature_of(
     structs_by_name: &HashMap<String, StructId>,
     enums_by_name: &HashMap<String, EnumId>,
     lists: &std::cell::RefCell<Vec<KirType>>,
+    nullables: &std::cell::RefCell<Vec<KirType>>,
 ) -> Result<(Vec<KirType>, KirType), LowerError> {
     if !task.type_params.is_empty() {
         return Err(LowerError::unsupported(
@@ -56,10 +57,11 @@ pub(crate) fn signature_of(
             structs_by_name,
             enums_by_name,
             lists,
+            nullables,
         )?);
     }
     let ret = match &task.return_type {
-        Some(ty) => ty_expr_to_kir(ty, structs_by_name, enums_by_name, lists)?,
+        Some(ty) => ty_expr_to_kir(ty, structs_by_name, enums_by_name, lists, nullables)?,
         None => KirType::Unit,
     };
     Ok((params, ret))

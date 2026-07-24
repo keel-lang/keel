@@ -61,6 +61,7 @@ pub(crate) fn lower_stmt(
                     lcx.structs_by_name,
                     lcx.enums_by_name,
                     lcx.lists,
+                    lcx.nullables,
                 )?;
                 lower_expr_expecting(value, expected, ctx, lcx, table)?
             } else if let ast::Expr::StructSpreadUpdate { base, .. } = &value.kind {
