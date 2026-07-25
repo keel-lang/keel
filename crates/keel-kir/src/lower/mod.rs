@@ -432,6 +432,7 @@ pub fn lower_program(
                 &lcx,
                 &mut span_table,
                 KirType::Unit,
+                false,
             )?);
         }
     }

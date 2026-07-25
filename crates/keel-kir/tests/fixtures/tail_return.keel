@@ -1,0 +1,11 @@
+task double(x: int) -> int {
+  x * 2
+}
+
+task abs(n: int) -> int {
+  if n < 0 {
+    0 - n
+  } else {
+    n
+  }
+}

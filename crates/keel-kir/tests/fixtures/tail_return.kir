@@ -1,0 +1,14 @@
+fn double(x: int) -> int {
+  return (x * 2)
+}
+
+fn abs(n: int) -> int {
+  if (n < 0) {
+    return (0 - n)
+  } else {
+    return n
+  }
+}
+
+fn <toplevel>() -> none {
+}
