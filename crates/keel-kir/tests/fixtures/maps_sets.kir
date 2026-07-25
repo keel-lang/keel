@@ -1,0 +1,19 @@
+fn total_stock(stock: map[str, int]) -> int {
+  let sum: int = 0
+  for key in rt.map_keys(stock) {
+    sum = (sum + (rt.map_get(stock, key) ?? 0))
+  }
+  return sum
+}
+
+fn <toplevel>() -> none {
+  let stock: map[str, int] = rt.map_insert(rt.map_insert(rt.map_new(), "apples", 1), "pears", 2)
+  let count: int = rt.map_len(stock)
+  let has_apples: bool = rt.map_contains(stock, "apples")
+  let missing: int = (rt.map_get(stock, "bananas") ?? (-1))
+  let names: list[str] = rt.map_keys(stock)
+  let amounts: list[int] = rt.map_values(stock)
+  let sum: int = total_stock(stock)
+  let nums: set[int] = rt.set_insert(rt.set_insert(rt.set_insert(rt.set_new(), 1), 2), 3)
+  let other: set[int] = nums
+}

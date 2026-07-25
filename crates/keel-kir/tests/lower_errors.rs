@@ -585,6 +585,81 @@ task f() -> int {
 }
 
 #[test]
+fn map_literal_with_a_non_str_key_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  stock: map[str, int] = {1: 2}
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("non-str key"), "unexpected message: {msg}");
+}
+
+#[test]
+fn duplicate_key_in_map_literal_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  stock: map[str, int] = {apples: 1, apples: 2}
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("duplicate key `apples`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn unknown_map_method_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  stock: map[str, int] = {apples: 1}
+  ys = stock.pop()
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("map method"), "unexpected message: {msg}");
+}
+
+#[test]
+fn map_get_wrong_arg_count_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  stock: map[str, int] = {apples: 1}
+  ys = stock.get()
+  return 0
+}
+"#,
+    );
+    assert!(msg.contains("`get`"), "unexpected message: {msg}");
+}
+
+#[test]
+fn set_value_method_call_is_rejected() {
+    // Issue #162 scopes construct/pass-through only for `set[T]` (the
+    // interpreter has no `Value::Set` variant and no set methods to match
+    // against yet — see `KirType::Set`'s doc) — a method call on a set
+    // falls through to the generic "method call" rejection, same as any
+    // other unsupported receiver type.
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  nums = set[1, 2, 3]
+  return nums.len()
+}
+"#,
+    );
+    assert!(msg.contains("method call"), "unexpected message: {msg}");
+}
+
+#[test]
 fn index_access_on_a_non_list_value_is_rejected() {
     let msg = lower_err(
         r#"

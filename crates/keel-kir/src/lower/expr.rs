@@ -24,7 +24,7 @@ use keel_syntax::lexer::Span;
 use keel_catalog::builtins::BuiltinResult;
 
 use super::{FnCtx, LowerCtx, LowerError, describe_ty};
-use crate::ir::{self, CallTarget, Expr, StructId};
+use crate::ir::{self, CallTarget, Expr, MapId, StructId};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -256,19 +256,37 @@ pub(crate) fn lower_expr(
         // No expected-type context here (that's `lower_expr_expecting`'s
         // job) — an anonymous struct literal with nothing pinning it to a
         // named struct isn't modeled yet (deferred until an M2 fixture
-        // needs one; see `ir.rs`'s `StructLayout` doc).
-        ast::Expr::StructLit(_) => Err(LowerError::unsupported(
-            "struct literal outside a known-struct-typed position (a `let` annotation, \
-             `return`, or call argument)",
-            expr.span.clone(),
-        )),
+        // needs one; see `ir.rs`'s `StructLayout` doc). An int/bool-keyed
+        // literal is unambiguously a map even without that context (the
+        // checker's own `classify_literal` treats it that way, `str`/bare
+        // keys need an expected `map[str, V]` type to disambiguate from a
+        // struct) — but non-`str` map keys aren't modeled yet either (see
+        // `KirType::Map`'s doc), so this names that specifically rather than
+        // reporting the generic struct-literal message for what's actually
+        // a map literal.
+        ast::Expr::StructLit(fields) => {
+            if let Some((ast::MapLitKey::Int(_) | ast::MapLitKey::Bool(_), value)) = fields.first()
+            {
+                return Err(LowerError::unsupported(
+                    "map literal with a non-str key (int/bool keys are a later M2/M3 concern)",
+                    value.span.clone(),
+                ));
+            }
+            Err(LowerError::unsupported(
+                "struct literal outside a known-struct-typed position (a `let` annotation, \
+                 `return`, or call argument) — the same restriction applies to a bareword/`str`-\
+                 keyed map literal, which needs an expected `map[str, V]` type to disambiguate \
+                 from a struct",
+                expr.span.clone(),
+            ))
+        }
         ast::Expr::StructSpreadUpdate { .. } => Err(LowerError::unsupported(
             "struct spread-update outside a known-struct-typed position (a `let` annotation, \
              `return`, or call argument)",
             expr.span.clone(),
         )),
         ast::Expr::ListLit(items) => lower_list_lit(items, &expr.span, ctx, lcx, table),
-        ast::Expr::SetLit(_) => Err(LowerError::unsupported("set literal", expr.span.clone())),
+        ast::Expr::SetLit(items) => lower_set_lit(items, &expr.span, ctx, lcx, table),
         ast::Expr::TupleLit(_) => Err(LowerError::unsupported("tuple literal", expr.span.clone())),
         ast::Expr::NullCoalesce(nullable, fallback) => {
             let nullable_e = lower_expr(nullable, ctx, lcx, table)?;
@@ -310,6 +328,9 @@ pub(crate) fn lower_expr(
             match object_e.ty() {
                 KirType::List(_) => {
                     lower_list_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
+                }
+                KirType::Map(_) => {
+                    lower_map_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
                 }
                 _ => Err(LowerError::unsupported("method call", expr.span.clone())),
             }
@@ -384,6 +405,17 @@ pub(crate) fn lower_expr_expecting(
             }
             _ => {}
         }
+    }
+    // `{key: value, ...}` is the same ambiguous `ast::Expr::StructLit` node
+    // a struct literal parses to (see `ast::MapLitKey`'s doc) — the checker
+    // itself only resolves a bareword/`str`-keyed one to a map when an
+    // expected `map[str, V]` type is already in scope; since that's exactly
+    // what `expected` already carries here, this needs no `CheckArtifacts`
+    // lookup, same as `lower_struct_lit` above never needing one.
+    if let KirType::Map(map_id) = expected
+        && let ast::Expr::StructLit(fields) = &expr.kind
+    {
+        return lower_map_lit(fields, map_id, &expr.span, ctx, lcx, table);
     }
     // `none` has no type of its own to infer bottom-up (`lower_expr` rejects
     // it outright) — the checker only accepts a bare `none` literal where an
@@ -483,6 +515,63 @@ fn lower_struct_lit(
     }
 
     Ok(Expr::MakeStruct { struct_id, fields })
+}
+
+/// Lowers a bareword/`str`-keyed `{key: value, ...}` literal against its
+/// expected `map[str, V]` type (the `map_methods.keel`-style shape,
+/// `stock: map[str, int] = {apples: 12, ...}`) — folds into a
+/// `MapNew`/`MapInsert` chain, same shape [`lower_list_lit`] builds for a
+/// list literal. Field order in the source doesn't matter (unlike a struct
+/// literal, a map has no declared field order to rebuild into) — each
+/// key/value pair just inserts in source order.
+fn lower_map_lit(
+    lit_fields: &[(ast::MapLitKey, SpannedExpr)],
+    map_id: MapId,
+    span: &Span,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    let value_ty = lcx.maps.borrow()[map_id];
+    let map_ty = KirType::Map(map_id);
+    let span_id = table.intern(span.clone());
+
+    let mut seen: HashMap<&str, ()> = HashMap::with_capacity(lit_fields.len());
+    let mut acc = Expr::Call {
+        target: CallTarget::Rt(ir::RtFn::MapNew),
+        args: Vec::new(),
+        ty: map_ty,
+        span: span_id,
+    };
+    for (key, value) in lit_fields {
+        let key_str = key.as_str().ok_or_else(|| {
+            LowerError::unsupported(
+                "map literal with a non-str key (int/bool keys are a later M2/M3 concern)",
+                value.span.clone(),
+            )
+        })?;
+        if seen.insert(key_str, ()).is_some() {
+            // The interpreter silently takes last-wins on a duplicate map
+            // key (no error); rejecting it here is a deliberate, stricter-
+            // than-interpreter divergence — this repo's namespace-
+            // implementation checklist treats a duplicate key as a
+            // structural-precondition violation that must error rather than
+            // silently drop data, and no conformance fixture should ever
+            // contain a duplicate-key map literal in the first place.
+            return Err(LowerError::new(
+                format!("duplicate key `{key_str}` in map literal"),
+                value.span.clone(),
+            ));
+        }
+        let value_e = lower_expr_expecting(value, value_ty, ctx, lcx, table)?;
+        acc = Expr::Call {
+            target: CallTarget::Rt(ir::RtFn::MapInsert),
+            args: vec![acc, Expr::ConstStr(key_str.to_string()), value_e],
+            ty: map_ty,
+            span: span_id,
+        };
+    }
+    Ok(acc)
 }
 
 /// Resolves the `(LocalId, KirType)` a spread-update's `base` already
@@ -891,6 +980,71 @@ fn lower_list_lit(
     Ok(acc)
 }
 
+/// Lowers `set[expr, ...]` — folds into a `SetNew`/`SetInsert` chain, same
+/// shape [`lower_list_lit`] builds, with no dedup (`RtFn::SetInsert`'s doc
+/// has the rationale: the interpreter's own `SetLit` doesn't dedup either,
+/// "v0.1: sets share list repr" — matching that, not a "more correct"
+/// deduplicating set the interpreter doesn't have, is the whole point).
+fn lower_set_lit(
+    items: &[SpannedExpr],
+    span: &Span,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+) -> Result<Expr, LowerError> {
+    let [first, rest @ ..] = items else {
+        return Err(LowerError::unsupported(
+            "empty set literal (element type can't be inferred without an annotation)",
+            span.clone(),
+        ));
+    };
+    let first_e = lower_expr(first, ctx, lcx, table)?;
+    let elem_ty = first_e.ty();
+    if !super::is_list_element_ty(elem_ty) {
+        return Err(LowerError::unsupported(
+            "set element type other than int/float/bool/str (struct/enum elements need Value \
+             marshaling, a later M2/M3 concern)",
+            first.span.clone(),
+        ));
+    }
+
+    let mut elements = Vec::with_capacity(items.len());
+    elements.push(first_e);
+    for item in rest {
+        let item_e = lower_expr(item, ctx, lcx, table)?;
+        if item_e.ty() != elem_ty {
+            return Err(LowerError::new(
+                format!(
+                    "set literal has mixed element types: `{}` and `{}`",
+                    describe_ty(elem_ty, lcx),
+                    describe_ty(item_e.ty(), lcx)
+                ),
+                item.span.clone(),
+            ));
+        }
+        elements.push(item_e);
+    }
+
+    let set_id = super::intern_set(lcx.sets, elem_ty);
+    let set_ty = KirType::Set(set_id);
+    let span_id = table.intern(span.clone());
+    let mut acc = Expr::Call {
+        target: CallTarget::Rt(ir::RtFn::SetNew),
+        args: Vec::new(),
+        ty: set_ty,
+        span: span_id,
+    };
+    for element in elements {
+        acc = Expr::Call {
+            target: CallTarget::Rt(ir::RtFn::SetInsert),
+            args: vec![acc, element],
+            ty: set_ty,
+            span: span_id,
+        };
+    }
+    Ok(acc)
+}
+
 /// Lowers a value method call on a `list[T]`-typed receiver (`xs.push(v)`,
 /// `xs.len()`) — the only container value methods lowered so far.
 fn lower_list_method_call(
@@ -948,6 +1102,144 @@ fn lower_list_method_call(
         }
         other => Err(LowerError::unsupported(
             &format!("list method `{other}` (only `push`/`len`/`count` are lowered so far)"),
+            call_span.clone(),
+        )),
+    }
+}
+
+/// Lowers a value method call on a `map[str, V]`-typed receiver (`m.get(k)`,
+/// `m.keys()`, `m.values()`, `m.len()`/`.count()`/`.size()`,
+/// `m.is_empty()`, `m.contains(k)`/`.has(k)`) — the construct/read subset
+/// issue #162 scopes to (no mutation method exists in the interpreter to
+/// match yet — see `KirType::Map`'s doc). `is_empty` has no dedicated
+/// runtime op; it's synthesized as `len == 0` rather than adding a
+/// `keel_map_is_empty` FFI symbol whose only job would be exactly that.
+fn lower_map_method_call(
+    object_e: Expr,
+    method: &str,
+    args: &[ast::CallArg],
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    call_span: &Span,
+) -> Result<Expr, LowerError> {
+    let KirType::Map(map_id) = object_e.ty() else {
+        unreachable!("caller only invokes lower_map_method_call on a KirType::Map receiver");
+    };
+    for arg in args {
+        if arg.name.is_some() || arg.spread {
+            return Err(LowerError::unsupported(
+                "named or spread arguments to a map method call",
+                arg.value.span.clone(),
+            ));
+        }
+    }
+
+    let value_ty = lcx.maps.borrow()[map_id];
+    let span_id = table.intern(call_span.clone());
+
+    let one_str_arg = |args: &[ast::CallArg],
+                       ctx: &mut FnCtx,
+                       table: &mut SpanTable|
+     -> Result<Expr, LowerError> {
+        let [arg] = args else {
+            return Err(LowerError::new(
+                format!("`{method}` takes 1 argument, got {}", args.len()),
+                call_span.clone(),
+            ));
+        };
+        lower_expr_expecting(&arg.value, KirType::Str, ctx, lcx, table)
+    };
+
+    match method {
+        "get" => {
+            let key_e = one_str_arg(args, ctx, table)?;
+            let nullable_id = super::intern_nullable(lcx.nullables, value_ty);
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapGet),
+                args: vec![object_e, key_e],
+                ty: KirType::Nullable(nullable_id),
+                span: span_id,
+            })
+        }
+        "contains" | "has" => {
+            let key_e = one_str_arg(args, ctx, table)?;
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapContains),
+                args: vec![object_e, key_e],
+                ty: KirType::Bool,
+                span: span_id,
+            })
+        }
+        "keys" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`keys` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            let list_id = super::intern_list(lcx.lists, KirType::Str);
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapKeys),
+                args: vec![object_e],
+                ty: KirType::List(list_id),
+                span: span_id,
+            })
+        }
+        "values" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`values` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            let list_id = super::intern_list(lcx.lists, value_ty);
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapValues),
+                args: vec![object_e],
+                ty: KirType::List(list_id),
+                span: span_id,
+            })
+        }
+        "len" | "count" | "size" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`{method}` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapLen),
+                args: vec![object_e],
+                ty: KirType::I64,
+                span: span_id,
+            })
+        }
+        "is_empty" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`is_empty` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            let len_e = Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapLen),
+                args: vec![object_e],
+                ty: KirType::I64,
+                span: span_id,
+            };
+            Ok(Expr::BinOp {
+                op: ir::BinOp::Eq,
+                left: Box::new(len_e),
+                right: Box::new(Expr::ConstInt(0)),
+                ty: KirType::Bool,
+            })
+        }
+        other => Err(LowerError::unsupported(
+            &format!(
+                "map method `{other}` (only `get`/`keys`/`values`/`len`/`count`/`size`/\
+                 `is_empty`/`contains`/`has` are lowered so far)"
+            ),
             call_span.clone(),
         )),
     }

@@ -51,8 +51,8 @@ use keel_syntax::ast::{Binding, Decl, Program, TypeDef, UseDecl, UseKind, UseSou
 use keel_syntax::lexer::Span;
 
 use crate::ir::{
-    Block, EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, NullableId,
-    StructId, StructLayout,
+    Block, EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, MapId, NullableId,
+    SetId, StructId, StructLayout,
 };
 use crate::span_table::SpanTable;
 use crate::types::KirType;
@@ -117,6 +117,12 @@ pub(crate) struct LowerCtx<'a> {
     /// See `lower_program`'s `lists` local for why this needs interior
     /// mutability (structurally discovered, not pre-declared).
     pub(crate) lists: &'a std::cell::RefCell<Vec<KirType>>,
+    /// Same interior-mutability rationale as `lists`, for `map[str, V]`
+    /// value types.
+    pub(crate) maps: &'a std::cell::RefCell<Vec<KirType>>,
+    /// Same interior-mutability rationale as `lists`, for `set[T]` element
+    /// types.
+    pub(crate) sets: &'a std::cell::RefCell<Vec<KirType>>,
     /// Same interior-mutability rationale as `lists`, for `T?` shapes.
     pub(crate) nullables: &'a std::cell::RefCell<Vec<KirType>>,
     /// Each task's per-parameter default-value expression (`None` for a
@@ -235,6 +241,12 @@ pub fn lower_program(
     // `LowerCtx` otherwise fully immutable/shared (see its doc) while still
     // letting every lowering function grow this table via `intern_list`.
     let lists: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
+    // Same structural-interning rationale as `lists`, for `map[str, V]`
+    // value types.
+    let maps: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
+    // Same structural-interning rationale as `lists`, for `set[T]` element
+    // types.
+    let sets: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
     // Same structural-interning rationale as `lists`, for `T?` shapes.
     let nullables: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
 
@@ -303,6 +315,8 @@ pub fn lower_program(
                     &structs_by_name,
                     &enums_by_name,
                     &lists,
+                    &maps,
+                    &sets,
                     &nullables,
                 )?,
             ));
@@ -339,8 +353,15 @@ pub fn lower_program(
     for decl in &program.declarations {
         match &decl.kind {
             Decl::Task(task) => {
-                let (params, ret) =
-                    decl::signature_of(task, &structs_by_name, &enums_by_name, &lists, &nullables)?;
+                let (params, ret) = decl::signature_of(
+                    task,
+                    &structs_by_name,
+                    &enums_by_name,
+                    &lists,
+                    &maps,
+                    &sets,
+                    &nullables,
+                )?;
                 let func_id = task_order.len();
                 task_order.push(task);
                 funcs.insert(
@@ -385,6 +406,8 @@ pub fn lower_program(
             enums_by_name: &enums_by_name,
             enum_layouts: &enum_layouts,
             lists: &lists,
+            maps: &maps,
+            sets: &sets,
             nullables: &nullables,
             param_defaults: &empty_param_defaults,
             artifacts,
@@ -406,6 +429,8 @@ pub fn lower_program(
         enums_by_name: &enums_by_name,
         enum_layouts: &enum_layouts,
         lists: &lists,
+        maps: &maps,
+        sets: &sets,
         nullables: &nullables,
         param_defaults: &param_defaults,
         artifacts,
@@ -470,6 +495,8 @@ pub fn lower_program(
         structs: struct_layouts,
         enums: enum_layouts,
         lists: lists.into_inner(),
+        maps: maps.into_inner(),
+        sets: sets.into_inner(),
         nullables: nullables.into_inner(),
         span_table,
     })
@@ -744,11 +771,14 @@ fn stmt_uses_raise_or_try(stmt: &keel_syntax::ast::Stmt) -> bool {
 /// `enums_by_name` resolve a bare `Named` type to a declared struct or enum
 /// — checked after the built-in scalar names, so neither can shadow a
 /// reserved type name.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn ty_expr_to_kir(
     ty: &keel_syntax::ast::Node<keel_syntax::ast::TypeExpr>,
     structs_by_name: &HashMap<String, StructId>,
     enums_by_name: &HashMap<String, EnumId>,
     lists: &std::cell::RefCell<Vec<KirType>>,
+    maps: &std::cell::RefCell<Vec<KirType>>,
+    sets: &std::cell::RefCell<Vec<KirType>>,
     nullables: &std::cell::RefCell<Vec<KirType>>,
 ) -> Result<KirType, LowerError> {
     use keel_syntax::ast::TypeExpr;
@@ -780,6 +810,8 @@ pub(crate) fn ty_expr_to_kir(
                 structs_by_name,
                 enums_by_name,
                 lists,
+                maps,
+                sets,
                 nullables,
             )?;
             if !is_nullable_inner_ty(inner_ty) {
@@ -802,6 +834,8 @@ pub(crate) fn ty_expr_to_kir(
                 structs_by_name,
                 enums_by_name,
                 lists,
+                maps,
+                sets,
                 nullables,
             )?;
             if !is_list_element_ty(elem_ty) {
@@ -813,8 +847,64 @@ pub(crate) fn ty_expr_to_kir(
             }
             Ok(KirType::List(intern_list(lists, elem_ty)))
         }
-        TypeExpr::Map(_, _) => Err(LowerError::unsupported("map type", ty.span.clone())),
-        TypeExpr::Set(_) => Err(LowerError::unsupported("set type", ty.span.clone())),
+        TypeExpr::Map(key, value) => {
+            // `TypeExpr::Map` boxes bare `TypeExpr`s, not `Node<TypeExpr>`s
+            // (no span of their own), same situation as `TypeExpr::List`.
+            let key_node = keel_syntax::ast::Node::new((**key).clone(), ty.span.clone());
+            let key_ty = ty_expr_to_kir(
+                &key_node,
+                structs_by_name,
+                enums_by_name,
+                lists,
+                maps,
+                sets,
+                nullables,
+            )?;
+            if key_ty != KirType::Str {
+                return Err(LowerError::unsupported(
+                    "map key type other than str (int/bool keys are a later M2/M3 concern)",
+                    ty.span.clone(),
+                ));
+            }
+            let value_node = keel_syntax::ast::Node::new((**value).clone(), ty.span.clone());
+            let value_ty = ty_expr_to_kir(
+                &value_node,
+                structs_by_name,
+                enums_by_name,
+                lists,
+                maps,
+                sets,
+                nullables,
+            )?;
+            if !is_list_element_ty(value_ty) {
+                return Err(LowerError::unsupported(
+                    "map value type other than int/float/bool/str (struct/enum values need \
+                     Value marshaling, a later M2/M3 concern)",
+                    ty.span.clone(),
+                ));
+            }
+            Ok(KirType::Map(intern_map(maps, value_ty)))
+        }
+        TypeExpr::Set(inner) => {
+            let inner_node = keel_syntax::ast::Node::new((**inner).clone(), ty.span.clone());
+            let elem_ty = ty_expr_to_kir(
+                &inner_node,
+                structs_by_name,
+                enums_by_name,
+                lists,
+                maps,
+                sets,
+                nullables,
+            )?;
+            if !is_list_element_ty(elem_ty) {
+                return Err(LowerError::unsupported(
+                    "set element type other than int/float/bool/str (struct/enum elements \
+                     need Value marshaling, a later M2/M3 concern)",
+                    ty.span.clone(),
+                ));
+            }
+            Ok(KirType::Set(intern_set(sets, elem_ty)))
+        }
         TypeExpr::Struct(_) => Err(LowerError::unsupported(
             "inline struct type",
             ty.span.clone(),
@@ -850,6 +940,29 @@ pub(crate) fn intern_list(lists: &std::cell::RefCell<Vec<KirType>>, elem: KirTyp
     }
     lists.push(elem);
     lists.len() - 1
+}
+
+/// Interns `value` into `maps`, returning its `MapId` — same structural-
+/// interning rationale as [`intern_list`] (the key is always `str`, so only
+/// the value type needs interning — see `ir.rs`'s `MapId` doc).
+pub(crate) fn intern_map(maps: &std::cell::RefCell<Vec<KirType>>, value: KirType) -> MapId {
+    let mut maps = maps.borrow_mut();
+    if let Some(id) = maps.iter().position(|t| *t == value) {
+        return id;
+    }
+    maps.push(value);
+    maps.len() - 1
+}
+
+/// Interns `elem` into `sets`, returning its `SetId` — same structural-
+/// interning rationale as [`intern_list`].
+pub(crate) fn intern_set(sets: &std::cell::RefCell<Vec<KirType>>, elem: KirType) -> SetId {
+    let mut sets = sets.borrow_mut();
+    if let Some(id) = sets.iter().position(|t| *t == elem) {
+        return id;
+    }
+    sets.push(elem);
+    sets.len() - 1
 }
 
 /// `true` for the inner types a nullable (`T?`) can wrap today —

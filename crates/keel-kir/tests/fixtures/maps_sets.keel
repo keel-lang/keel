@@ -1,0 +1,18 @@
+task total_stock(stock: map[str, int]) -> int {
+  sum = 0
+  for key in stock.keys() {
+    sum += (stock.get(key) ?? 0)
+  }
+  return sum
+}
+
+stock: map[str, int] = {apples: 1, pears: 2}
+count = stock.len()
+has_apples = stock.contains("apples")
+missing = stock.get("bananas") ?? -1
+names = stock.keys()
+amounts = stock.values()
+sum = total_stock(stock)
+
+nums = set[1, 2, 3]
+other = nums

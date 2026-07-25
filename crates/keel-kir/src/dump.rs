@@ -47,6 +47,8 @@ fn fmt_ty(program: &KirProgram, ty: KirType) -> String {
         KirType::Struct(id) => program.structs[id].name.clone(),
         KirType::Enum(id) => program.enums[id].name.clone(),
         KirType::List(id) => format!("list[{}]", fmt_ty(program, program.lists[id])),
+        KirType::Map(id) => format!("map[str, {}]", fmt_ty(program, program.maps[id])),
+        KirType::Set(id) => format!("set[{}]", fmt_ty(program, program.sets[id])),
         KirType::Nullable(id) => format!("{}?", fmt_ty(program, program.nullables[id])),
         other => other.to_string(),
     }
@@ -331,6 +333,15 @@ fn rt_fn_name(rt_fn: crate::ir::RtFn) -> &'static str {
         crate::ir::RtFn::IntToStr => "int_to_str",
         crate::ir::RtFn::FloatToStr => "float_to_str",
         crate::ir::RtFn::BoolToStr => "bool_to_str",
+        crate::ir::RtFn::MapNew => "map_new",
+        crate::ir::RtFn::MapInsert => "map_insert",
+        crate::ir::RtFn::MapGet => "map_get",
+        crate::ir::RtFn::MapLen => "map_len",
+        crate::ir::RtFn::MapContains => "map_contains",
+        crate::ir::RtFn::MapKeys => "map_keys",
+        crate::ir::RtFn::MapValues => "map_values",
+        crate::ir::RtFn::SetNew => "set_new",
+        crate::ir::RtFn::SetInsert => "set_insert",
     }
 }
 

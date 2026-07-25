@@ -45,7 +45,9 @@ pub(crate) fn llvm_type<'ctx>(
             }
         }
         KirType::Enum(_) => Ok(context.i32_type().into()),
-        KirType::List(_) => Ok(context.ptr_type(AddressSpace::default()).into()),
+        KirType::List(_) | KirType::Map(_) | KirType::Set(_) => {
+            Ok(context.ptr_type(AddressSpace::default()).into())
+        }
         KirType::Nullable(id) => match program.nullables[id] {
             // A nullable scalar has no spare pointer bit to steal, so it's
             // an explicit `{ i1 has_value, T }` pair, by value.

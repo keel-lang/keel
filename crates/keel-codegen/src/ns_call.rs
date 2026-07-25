@@ -110,10 +110,13 @@ pub(crate) fn emit_box_arg<'ctx>(
              Value is a later-M2/M3 concern)"
                 .to_string(),
         )),
-        // A `list[T]` value is already a boxed `*const Value` (`Value::List`,
-        // same representation `keel_rt_call_ns`/every `keel_list_*` expects)
-        // — no extra boxing needed, same as `Str`.
-        KirType::List(_) => Ok(emit_expr(fcx, arg)?.into_pointer_value()),
+        // A `list[T]`/`map[str, V]`/`set[T]` value is already a boxed
+        // `*const Value` (`Value::List`/`Value::Map`, same representation
+        // `keel_rt_call_ns`/every `keel_list_*`/`keel_map_*` expects) — no
+        // extra boxing needed, same as `Str`.
+        KirType::List(_) | KirType::Map(_) | KirType::Set(_) => {
+            Ok(emit_expr(fcx, arg)?.into_pointer_value())
+        }
         KirType::Nullable(_) => Err(CodegenError::Unsupported(
             "nullable-typed argument to a namespace call (unwrap via `??` first — marshaling a \
              nullable into a boxed Value is a later-M2/M3 concern)"
