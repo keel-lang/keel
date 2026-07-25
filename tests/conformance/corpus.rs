@@ -43,6 +43,31 @@ pub fn discover_m1_scalar_fixtures() -> Vec<CorpusEntry> {
     entries
 }
 
+/// M2-scope fixtures (issue #151) — nested under `fixtures/` for the same
+/// reason as [`m1_scalar_fixtures_dir`]: kept out of [`discover_corpus`]'s
+/// flat listing since these run under the interpreter-vs-compiled
+/// comparison, not the interpreter-vs-interpreter determinism loop. Covers
+/// all six M2 features (structs/spread-update, enums/`when` — both
+/// statement and expression form, containers with a list CoW-aliasing
+/// case, nullable, string interpolation, raise/try/catch), plus one fixture
+/// combining several features in a single program (a struct with an enum
+/// field and a nullable field, `when` assigned into a local, spread-update,
+/// string interpolation of struct fields) — see `designs/llvm-
+/// compilation.md` §4 M2's exit criterion.
+#[cfg(feature = "build-backend")]
+pub fn m2_features_fixtures_dir() -> PathBuf {
+    fixtures_dir().join("m2_features")
+}
+
+/// Discovers the M2-scope fixture set, sorted by stem.
+#[cfg(feature = "build-backend")]
+pub fn discover_m2_features_fixtures() -> Vec<CorpusEntry> {
+    let mut entries = Vec::new();
+    collect_flat_keel_files(&m2_features_fixtures_dir(), &mut entries);
+    entries.sort_by(|a, b| a.stem.cmp(&b.stem));
+    entries
+}
+
 /// Discovers the corpus, sorted by stem for stable, reproducible test
 /// output.
 pub fn discover_corpus() -> Vec<CorpusEntry> {
