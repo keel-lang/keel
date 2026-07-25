@@ -508,6 +508,8 @@ fn lower_when_expr_let(
             lcx.structs_by_name,
             lcx.enums_by_name,
             lcx.lists,
+            lcx.maps,
+            lcx.sets,
             lcx.nullables,
         )?,
         None => {
