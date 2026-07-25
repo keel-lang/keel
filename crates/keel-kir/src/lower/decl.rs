@@ -107,7 +107,18 @@ pub(crate) fn lower_task_body(
         params.push(Param { local, ty: *ty });
     }
 
-    let body = super::stmt::lower_block(&task.body, &mut ctx, lcx, table, sig.ret)?;
+    let body = super::stmt::lower_block(&task.body, &mut ctx, lcx, table, sig.ret, true)?;
+    if sig.ret != KirType::Unit && !super::stmt::block_terminates(&body) {
+        return Err(LowerError::new(
+            format!(
+                "task `{}` is declared to return `{}` but its body does not return on every \
+                 path — even after implicit-tail-return desugaring, the last reachable \
+                 statement isn't a value-producing expression, `return`, or `raise`",
+                task.name, sig.ret
+            ),
+            task.name_span.clone(),
+        ));
+    }
 
     Ok(KirFunction {
         id: sig.func_id,

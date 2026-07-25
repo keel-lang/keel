@@ -19,18 +19,27 @@ use crate::types::KirType;
 
 use super::expr::{lower_expr, lower_expr_expecting, struct_spread_base};
 
-/// Lowers a `{ ... }` block in its own child scope.
+/// Lowers a `{ ... }` block in its own child scope. `is_tail` marks whether
+/// falling off the end of *this block* falls off the end of the enclosing
+/// task body — i.e. whether its last statement is in implicit-tail-return
+/// position (see [`lower_stmt`]'s `ast::Stmt::Expr` arm and the module doc
+/// on tail-position desugaring, issue #159). Only the block's own last
+/// statement inherits `is_tail`; every earlier statement gets `false`
+/// regardless of the block's own tailness.
 pub(crate) fn lower_block(
     block: &ast::Block,
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
     ret_ty: KirType,
+    is_tail: bool,
 ) -> Result<Block, LowerError> {
     ctx.push_scope();
+    let last_idx = block.len().checked_sub(1);
     let mut out = Vec::with_capacity(block.len());
-    for stmt in block {
-        out.push(lower_stmt(stmt, ctx, lcx, table, ret_ty)?);
+    for (i, stmt) in block.iter().enumerate() {
+        let stmt_is_tail = is_tail && Some(i) == last_idx;
+        out.push(lower_stmt(stmt, ctx, lcx, table, ret_ty, stmt_is_tail)?);
     }
     ctx.pop_scope();
     Ok(out)
@@ -40,12 +49,20 @@ pub(crate) fn lower_block(
 /// need block scoping (`if`/`while` bodies) go through [`lower_block`]; the
 /// synthetic top-level function lowers its statements directly into the
 /// function's single root scope.
+///
+/// `is_tail` is only ever `true` for a statement that is the last statement
+/// of a block reached in tail position from the task's own body — `if`/
+/// `else` branches (and, transitively, `when` arms, already desugared to
+/// nested `if`s by [`lower_when_stmt`]) propagate their own `is_tail` into
+/// both branches; a `while`/`for` body is never a tail position (loops
+/// aren't exhaustive) and always lowers with `is_tail = false`.
 pub(crate) fn lower_stmt(
     stmt: &Node<ast::Stmt>,
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
     ret_ty: KirType,
+    is_tail: bool,
 ) -> Result<ir::Stmt, LowerError> {
     match &stmt.kind {
         ast::Stmt::Let { binding, ty, value } => {
@@ -134,9 +151,9 @@ pub(crate) fn lower_stmt(
                     cond.span.clone(),
                 ));
             }
-            let then_branch = lower_block(then_body, ctx, lcx, table, ret_ty)?;
+            let then_branch = lower_block(then_body, ctx, lcx, table, ret_ty, is_tail)?;
             let else_branch = match else_body {
-                Some(body) => lower_block(body, ctx, lcx, table, ret_ty)?,
+                Some(body) => lower_block(body, ctx, lcx, table, ret_ty, is_tail)?,
                 None => Vec::new(),
             };
             Ok(ir::Stmt::If {
@@ -153,13 +170,25 @@ pub(crate) fn lower_stmt(
                     cond.span.clone(),
                 ));
             }
-            let body = lower_block(body, ctx, lcx, table, ret_ty)?;
+            let body = lower_block(body, ctx, lcx, table, ret_ty, false)?;
             Ok(ir::Stmt::While {
                 cond: cond_expr,
                 body,
             })
         }
-        ast::Stmt::Expr(expr) => Ok(ir::Stmt::Expr(lower_expr(expr, ctx, lcx, table)?)),
+        ast::Stmt::Expr(expr) => {
+            // A bare tail expression implicitly returns its value (mirrors
+            // `exec_block`'s `StmtOutcome::Value` in the interpreter, issue
+            // #159) — but only when it's genuinely in tail position and the
+            // task actually returns a value; a `Unit`-returning task's tail
+            // expression is still just evaluated for its side effect.
+            if is_tail && ret_ty != KirType::Unit {
+                let value = lower_expr_expecting(expr, ret_ty, ctx, lcx, table)?;
+                Ok(ir::Stmt::Return(Some(value)))
+            } else {
+                Ok(ir::Stmt::Expr(lower_expr(expr, ctx, lcx, table)?))
+            }
+        }
         ast::Stmt::SelfAssign { .. } => Err(LowerError::unsupported(
             "self.field assignment",
             stmt.span.clone(),
@@ -191,7 +220,7 @@ pub(crate) fn lower_stmt(
                 let elem_ty = lcx.lists.borrow()[list_id];
                 ctx.push_scope();
                 let var = ctx.declare(name, elem_ty);
-                let body = lower_block(body, ctx, lcx, table, ret_ty)?;
+                let body = lower_block(body, ctx, lcx, table, ret_ty, false)?;
                 ctx.pop_scope();
                 return Ok(ir::Stmt::ForEach {
                     var,
@@ -218,7 +247,7 @@ pub(crate) fn lower_stmt(
             }
             ctx.push_scope();
             let var = ctx.declare(name, KirType::I64);
-            let body = lower_block(body, ctx, lcx, table, ret_ty)?;
+            let body = lower_block(body, ctx, lcx, table, ret_ty, false)?;
             ctx.pop_scope();
             Ok(ir::Stmt::ForIndex {
                 var,
@@ -228,7 +257,7 @@ pub(crate) fn lower_stmt(
             })
         }
         ast::Stmt::When { subject, arms } => {
-            lower_when_stmt(subject, arms, ctx, lcx, table, ret_ty, &stmt.span)
+            lower_when_stmt(subject, arms, ctx, lcx, table, ret_ty, is_tail, &stmt.span)
         }
         ast::Stmt::TryCatch { body, catches } => {
             lower_try_catch(body, catches, ctx, lcx, table, ret_ty, &stmt.span)
@@ -250,6 +279,7 @@ pub(crate) fn lower_stmt(
 /// of its own, so a non-trivial subject would otherwise get re-evaluated
 /// once per arm comparison — same restriction, and same rationale, as
 /// `expr::struct_spread_base`'s spread-update base.
+#[allow(clippy::too_many_arguments)]
 fn lower_when_stmt(
     subject: &ast::SpannedExpr,
     arms: &[ast::WhenArm],
@@ -257,6 +287,7 @@ fn lower_when_stmt(
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
     ret_ty: KirType,
+    is_tail: bool,
     stmt_span: &Span,
 ) -> Result<ir::Stmt, LowerError> {
     let ast::Expr::Ident(name) = &subject.kind else {
@@ -286,6 +317,7 @@ fn lower_when_stmt(
         lcx,
         table,
         ret_ty,
+        is_tail,
         stmt_span,
     )
 }
@@ -306,6 +338,7 @@ fn build_when_chain(
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
     ret_ty: KirType,
+    is_tail: bool,
     stmt_span: &Span,
 ) -> Result<ir::Stmt, LowerError> {
     let arm = &arms[idx];
@@ -315,7 +348,7 @@ fn build_when_chain(
             guard.span.clone(),
         ));
     }
-    let then_branch = lower_block(&arm.body, ctx, lcx, table, ret_ty)?;
+    let then_branch = lower_block(&arm.body, ctx, lcx, table, ret_ty, is_tail)?;
     let is_last = idx + 1 == arms.len();
     let cond = if is_last {
         ir::Expr::ConstBool(true)
@@ -342,6 +375,7 @@ fn build_when_chain(
             lcx,
             table,
             ret_ty,
+            is_tail,
             stmt_span,
         )?]
     };
@@ -535,12 +569,19 @@ fn lower_try_catch(
         "program_uses_raise_or_try found this Stmt::TryCatch, so the synthetic struct exists",
     );
 
-    let body = lower_block(body, ctx, lcx, table, ret_ty)?;
+    // Neither `body` nor `handler` is a tail position for this issue's
+    // desugaring: `body` may raise before reaching its own tail, and
+    // whether `handler` runs at all depends on that, so treating either as
+    // the function's implicit return would assume more than the checker
+    // itself proves. A `try`/`catch` whose own arms both explicitly
+    // `return` already terminates fine — see `block_terminates`'s
+    // `TryCatch` arm.
+    let body = lower_block(body, ctx, lcx, table, ret_ty, false)?;
 
     let binder_ty = KirType::Struct(struct_id);
     ctx.push_scope();
     let binder = ctx.declare(&catch.name, binder_ty);
-    let handler = lower_block(&catch.body, ctx, lcx, table, ret_ty)?;
+    let handler = lower_block(&catch.body, ctx, lcx, table, ret_ty, false)?;
     ctx.pop_scope();
 
     Ok(ir::Stmt::TryCatch {
@@ -549,4 +590,46 @@ fn lower_try_catch(
         binder_ty,
         handler,
     })
+}
+
+/// Whether every reachable path through `block` ends in a `return` or
+/// `raise` — the KIR-level mirror of `keel-codegen`'s `block_is_terminated`
+/// (an LLVM basic-block terminator check); this runs *before* codegen, over
+/// the tail-desugared body (see [`lower_block`]'s `is_tail` doc), so
+/// `lower_task_body` can reject a non-`none`-returning task whose body still
+/// doesn't return on some path with a clear `LowerError` instead of letting
+/// `finish_block`'s `build_unreachable` fallback silently miscompile it
+/// (issue #159).
+///
+/// An `if` terminates when both branches do — except when its condition is
+/// the literal `ConstBool(true)` [`build_when_chain`] emits for a `when`
+/// statement's last arm: exhaustiveness (already proven by the checker)
+/// guarantees that branch is always taken, so its `else_branch` (always
+/// empty in that shape) is provably dead code, not a real unterminated
+/// path. An absent `else` on a genuine `if`/`else` lowers to an empty
+/// branch with a non-constant condition, which correctly still fails to
+/// terminate here. A `try`/`catch` terminates only when both `body` and
+/// `handler` do — unlike tail-expression desugaring, this is not a
+/// tail-position rewrite, just recognizing a shape (explicit `return` in
+/// both arms) that already compiles correctly today, see
+/// `raise_try_catch.rs`'s `try_catch_as_the_tail_statement`-style fixtures.
+/// `while`/`for` are never terminators (loops aren't exhaustive).
+pub(crate) fn block_terminates(block: &Block) -> bool {
+    match block.last() {
+        Some(ir::Stmt::Return(_)) | Some(ir::Stmt::Raise { .. }) => true,
+        Some(ir::Stmt::If {
+            cond: ir::Expr::ConstBool(true),
+            then_branch,
+            ..
+        }) => block_terminates(then_branch),
+        Some(ir::Stmt::If {
+            then_branch,
+            else_branch,
+            ..
+        }) => block_terminates(then_branch) && block_terminates(else_branch),
+        Some(ir::Stmt::TryCatch { body, handler, .. }) => {
+            block_terminates(body) && block_terminates(handler)
+        }
+        _ => false,
+    }
 }

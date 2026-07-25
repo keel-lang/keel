@@ -827,3 +827,42 @@ x = a()
         "unexpected message: {msg}"
     );
 }
+
+#[test]
+fn empty_body_with_a_non_unit_return_type_is_rejected() {
+    // Issue #159: implicit-tail-return desugaring only rewrites a *bare
+    // expression* in tail position — an empty body has no tail statement
+    // at all to rewrite, so this must still be rejected rather than
+    // silently lowering a function whose fallthrough is unreachable in
+    // name only.
+    let msg = lower_err(
+        r#"
+task f() -> int {
+}
+"#,
+    );
+    assert!(
+        msg.contains("does not return on every path"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn body_ending_in_a_while_loop_with_a_non_unit_return_type_is_rejected() {
+    // A `while` can't be in tail position (loops aren't exhaustive) — even
+    // after tail-desugaring, a body whose last statement is a `while` still
+    // doesn't return a value on the loop's `false`-condition path.
+    let msg = lower_err(
+        r#"
+task f(n: int) -> int {
+  while n > 0 {
+    n -= 1
+  }
+}
+"#,
+    );
+    assert!(
+        msg.contains("does not return on every path"),
+        "unexpected message: {msg}"
+    );
+}
