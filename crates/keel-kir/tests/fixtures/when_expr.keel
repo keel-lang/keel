@@ -1,0 +1,8 @@
+task grade(score: str) -> str {
+  result = when score {
+    "A" => "excellent"
+    "B" => "good"
+    _ => "needs work"
+  }
+  return result
+}

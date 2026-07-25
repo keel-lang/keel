@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use keel_syntax::ast::TaskDecl;
 
+use super::stmt::TailSink;
 use super::{FnCtx, FuncSig, LowerCtx, LowerError, binding_ident, ty_expr_to_kir};
 use crate::ir::{EnumId, Expr, KirFunction, Param, StructId};
 use crate::span_table::SpanTable;
@@ -107,7 +108,8 @@ pub(crate) fn lower_task_body(
         params.push(Param { local, ty: *ty });
     }
 
-    let body = super::stmt::lower_block(&task.body, &mut ctx, lcx, table, sig.ret, true)?;
+    let body =
+        super::stmt::lower_block(&task.body, &mut ctx, lcx, table, sig.ret, TailSink::Return)?;
     if sig.ret != KirType::Unit && !super::stmt::block_terminates(&body) {
         return Err(LowerError::new(
             format!(

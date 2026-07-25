@@ -426,13 +426,13 @@ pub fn lower_program(
     let mut body = Vec::new();
     for decl in &program.declarations {
         if let Decl::Stmt(stmt) = &decl.kind {
-            body.push(stmt::lower_stmt(
+            body.extend(stmt::lower_stmt(
                 stmt,
                 &mut ctx,
                 &lcx,
                 &mut span_table,
                 KirType::Unit,
-                false,
+                stmt::TailSink::Discard,
             )?);
         }
     }
@@ -553,7 +553,9 @@ fn stmt_escapes_uncaught(stmt: &crate::ir::Stmt, try_depth: usize, can_raise: &[
             block_escapes_uncaught(body, try_depth + 1, can_raise)
                 || block_escapes_uncaught(handler, try_depth, can_raise)
         }
-        Stmt::Let { init, .. } => expr_escapes_uncaught(init, try_depth, can_raise),
+        Stmt::Let { init, .. } => init
+            .as_ref()
+            .is_some_and(|init| expr_escapes_uncaught(init, try_depth, can_raise)),
         Stmt::Assign { value, .. } => expr_escapes_uncaught(value, try_depth, can_raise),
         Stmt::If {
             cond,

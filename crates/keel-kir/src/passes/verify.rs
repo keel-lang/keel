@@ -155,6 +155,13 @@ fn verify_stmt(program: &KirProgram, func: &KirFunction, stmt: &Stmt) -> Result<
     match stmt {
         Stmt::Let { local, init } => {
             check_local(func, *local)?;
+            let Some(init) = init else {
+                // `init: None` — a declare-only `when`-as-expression temp
+                // (issue #160); the result local's type is fixed at declare
+                // time from the `when`'s first arm (or annotation), and
+                // every arm's `Stmt::Assign` into it is checked below.
+                return Ok(());
+            };
             verify_expr(program, func, init)?;
             let declared = func.locals[*local].ty;
             if declared != init.ty() {
