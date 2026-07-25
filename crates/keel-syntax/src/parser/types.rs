@@ -10,7 +10,7 @@ use super::common::KeelExt;
 use crate::ast::{Field, Node, TypeExpr};
 use crate::lexer::Token;
 
-use super::common::{P, field_name, field_sep, ident, newlines};
+use super::common::{P, field_name, field_sep, newlines};
 
 /// Wrap a [`type_expr`] production with its source span.
 ///
@@ -23,7 +23,19 @@ pub(super) fn spanned_type_expr() -> P<Node<TypeExpr>> {
 
 pub(super) fn type_expr() -> P<TypeExpr> {
     recursive(|ty| {
-        let named = ident().map(TypeExpr::Named);
+        // `set` is a reserved keyword (its own `Token::Set`, used by the
+        // `set[1, 2, 3]` literal-expression grammar) rather than a plain
+        // `Token::Ident` — so plain `ident()` can never produce
+        // `TypeExpr::Named("set")`, and `set[T]` as a *type annotation*
+        // (as opposed to a set literal) could never parse without this,
+        // even though the generic-args resolution below already has a
+        // `n == "set"` branch waiting for it. Same "keyword usable as a
+        // name in this one grammar position" pattern as `field_name()`.
+        let named = select! {
+            Token::Ident(s) => s,
+            Token::Set => "set".to_string(),
+        }
+        .map(TypeExpr::Named);
 
         let dynamic_ty = just(Token::Ident("dynamic".to_string())).to(TypeExpr::Dynamic);
 

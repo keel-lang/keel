@@ -17,11 +17,14 @@ use crate::types::KirType;
 /// parameter values are allowed here (just their *type*, matching the
 /// declared param) — see [`lower_param_defaults`] for lowering the default
 /// *expressions* themselves.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn signature_of(
     task: &TaskDecl,
     structs_by_name: &HashMap<String, StructId>,
     enums_by_name: &HashMap<String, EnumId>,
     lists: &std::cell::RefCell<Vec<KirType>>,
+    maps: &std::cell::RefCell<Vec<KirType>>,
+    sets: &std::cell::RefCell<Vec<KirType>>,
     nullables: &std::cell::RefCell<Vec<KirType>>,
 ) -> Result<(Vec<KirType>, KirType), LowerError> {
     if !task.type_params.is_empty() {
@@ -57,11 +60,21 @@ pub(crate) fn signature_of(
             structs_by_name,
             enums_by_name,
             lists,
+            maps,
+            sets,
             nullables,
         )?);
     }
     let ret = match &task.return_type {
-        Some(ty) => ty_expr_to_kir(ty, structs_by_name, enums_by_name, lists, nullables)?,
+        Some(ty) => ty_expr_to_kir(
+            ty,
+            structs_by_name,
+            enums_by_name,
+            lists,
+            maps,
+            sets,
+            nullables,
+        )?,
         None => KirType::Unit,
     };
     Ok((params, ret))

@@ -1,14 +1,15 @@
 //! `KirType` — the lowered type vocabulary KIR expressions carry.
 //!
 //! M0/M1 lower the scalar subset only (see `designs/llvm-compilation.md`
-//! §4); M2 adds named structs, simple enums, and `list[T]` (int/float/bool/
-//! str elements only). The remaining variants sketched in the design doc's
-//! `KirType` (§2.3) — map/set, anonymous struct shapes, rich enum variants,
-//! nullable, func, boxed `dynamic`, opaque handles — are deliberately not
-//! modeled yet; adding them is later-M2+ work, done alongside the lowering
-//! support that produces them.
+//! §4); M2 adds named structs, simple enums, `list[T]`, `map[str, V]`,
+//! `set[T]` (all restricted to int/float/bool/str elements), and nullable.
+//! The remaining variants sketched in the design doc's `KirType` (§2.3) —
+//! anonymous struct shapes, rich enum variants, non-`str` map keys, func,
+//! boxed `dynamic`, opaque handles — are deliberately not modeled yet;
+//! adding them is later-M2+ work, done alongside the lowering support that
+//! produces them.
 
-use crate::ir::{EnumId, KirProgram, ListId, NullableId, StructId};
+use crate::ir::{EnumId, KirProgram, ListId, MapId, NullableId, SetId, StructId};
 
 /// A KIR-level type. Every KIR expression carries one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +42,22 @@ pub enum KirType {
     /// mutation `Value::List` (opaque to codegen; every operation is a
     /// `CallTarget::Rt` runtime call, `designs/llvm-compilation.md` §2.7).
     List(ListId),
+    /// `map[str, V]` (`V` restricted to int/float/bool/str, and the key is
+    /// always `str` — see `KirProgram::maps`'s doc; non-`str` keys are a
+    /// later issue) — a `ptr` to an RC'd, always-clone-on-mutation
+    /// `Value::Map` (opaque to codegen, same `CallTarget::Rt` treatment as
+    /// `List`). No mutation op is exposed yet (issue #162's construct/read
+    /// scope — see `KirProgram::maps`'s doc for why).
+    Map(MapId),
+    /// `set[T]` (`T` restricted to int/float/bool/str, same as `List`) — a
+    /// `ptr` to an RC'd `Value::List` under the hood: the interpreter itself
+    /// has no distinct `Value::Set` representation yet (`SetLit` evaluates
+    /// to a plain, non-deduplicating `Value::List` — "v0.1: sets share list
+    /// repr"), so the compiled backend deliberately matches that rather than
+    /// diverging with a "more correct" deduplicating set the interpreter
+    /// doesn't have. `Set` is purely a *static* type distinction from
+    /// `List` — see `KirProgram::sets`'s doc.
+    Set(SetId),
     /// `T?` (inner restricted to int/float/bool/str/list/struct — see
     /// `KirProgram::nullables`'s doc and `lower::is_nullable_inner_ty`). Per
     /// §1.1's representation split: a nullable *struct* is the same `ptr` as
@@ -72,6 +89,8 @@ impl KirType {
             KirType::Struct(_) => "struct",
             KirType::Enum(_) => "enum",
             KirType::List(_) => "list",
+            KirType::Map(_) => "map",
+            KirType::Set(_) => "set",
             KirType::Nullable(_) => "nullable",
         }
     }
@@ -91,7 +110,7 @@ impl KirType {
         match self {
             KirType::Str => true,
             KirType::Struct(id) => program.structs[id].is_heap(program),
-            KirType::List(_) => true,
+            KirType::List(_) | KirType::Map(_) | KirType::Set(_) => true,
             KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit | KirType::Enum(_) => false,
             // A nullable scalar is a by-value `{ i1, T }` pair, not a
             // pointer — everything else nullable wraps a `ptr` (see

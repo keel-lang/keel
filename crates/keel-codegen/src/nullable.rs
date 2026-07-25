@@ -37,7 +37,7 @@ fn llvm_err(e: impl std::fmt::Display) -> CodegenError {
     CodegenError::Llvm(e.to_string())
 }
 
-fn nullable_inner<'ctx>(fcx: &FuncCtx<'ctx, '_>, ty: KirType) -> KirType {
+pub(crate) fn nullable_inner<'ctx>(fcx: &FuncCtx<'ctx, '_>, ty: KirType) -> KirType {
     let KirType::Nullable(id) = ty else {
         unreachable!(
             "caller only invokes this on a KirType::Nullable — keel-kir's verify pass \
@@ -164,7 +164,7 @@ fn emit_unwrap_some<'ctx>(
 
 /// Builds the nullable-`{ty}`'s "some" representation from a known-present,
 /// plain `inner_ty`-typed value — the inverse of [`emit_unwrap_some`].
-fn emit_wrap_some<'ctx>(
+pub(crate) fn emit_wrap_some<'ctx>(
     fcx: &FuncCtx<'ctx, '_>,
     raw: BasicValueEnum<'ctx>,
     inner_ty: KirType,

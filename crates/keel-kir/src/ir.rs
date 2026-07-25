@@ -39,6 +39,16 @@ pub type ListId = usize;
 /// `NullableId`.
 pub type NullableId = usize;
 
+/// Index into `KirProgram::maps` — a *structural* intern id over the
+/// *value* type only (the key is always `str` — see `KirType::Map`'s doc),
+/// same rationale as `ListId`: `map[str, int]` written anywhere in the
+/// program is the same `MapId`.
+pub type MapId = usize;
+
+/// Index into `KirProgram::sets` — a *structural* intern id over the
+/// element type, same rationale as `ListId`.
+pub type SetId = usize;
+
 /// A whole lowered program (currently: a single file's tasks + its
 /// top-level statements — multi-module lowering is deferred until the
 /// `keel-compiler` `ModuleGraph`/`CheckArtifacts` seam lands, see `lib.rs`).
@@ -67,6 +77,24 @@ pub struct KirProgram {
     /// marshaling that doesn't exist yet (deferred, see `lower/expr.rs`'s
     /// list-literal lowering doc).
     pub lists: Vec<KirType>,
+    /// Every distinct `map[str, V]` *value* type interned so far (structural,
+    /// not declaration order — see `MapId`'s doc). Only int/float/bool/str
+    /// values are modeled, same restriction as `lists`; the key is always
+    /// `str` (non-`str` keys are a later issue, see `KirType::Map`'s doc).
+    /// No mutation op is exposed yet — issue #162's construct/read scope
+    /// (the interpreter itself has no `map.insert`-style method to match).
+    pub maps: Vec<KirType>,
+    /// Every distinct `set[T]` element type interned so far (structural, not
+    /// declaration order — see `SetId`'s doc). Only int/float/bool/str
+    /// elements are modeled, same restriction as `lists`. `Set` is purely a
+    /// *static* type distinct from `List` — at runtime a set is the exact
+    /// same `Value::List` a list is (see `KirType::Set`'s doc), so no method
+    /// call lowers on it yet: the interpreter itself doesn't type-check any
+    /// set method or `for`-over-`set[T]` today (every set method call
+    /// resolves to `Ty::Unknown(InferenceLimitation)`, and `for` explicitly
+    /// requires `Ty::List`) — there is nothing for the compiled backend to
+    /// match yet.
+    pub sets: Vec<KirType>,
     /// Every distinct nullable inner type interned so far (structural, not
     /// declaration order — see `NullableId`'s doc). Only int/float/bool/str/
     /// list/struct inner types are modeled — see
@@ -396,6 +424,39 @@ pub enum RtFn {
     FloatToStr,
     /// `keel_bool_to_str(bool) -> str`. See [`RtFn::IntToStr`].
     BoolToStr,
+    /// `keel_map_new() -> map` — builds an empty `map[str, V]`.
+    MapNew,
+    /// `keel_map_insert(map, key, val) -> map'` — always clones, same
+    /// convention as [`RtFn::ListPush`]. `key` is always `str`-typed
+    /// (`map[str, V]` only — see `KirType::Map`'s doc).
+    MapInsert,
+    /// `keel_map_get(map, key) -> V?` — returns a boxed `none` on a missing
+    /// key rather than exiting (unlike `Expr::Index`'s list-indexing
+    /// out-of-bounds exit, `keel-rt-ffi`'s `keel_list_get`): a missing key is
+    /// an ordinary, checker-required-nullable outcome the interpreter's own
+    /// `map.get` also just returns `none` for.
+    MapGet,
+    /// `keel_map_len(map) -> int`.
+    MapLen,
+    /// `keel_map_contains(map, key) -> bool`.
+    MapContains,
+    /// `keel_map_keys(map) -> list[str]`, sorted (see `keel-rt-ffi`'s doc on
+    /// why: `HashMap` iteration order isn't deterministic).
+    MapKeys,
+    /// `keel_map_values(map) -> list[V]`, ordered by sorted key. See
+    /// [`RtFn::MapKeys`].
+    MapValues,
+    /// Builds an empty `set[T]` — codegen calls `keel_list_new` directly
+    /// (a distinct `RtFn` variant from [`RtFn::ListNew`] only so `keel-kir`'s
+    /// verify pass can require this call's result to be `KirType::Set`, not
+    /// `KirType::List` — see `KirType::Set`'s doc for why they share a
+    /// runtime representation but stay distinct static types).
+    SetNew,
+    /// `set[T]` literal's per-element fold — codegen calls `keel_list_push`
+    /// directly, no dedup (matches the interpreter's own `SetLit` evaluation
+    /// — see `KirType::Set`'s doc). See [`RtFn::SetNew`] for why this is a
+    /// distinct variant from [`RtFn::ListPush`].
+    SetInsert,
 }
 
 impl Expr {

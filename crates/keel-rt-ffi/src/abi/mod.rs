@@ -19,10 +19,11 @@
 
 pub mod rc;
 
+use std::collections::HashMap;
 use std::slice;
 use std::sync::Arc;
 
-use keel_runtime::interpreter::value::Value;
+use keel_runtime::interpreter::value::{MapKey, Value};
 
 /// Boxes an `int` constant. Returns a strong (+1) reference the caller owns
 /// and must eventually pass to [`rc::keel_box_release`].
@@ -270,6 +271,136 @@ pub unsafe extern "C" fn keel_list_get(list: *const Value, index: i64) -> *const
         std::process::exit(1);
     };
     boxed(item.clone())
+}
+
+/// Builds an empty `map[str, V]`. See [`keel_box_int`] for ownership.
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_map_new() -> *const Value {
+    Arc::into_raw(Arc::new(Value::Map(HashMap::new())))
+}
+
+/// Returns a **fresh** map with `key`/`val` inserted (overwriting `key`'s
+/// existing entry, if any), leaving `map` untouched — the same deliberate
+/// always-clone convention as [`keel_list_push`] (see its doc for why: real
+/// copy-on-write needs the RC pass this codebase doesn't implement yet).
+///
+/// # Safety
+///
+/// `map` must be a live `KeelBox` whose `Value` is `Value::Map`; `key` must
+/// be a live `KeelBox` whose `Value` is `Value::String` (`map[str, V]` only
+/// — non-`str` keys are a later issue); `val` must be a live `KeelBox` (any
+/// variant).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_map_insert(
+    map: *const Value,
+    key: *const Value,
+    val: *const Value,
+) -> *const Value {
+    let Value::Map(entries) = (unsafe { &*map }) else {
+        unreachable!("keel-codegen only calls keel_map_insert on a KirType::Map value");
+    };
+    let Value::String(key) = (unsafe { &*key }) else {
+        unreachable!("keel-codegen only calls keel_map_insert with a str key (map[str, V])");
+    };
+    let mut entries = entries.clone();
+    entries.insert(MapKey::Str(key.clone()), unsafe { borrow(val) });
+    boxed(Value::Map(entries))
+}
+
+/// Returns the value for `key`, or a boxed `Value::None` if absent — mirrors
+/// the interpreter's `map.get` (`interpreter/methods.rs`), which returns
+/// `none` rather than raising on a missing key (unlike [`keel_list_get`]'s
+/// out-of-bounds exit: a missing map key is an ordinary, checker-required-
+/// nullable outcome, not a programming error).
+///
+/// # Safety
+///
+/// `map` must be a live `KeelBox` whose `Value` is `Value::Map`; `key` must
+/// be a live `KeelBox` whose `Value` is `Value::String`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_map_get(map: *const Value, key: *const Value) -> *const Value {
+    let Value::Map(entries) = (unsafe { &*map }) else {
+        unreachable!("keel-codegen only calls keel_map_get on a KirType::Map value");
+    };
+    let Value::String(key) = (unsafe { &*key }) else {
+        unreachable!("keel-codegen only calls keel_map_get with a str key (map[str, V])");
+    };
+    boxed(
+        entries
+            .get(&MapKey::Str(key.clone()))
+            .cloned()
+            .unwrap_or(Value::None),
+    )
+}
+
+/// Returns a map's entry count.
+///
+/// # Safety
+///
+/// `map` must be a live `KeelBox` whose `Value` is `Value::Map`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_map_len(map: *const Value) -> i64 {
+    let Value::Map(entries) = (unsafe { &*map }) else {
+        unreachable!("keel-codegen only calls keel_map_len on a KirType::Map value");
+    };
+    entries.len() as i64
+}
+
+/// Reports whether `key` is present. Returns `1`/`0`, matching
+/// [`keel_str_eq`]'s convention.
+///
+/// # Safety
+///
+/// `map` must be a live `KeelBox` whose `Value` is `Value::Map`; `key` must
+/// be a live `KeelBox` whose `Value` is `Value::String`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_map_contains(map: *const Value, key: *const Value) -> u8 {
+    let Value::Map(entries) = (unsafe { &*map }) else {
+        unreachable!("keel-codegen only calls keel_map_contains on a KirType::Map value");
+    };
+    let Value::String(key) = (unsafe { &*key }) else {
+        unreachable!("keel-codegen only calls keel_map_contains with a str key (map[str, V])");
+    };
+    u8::from(entries.contains_key(&MapKey::Str(key.clone())))
+}
+
+/// Returns this map's keys as a `list[str]`, **sorted** — `HashMap`
+/// iteration order isn't deterministic, so this matches the interpreter's
+/// own `map.keys` (`interpreter/methods.rs`), which sorts for exactly that
+/// reason (byte-identical output is the whole point of this ABI).
+///
+/// # Safety
+///
+/// `map` must be a live `KeelBox` whose `Value` is `Value::Map`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_map_keys(map: *const Value) -> *const Value {
+    let Value::Map(entries) = (unsafe { &*map }) else {
+        unreachable!("keel-codegen only calls keel_map_keys on a KirType::Map value");
+    };
+    let mut keys: Vec<&MapKey> = entries.keys().collect();
+    keys.sort();
+    boxed(Value::List(
+        keys.into_iter().map(MapKey::to_value).collect(),
+    ))
+}
+
+/// Returns this map's values as a `list[V]`, ordered by **sorted key** —
+/// same determinism rationale as [`keel_map_keys`], matching the
+/// interpreter's `map.values`.
+///
+/// # Safety
+///
+/// `map` must be a live `KeelBox` whose `Value` is `Value::Map`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_map_values(map: *const Value) -> *const Value {
+    let Value::Map(entries) = (unsafe { &*map }) else {
+        unreachable!("keel-codegen only calls keel_map_values on a KirType::Map value");
+    };
+    let mut keys: Vec<&MapKey> = entries.keys().collect();
+    keys.sort();
+    boxed(Value::List(
+        keys.into_iter().map(|k| entries[k].clone()).collect(),
+    ))
 }
 
 /// Reads a `KeelBox`'s value without consuming the caller's reference —

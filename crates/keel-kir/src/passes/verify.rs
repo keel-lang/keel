@@ -134,6 +134,26 @@ fn check_list(program: &KirProgram, id: crate::ir::ListId) -> Result<(), String>
     Ok(())
 }
 
+fn check_map(program: &KirProgram, id: crate::ir::MapId) -> Result<(), String> {
+    if id >= program.maps.len() {
+        return Err(format!(
+            "MapId {id} out of range ({} maps)",
+            program.maps.len()
+        ));
+    }
+    Ok(())
+}
+
+fn check_set(program: &KirProgram, id: crate::ir::SetId) -> Result<(), String> {
+    if id >= program.sets.len() {
+        return Err(format!(
+            "SetId {id} out of range ({} sets)",
+            program.sets.len()
+        ));
+    }
+    Ok(())
+}
+
 fn check_nullable(program: &KirProgram, id: crate::ir::NullableId) -> Result<(), String> {
     if id >= program.nullables.len() {
         return Err(format!(
@@ -658,6 +678,188 @@ fn verify_rt_call(
             check_list(program, list_id)?;
             if ty != KirType::I64 {
                 return Err(format!("rt.list_len result is {ty}, expected int"));
+            }
+            Ok(())
+        }
+        RtFn::MapNew => {
+            if !args.is_empty() {
+                return Err(format!("rt.map_new takes 0 args, got {}", args.len()));
+            }
+            let KirType::Map(map_id) = ty else {
+                return Err(format!("rt.map_new result is {ty}, expected a map"));
+            };
+            check_map(program, map_id)
+        }
+        RtFn::MapInsert => {
+            let [map, key, val] = args else {
+                return Err(format!("rt.map_insert takes 3 args, got {}", args.len()));
+            };
+            let KirType::Map(map_id) = map.ty() else {
+                return Err(format!(
+                    "rt.map_insert base is {}, expected a map",
+                    map.ty()
+                ));
+            };
+            check_map(program, map_id)?;
+            if key.ty() != KirType::Str {
+                return Err(format!(
+                    "rt.map_insert key is {}, expected str (map[str, V] only)",
+                    key.ty()
+                ));
+            }
+            let value_ty = program.maps[map_id];
+            if val.ty() != value_ty {
+                return Err(format!(
+                    "rt.map_insert value is {} but the map holds {value_ty}",
+                    val.ty()
+                ));
+            }
+            if ty != map.ty() {
+                return Err(format!(
+                    "rt.map_insert result is {ty} but the base map is {}",
+                    map.ty()
+                ));
+            }
+            Ok(())
+        }
+        RtFn::MapGet => {
+            let [map, key] = args else {
+                return Err(format!("rt.map_get takes 2 args, got {}", args.len()));
+            };
+            let KirType::Map(map_id) = map.ty() else {
+                return Err(format!("rt.map_get base is {}, expected a map", map.ty()));
+            };
+            check_map(program, map_id)?;
+            if key.ty() != KirType::Str {
+                return Err(format!(
+                    "rt.map_get key is {}, expected str (map[str, V] only)",
+                    key.ty()
+                ));
+            }
+            let value_ty = program.maps[map_id];
+            let KirType::Nullable(nullable_id) = ty else {
+                return Err(format!("rt.map_get result is {ty}, expected a nullable"));
+            };
+            check_nullable(program, nullable_id)?;
+            if program.nullables[nullable_id] != value_ty {
+                return Err(format!(
+                    "rt.map_get result is {}? but the map holds {value_ty}",
+                    program.nullables[nullable_id]
+                ));
+            }
+            Ok(())
+        }
+        RtFn::MapLen => {
+            let [map] = args else {
+                return Err(format!("rt.map_len takes 1 arg, got {}", args.len()));
+            };
+            let KirType::Map(map_id) = map.ty() else {
+                return Err(format!("rt.map_len base is {}, expected a map", map.ty()));
+            };
+            check_map(program, map_id)?;
+            if ty != KirType::I64 {
+                return Err(format!("rt.map_len result is {ty}, expected int"));
+            }
+            Ok(())
+        }
+        RtFn::MapContains => {
+            let [map, key] = args else {
+                return Err(format!("rt.map_contains takes 2 args, got {}", args.len()));
+            };
+            let KirType::Map(map_id) = map.ty() else {
+                return Err(format!(
+                    "rt.map_contains base is {}, expected a map",
+                    map.ty()
+                ));
+            };
+            check_map(program, map_id)?;
+            if key.ty() != KirType::Str {
+                return Err(format!(
+                    "rt.map_contains key is {}, expected str (map[str, V] only)",
+                    key.ty()
+                ));
+            }
+            if ty != KirType::Bool {
+                return Err(format!("rt.map_contains result is {ty}, expected bool"));
+            }
+            Ok(())
+        }
+        RtFn::MapKeys => {
+            let [map] = args else {
+                return Err(format!("rt.map_keys takes 1 arg, got {}", args.len()));
+            };
+            let KirType::Map(map_id) = map.ty() else {
+                return Err(format!("rt.map_keys base is {}, expected a map", map.ty()));
+            };
+            check_map(program, map_id)?;
+            let KirType::List(list_id) = ty else {
+                return Err(format!("rt.map_keys result is {ty}, expected a list"));
+            };
+            check_list(program, list_id)?;
+            if program.lists[list_id] != KirType::Str {
+                return Err(format!(
+                    "rt.map_keys result is list[{}], expected list[str] (map[str, V] only)",
+                    program.lists[list_id]
+                ));
+            }
+            Ok(())
+        }
+        RtFn::MapValues => {
+            let [map] = args else {
+                return Err(format!("rt.map_values takes 1 arg, got {}", args.len()));
+            };
+            let KirType::Map(map_id) = map.ty() else {
+                return Err(format!(
+                    "rt.map_values base is {}, expected a map",
+                    map.ty()
+                ));
+            };
+            check_map(program, map_id)?;
+            let value_ty = program.maps[map_id];
+            let KirType::List(list_id) = ty else {
+                return Err(format!("rt.map_values result is {ty}, expected a list"));
+            };
+            check_list(program, list_id)?;
+            if program.lists[list_id] != value_ty {
+                return Err(format!(
+                    "rt.map_values result is list[{}] but the map holds {value_ty}",
+                    program.lists[list_id]
+                ));
+            }
+            Ok(())
+        }
+        RtFn::SetNew => {
+            if !args.is_empty() {
+                return Err(format!("rt.set_new takes 0 args, got {}", args.len()));
+            }
+            let KirType::Set(set_id) = ty else {
+                return Err(format!("rt.set_new result is {ty}, expected a set"));
+            };
+            check_set(program, set_id)
+        }
+        RtFn::SetInsert => {
+            let [set, elem] = args else {
+                return Err(format!("rt.set_insert takes 2 args, got {}", args.len()));
+            };
+            let KirType::Set(set_id) = set.ty() else {
+                return Err(format!(
+                    "rt.set_insert base is {}, expected a set",
+                    set.ty()
+                ));
+            };
+            check_set(program, set_id)?;
+            let elem_ty = program.sets[set_id];
+            if elem.ty() != elem_ty {
+                return Err(format!(
+                    "rt.set_insert element is {} but the set holds {elem_ty}",
+                    elem.ty()
+                ));
+            }
+            if ty != set.ty() {
+                return Err(format!(
+                    "rt.set_insert result is {ty} but the base set is {}",
+                    set.ty()
+                ));
             }
             Ok(())
         }
