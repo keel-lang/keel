@@ -1,0 +1,11 @@
+use std/io
+
+task total_line(x: int, y: int) -> str {
+  return "total: {x + y}"
+}
+
+name = "Ada"
+pi = 3.5
+ready = true
+io.show(total_line(2, 3))
+io.show("Hello, {name}! pi={pi} ready={ready}")

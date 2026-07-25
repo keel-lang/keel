@@ -1,0 +1,36 @@
+use std/io
+
+type Priority = low | medium | high
+
+task label(p: Priority) -> str {
+  when p {
+    low => "low priority"
+    medium => "medium priority"
+    high => "high priority"
+  }
+}
+
+task grade(score: str) -> str {
+  result = when score {
+    "A" => "excellent"
+    "B" => "good"
+    "C" => "fair"
+    _ => "needs work"
+  }
+  result
+}
+
+task announce(p: Priority) {
+  when p {
+    low => { io.show("low seen") }
+    medium => { io.show("medium seen") }
+    high => { io.show("high seen") }
+  }
+  io.show("done")
+}
+
+io.show(label(Priority.low))
+io.show(label(Priority.high))
+io.show(grade("A"))
+io.show(grade("D"))
+announce(Priority.medium)

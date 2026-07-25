@@ -1,0 +1,33 @@
+use std/io
+
+type Priority = low | medium | high
+
+type Task {
+  title: str
+  priority: Priority
+  assignee: str?
+}
+
+task mk_task(title: str, priority: Priority, assignee: str? = none) -> Task {
+  return { title: title, priority: priority, assignee: assignee }
+}
+
+task describe(t: Task) -> str {
+  who = t.assignee ?? "unassigned"
+  p = t.priority
+  level = when p {
+    low => "low"
+    medium => "medium"
+    high => "high"
+  }
+  "{t.title} [{level}] -> {who}"
+}
+
+urgent = mk_task("Fix bug", Priority.high, "ada")
+backlog = mk_task("Write docs", Priority.low)
+
+io.show(describe(urgent))
+io.show(describe(backlog))
+
+reassigned = { ...urgent, assignee: backlog.assignee }
+io.show(describe(reassigned))

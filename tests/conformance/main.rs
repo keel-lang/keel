@@ -59,6 +59,19 @@
 //! `capture_stdout` with the compiled engine's subprocess spawning in the
 //! same test lost the interpreter's captured output. The M0 corpus loop
 //! below is unaffected — it stays in-process, per the reasoning above.
+//!
+//! M2 (issue #151, the milestone-closing issue for `designs/llvm-
+//! compilation.md`'s M2) reuses this exact same subprocess-comparison shape
+//! against a second, separately curated fixture set
+//! (`fixtures/m2_features/`, discovered via
+//! [`discover_m2_features_fixtures`]) spanning all six M2 features: named
+//! structs + spread-update, enums + `when` (statement and expression
+//! form), containers (list/map/set, including a list CoW-aliasing case),
+//! nullable (`?`, `??`, `?.`), string interpolation, and raise/try/catch —
+//! plus one fixture combining several of them in a single program. No new
+//! harness machinery was needed, exactly as #151 anticipated: just a
+//! second fixture-discovery call and comparison loop, sharing
+//! `run_interpreter_subprocess_one`/`run_compiled_one` with the M1 loop.
 
 mod corpus;
 mod engine;
@@ -72,7 +85,7 @@ use std::time::Duration;
 
 use corpus::discover_corpus;
 #[cfg(feature = "build-backend")]
-use corpus::discover_m1_scalar_fixtures;
+use corpus::{discover_m1_scalar_fixtures, discover_m2_features_fixtures};
 use engine::{Engine, EngineError, EngineOutput};
 
 /// Per-program wall-clock budget. Generous enough for the mock LLM path and
@@ -336,6 +349,50 @@ async fn interpreter_is_deterministic_across_the_corpus() {
             "M1 conformance failures ({}):\n{}",
             m1_failures.len(),
             m1_failures.join("\n")
+        );
+    }
+
+    // Issue #151 (M2's own exit criterion, = #113's exit criterion refined
+    // to the curated-fixture-set reality — see this file's module doc): the
+    // compiled engine, run on the curated M2-scope fixture set (structs,
+    // enums/`when`, containers, nullable, string interpolation, raise/try/
+    // catch), must produce byte-identical stdout and exit codes to the
+    // interpreter. Same subprocess-comparison shape as the M1 loop above,
+    // for the same reasons (see that block's comment).
+    #[cfg(feature = "build-backend")]
+    {
+        let fixtures = discover_m2_features_fixtures();
+        assert!(
+            !fixtures.is_empty(),
+            "expected a non-empty M2-features conformance fixture set"
+        );
+
+        let mut m2_failures = Vec::new();
+        for entry in &fixtures {
+            let interpreted = run_interpreter_subprocess_one(&entry.path).await;
+            let compiled = run_compiled_one(&entry.path).await;
+            match (interpreted, compiled) {
+                (Ok(a), Ok(b)) if a == b => {}
+                (Ok(a), Ok(b)) => m2_failures.push(format!(
+                    "{}: compiled engine diverges from the interpreter:\n  interpreter: exit={} stdout={:?}\n  compiled:    exit={} stdout={:?}",
+                    entry.stem, a.exit_code, a.stdout, b.exit_code, b.stdout
+                )),
+                (Err(e), _) | (_, Err(e)) => {
+                    m2_failures.push(format!("{}: engine error: {e}", entry.stem));
+                }
+            }
+        }
+
+        eprintln!(
+            "conformance (M2 features, interpreter vs. compiled): {} run, {} failed",
+            fixtures.len(),
+            m2_failures.len()
+        );
+        assert!(
+            m2_failures.is_empty(),
+            "M2 conformance failures ({}):\n{}",
+            m2_failures.len(),
+            m2_failures.join("\n")
         );
     }
 

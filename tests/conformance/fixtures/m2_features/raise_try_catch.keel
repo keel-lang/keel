@@ -1,0 +1,39 @@
+use std/io
+
+task a() -> int {
+  raise "boom"
+}
+
+task b() -> int {
+  return a()
+}
+
+task c() -> int {
+  try {
+    result = b()
+    return result
+  } catch e: Error {
+    io.show(e.message)
+    return -1
+  }
+}
+
+task risky(should_raise: bool) -> int {
+  if should_raise {
+    raise "nope"
+  }
+  return 42
+}
+
+task run_it(should_raise: bool) -> int {
+  try {
+    return risky(should_raise)
+  } catch e: Error {
+    io.show(e.message)
+    return -1
+  }
+}
+
+io.show(c())
+io.show(run_it(false))
+io.show(run_it(true))

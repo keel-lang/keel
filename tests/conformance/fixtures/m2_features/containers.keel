@@ -1,0 +1,32 @@
+use std/io
+
+task sum(xs: list[int]) -> int {
+  total = 0
+  for x in xs {
+    total += x
+  }
+  return total
+}
+
+a = [1, 2, 3]
+b = a
+a = a.push(4)
+io.show(a)
+io.show(b)
+io.show(sum(a))
+
+names = ["alice", "bob"]
+names = names.push("carol")
+io.show(names.len())
+io.show(names[2])
+
+stock: map[str, int] = { apples: 1, pears: 2 }
+io.show(stock.len())
+io.show(stock.contains("apples"))
+io.show(stock.get("bananas") ?? -1)
+io.show(stock.keys())
+io.show(stock.values())
+
+nums = set[1, 2, 3]
+other = nums
+io.show(other)

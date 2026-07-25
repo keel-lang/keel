@@ -1,0 +1,20 @@
+use std/io
+
+type Email {
+  subject: str
+}
+
+task pick(n: int? = none) -> int {
+  return n ?? 0
+}
+
+task greet(email: Email? = none) -> str {
+  return email?.subject ?? "(none)"
+}
+
+io.show(pick(5))
+io.show(pick())
+
+some_email: Email = { subject: "hello" }
+io.show(greet(some_email))
+io.show(greet())

@@ -567,8 +567,11 @@ generic namespace dispatch proving out on `io.print`/`log.*`.
 **M2 — Data types + errors.**
 Lists/maps/sets/tuples via container ABI (CoW semantics verified), named + anonymous
 structs, enums, `when` exhaustive matching, nullable (`?`, `??`, `?.`), `raise`/`try`/
-`catch` result convention, string interpolation. *Exit: conformance suite green on all
-non-agent, non-I/O examples.*
+`catch` result convention, string interpolation. *Exit: the conformance harness runs a
+curated M2-scope fixture set (not all non-agent, non-I/O examples — most of that corpus
+uses lambdas/value-method dispatch, which is M3 scope) green under both engines,
+byte-identical stdout and exit codes, covering structs, enums/`when`, containers,
+nullable, string interpolation, and `raise`/`try`/`catch`.*
 
 **M3 — Full stdlib + functions as values.**
 Generic namespace dispatch covering all 23 namespaces (`ns_id`/`method_id` pinned in
