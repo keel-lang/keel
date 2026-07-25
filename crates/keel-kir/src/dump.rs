@@ -102,13 +102,20 @@ fn dump_stmt(
     match stmt {
         Stmt::Let { local, init } => {
             let l = &func.locals[*local];
-            let _ = writeln!(
-                out,
-                "let {}: {} = {}",
-                l.name,
-                fmt_ty(program, l.ty),
-                fmt_expr(program, func, init)
-            );
+            match init {
+                Some(init) => {
+                    let _ = writeln!(
+                        out,
+                        "let {}: {} = {}",
+                        l.name,
+                        fmt_ty(program, l.ty),
+                        fmt_expr(program, func, init)
+                    );
+                }
+                None => {
+                    let _ = writeln!(out, "let {}: {}", l.name, fmt_ty(program, l.ty));
+                }
+            }
         }
         Stmt::Assign { local, value } => {
             let l = &func.locals[*local];

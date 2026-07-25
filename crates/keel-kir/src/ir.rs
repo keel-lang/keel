@@ -174,10 +174,15 @@ pub type Block = Vec<Stmt>;
 #[derive(Debug, Clone)]
 pub enum Stmt {
     /// `x = expr` — always declares a fresh local (Keel assignment scoping:
-    /// plain `=` shadows in the current scope).
+    /// plain `=` shadows in the current scope). `init: None` declares the
+    /// local without an initial value (`keel-codegen`'s `Stmt::Let` arm
+    /// still allocates storage but skips the initial store) — used only by
+    /// `when`-as-expression's let-position lowering (issue #160), where the
+    /// value depends on which arm runs: a subsequent `Stmt::Assign` in each
+    /// arm's branch supplies the real value before the local is ever read.
     Let {
         local: LocalId,
-        init: Expr,
+        init: Option<Expr>,
     },
     /// `x += expr` (and other augmented-assign ops) — desugared to a plain
     /// store against the *existing* local it resolved to; the RHS already

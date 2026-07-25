@@ -454,18 +454,24 @@ task f(n: int) -> str {
 }
 
 #[test]
-fn when_expression_position_is_still_rejected() {
-    // `when` as a value-producing expression (`x = when ... {...}`) isn't
-    // lowered yet — only the statement form (each arm terminating via
-    // `return`) is, see `lower/stmt.rs`'s `lower_when_stmt` doc.
+fn when_expression_as_a_call_argument_is_still_rejected() {
+    // `when` as an expression lowers in `let`/`return` position (issue
+    // #160), but a call-argument or other nested-sub-expression position
+    // would need every `lower_expr`/`lower_expr_expecting` call site to
+    // thread out hoisted statements — out of scope for that issue, see
+    // `lower/stmt.rs`'s `lower_when_expr_let` doc. Plain `lower_expr` still
+    // rejects a bare `WhenExpr` outright, so this position still errors.
     let msg = lower_err(
         r#"
-task grade(score: str) -> str {
-  result = when score {
-    "A" => "excellent"
-    _ => "needs work"
-  }
-  return result
+task describe(n: int) -> str {
+  return f(when n {
+    0 => "zero"
+    _ => "nonzero"
+  })
+}
+
+task f(s: str) -> str {
+  return s
 }
 "#,
     );
@@ -473,6 +479,22 @@ task grade(score: str) -> str {
         msg.contains("when` expression"),
         "unexpected message: {msg}"
     );
+}
+
+#[test]
+fn when_expression_with_mismatched_arm_types_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(n: int) -> str {
+  result = when n {
+    0 => "zero"
+    _ => 1
+  }
+  return result
+}
+"#,
+    );
+    assert!(msg.contains("expected"), "unexpected message: {msg}");
 }
 
 #[test]

@@ -64,6 +64,12 @@ pub(crate) struct FuncCtx<'ctx, 'a> {
     /// see the module doc) means "exit 0 now" instead of `ret void`.
     pub(crate) is_toplevel: bool,
     pub(crate) locals: HashMap<LocalId, PointerValue<'ctx>>,
+    /// This function's `KirFunction::locals` metadata (name/declared type per
+    /// `LocalId`) — needed by `stmt.rs`'s `Stmt::Let { init: None, .. }` arm
+    /// (a `when`-as-expression result temp, issue #160) to recover the
+    /// local's declared type when there's no `init` expression to read it
+    /// from.
+    pub(crate) local_types: &'a [keel_kir::ir::Local],
     /// This function's own logical return type (`KirFunction::ret`) — needed
     /// by `raise.rs`'s `emit_ok_return` to box a `return`/fallthrough value
     /// into the result-ABI's payload slot.
@@ -138,6 +144,7 @@ pub(crate) fn emit_function<'ctx>(
         functions,
         is_toplevel: false,
         locals: HashMap::new(),
+        local_types: &func.locals,
         ret_ty: func.ret,
         can_raise: func.can_raise,
         catch_stack: Vec::new(),
@@ -186,6 +193,7 @@ pub(crate) fn emit_toplevel_function<'ctx>(
         functions,
         is_toplevel: true,
         locals: HashMap::new(),
+        local_types: &toplevel.locals,
         ret_ty: KirType::Unit,
         // `lower_program` rejects a `can_raise` toplevel (an uncaught raise
         // reaching the top level is a later M2/M3 concern — see its doc) —

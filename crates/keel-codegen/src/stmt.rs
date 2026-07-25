@@ -41,13 +41,24 @@ fn emit_stmt<'ctx>(
 ) -> Result<Option<(BasicValueEnum<'ctx>, KirType)>, CodegenError> {
     match stmt {
         Stmt::Let { local, init } => {
-            let value = expr::emit_expr(fcx, init)?;
-            let ty = layout::llvm_type(fcx.context, fcx.program, init.ty())?;
+            // `init: None` declares a `when`-as-expression result temp
+            // (issue #160) with no initial store — its declared type comes
+            // from `KirFunction::locals` (there's no `init` expression to
+            // read it from), and each arm's `Stmt::Assign` supplies the
+            // real value before the local is ever read.
+            let declared_ty = match init {
+                Some(init) => init.ty(),
+                None => fcx.local_types[*local].ty,
+            };
+            let ty = layout::llvm_type(fcx.context, fcx.program, declared_ty)?;
             let ptr = fcx
                 .builder
                 .build_alloca(ty, &format!("local.{local}"))
                 .map_err(llvm_err)?;
-            fcx.builder.build_store(ptr, value).map_err(llvm_err)?;
+            if let Some(init) = init {
+                let value = expr::emit_expr(fcx, init)?;
+                fcx.builder.build_store(ptr, value).map_err(llvm_err)?;
+            }
             fcx.locals.insert(*local, ptr);
             Ok(None)
         }

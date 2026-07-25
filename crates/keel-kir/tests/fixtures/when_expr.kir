@@ -1,0 +1,18 @@
+fn grade(score: str) -> str {
+  let result: str
+  if (score == "A") {
+    result = "excellent"
+  } else {
+    if (score == "B") {
+      result = "good"
+    } else {
+      if true {
+        result = "needs work"
+      }
+    }
+  }
+  return result
+}
+
+fn <toplevel>() -> none {
+}
