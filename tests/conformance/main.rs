@@ -127,7 +127,45 @@ where
     let mut captured = String::new();
     tmp.read_to_string(&mut captured)
         .expect("capture tempfile must be valid UTF-8");
-    (result, captured)
+    (result, strip_slow_test_watchdog_noise(captured))
+}
+
+/// Strips libtest's own "slow test" watchdog line from captured output.
+///
+/// This is not a sibling test writing to fd 1 (the risk the module doc
+/// already calls out) — it's the test harness's *own* built-in monitor
+/// thread, which unconditionally prints `test <name> has been running for
+/// over N seconds` to the process's real stdout if this single
+/// `#[tokio::test]` (which now runs the entire corpus, plus the M1/M2
+/// subprocess comparisons, sequentially) takes longer than the harness's
+/// slow-test threshold — observed in CI once the M2 fixture set (#151)
+/// pushed total runtime close to it, even though it stays comfortably under
+/// locally. There is no stable flag to disable that monitor thread, and the
+/// alternative (redirecting the *interpreter's* own output through an
+/// injectable writer instead of OS-level fd 1) is the "no injectable writer
+/// exists in the runtime today" gap the module doc already defers. Whichever
+/// corpus entry happens to be mid-capture when the monitor fires gets this
+/// line spliced into its otherwise-deterministic output — filtering the
+/// exact, recognizable line here is the narrow fix for that, not a general
+/// license to scrub arbitrary "unexpected" output.
+fn strip_slow_test_watchdog_noise(captured: String) -> String {
+    const MARKER: &str = "has been running for over";
+    // Fast path: the overwhelming majority of captures never see the
+    // watchdog fire at all — return byte-identical in that case rather than
+    // risk altering a program's output that doesn't end in a trailing
+    // newline via a lines()-based rebuild.
+    if !captured.contains(MARKER) {
+        return captured;
+    }
+    // `split('\n')` (not `.lines()`) preserves the exact segment structure
+    // — including a trailing empty segment when `captured` ends in `\n` —
+    // so rejoining with `\n` reconstructs byte-identically except for the
+    // one filtered-out line.
+    captured
+        .split('\n')
+        .filter(|line| !(line.starts_with("test ") && line.contains(MARKER)))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Runs one program under `engine`, in an isolated temp working directory
@@ -271,6 +309,35 @@ fn skip_reason(stem: &str) -> Option<&'static str> {
 
 #[tokio::test]
 async fn interpreter_is_deterministic_across_the_corpus() {
+    // Pure, synchronous assertions on `strip_slow_test_watchdog_noise` — run
+    // here, inline, rather than as separate `#[test]` functions in this
+    // file: this binary's own module doc is explicit that a *second* test
+    // of any kind (sync or async) sharing this binary is enough to corrupt
+    // the fd-1 capture below, since libtest prints every sibling test's own
+    // `test <name> ... ok` status line to real stdout — exactly the class
+    // of bug this filter exists to work around in the first place. Adding
+    // these as sibling `#[test]`s previously did exactly that (observed:
+    // their own status lines leaked into the `agent_delegation` fixture's
+    // captured stdout).
+    assert_eq!(
+        strip_slow_test_watchdog_noise("  1. 1\n  2. 2\n".to_string()),
+        "  1. 1\n  2. 2\n",
+        "clean output must be returned byte-identical"
+    );
+    assert_eq!(
+        strip_slow_test_watchdog_noise("no trailing newline".to_string()),
+        "no trailing newline",
+        "output with no trailing newline must be untouched"
+    );
+    assert_eq!(
+        strip_slow_test_watchdog_noise(
+            "  hello\ntest interpreter_is_deterministic_across_the_corpus has been running for over 60 seconds\n  world\n"
+                .to_string()
+        ),
+        "  hello\n  world\n",
+        "a watchdog line spliced mid-output must be removed"
+    );
+
     // KEEL_LLM=mock keeps `ai.*` deterministic and offline; KEEL_ONESHOT=1
     // makes agent programs exit after one idle window instead of serving
     // forever. Set once, process-wide — safe because this whole corpus runs
