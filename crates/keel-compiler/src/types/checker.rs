@@ -995,6 +995,9 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             | (Ty::Bool, Ty::Bool)
             | (Ty::None_, Ty::None_)
             | (Ty::Uuid, Ty::Uuid) => true,
+            // A bare `none` matches any nullable type — same rationale as
+            // `expect_at`'s equivalent case (#174).
+            (Ty::None_, Ty::Nullable(_)) | (Ty::Nullable(_), Ty::None_) => true,
             (Ty::List(a), Ty::List(b)) | (Ty::Set(a), Ty::Set(b)) => {
                 self.types_match(a.as_ref(), b.as_ref())
             }
@@ -1049,6 +1052,21 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             return;
         }
         if expected.is_opaque() {
+            return;
+        }
+
+        // A bare `none` literal is assignable to any nullable type — it never
+        // carries a concrete inner type of its own to compare structurally,
+        // so this must short-circuit before the struct/list/map/tuple
+        // recursion below (which would otherwise compare `None_` against
+        // whatever `expected`'s inner type is and fail the raw `!=`
+        // fallback). Without this, `alias: str? = none` (SPEC.md §2.7's own
+        // example), a nullable struct-literal field, a `return none`, and a
+        // `none` call argument are all rejected even though a nullable
+        // *default parameter value* (`n: int? = none`) has always worked —
+        // that path just never validates its default's type at all, it
+        // isn't a more permissive coercion (see #174).
+        if matches!(actual, Ty::None_) && matches!(expected, Ty::Nullable(_)) {
             return;
         }
 
@@ -1890,6 +1908,87 @@ task t() {
   x: str? = "hello"
 }
 "#,
+        );
+    }
+
+    // ─── #174: bare `none` assignable wherever a nullable type is expected ───────
+
+    #[test]
+    fn valid_none_assigned_to_annotated_nullable_let() {
+        // SPEC.md §2.7's own canonical example.
+        type_ok(
+            r#"
+name: str   = "Keel"
+alias: str? = none
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_none_in_nullable_struct_literal_field() {
+        type_ok(
+            r#"
+type Email { subject: str? }
+
+e: Email = { subject: none }
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_none_returned_from_nullable_returning_task() {
+        type_ok(
+            r#"
+task pick() -> int? {
+  return none
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_none_passed_as_nullable_call_argument() {
+        type_ok(
+            r#"
+task f(n: int?) -> int {
+  return n ?? 0
+}
+
+x = f(none)
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_none_overriding_a_nullable_struct_field_in_spread_update() {
+        type_ok(
+            r#"
+type Email { subject: str? }
+
+task run_test() {
+  e: Email = { subject: "hi" }
+  e2 = { ...e, subject: none }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_spread_update_field_override_wrong_type_is_still_rejected() {
+        // The struct-literal branch of spread-update never validated override
+        // values against the base field's declared type at all (a `none` was
+        // never the only thing that slipped through) — this pins that a
+        // genuinely wrong type is still caught now that it does.
+        expect_error(
+            r#"
+type Point { x: int, y: int }
+
+task run_test() {
+  p: Point = { x: 1, y: 2 }
+  q = { ...p, x: "oops" }
+}
+"#,
+            "expected",
         );
     }
 

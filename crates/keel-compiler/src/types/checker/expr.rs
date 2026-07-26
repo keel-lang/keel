@@ -318,7 +318,7 @@ impl Checker<'_, '_> {
                         return Ty::Error;
                     }
                 };
-                let mut result_fields = base_fields.clone();
+                let result_fields = base_fields.clone();
                 let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
                 for (k, v) in overrides {
                     let val_ty = self.infer_expr(v, scope);
@@ -331,7 +331,17 @@ impl Checker<'_, '_> {
                         continue;
                     }
                     if let Some(pos) = result_fields.iter().position(|(f, _)| f == k) {
-                        result_fields[pos] = (k.clone(), val_ty);
+                        // Validate the override against the field's declared
+                        // type (previously unchecked — any type silently
+                        // replaced the field's static type here, mirroring
+                        // the map branch above's existing `self.expect` call
+                        // for the same purpose, #174). The result keeps the
+                        // struct's *declared* field type, not the override
+                        // expression's raw inferred type — e.g. overriding a
+                        // `str?` field with a bare `none` must not narrow the
+                        // result field's static type to `None_`.
+                        let field_ty = result_fields[pos].1.clone();
+                        self.expect(&val_ty, &field_ty, &format!("spread-update field `{k}`"));
                     } else {
                         self.err(format!(
                             "unknown field `{}` in spread-update — not present in base struct",
