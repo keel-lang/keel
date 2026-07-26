@@ -127,7 +127,45 @@ where
     let mut captured = String::new();
     tmp.read_to_string(&mut captured)
         .expect("capture tempfile must be valid UTF-8");
-    (result, captured)
+    (result, strip_slow_test_watchdog_noise(captured))
+}
+
+/// Strips libtest's own "slow test" watchdog line from captured output.
+///
+/// This is not a sibling test writing to fd 1 (the risk the module doc
+/// already calls out) — it's the test harness's *own* built-in monitor
+/// thread, which unconditionally prints `test <name> has been running for
+/// over N seconds` to the process's real stdout if this single
+/// `#[tokio::test]` (which now runs the entire corpus, plus the M1/M2
+/// subprocess comparisons, sequentially) takes longer than the harness's
+/// slow-test threshold — observed in CI once the M2 fixture set (#151)
+/// pushed total runtime close to it, even though it stays comfortably under
+/// locally. There is no stable flag to disable that monitor thread, and the
+/// alternative (redirecting the *interpreter's* own output through an
+/// injectable writer instead of OS-level fd 1) is the "no injectable writer
+/// exists in the runtime today" gap the module doc already defers. Whichever
+/// corpus entry happens to be mid-capture when the monitor fires gets this
+/// line spliced into its otherwise-deterministic output — filtering the
+/// exact, recognizable line here is the narrow fix for that, not a general
+/// license to scrub arbitrary "unexpected" output.
+fn strip_slow_test_watchdog_noise(captured: String) -> String {
+    const MARKER: &str = "has been running for over";
+    // Fast path: the overwhelming majority of captures never see the
+    // watchdog fire at all — return byte-identical in that case rather than
+    // risk altering a program's output that doesn't end in a trailing
+    // newline via a lines()-based rebuild.
+    if !captured.contains(MARKER) {
+        return captured;
+    }
+    // `split('\n')` (not `.lines()`) preserves the exact segment structure
+    // — including a trailing empty segment when `captured` ends in `\n` —
+    // so rejoining with `\n` reconstructs byte-identically except for the
+    // one filtered-out line.
+    captured
+        .split('\n')
+        .filter(|line| !(line.starts_with("test ") && line.contains(MARKER)))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Runs one program under `engine`, in an isolated temp working directory
@@ -439,4 +477,30 @@ async fn interpreter_is_deterministic_across_the_corpus() {
         failures.len(),
         failures.join("\n")
     );
+}
+
+#[cfg(test)]
+mod noise_filter_tests {
+    use super::strip_slow_test_watchdog_noise;
+
+    #[test]
+    fn clean_output_is_returned_byte_identical() {
+        let clean = "  1. 1\n  2. 2\n".to_string();
+        assert_eq!(strip_slow_test_watchdog_noise(clean.clone()), clean);
+    }
+
+    #[test]
+    fn output_with_no_trailing_newline_is_untouched() {
+        let clean = "no trailing newline".to_string();
+        assert_eq!(strip_slow_test_watchdog_noise(clean.clone()), clean);
+    }
+
+    #[test]
+    fn watchdog_line_spliced_mid_output_is_removed() {
+        let polluted = "  hello\ntest interpreter_is_deterministic_across_the_corpus has been running for over 60 seconds\n  world\n".to_string();
+        assert_eq!(
+            strip_slow_test_watchdog_noise(polluted),
+            "  hello\n  world\n"
+        );
+    }
 }
