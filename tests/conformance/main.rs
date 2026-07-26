@@ -309,6 +309,35 @@ fn skip_reason(stem: &str) -> Option<&'static str> {
 
 #[tokio::test]
 async fn interpreter_is_deterministic_across_the_corpus() {
+    // Pure, synchronous assertions on `strip_slow_test_watchdog_noise` — run
+    // here, inline, rather than as separate `#[test]` functions in this
+    // file: this binary's own module doc is explicit that a *second* test
+    // of any kind (sync or async) sharing this binary is enough to corrupt
+    // the fd-1 capture below, since libtest prints every sibling test's own
+    // `test <name> ... ok` status line to real stdout — exactly the class
+    // of bug this filter exists to work around in the first place. Adding
+    // these as sibling `#[test]`s previously did exactly that (observed:
+    // their own status lines leaked into the `agent_delegation` fixture's
+    // captured stdout).
+    assert_eq!(
+        strip_slow_test_watchdog_noise("  1. 1\n  2. 2\n".to_string()),
+        "  1. 1\n  2. 2\n",
+        "clean output must be returned byte-identical"
+    );
+    assert_eq!(
+        strip_slow_test_watchdog_noise("no trailing newline".to_string()),
+        "no trailing newline",
+        "output with no trailing newline must be untouched"
+    );
+    assert_eq!(
+        strip_slow_test_watchdog_noise(
+            "  hello\ntest interpreter_is_deterministic_across_the_corpus has been running for over 60 seconds\n  world\n"
+                .to_string()
+        ),
+        "  hello\n  world\n",
+        "a watchdog line spliced mid-output must be removed"
+    );
+
     // KEEL_LLM=mock keeps `ai.*` deterministic and offline; KEEL_ONESHOT=1
     // makes agent programs exit after one idle window instead of serving
     // forever. Set once, process-wide — safe because this whole corpus runs
@@ -477,30 +506,4 @@ async fn interpreter_is_deterministic_across_the_corpus() {
         failures.len(),
         failures.join("\n")
     );
-}
-
-#[cfg(test)]
-mod noise_filter_tests {
-    use super::strip_slow_test_watchdog_noise;
-
-    #[test]
-    fn clean_output_is_returned_byte_identical() {
-        let clean = "  1. 1\n  2. 2\n".to_string();
-        assert_eq!(strip_slow_test_watchdog_noise(clean.clone()), clean);
-    }
-
-    #[test]
-    fn output_with_no_trailing_newline_is_untouched() {
-        let clean = "no trailing newline".to_string();
-        assert_eq!(strip_slow_test_watchdog_noise(clean.clone()), clean);
-    }
-
-    #[test]
-    fn watchdog_line_spliced_mid_output_is_removed() {
-        let polluted = "  hello\ntest interpreter_is_deterministic_across_the_corpus has been running for over 60 seconds\n  world\n".to_string();
-        assert_eq!(
-            strip_slow_test_watchdog_noise(polluted),
-            "  hello\n  world\n"
-        );
-    }
 }
