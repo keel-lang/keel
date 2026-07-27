@@ -206,12 +206,12 @@ impl Checker<'_, '_> {
                     }
                 }
                 let obj_ty = self.infer_expr(obj, scope);
-                self.resolve_struct_field(&obj_ty, field)
+                self.resolve_struct_field_checked(&obj_ty, field)
             }
 
             Expr::NullFieldAccess(obj, field) => {
                 let obj_ty = self.infer_expr(obj, scope);
-                Ty::Nullable(Box::new(self.resolve_struct_field(&obj_ty, field)))
+                Ty::Nullable(Box::new(self.resolve_struct_field_checked(&obj_ty, field)))
             }
 
             Expr::NullAssert(e) => {

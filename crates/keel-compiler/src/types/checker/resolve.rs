@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::ast::*;
-use crate::types::ty::{Ty, UnknownReason};
+use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 use super::Checker;
 
@@ -329,17 +329,45 @@ impl Checker<'_, '_> {
 
     /// Look up a named field's type from a struct subject type.
     /// Returns `Ty::Unknown(InferenceLimitation)` for opaque subjects or
-    /// unknown fields rather than emitting an error — callers that want
-    /// a hard diagnostic should do so themselves.
+    /// unknown fields rather than emitting an error — used by callers that
+    /// already validate field existence themselves (struct-pattern
+    /// destructuring in `bind_struct_pattern_fields`, and `when`-expression
+    /// arm unification, which re-derives bindings `check_when_arms` already
+    /// validated).
     pub(crate) fn resolve_struct_field(&self, subject_ty: &Ty, field: &str) -> Ty {
         match subject_ty.strip_nullable() {
-            Ty::Struct { fields, .. } => fields
-                .iter()
-                .find(|(n, _)| n == field)
-                .map(|(_, t)| t.clone())
+            Ty::Struct { fields, .. } => Self::find_struct_field(fields, field)
+                .cloned()
                 .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
             _ => Ty::Unknown(UnknownReason::InferenceLimitation),
         }
+    }
+
+    /// Like [`resolve_struct_field`](Self::resolve_struct_field), but emits a
+    /// diagnostic when `field` is statically known not to exist on a
+    /// concrete struct subject. Opaque subjects stay silent — there's
+    /// nothing concrete to validate a field name against. Only called from
+    /// plain `.field`/`?.field` access: struct-pattern destructuring
+    /// already validates unknown fields itself, so routing it through here
+    /// too would double-report.
+    pub(crate) fn resolve_struct_field_checked(&mut self, subject_ty: &Ty, field: &str) -> Ty {
+        let Ty::Struct { fields, .. } = subject_ty.strip_nullable() else {
+            return Ty::Unknown(UnknownReason::InferenceLimitation);
+        };
+        match Self::find_struct_field(fields, field) {
+            Some(ty) => ty.clone(),
+            None => {
+                self.err(format!(
+                    "field `{field}` does not exist on `{}`",
+                    describe_ty(subject_ty)
+                ));
+                Ty::Error
+            }
+        }
+    }
+
+    fn find_struct_field<'a>(fields: &'a [(String, Ty)], field: &str) -> Option<&'a Ty> {
+        fields.iter().find(|(n, _)| n == field).map(|(_, t)| t)
     }
 }
 
