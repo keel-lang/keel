@@ -2077,6 +2077,19 @@ sum = p.x + p.y
         );
     }
 
+    #[test]
+    fn valid_top_level_aug_assign_sees_earlier_top_level_binding() {
+        // Duplicate of #154: `+=` looks up its target via `scope.get(name)`,
+        // so it was falsely rejected as "undefined variable" by the same
+        // fresh-Scope-per-statement bug this section otherwise pins.
+        type_ok(
+            r#"
+n = 5
+n += 3
+"#,
+        );
+    }
+
     // ─── nullable safety at call sites ───────────────────────────────────────────
 
     #[test]
