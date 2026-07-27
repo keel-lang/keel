@@ -1992,6 +1992,91 @@ task run_test() {
         );
     }
 
+    // ─── top-level statement type threading (#177) ───────────────────────────────
+    // Top-level `Decl::Stmt` declarations used to each get checked against a
+    // fresh, empty `Scope`, so a statement referencing an earlier top-level
+    // binding had no type info for it — `expect_at`'s opaque short-circuit then
+    // silently accepted anything downstream. These pin that top-level checking
+    // now threads one shared scope, exactly like the equivalent task-body checks
+    // above.
+
+    #[test]
+    fn error_top_level_nonexistent_field_access_is_rejected() {
+        expect_error(
+            r#"
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+bad = p.nonexistent_field
+"#,
+            "does not exist on",
+        );
+    }
+
+    #[test]
+    fn error_nonexistent_field_access_is_rejected_inside_task_body_too() {
+        // Plain `.field` access never validated the field name existed at
+        // all, in any context — this pins the fix at the task-body site,
+        // not just top level (see the sibling top-level test above).
+        expect_error(
+            r#"
+type Point { x: int, y: int }
+
+task run_test() {
+  p: Point = { x: 1, y: 2 }
+  bad = p.nonexistent_field
+}
+"#,
+            "does not exist on",
+        );
+    }
+
+    #[test]
+    fn error_top_level_spread_update_field_override_wrong_type_is_rejected() {
+        expect_error(
+            r#"
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+q = { ...p, x: "oops" }
+"#,
+            "expected",
+        );
+    }
+
+    #[test]
+    fn error_top_level_spread_update_unknown_field_is_rejected() {
+        expect_error(
+            r#"
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+r = { ...p, nonexistent: 99 }
+"#,
+            "unknown field",
+        );
+    }
+
+    #[test]
+    fn error_top_level_cross_statement_type_mismatch_is_rejected() {
+        expect_error(
+            r#"
+a = 5
+b: str = a
+"#,
+            "expected",
+        );
+    }
+
+    #[test]
+    fn valid_top_level_statements_thread_types_across_bindings() {
+        type_ok(
+            r#"
+type Point { x: int, y: int }
+p: Point = { x: 1, y: 2 }
+q = { ...p, x: 5 }
+sum = p.x + p.y
+"#,
+        );
+    }
+
     // ─── nullable safety at call sites ───────────────────────────────────────────
 
     #[test]

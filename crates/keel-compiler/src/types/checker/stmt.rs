@@ -215,6 +215,12 @@ impl Checker<'_, '_> {
         // HIR lowering is the canonical source of undefined-name diagnostics.
         self.errors.extend_from_slice(self.hir.diagnostics());
 
+        // Top-level statements form the implicit main: they share one scope
+        // across the whole program so a later statement can see the types of
+        // earlier bindings — mirroring how the runtime's `execute()` shares
+        // one `Environment` across top-level statements at run time.
+        let mut top_level_scope = Scope::new();
+
         for node in &program.declarations {
             match &node.kind {
                 Decl::Task(t) => {
@@ -238,8 +244,11 @@ impl Checker<'_, '_> {
                     self.current_agent = None;
                 }
                 Decl::Stmt(stmt_node) => {
-                    let mut scope = Scope::new();
-                    self.check_stmt(&stmt_node.kind, stmt_node.span.clone(), &mut scope);
+                    self.check_stmt(
+                        &stmt_node.kind,
+                        stmt_node.span.clone(),
+                        &mut top_level_scope,
+                    );
                 }
                 _ => {}
             }
