@@ -14,6 +14,16 @@ use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 use super::{Checker, binop::check_binop};
 
+/// A parameter's display name for diagnostics — destructure patterns (`{a, b}: T`)
+/// have no single name, so they fall back to a placeholder (mirrors `TaskSig`
+/// construction in `collect.rs`).
+fn binding_display_name(binding: &Binding) -> String {
+    match binding {
+        Binding::Ident(name) => name.clone(),
+        Binding::Destruct(_) => "_".to_string(),
+    }
+}
+
 fn mock_registration_target_from_expr(expr: &SpannedExpr) -> Option<(String, String)> {
     let Expr::MethodCall {
         object,
@@ -238,7 +248,12 @@ impl Checker<'_, '_> {
                             AgentItem::Task(t) => self.check_task(t),
                             AgentItem::On(h) => self.check_on_handler(h),
                             AgentItem::Attribute(attr) => self.check_attribute(attr),
-                            AgentItem::State(_) => {}
+                            AgentItem::State(fields) => {
+                                for f in fields {
+                                    let field_ty = self.resolve_and_check_type(&f.ty.kind);
+                                    self.check_default_value(&field_ty, &f.default, &f.name);
+                                }
+                            }
                         }
                     }
                     self.current_agent = None;
@@ -391,6 +406,9 @@ impl Checker<'_, '_> {
         let mut scope = self.fresh_scope();
         for p in &t.params {
             let elem_ty = self.resolve_and_check_type(&p.ty.kind);
+            if let Some(default) = &p.default {
+                self.check_default_value(&elem_ty, default, &binding_display_name(&p.name));
+            }
             // Variadic params are visible inside the body as `list[T]`.
             let param_ty = if p.variadic {
                 Ty::List(Box::new(elem_ty))
@@ -431,6 +449,23 @@ impl Checker<'_, '_> {
             self.bind_to_scope(&p.name, &param_ty, &mut scope);
         }
         self.check_block(&h.body, &mut scope);
+    }
+
+    /// Validate a default value's inferred type against its declared type.
+    ///
+    /// Used for parameter and state-field defaults, neither of which may
+    /// reference other parameters/fields or `self` — mirrors the interpreter's
+    /// evaluation of defaults in a fresh, binding-free `Environment` (see
+    /// `call.rs`'s and `agent.rs`'s `tmp_env`).
+    fn check_default_value(&mut self, declared_ty: &Ty, default: &SpannedExpr, name: &str) {
+        let mut scope = self.fresh_scope();
+        let default_ty = self.infer_expr(default, &mut scope);
+        self.expect_at(
+            &default_ty,
+            declared_ty,
+            &format!("default value for `{name}`"),
+            default.span.clone(),
+        );
     }
 
     fn check_attribute(&mut self, attr: &AttributeDecl) {

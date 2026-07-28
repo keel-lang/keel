@@ -1992,6 +1992,96 @@ task run_test() {
         );
     }
 
+    // ─── #176: default parameter/field values were never validated at all ───────
+    // `keel check` used to accept a default of any type for a param or state
+    // field, regardless of the declared type — `lower_task`/`lower_agent_item`
+    // (HIR name resolution) visit every default expression, but nothing in the
+    // second-pass `Checker` ever validated its inferred type against the
+    // declared one. These pin the fix at both real sites: task/method params
+    // (`check_task`, shared by top-level tasks and agent-owned tasks) and
+    // agent state fields. Interface method params, extern params, on-handler
+    // params, and variadic params are excluded — the parser hardcodes
+    // `default: None` for all of them, so a mismatched default there is not
+    // constructible in valid Keel source.
+
+    #[test]
+    fn error_task_param_default_wrong_type_is_rejected() {
+        expect_error(
+            r#"
+task f(n: int = "oops") -> int {
+  return n
+}
+"#,
+            "expected",
+        );
+    }
+
+    #[test]
+    fn error_agent_task_param_default_wrong_type_is_rejected() {
+        expect_error(
+            r#"
+agent A {
+  task greet(name: str = 42) -> str {
+    return name
+  }
+}
+"#,
+            "expected",
+        );
+    }
+
+    #[test]
+    fn error_agent_state_field_default_wrong_type_is_rejected() {
+        expect_error(
+            r#"
+agent A {
+  state {
+    count: int = "oops"
+  }
+}
+"#,
+            "expected",
+        );
+    }
+
+    #[test]
+    fn valid_task_param_default_matching_declared_type() {
+        type_ok(
+            r#"
+task f(n: int = 5, s: str = "hi") -> int {
+  return n
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_agent_state_field_default_matching_declared_type() {
+        type_ok(
+            r#"
+agent A {
+  state {
+    count: int = 0
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_nullable_task_param_default_of_none_still_passes() {
+        // #174 fixed `expect_at` to accept a bare `none` against any nullable
+        // type — pins that the newly-added default-value check reuses that
+        // short-circuit rather than reintroducing the regression #174 fixed.
+        type_ok(
+            r#"
+task f(n: int? = none) -> int {
+  return n ?? 0
+}
+"#,
+        );
+    }
+
     // ─── top-level statement type threading (#177) ───────────────────────────────
     // Top-level `Decl::Stmt` declarations used to each get checked against a
     // fresh, empty `Scope`, so a statement referencing an earlier top-level
