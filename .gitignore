@@ -7,3 +7,4 @@ spikes/*/target
 *~
 *.keelc
 .claude/plans/
+graphify-out/
