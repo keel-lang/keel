@@ -238,6 +238,25 @@ pub(crate) fn prelude_names() -> &'static HashSet<String> {
 // Built-in interface definitions
 // ---------------------------------------------------------------------------
 
+/// Names of the types and interfaces the checker pre-seeds its tables with in
+/// `Checker::new` — `CompletionRequest`, `Stringable`, and friends.
+///
+/// These belong to no module, so the module-visibility check must never ask a
+/// program to import them. Deliberately narrower than [`prelude_names`], which
+/// also covers ordinary identifiers a user may legitimately declare a type
+/// with (`Message`, `Result`, …) and whose cross-module use must still be
+/// reported.
+pub(crate) fn builtin_type_names() -> &'static HashSet<String> {
+    &BUILTIN_TYPE_NAMES
+}
+
+static BUILTIN_TYPE_NAMES: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    builtin_structs()
+        .into_keys()
+        .chain(builtin_interfaces().into_keys())
+        .collect()
+});
+
 /// Return the built-in interface catalog.
 ///
 /// Each entry maps an interface name to the list of method signatures that

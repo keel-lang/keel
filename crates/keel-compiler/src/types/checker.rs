@@ -122,6 +122,11 @@ pub(crate) struct Checker<'hir, 'ast> {
     top_tasks: HashMap<String, TaskSig>,
     agents: HashMap<String, AgentInfo>,
     current_agent: Option<String>,
+    /// Implementing type name of the `impl` block whose method body is being
+    /// checked. `self` inside such a body is a value of that type — the
+    /// receiver — not an agent reference, so every `self`-gated site consults
+    /// this before falling back to the agent path.
+    current_impl_type: Option<String>,
     /// Declared return type of the task currently being checked.
     current_return_ty: Option<Ty>,
     /// Mock targets declared by the test currently being checked.
@@ -729,6 +734,7 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
             top_tasks: HashMap::new(),
             agents: HashMap::new(),
             current_agent: None,
+            current_impl_type: None,
             current_return_ty: None,
             current_test_mocks: None,
             current_span: None,
@@ -1031,7 +1037,14 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
         let mut last = Ty::None_;
         for node in block {
             last = match &node.kind {
-                Stmt::Expr(e) => self.infer_expr(e, scope),
+                Stmt::Expr(e) => {
+                    // Expression statements bypass `check_stmt`, the usual
+                    // writer of `current_span` — set it here too so errors
+                    // raised during inference carry this statement's location
+                    // instead of the enclosing declaration's.
+                    self.current_span = Some(node.span.clone());
+                    self.infer_expr(e, scope)
+                }
                 other => {
                     self.check_stmt(other, node.span.clone(), scope);
                     Ty::None_
@@ -2077,6 +2090,193 @@ agent A {
             r#"
 task f(n: int? = none) -> int {
   return n ?? 0
+}
+"#,
+        );
+    }
+
+    // ─── #181: impl method bodies were never type-checked ───────────────────────
+    // `check_body`'s dispatch used to drop `Decl::Impl` on the floor, so an impl
+    // method's body was parsed and name-resolved but never inferred — any type
+    // error inside it was silently accepted. These pin that impl bodies are now
+    // walked like any other task body, with `self` bound to the implementing
+    // type rather than to agent state.
+
+    #[test]
+    fn error_type_mismatch_inside_impl_method_body_is_rejected() {
+        expect_error(
+            r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> str {
+    x: int = "oops"
+    return self.name
+  }
+}
+"#,
+            "expected int, got str",
+        );
+    }
+
+    #[test]
+    fn error_impl_method_returns_wrong_type() {
+        expect_error(
+            r#"
+interface Shape {
+  task area(self) -> float
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    return "wide"
+  }
+}
+"#,
+            "return value: expected float, got str",
+        );
+    }
+
+    #[test]
+    fn error_impl_method_unknown_self_field() {
+        expect_error(
+            r#"
+interface Shape {
+  task area(self) -> float
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.nope
+  }
+}
+"#,
+            "field `nope` does not exist on `Rect`",
+        );
+    }
+
+    #[test]
+    fn error_impl_method_undefined_name() {
+        expect_error(
+            r#"
+interface Shape {
+  task area(self) -> float
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    return missing * self.w
+  }
+}
+"#,
+            "undefined",
+        );
+    }
+
+    #[test]
+    fn error_impl_method_assigns_to_self_field() {
+        // The receiver is passed by value, so the write cannot outlive the
+        // call — the interpreter rejects it too.
+        expect_error(
+            r#"
+interface Shape {
+  task area(self) -> float
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w = 2.0
+    self.w
+  }
+}
+"#,
+            "cannot assign to `self.w` in an `impl` method",
+        );
+    }
+
+    #[test]
+    fn error_impl_method_calls_self_method() {
+        // `self.m(...)` always routes to the enclosing *agent's* task at run
+        // time, so in an impl method it either fails or silently calls
+        // something else entirely.
+        expect_error(
+            r#"
+interface Shape {
+  task area(self) -> float
+  task label(self) -> str
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w * self.h
+  }
+
+  task label(self) -> str {
+    "area is {self.area()}"
+  }
+}
+"#,
+            "not available in an `impl` method",
+        );
+    }
+
+    #[test]
+    fn valid_impl_method_body_type_checks_self_and_params() {
+        // `self` is a value of the implementing type: its fields resolve to
+        // their declared types and it can be passed wherever that type is
+        // expected.
+        type_ok(
+            r#"
+interface Shape {
+  task area(self) -> float
+  task grown(self) -> Rect
+}
+
+type Rect { w: float, h: float }
+
+task scale(r: Rect, factor: float) -> Rect {
+  { w: r.w * factor, h: r.h * factor }
+}
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w * self.h
+  }
+
+  task grown(self) -> Rect {
+    return scale(self, 2.0)
+  }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_impl_method_on_non_struct_type_stays_opaque() {
+        // Enum and alias receivers have no fields to validate against; they
+        // must not produce false "field does not exist" reports.
+        type_ok(
+            r#"
+type Kind = small | large
+
+impl Stringable for Kind {
+  task to_str(self) -> str {
+    "kind"
+  }
 }
 "#,
         );

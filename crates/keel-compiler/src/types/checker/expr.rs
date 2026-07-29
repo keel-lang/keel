@@ -29,6 +29,20 @@ fn mock_target_from_expr(expr: &SpannedExpr) -> Option<(&str, &str)> {
     Some((namespace.as_str(), method.as_str()))
 }
 
+/// Message for `self.m(...)` inside an `impl` method. The interpreter routes
+/// every `self.m(...)` to the *current agent's* task, so in an impl method it
+/// either fails outright or — when the method was called from inside an agent —
+/// silently invokes that agent's task of the same name. Neither is what the
+/// author meant, so reject it at check time.
+fn impl_self_call_error(method: &str) -> String {
+    format!(
+        "`self.{method}(...)` is not available in an `impl` method: `self` is the \
+         receiver value, and `self.{method}(...)` always calls the enclosing \
+         agent's task. Move the logic into a top-level task and call it as \
+         `{method}(self)`"
+    )
+}
+
 impl Checker<'_, '_> {
     pub(crate) fn infer_expr(&mut self, spanned: &SpannedExpr, scope: &mut Scope) -> Ty {
         let ty = self.infer_expr_uncached(spanned, scope);
@@ -104,6 +118,13 @@ impl Checker<'_, '_> {
             }
 
             Expr::SelfAccess { field, .. } => {
+                // Inside an `impl` method the receiver is a value of the
+                // implementing type — resolve the field against that type.
+                // Non-struct implementing types (enums, aliases) resolve
+                // opaquely, so nothing is falsely reported.
+                if let Some(self_ty) = self.impl_self_ty() {
+                    return self.resolve_struct_field_checked(&self_ty, field);
+                }
                 let Some(agent_name) = self.current_agent.clone() else {
                     self.err(format!("`self.{field}` used outside an agent"));
                     return Ty::Error;
@@ -119,9 +140,13 @@ impl Checker<'_, '_> {
                 Ty::Error
             }
 
-            // The type of `self` (the agent reference itself) is not tracked
-            // statically — only `self.field` and `self.task(...)` are resolved.
-            Expr::SelfRef => Ty::Unknown(UnknownReason::InferenceLimitation),
+            // In an `impl` method `self` is the receiver value, so it has the
+            // implementing type. Elsewhere it is the agent reference itself,
+            // whose type is not tracked statically — only `self.field` and
+            // `self.task(...)` are resolved there.
+            Expr::SelfRef => self
+                .impl_self_ty()
+                .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
 
             Expr::FieldAccess(obj, field) => {
                 if matches!(field.as_str(), "called" | "call_count")
@@ -505,6 +530,10 @@ impl Checker<'_, '_> {
                     field: task_name, ..
                 } = &callee.as_ref().kind
                 {
+                    if self.current_impl_type.is_some() {
+                        self.err(impl_self_call_error(task_name));
+                        return Ty::Error;
+                    }
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{task_name}(...)` used outside an agent"));
                         return Ty::Error;
@@ -784,6 +813,10 @@ impl Checker<'_, '_> {
                     return Ty::Error;
                 }
                 if matches!(&object.as_ref().kind, Expr::SelfRef) {
+                    if self.current_impl_type.is_some() {
+                        self.err(impl_self_call_error(method));
+                        return Ty::Error;
+                    }
                     let Some(agent_name) = self.current_agent.clone() else {
                         self.err(format!("`self.{method}(...)` used outside an agent"));
                         return Ty::Error;

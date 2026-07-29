@@ -46,6 +46,42 @@ io.show(p.print())    # → "(1.5, 2.0)"
 - Parameter count and parameter types must match the interface signature. `dynamic` in the interface's parameter position is a wildcard — an `impl` may narrow it to any concrete type (this is how `Comparable` declares `other: dynamic` while an `impl` writes `other: Score`). A concrete parameter type requires an exact match.
 - Return types must match exactly (`dynamic` in the return position is likewise a wildcard).
 - Interfaces and their `impl` blocks can appear in any order in the same file.
+- Method **bodies** are type-checked like any other task body — see below.
+
+## Inside a method body
+
+An `impl` method body is checked exactly like a top-level task: annotations, return values, field access, arity, and enum exhaustiveness are all validated by `keel check`.
+
+```keel
+interface Shape {
+  task area(self) -> float
+  task grown(self) -> str
+}
+
+type Rect { w: float, h: float }
+
+task scale(r: Rect, factor: float) -> Rect {
+  { w: r.w * factor, h: r.h * factor }
+}
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w * self.h          # fields keep their declared types
+  }
+
+  task grown(self) -> str {
+    bigger = scale(self, 2.0)   # `self` is a value of the implementing type
+    "{bigger.w}x{bigger.h}"
+  }
+}
+```
+
+These rules follow from `self` being the receiver **value**, not an agent:
+
+- `self.field` resolves to the field's declared type; naming a field the type doesn't declare is a compile-time error.
+- `self` can be passed anywhere a value of the implementing type is expected.
+- `self.field = value` is a compile-time error — the receiver is passed by value, so the write could never outlive the call. Return an updated value instead.
+- `self.method(...)` is a compile-time error. `self.method(...)` is agent syntax and always dispatches to the enclosing *agent's* task, never to another `impl` method. Move shared logic into a top-level task and call it as `method(self)`.
 
 ## Multiple types, one interface
 

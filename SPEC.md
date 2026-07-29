@@ -801,6 +801,14 @@ io.show(p.print())    # → "(1.5, 2.0)"
 - Parameter types must match the interface signature. `dynamic` in the interface's parameter position is a wildcard — an `impl` may narrow it to any concrete type (this is how `Comparable`/`Equatable` accept `other: dynamic` while the `impl` declares `other: Score`). A concrete interface parameter type requires an exact match.
 - Return types must match exactly (`dynamic` in the return position is likewise a wildcard).
 - `self` inside the block receives the struct value. Use `self.field` to access fields.
+- Method bodies are type-checked like any other task body.
+
+**`self` inside a method body.** `self` is the receiver *value*, of the type named by the `for` clause — not an agent reference. So:
+
+- `self.field` has the field's declared type; naming a field the type does not declare is a compile-time error.
+- `self` may be passed anywhere a value of the implementing type is expected.
+- `self.field = value` is a compile-time error. The receiver is passed by value, so the write could never outlive the call — return an updated value instead.
+- `self.method(...)` is a compile-time error. That form is agent syntax and always dispatches to the enclosing agent's task, never to another `impl` method. Move the logic into a top-level task and call it as `method(self)`.
 
 **Dispatch rule.** The runtime dispatches `impl` methods by the value's declared type tag. A value acquires its tag at the first typed boundary it crosses: a `let x: TypeName = ...` binding, a task parameter with a named type annotation, a task return with a named return type, or an `ai.extract(…, as: TypeName)` call. List elements are promoted to `Value::Struct` when the list is assigned to a `list[TypeName]` variable. Untagged maps (struct literals not yet passed through a typed boundary) do not dispatch to any `impl` method.
 

@@ -258,6 +258,22 @@ impl Checker<'_, '_> {
                     }
                     self.current_agent = None;
                 }
+                Decl::Impl(impl_decl) => {
+                    // Method bodies are ordinary task bodies with `self` bound
+                    // to the implementing type. `check_impl_conformance` (run
+                    // during collection) only compares signatures.
+                    self.current_agent = None;
+                    self.current_impl_type = Some(impl_decl.type_name.clone());
+                    // Errors raised outside `check_stmt` — parameter type
+                    // resolution, default values, the implicit-return check —
+                    // otherwise land at byte 0.
+                    self.current_span = Some(node.span.clone());
+                    for method in &impl_decl.methods {
+                        self.check_task(method);
+                    }
+                    self.current_span = None;
+                    self.current_impl_type = None;
+                }
                 Decl::Stmt(stmt_node) => {
                     self.check_stmt(
                         &stmt_node.kind,
@@ -598,6 +614,18 @@ impl Checker<'_, '_> {
                 self.bind_to_scope(binding, &bound, scope);
             }
             Stmt::SelfAssign { field, value, .. } => {
+                // An `impl` receiver is passed by value, so a write to
+                // `self.field` cannot outlive the call — the interpreter
+                // rejects it too ("used outside an agent" at run time).
+                if let Some(type_name) = self.current_impl_type.clone() {
+                    self.err(format!(
+                        "cannot assign to `self.{field}` in an `impl` method: the \
+                         `{type_name}` receiver is passed by value — return an \
+                         updated value instead"
+                    ));
+                    self.infer_expr(value, scope);
+                    return;
+                }
                 let Some(agent_name) = &self.current_agent.clone() else {
                     self.err(format!("`self.{field}` used outside an agent"));
                     return;

@@ -19,6 +19,15 @@ impl Checker<'_, '_> {
         self.resolve_type_with_env(ty, &HashMap::new())
     }
 
+    /// The type of `self` while checking an `impl` method body, or `None`
+    /// outside one. Mirrors the runtime, which rewrites the synthetic
+    /// `SelfType` receiver to the implementing type when it registers impl
+    /// methods (`interpreter/decl.rs`).
+    pub(crate) fn impl_self_ty(&self) -> Option<Ty> {
+        let name = self.current_impl_type.as_ref()?;
+        Some(self.resolve_type(&TypeExpr::Named(name.clone())))
+    }
+
     /// Resolve a type and emit a compile-time error if it is `map[K, V]` with
     /// an unsupported key type. Built-in hashable types are `str`, `int`, `bool`.
     /// `float` is excluded because NaN violates the Hash/Eq contract.
@@ -57,6 +66,12 @@ impl Checker<'_, '_> {
         let mut names = Vec::new();
         collect_named_types(ty, &mut names);
         for name in names {
+            // Built-in types and interfaces (`CompletionRequest`, `Stringable`,
+            // …) live in the checker's tables from `Checker::new`, not in any
+            // module — they are always in scope and can never be imported.
+            if crate::types::prelude::builtin_type_names().contains(&name) {
+                continue;
+            }
             let known = self.enum_variants.contains_key(&name)
                 || self.structs.contains_key(&name)
                 || self.aliases.contains_key(&name)
