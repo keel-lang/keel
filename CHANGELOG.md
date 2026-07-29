@@ -98,6 +98,24 @@ Known D0 gaps (see `docs/src/guide/debugging.md`): code inside `Async.spawn` run
 ### Fixed
 
 - **Default parameter and state-field values were never checked against their declared type.** `task f(n: int = "oops") -> int` and an agent `state { count: int = "oops" }` both passed `keel check` cleanly — the HIR lowering pass visited every default expression for name resolution, but nothing in the second-pass checker ever validated the default's inferred type against the declared one, for any type. Task and agent-task parameter defaults and agent state-field defaults are now checked with the same `expect_at` check that call arguments and return values already use; a nullable default of bare `none` (`n: int? = none`) is unaffected. Interface method params, extern params, on-handler params, and variadic params are unaffected too, but only because the parser never allows a default to appear at those sites in the first place.
+- **`impl` method bodies were never type-checked at all.** The second-pass validation walk dispatched on task, test, agent, and top-level-statement declarations and dropped `Decl::Impl` on the floor, so a method body was parsed and name-resolved but never inferred — `keel check` passed cleanly on any type error inside one. `impl` bodies are now walked exactly like task bodies, with `self` bound to the implementing type: `self.field` resolves to the field's declared type (and an undeclared field is an error), and `self` can be passed anywhere a value of that type is expected. Two constructs that the interpreter has always rejected are now compile-time errors instead of run-time ones: `self.field = value` (the receiver is passed by value, so the write can never outlive the call) and `self.method(...)` (which always dispatches to the enclosing *agent's* task, never to another `impl` method — extract a top-level task and call it as `method(self)`).
+
+```keel
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> str {
+    x: int = "oops"      # now: `x`: expected int, got str
+    return self.nickname # now: field `nickname` does not exist on `Person`
+  }
+}
+```
+
+- **Built-in types were reported as "declared in another module".** Naming a built-in struct or interface in an annotation — `task complete(self, req: CompletionRequest)`, the signature every user-authored LLM provider writes — failed `keel check` with a suggestion to import it from a file, because the module-visibility check treated the checker's pre-seeded built-in tables as another module's declarations. Prelude names are now exempt; they are always in scope and cannot be imported.
 - **`keel check` gave false confidence for top-level programs that chain bindings.** Every top-level statement was checked against a brand-new, empty scope, so a later top-level statement referencing an earlier top-level binding had no type information for it — the checker fell back to an opaque type and silently accepted anything downstream (a spread-update overriding a field with the wrong type, or an unknown field added via spread-update, both passed `keel check` cleanly at the top level despite failing correctly inside a `task` body). Top-level statement checking now threads one scope across the whole program, mirroring how the runtime already shares one environment across top-level statements at run time.
 - **Plain `.field`/`?.field` access on a struct never checked the field actually existed.** In any context — top level or task body — an unknown field silently resolved to an opaque type instead of raising a diagnostic, so only the runtime's `Value has no field ...` error ever caught a typo. Now checked statically, same as struct-pattern destructuring already was.
 - **`schedule.cron` could stall the runtime on rare/impossible expressions.** Computing the next fire time scanned candidate minutes one at a time — up to ~4 years' worth — synchronously inside the async task driving the cron loop. A spec that fires rarely (or never, e.g. `"0 0 31 2 *"`, which asks for February 31st) blocked that task's worker thread for the full scan. The scan now runs via `tokio::task::spawn_blocking`, off the async worker pool; the matching logic itself is unchanged.

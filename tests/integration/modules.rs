@@ -433,6 +433,24 @@ task f(c: Classifier) -> str {
 }
 
 #[test]
+fn builtin_type_annotation_needs_no_import() {
+    // Built-in types live in the checker's tables rather than in any module.
+    // The visibility check used to treat them as another module's declarations
+    // and demand an impossible import — `CompletionRequest` is the signature
+    // every user-authored LLM provider writes.
+    let (_dir, entry) = write_project(&[(
+        "main.keel",
+        r#"
+task describe(req: CompletionRequest) -> str {
+  "{req.user}"
+}
+"#,
+    )]);
+    let (ok, _stdout, stderr) = keel("check", &entry);
+    assert!(ok, "built-in type must not require an import:\n{stderr}");
+}
+
+#[test]
 fn duplicate_import_binding_is_rejected_with_alias_hint() {
     let (dir, _) = write_project(&[
         ("strings.keel", "task s() -> str { \"local\" }\n"),

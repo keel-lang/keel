@@ -336,3 +336,150 @@ run_test()
         "dynamic param should accept any concrete type\nstdout: {stdout}\nstderr: {stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// impl method bodies are type-checked (#181)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn impl_method_body_type_mismatch_fails_check() {
+    // `check_body` used to skip `Decl::Impl` entirely, so any type error inside
+    // a method body passed `keel check` untouched.
+    let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> str {
+    x: int = "oops"
+    return self.name
+  }
+}
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("expected int, got str"),
+        "expected a type-mismatch diagnostic, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_method_unknown_self_field_fails_check() {
+    let src = r#"
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> str {
+    return self.nickname
+  }
+}
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("nickname"),
+        "expected an unknown-field diagnostic, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_method_body_using_self_still_runs() {
+    // The receiver is a value of the implementing type: its fields keep their
+    // declared types and it can be handed to a task that expects that type.
+    let src = r#"
+use std/io
+interface Shape {
+  task area(self) -> float
+  task grown(self) -> str
+}
+
+type Rect { w: float, h: float }
+
+task scale(r: Rect, factor: float) -> Rect {
+  { w: r.w * factor, h: r.h * factor }
+}
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w * self.h
+  }
+
+  task grown(self) -> str {
+    bigger = scale(self, 2.0)
+    "{bigger.w}x{bigger.h}"
+  }
+}
+
+task run_test() {
+  r: Rect = { w: 2.0, h: 3.0 }
+  io.show("{r.area()} {r.grown()}")
+}
+run_test()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(stdout.contains("6 4x6"), "got: {stdout}");
+}
+
+#[test]
+fn impl_method_calling_self_method_fails_check() {
+    // At run time `self.m(...)` always dispatches to the enclosing agent's
+    // task, never to another impl method — reject it at check time instead of
+    // failing (or calling the wrong thing) at run time.
+    let src = r#"
+interface Shape {
+  task area(self) -> float
+  task label(self) -> str
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w * self.h
+  }
+
+  task label(self) -> str {
+    "area is {self.area()}"
+  }
+}
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("not available in an `impl` method"),
+        "expected an impl self-call diagnostic, got: {stderr}"
+    );
+}
+
+#[test]
+fn impl_method_assigning_to_self_field_fails_check() {
+    let src = r#"
+interface Shape {
+  task area(self) -> float
+}
+
+type Rect { w: float, h: float }
+
+impl Shape for Rect {
+  task area(self) -> float {
+    self.w = 4.0
+    self.w
+  }
+}
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "should have failed");
+    assert!(
+        stderr.contains("cannot assign to `self.w` in an `impl` method"),
+        "expected an impl self-assign diagnostic, got: {stderr}"
+    );
+}

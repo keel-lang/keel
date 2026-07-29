@@ -40,6 +40,35 @@ in this first milestone and what's still a documented gap (code inside
 [vscode-keel](https://github.com/keel-lang/vscode-keel) are the notable
 ones).
 
+### `impl` method bodies are type-checked
+
+The checker's validation walk never visited `impl` blocks, so a method body was
+name-resolved but never type-inferred — `keel check` passed cleanly on any type
+error inside one:
+
+```keel
+interface Greetable {
+  task greet(self) -> str
+}
+
+type Person { name: str }
+
+impl Greetable for Person {
+  task greet(self) -> str {
+    x: int = "oops"       # now: `x`: expected int, got str
+    return self.nickname  # now: field `nickname` does not exist on `Person`
+  }
+}
+```
+
+Bodies are now checked exactly like task bodies, with `self` bound to the
+implementing type: `self.field` carries the field's declared type, and `self`
+can be passed anywhere a value of that type is expected. Two forms the
+interpreter has always rejected now fail at check time instead of run time —
+`self.field = value` (the receiver is passed by value) and `self.method(...)`
+(agent syntax; it dispatches to the enclosing agent's task, never to another
+`impl` method). See [Interfaces](./guide/interfaces.md#inside-a-method-body).
+
 ---
 
 ## v0.2.4 — 2026-06-21
