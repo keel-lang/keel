@@ -6,30 +6,61 @@
 
 ## Structure
 
+The workspace is layered: the root `keel` crate is the CLI/LSP/REPL shell, and the
+compiler and runtime live in `crates/`.
+
 ```
-src/
-  lexer.rs          # Token definitions (logos)
-  parser.rs         # Grammar (chumsky 0.9, BoxedParser)
-  ast/              # AST node types
-  types/            # Type checker (enum exhaustiveness, arg arity, scope,
-                    #   nullable safety with call-site enforcement, return-type
-                    #   matching, struct subtyping, generic instantiation)
-  interpreter/      # Tree-walking async interpreter
-  runtime/          # LLM client (Ollama/OpenAI/Anthropic + user-authored providers), email (IMAP/SMTP), human I/O, std module namespaces
-  formatter.rs      # Pretty-printer (keel fmt)
-  repl.rs           # Interactive REPL
-  lsp/              # Language Server Protocol (diagnostics, completion, hover, go-to-definition)
-  main.rs           # CLI entry (clap)
-crates/keel-kir/    # Mid-level IR for the future native/LLVM backend (designs/llvm-compilation.md).
-                    #   `keel build` is the CLI entry point — `--emit=kir` previews the pipeline
-                    #   (scalar subset only); no codegen exists yet. Supersedes the old `src/vm/`
-                    #   bytecode-VM stub (removed; see NON-GOALS.md).
-brand/              # Logo, color tokens, mdBook theme (single source of truth)
-examples/           # .keel example programs
-tests/              # Lexer, parser, type checker, formatter, lsp, integration, conformance
-docs/               # mdBook documentation
-                    # VS Code extension lives at github.com/keel-lang/vscode-keel
+src/                  # Root `keel` crate — CLI, LSP, REPL, embedding API
+  main.rs             # CLI entry (clap)
+  cli/                # Command definitions and dispatch
+  pipeline.rs         # run/check/fmt/lint/build implementations
+  session.rs          # Public embedding API (parse_source, check_source, run_source, …)
+  diagnostics.rs      # Public diagnostic types (TypeDiagnostic, LintWarning, Ty)
+  catalog.rs          # Namespace catalog surface for docs/tooling
+  lsp/                # Language Server Protocol (diagnostics, completion, hover, go-to-definition)
+  repl.rs             # Interactive REPL
+  dap.rs              # Debug Adapter Protocol entry (`keel dap`)
+crates/
+  keel-syntax/        # lexer.rs (logos), parser/ (chumsky 0.9, BoxedParser), ast/, formatter.rs, lint.rs
+  keel-compiler/      # types/ (type checker), hir/, modules.rs (ModuleGraph), ide/
+  keel-runtime/       # interpreter/ (tree-walking async), runtime/ (LLM client
+                      #   (Ollama/OpenAI/Anthropic + user-authored providers), email
+                      #   (IMAP/SMTP), human I/O, std module namespaces)
+  keel-catalog/       # Neutral stdlib namespace descriptors + capability metadata
+  keel-kir/           # Mid-level IR (typed, desugared): AST→KIR lowering for the native backend
+  keel-codegen/       # KIR→LLVM IR→native object/binary. Links LLVM; gated behind the
+                      #   root crate's `build-backend` feature. See "Native backend status".
+  keel-rt-ffi/        # C ABI + CompiledHost — boots the same RuntimeContext/tokio/event-loop
+                      #   the interpreter uses, for keel-codegen-linked binaries
+  keel-dap/           # Interpreter-backed DAP server
+brand/                # Logo, color tokens, mdBook theme (single source of truth)
+examples/             # .keel example programs
+tests/                # integration/ (language/, namespaces/, agent, ai, dap, …),
+                      #   conformance/ (interpreter-vs-compiled differential harness)
+docs/                 # mdBook documentation
+                      # VS Code extension lives at github.com/keel-lang/vscode-keel
 ```
+
+**Do not "fix" `crate::` paths that look wrong.** `src/lib.rs` re-exports the extracted
+crates under their original module paths, so `crate::lexer`, `crate::parser`,
+`crate::formatter`, `crate::types`, `crate::hir`, `crate::ide`, `crate::interpreter`, and
+`crate::runtime` all still resolve inside the root crate even though those files now live
+in `crates/`. Only `ast`, `modules`, `catalog`, `diagnostics`, and `session` are public.
+
+### Native backend status
+
+`keel build` does **not** produce a binary yet. The CLI supports exactly one mode:
+`keel build file.keel --emit=kir`, which type-checks a **single-file** program and prints
+its KIR dump. Plain `keel build` errors out, as does any other `--emit` value, and
+`--emit=kir` rejects multi-module programs (KIR lowering doesn't consume `ModuleGraph`
+yet — `designs/llvm-compilation.md` §2.2).
+
+Codegen itself does work end to end — compile → link → run a native binary — but only
+from `crates/keel-codegen/tests/` and the conformance harness under
+`cargo test --features build-backend`. Nothing in `src/` calls `keel_codegen::compile`.
+Milestones M0 and M1 are complete and M2's exit gate has passed; see the GitHub
+milestones and tracking issue #108. KIR supersedes the old `src/vm/` bytecode-VM stub
+(removed; see `NON-GOALS.md`).
 
 ## Key Design Decisions
 
@@ -42,7 +73,7 @@ docs/               # mdBook documentation
 
 ## Conventions
 
-- `.keel` file extension. `keel build` is the reserved verb for the future native/LLVM backend (`designs/llvm-compilation.md`); `--emit=kir` previews the mid-level IR (scalar subset only) — no codegen yet.
+- `.keel` file extension. `keel build` is the verb for the native/LLVM backend (`designs/llvm-compilation.md`); today the CLI only supports `--emit=kir` on single-file programs — see "Native backend status" above before touching it.
 - Examples in `examples/`, tests in `tests/`, brand assets in `brand/`.
 - **Before adding or modifying any language feature** (new syntax, new built-in, new stdlib namespace, behaviour change), invoke the `design-lang` skill to validate the idea against Hejlsberg's design principles. Do this before touching `SPEC.md` or any source file.
 - Update `SPEC.md` before implementing new language features.
@@ -56,12 +87,16 @@ docs/               # mdBook documentation
 
 ```
 keel run file.keel       # execute
+keel test file.keel      # run tests
 keel check file.keel     # type-check only
 keel fmt file.keel       # auto-format
+keel lint file.keel      # style and best-practice checks (--fix applies safe fixes)
 keel init project-name   # scaffold
 keel repl                # interactive
 keel lsp                 # language server (stdin/stdout)
-keel build file.keel --emit=kir  # preview mid-level IR (scalar subset); no codegen yet
+keel dap                 # debug adapter (interpreter-backed)
+keel build file.keel --emit=kir  # print KIR for a single-file program; this is the
+                                 # ONLY working build mode — plain `keel build` errors
 ```
 
 ## Release Checklist
