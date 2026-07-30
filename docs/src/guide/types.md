@@ -315,6 +315,67 @@ String subscript (`str[i]`) returns a single-character `str` by the same rules.
 | `.last` | `T?` | Last element or none |
 | `.is_empty` | `bool` | True if count == 0 |
 
+## Tuples
+
+A tuple is a fixed-length, ordered group of values whose types can differ. Write the type as parenthesised element types:
+
+```keel
+pair: (str, int) = ("hello", 42)
+```
+
+Tuples are structural and immutable — two tuples with the same element types are the same type, and you build a new one rather than modifying an existing one. There is no single-element tuple: `(str)` is just `str`. The empty tuple `()` is `none`.
+
+Read elements either by destructuring or by position:
+
+```keel
+use std/io
+
+pair: (str, int) = ("hello", 42)
+
+(name, count) = pair          # destructure into two bindings
+io.show(name)                 # hello
+
+x = pair.0                    # positional access — str
+io.show("{x} {pair.1}")       # hello 42
+```
+
+Positional access is checked at compile time. The index must be within the tuple's arity, and `.N` is only valid on tuples:
+
+```keel
+pair: (str, int) = ("hello", 42)
+
+# pair.5      # error: tuple index 5 is out of bounds for `(str, int)` (arity 2)
+# pair.name   # error: `(str, int)` has no field `name` — read by position
+```
+
+Lists and maps use subscripts instead, so `.0` on a list is an error that points you at the right syntax:
+
+```keel
+xs: list[int] = [1, 2, 3]
+
+y = xs[0]     # 1 — correct
+# y = xs.0    # error: positional access `.0` is only valid on tuples;
+              #        index `list[int]` with `[0]`
+```
+
+`?.` works on a nullable tuple, yielding a nullable element:
+
+```keel
+maybe: (str, int)? = ("hi", 7)
+io.show("{maybe?.0}")         # hi
+```
+
+Nested positional access needs parentheses:
+
+```keel
+t: ((int, int), int) = ((1, 2), 3)
+
+b = (t.0).1                   # 2
+# b = t.0.1                   # parse error
+```
+
+This is a lexer limitation, not a language rule — `0.1` matches the float-literal pattern and is claimed as a single token before the grammar sees two separate indices. Tracked in [issue #185](https://github.com/keel-lang/keel/issues/185). The parenthesised form works and will keep working.
+
 ## Function types
 
 Function types describe callable values. Write the parameter types in parentheses followed by `->` and the return type:

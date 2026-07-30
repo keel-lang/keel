@@ -354,6 +354,13 @@ impl Checker<'_, '_> {
             Ty::Struct { fields, .. } => Self::find_struct_field(fields, field)
                 .cloned()
                 .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
+            // Positional tuple access (`pair.0`, `SPEC.md` §2.8). Silent
+            // variant: an out-of-range or non-numeric field yields the same
+            // inference gap as an unknown struct field.
+            Ty::Tuple(items) => tuple_index(field)
+                .and_then(|i| items.get(i))
+                .cloned()
+                .unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation)),
             _ => Ty::Unknown(UnknownReason::InferenceLimitation),
         }
     }
@@ -366,6 +373,57 @@ impl Checker<'_, '_> {
     /// already validates unknown fields itself, so routing it through here
     /// too would double-report.
     pub(crate) fn resolve_struct_field_checked(&mut self, subject_ty: &Ty, field: &str) -> Ty {
+        let subject = subject_ty.strip_nullable();
+
+        // Positional access (`SPEC.md` §2.8). Handled before struct fields
+        // and keyed off the *field* shape, not the subject: an all-digit
+        // field name is only ever a tuple index, so `.0` on a non-tuple has
+        // to be rejected here. The interpreter cannot make that call —
+        // tuples share the list repr in v0.1, so `xs.0` on a `list` would
+        // silently succeed at runtime if this arm let it through.
+        if let Some(idx) = tuple_index(field) {
+            return match subject {
+                Ty::Tuple(items) if idx < items.len() => items[idx].clone(),
+                Ty::Tuple(items) => {
+                    self.err(format!(
+                        "tuple index {idx} is out of bounds for `{}` (arity {})",
+                        describe_ty(subject_ty),
+                        items.len()
+                    ));
+                    Ty::Error
+                }
+                // Opaque subjects have no known shape to validate against —
+                // same silence as an unknown struct field.
+                _ if subject.is_opaque() => Ty::Unknown(UnknownReason::InferenceLimitation),
+                Ty::List(_) | Ty::Set(_) | Ty::Map(_, _) => {
+                    self.err(format!(
+                        "positional access `.{idx}` is only valid on tuples; \
+                         index `{}` with `[{idx}]`",
+                        describe_ty(subject_ty)
+                    ));
+                    Ty::Error
+                }
+                _ => {
+                    self.err(format!(
+                        "positional access `.{idx}` is only valid on tuples, not `{}`",
+                        describe_ty(subject_ty)
+                    ));
+                    Ty::Error
+                }
+            };
+        }
+
+        // A non-numeric field on a tuple can never resolve — tuples have no
+        // named fields.
+        if let Ty::Tuple(items) = subject {
+            self.err(format!(
+                "`{}` has no field `{field}` — tuple elements are read by \
+                 position (`.0` … `.{}`)",
+                describe_ty(subject_ty),
+                items.len().saturating_sub(1)
+            ));
+            return Ty::Error;
+        }
         let Ty::Struct { fields, .. } = subject_ty.strip_nullable() else {
             return Ty::Unknown(UnknownReason::InferenceLimitation);
         };
