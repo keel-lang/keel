@@ -280,6 +280,11 @@ pub struct KirProgram {
     pub functions: Vec<KirFunction>,          // includes lambdas + monomorphized stamps
     pub structs: Vec<StructLayout>,           // nominal + interned anonymous shapes
     pub enums: Vec<EnumLayout>,               // tag values fixed here, not in codegen
+    pub lists: Vec<KirType>,                  // ─┐ side tables every composite `KirType`
+    pub maps: Vec<KirType>,                   //  │ indexes into — see the interning note
+    pub sets: Vec<KirType>,                   //  │ below
+    pub nullables: Vec<KirType>,              //  │
+    pub tuples: Vec<TupleLayout>,             // ─┘
     pub agents: Vec<AgentDescriptor>,         // state layout, handler FuncIds, @tools,
                                               //   @schedule specs (feeds descriptor.rs)
     pub toplevel: FuncId,                     // compiled top-level statements
@@ -288,9 +293,9 @@ pub struct KirProgram {
 
 pub enum KirType {
     I64, F64, Bool, Unit, Duration,           // unboxed scalars
-    Str, List(Box<KirType>), Map(..), Set(..),// opaque RC pointers (container ABI)
-    Struct(StructId), Enum(EnumId), Tuple(Vec<KirType>),
-    Nullable(Box<KirType>), Func(..),
+    Str, List(ListId), Map(MapId), Set(SetId),// opaque RC pointers (container ABI)
+    Struct(StructId), Enum(EnumId), Tuple(TupleId),
+    Nullable(NullableId), Func(FuncTyId),
     Boxed,                                    // `dynamic` — KeelBox*
     Handle(HandleKind),                       // DbConnection, datetime, Task[T]
 }
@@ -323,7 +328,9 @@ pub enum Expr {
     Const(..), Local(LocalId),
     Call { target: CallTarget, args: Vec<Expr>, span: SpanId },
     BinOp(..), UnOp(..),
-    FieldGet { .. }, MakeStruct { .. }, MakeEnum { .. }, MakeTuple(..),
+    FieldGet { .. }, MakeStruct { .. }, MakeEnum { .. },
+    MakeTuple { tuple_id: TupleId, elems: Vec<Expr> },
+    TupleGet { base: Box<Expr>, index: usize, ty: KirType },
     Box { value: Box<Expr> },                 // typed -> KeelBox*
     Unbox { value: Box<Expr>, ty: KirType, span: SpanId },  // `as T`, may raise
     NullCheck { .. },                         // from `?.` / `??` desugar
@@ -337,6 +344,25 @@ pub enum CallTarget {
     Indirect(Box<Expr>),                      // lambda value: {fn*, env*} pair
 }
 ```
+
+**Composite types are ID-interned, never inline.** Every composite `KirType`
+carries a `usize` index into a side table on `KirProgram` — `List(ListId)`, not
+`List(Box<KirType>)`; `Tuple(TupleId)`, not `Tuple(Vec<KirType>)`. This keeps
+`KirType` `Copy`, which the implementation relies on pervasively: it is passed
+by value through lowering, codegen, and `verify`, and stored in every `Expr`.
+An inline `Box`/`Vec` payload would take that away and force a clone at each of
+those sites. **Any new composite type must follow the same shape** — add a side
+table plus an id, not a nested payload.
+
+Two interning disciplines, and the distinction is semantic rather than
+incidental:
+
+- **Nominal**, in declaration order — `StructId`, `EnumId`. Two declarations
+  with identical shape stay distinct types, because `type Point {x: int}` and
+  `type Score {x: int}` are not interchangeable (issue #16).
+- **Structural**, deduplicated by shape — `ListId`, `MapId`, `SetId`,
+  `NullableId`, `TupleId`. `(str, int)` written anywhere in the program is one
+  id, because `SPEC.md` §2.8 makes tuples structural; same for `list[int]`.
 
 Fixed pass order (each pass re-runs `verify` in debug builds):
 
@@ -565,7 +591,9 @@ generic namespace dispatch proving out on `io.print`/`log.*`.
 *Exit: a scalar-only example compiles, links, runs, and matches the interpreter.*
 
 **M2 — Data types + errors.**
-Lists/maps/sets/tuples via container ABI (CoW semantics verified), named + anonymous
+Lists/maps/sets via container ABI (CoW semantics verified) — tuples are *not*:
+per §1.1 they are by-value LLVM aggregates with no heap allocation and no RC, so
+they deliberately bypass the container ABI (issue #157). Plus named + anonymous
 structs, enums, `when` exhaustive matching, nullable (`?`, `??`, `?.`), `raise`/`try`/
 `catch` result convention, string interpolation. *Exit: the conformance harness runs a
 curated M2-scope fixture set (not all non-agent, non-I/O examples — most of that corpus
