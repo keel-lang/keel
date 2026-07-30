@@ -8,7 +8,7 @@ use keel_syntax::ast::TaskDecl;
 
 use super::stmt::TailSink;
 use super::{FnCtx, FuncSig, LowerCtx, LowerError, binding_ident, ty_expr_to_kir};
-use crate::ir::{EnumId, Expr, KirFunction, Param, StructId};
+use crate::ir::{EnumId, Expr, KirFunction, Param, StructId, TupleLayout};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -27,6 +27,7 @@ pub(crate) fn signature_of(
     maps: &std::cell::RefCell<Vec<KirType>>,
     sets: &std::cell::RefCell<Vec<KirType>>,
     nullables: &std::cell::RefCell<Vec<KirType>>,
+    tuples: &std::cell::RefCell<Vec<TupleLayout>>,
 ) -> Result<(Vec<KirType>, KirType), LowerError> {
     if !task.type_params.is_empty() {
         return Err(LowerError::unsupported(
@@ -64,6 +65,7 @@ pub(crate) fn signature_of(
             maps,
             sets,
             nullables,
+            tuples,
         )?);
     }
     let ret = match &task.return_type {
@@ -75,6 +77,7 @@ pub(crate) fn signature_of(
             maps,
             sets,
             nullables,
+            tuples,
         )?,
         None => KirType::Unit,
     };

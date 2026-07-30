@@ -64,6 +64,8 @@ pub(crate) fn emit_expr<'ctx>(
             field_index,
             ty,
         } => emit_field_get(fcx, base, *field_index, *ty),
+        Expr::MakeTuple { tuple_id, elems } => emit_make_tuple(fcx, *tuple_id, elems),
+        Expr::TupleGet { base, index, ty } => emit_tuple_get(fcx, base, *index, *ty),
         Expr::MakeEnum { variant_index, .. } => Ok(fcx
             .context
             .i32_type()
@@ -83,6 +85,63 @@ pub(crate) fn emit_expr<'ctx>(
             ty,
         } => crate::nullable::emit_null_field_get(fcx, base, *field_index, *ty),
     }
+}
+
+/// Builds a tuple as a by-value LLVM aggregate: start from `undef` of the
+/// tuple's struct type and `insertvalue` each element in positional order.
+/// No `malloc` and no `GEP`, unlike [`emit_make_struct`] — the aggregate
+/// lives in registers (or an `alloca` when a local binds it) rather than on
+/// the heap.
+fn emit_make_tuple<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    tuple_id: keel_kir::ir::TupleId,
+    elems: &[Expr],
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let aggregate_ty =
+        layout::llvm_type(fcx.context, fcx.program, KirType::Tuple(tuple_id))?.into_struct_type();
+    let mut aggregate = aggregate_ty.get_undef();
+    for (index, elem) in elems.iter().enumerate() {
+        let value = emit_expr(fcx, elem)?;
+        aggregate = fcx
+            .builder
+            .build_insert_value(
+                aggregate,
+                value,
+                u32::try_from(index).map_err(|_| {
+                    CodegenError::Unsupported(format!("tuple arity {index} exceeds u32"))
+                })?,
+                "tuple.insert",
+            )
+            .map_err(llvm_err)?
+            .into_struct_value();
+    }
+    Ok(aggregate.into())
+}
+
+/// Reads one element out of a by-value tuple aggregate with `extractvalue`.
+/// The index is already bounds-checked — by the type checker for user code
+/// (`SPEC.md` §2.8) and again by `passes::verify` — so there is no runtime
+/// check here, unlike list indexing's `keel_list_get`.
+fn emit_tuple_get<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    base: &Expr,
+    index: usize,
+    ty: KirType,
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let aggregate = emit_expr(fcx, base)?.into_struct_value();
+    let index = u32::try_from(index)
+        .map_err(|_| CodegenError::Unsupported(format!("tuple index {index} exceeds u32")))?;
+    fcx.builder
+        .build_extract_value(aggregate, index, "tuple.get")
+        .map_err(llvm_err)
+        .and_then(|value| {
+            debug_assert_eq!(
+                value.get_type(),
+                layout::llvm_type(fcx.context, fcx.program, ty)?,
+                "verified KIR: TupleGet's ty matches the layout element"
+            );
+            Ok(value)
+        })
 }
 
 /// Allocates a fresh heap struct (via `malloc`, leaked for process lifetime
@@ -374,12 +433,17 @@ fn emit_binop<'ctx>(
             };
             Ok(result)
         }
+        // A tuple joins these as an unsupported operand: element-wise `==`
+        // on an aggregate would need a generated comparison loop, which the
+        // checker does not offer today either. Listed explicitly so a future
+        // tuple-equality feature has to come here deliberately.
         KirType::Unit
         | KirType::Struct(_)
         | KirType::List(_)
         | KirType::Map(_)
         | KirType::Set(_)
-        | KirType::Nullable(_) => Err(unreachable_combo(op, operand_ty)),
+        | KirType::Nullable(_)
+        | KirType::Tuple(_) => Err(unreachable_combo(op, operand_ty)),
     }
 }
 

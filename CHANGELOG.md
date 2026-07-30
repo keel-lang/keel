@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program, alongside the native LLVM backend now compiling, linking, and running the full M2 feature set (structs, enums, containers, nullable, string interpolation, raise/try/catch) byte-for-byte identical to the interpreter.
+%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program, alongside the native LLVM backend now compiling, linking, and running the full M2 feature set (structs, enums, containers, tuples, nullable, string interpolation, raise/try/catch) byte-for-byte identical to the interpreter.
 
 ### Added
 
@@ -35,6 +35,18 @@ io.show("{(nested.0).1}")         # 2 — parentheses required, see #185
   tuples; index `list[int]` with `[0]`*. Nested access without parentheses
   (`t.0.1`) still fails to parse — `0.1` matches the float-literal pattern and
   is claimed as one token — tracked in #185.
+
+  The native backend compiles tuples too: construction, positional reads, and
+  positional destructuring (`(a, b) = pair`) lower through KIR and codegen, and
+  the conformance harness runs them byte-identical under both engines. Tuples
+  are the first **by-value aggregate** in the compiled backend — an unnamed
+  LLVM struct built with `insertvalue` and read with `extractvalue`, with no
+  heap allocation, no pointer indirection, and no refcounting, unlike heap
+  structs and containers. Nested tuples are allowed as elements (a by-value
+  aggregate nests for free); containers, structs, enums, and nullables inside a
+  tuple are not, since those would need the `Value` marshaling the by-value
+  representation exists to avoid. Passing a whole tuple to a stdlib namespace
+  method is a compile error naming the construct — read an element instead.
 
 - **`keel dap` — an interpreter-backed step debugger over the Debug Adapter Protocol.** Any DAP-speaking editor (VS Code, `lldb-dap`-style clients) can now set source breakpoints, step over/in/out, inspect the call stack, and view locals and live agent `state` in a running Keel program — the same tree-walking interpreter every `keel run`/`keel test` already uses, paused in place rather than a separate execution path. `keel test --debug --filter <name>` debugs a single test the same way. Evaluating an expression while paused (`watch`/`hover`) reuses the program's own expression evaluator, so it sees the same values, types, and errors the paused statement would.
 

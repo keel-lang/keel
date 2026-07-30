@@ -196,6 +196,42 @@ pub(crate) fn lower_expr(
             }
 
             let base_e = lower_expr(base, ctx, lcx, table)?;
+
+            // Positional tuple read (`pair.0`, `SPEC.md` §2.8). An all-digit
+            // field name can only come from `postfix_field_name()`, so it is
+            // unambiguously an index rather than a struct field. The checker
+            // has already bounds-checked it and rejected `.N` on non-tuples,
+            // so the arity check here is a lowering invariant, not a
+            // user-facing diagnostic.
+            if let Some(index) = keel_syntax::ast::tuple_index(field) {
+                let KirType::Tuple(tuple_id) = base_e.ty() else {
+                    return Err(LowerError::new(
+                        format!(
+                            "positional read `.{index}` on a {} value — the checker should \
+                             have rejected this",
+                            describe_ty(base_e.ty(), lcx)
+                        ),
+                        expr.span.clone(),
+                    ));
+                };
+                let elems = &lcx.tuples.borrow()[tuple_id].elems;
+                let ty = *elems.get(index).ok_or_else(|| {
+                    LowerError::new(
+                        format!(
+                            "tuple index {index} is out of bounds for a {}-element shape — \
+                             the checker should have rejected this",
+                            elems.len()
+                        ),
+                        expr.span.clone(),
+                    )
+                })?;
+                return Ok(Expr::TupleGet {
+                    base: Box::new(base_e),
+                    index,
+                    ty,
+                });
+            }
+
             let KirType::Struct(struct_id) = base_e.ty() else {
                 return Err(LowerError::unsupported(
                     "field access on a non-struct value (containers/dynamic land in a later \
@@ -287,7 +323,27 @@ pub(crate) fn lower_expr(
         )),
         ast::Expr::ListLit(items) => lower_list_lit(items, &expr.span, ctx, lcx, table),
         ast::Expr::SetLit(items) => lower_set_lit(items, &expr.span, ctx, lcx, table),
-        ast::Expr::TupleLit(_) => Err(LowerError::unsupported("tuple literal", expr.span.clone())),
+        ast::Expr::TupleLit(items) => {
+            // Tuples are structural, so the shape is inferred bottom-up from
+            // the element expressions — no expected-type context needed, in
+            // contrast to struct literals (see `lower_expr_expecting`).
+            let mut elems = Vec::with_capacity(items.len());
+            for item in items {
+                let elem_e = lower_expr(item, ctx, lcx, table)?;
+                if !super::is_tuple_element_ty(elem_e.ty()) {
+                    return Err(LowerError::unsupported(
+                        "tuple element type other than int/float/bool/str or a nested tuple \
+                         (container/struct/enum/nullable elements need the `Value` marshaling a \
+                         by-value tuple deliberately avoids)",
+                        item.span.clone(),
+                    ));
+                }
+                elems.push(elem_e);
+            }
+            let shape = elems.iter().map(Expr::ty).collect::<Vec<_>>();
+            let tuple_id = super::intern_tuple(lcx.tuples, shape);
+            Ok(Expr::MakeTuple { tuple_id, elems })
+        }
         ast::Expr::NullCoalesce(nullable, fallback) => {
             let nullable_e = lower_expr(nullable, ctx, lcx, table)?;
             let KirType::Nullable(nullable_id) = nullable_e.ty() else {

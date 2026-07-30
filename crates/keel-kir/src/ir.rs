@@ -28,6 +28,11 @@ pub type StructId = usize;
 /// Index into `KirProgram::enums`.
 pub type EnumId = usize;
 
+/// Index into `KirProgram::tuples` — a *structural* intern id, like `ListId`
+/// rather than `StructId`: `(str, int)` written anywhere in the program is
+/// the same `TupleId`, since `SPEC.md` §2.8 makes tuples structural.
+pub type TupleId = usize;
+
 /// Index into `KirProgram::lists` — a *structural* intern id (unlike
 /// `StructId`/`EnumId`, which are nominal: two declarations with identical
 /// shape are still distinct types). `list[int]` written anywhere in the
@@ -100,7 +105,44 @@ pub struct KirProgram {
     /// list/struct inner types are modeled — see
     /// `lower::is_nullable_inner_ty`.
     pub nullables: Vec<KirType>,
+    /// Every distinct tuple *shape* interned so far (structural, not
+    /// declaration order — see `TupleId`'s doc). Element types are restricted
+    /// to int/float/bool/str and nested tuples (`lower::is_tuple_element_ty`);
+    /// containers, structs, enums, and nullables inside a tuple need `Value`
+    /// marshaling the by-value representation deliberately avoids.
+    pub tuples: Vec<TupleLayout>,
     pub span_table: SpanTable,
+}
+
+/// A tuple shape's compiled layout: element types in positional order,
+/// fixed at KIR-lowering time. Unlike [`StructLayout`] this is *structural*
+/// and unnamed — `(str, int)` written anywhere in the program is one
+/// `TupleId` (`SPEC.md` §2.8 makes tuples structural), so there is no
+/// declaration to carry a name from.
+///
+/// A tuple is a **by-value** LLVM aggregate: no heap allocation, no `ptr`
+/// indirection, and no RC — deliberately not the container ABI
+/// (`designs/llvm-compilation.md` §1.1). A `str` element is still a boxed
+/// `Value*`, so copying a tuple duplicates that pointer without a retain.
+/// That is consistent with the rest of the backend today — `passes::rc`'s
+/// `insert_rc` is a no-op, so nothing releases either and there is no
+/// double-free — and becomes real RC bookkeeping when that pass does.
+#[derive(Debug, Clone)]
+pub struct TupleLayout {
+    pub id: TupleId,
+    /// Positional order — `pair.0` indexes this directly.
+    pub elems: Vec<KirType>,
+}
+
+impl TupleLayout {
+    /// `true` when any element is heap-shaped, mirroring
+    /// [`StructLayout::is_heap`]. Note this does *not* make the tuple itself
+    /// a `ptr` the way a heap struct is — the aggregate stays by value; it
+    /// only reports that it *contains* RC'd data.
+    #[must_use]
+    pub fn is_heap(&self, program: &KirProgram) -> bool {
+        self.elems.iter().any(|ty| ty.is_heap(program))
+    }
 }
 
 /// A named struct type's compiled layout: field order + `KirType` per
@@ -336,6 +378,22 @@ pub enum Expr {
         field_index: usize,
         ty: KirType,
     },
+    /// Builds a tuple value (`("hello", 42)`) as a by-value aggregate — one
+    /// element expression per position in `TupleLayout::elems`, same order.
+    /// Unlike `MakeStruct` there is no heap allocation and no field-name
+    /// matching: tuple positions *are* the layout.
+    MakeTuple {
+        tuple_id: TupleId,
+        elems: Vec<Expr>,
+    },
+    /// `pair.0` on a tuple-typed `base` — `index` is the positional index,
+    /// bounds-checked by the type checker before lowering ever sees it
+    /// (`SPEC.md` §2.8), so codegen can `extractvalue` unconditionally.
+    TupleGet {
+        base: Box<Expr>,
+        index: usize,
+        ty: KirType,
+    },
     /// Builds a simple-enum value (`Priority.low`) — just its runtime tag,
     /// resolved at lowering time via `EnumLayout::variant_index`. No payload
     /// (rich variants aren't modeled yet).
@@ -479,6 +537,8 @@ impl Expr {
             | Expr::Call { ty, .. }
             | Expr::FieldGet { ty, .. } => *ty,
             Expr::MakeStruct { struct_id, .. } => KirType::Struct(*struct_id),
+            Expr::MakeTuple { tuple_id, .. } => KirType::Tuple(*tuple_id),
+            Expr::TupleGet { ty, .. } => *ty,
             Expr::MakeEnum { enum_id, .. } => KirType::Enum(*enum_id),
             Expr::Index { ty, .. }
             | Expr::NullLit { ty }

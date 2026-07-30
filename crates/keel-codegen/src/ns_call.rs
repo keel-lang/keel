@@ -122,6 +122,17 @@ pub(crate) fn emit_box_arg<'ctx>(
              nullable into a boxed Value is a later-M2/M3 concern)"
                 .to_string(),
         )),
+        // A tuple is a by-value LLVM aggregate, not a boxed `Value` — there
+        // is no `keel_box_tuple`, so passing a whole tuple across the
+        // namespace boundary has no representation. Reading an element first
+        // (`io.show("{pair.0}")`) works, since that yields a scalar. An
+        // explicit arm rather than a fallthrough: silently treating the
+        // aggregate as a pointer would miscompile.
+        KirType::Tuple(_) => Err(CodegenError::Unsupported(
+            "tuple-typed argument to a namespace call (pass an element — `pair.0` — instead; \
+             marshaling a whole tuple into a boxed Value::List is a later-M2/M3 concern)"
+                .to_string(),
+        )),
     }
 }
 

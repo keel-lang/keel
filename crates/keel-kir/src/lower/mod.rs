@@ -52,7 +52,7 @@ use keel_syntax::lexer::Span;
 
 use crate::ir::{
     Block, EnumId, EnumLayout, FuncId, KirFunction, KirProgram, ListId, LocalId, MapId, NullableId,
-    SetId, StructId, StructLayout,
+    SetId, StructId, StructLayout, TupleId, TupleLayout,
 };
 use crate::span_table::SpanTable;
 use crate::types::KirType;
@@ -125,6 +125,8 @@ pub(crate) struct LowerCtx<'a> {
     pub(crate) sets: &'a std::cell::RefCell<Vec<KirType>>,
     /// Same interior-mutability rationale as `lists`, for `T?` shapes.
     pub(crate) nullables: &'a std::cell::RefCell<Vec<KirType>>,
+    /// Same interior-mutability rationale as `lists`, for tuple shapes.
+    pub(crate) tuples: &'a std::cell::RefCell<Vec<TupleLayout>>,
     /// Each task's per-parameter default-value expression (`None` for a
     /// parameter with no default), indexed by `FuncId`, parallel to that
     /// task's own param list. Lowered once per declaration in a separate,
@@ -249,6 +251,8 @@ pub fn lower_program(
     let sets: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
     // Same structural-interning rationale as `lists`, for `T?` shapes.
     let nullables: std::cell::RefCell<Vec<KirType>> = std::cell::RefCell::new(Vec::new());
+    // Same structural-interning rationale as `lists`, for tuple shapes.
+    let tuples: std::cell::RefCell<Vec<TupleLayout>> = std::cell::RefCell::new(Vec::new());
 
     // Pass 1a: reserve a `StructId` for every named struct declaration
     // before resolving any field types, so a field can reference another
@@ -318,6 +322,7 @@ pub fn lower_program(
                     &maps,
                     &sets,
                     &nullables,
+                    &tuples,
                 )?,
             ));
         }
@@ -361,6 +366,7 @@ pub fn lower_program(
                     &maps,
                     &sets,
                     &nullables,
+                    &tuples,
                 )?;
                 let func_id = task_order.len();
                 task_order.push(task);
@@ -409,6 +415,7 @@ pub fn lower_program(
             maps: &maps,
             sets: &sets,
             nullables: &nullables,
+            tuples: &tuples,
             param_defaults: &empty_param_defaults,
             artifacts,
             user_raised_struct_id,
@@ -432,6 +439,7 @@ pub fn lower_program(
         maps: &maps,
         sets: &sets,
         nullables: &nullables,
+        tuples: &tuples,
         param_defaults: &param_defaults,
         artifacts,
         user_raised_struct_id,
@@ -498,6 +506,7 @@ pub fn lower_program(
         maps: maps.into_inner(),
         sets: sets.into_inner(),
         nullables: nullables.into_inner(),
+        tuples: tuples.into_inner(),
         span_table,
     })
 }
@@ -648,12 +657,15 @@ fn expr_escapes_uncaught(expr: &crate::ir::Expr, try_depth: usize, can_raise: &[
             expr_escapes_uncaught(list, try_depth, can_raise)
                 || expr_escapes_uncaught(index, try_depth, can_raise)
         }
-        Expr::FieldGet { base, .. } | Expr::NullFieldGet { base, .. } => {
-            expr_escapes_uncaught(base, try_depth, can_raise)
-        }
+        Expr::FieldGet { base, .. }
+        | Expr::NullFieldGet { base, .. }
+        | Expr::TupleGet { base, .. } => expr_escapes_uncaught(base, try_depth, can_raise),
         Expr::MakeStruct { fields, .. } => fields
             .iter()
             .any(|f| expr_escapes_uncaught(f, try_depth, can_raise)),
+        Expr::MakeTuple { elems, .. } => elems
+            .iter()
+            .any(|e| expr_escapes_uncaught(e, try_depth, can_raise)),
         Expr::Call { target, args, .. } => {
             let self_escapes =
                 try_depth == 0 && matches!(target, crate::ir::CallTarget::Fn(id) if can_raise[*id]);
@@ -780,6 +792,7 @@ pub(crate) fn ty_expr_to_kir(
     maps: &std::cell::RefCell<Vec<KirType>>,
     sets: &std::cell::RefCell<Vec<KirType>>,
     nullables: &std::cell::RefCell<Vec<KirType>>,
+    tuples: &std::cell::RefCell<Vec<TupleLayout>>,
 ) -> Result<KirType, LowerError> {
     use keel_syntax::ast::TypeExpr;
     match &ty.kind {
@@ -813,6 +826,7 @@ pub(crate) fn ty_expr_to_kir(
                 maps,
                 sets,
                 nullables,
+                tuples,
             )?;
             if !is_nullable_inner_ty(inner_ty) {
                 return Err(LowerError::unsupported(
@@ -837,6 +851,7 @@ pub(crate) fn ty_expr_to_kir(
                 maps,
                 sets,
                 nullables,
+                tuples,
             )?;
             if !is_list_element_ty(elem_ty) {
                 return Err(LowerError::unsupported(
@@ -859,6 +874,7 @@ pub(crate) fn ty_expr_to_kir(
                 maps,
                 sets,
                 nullables,
+                tuples,
             )?;
             if key_ty != KirType::Str {
                 return Err(LowerError::unsupported(
@@ -875,6 +891,7 @@ pub(crate) fn ty_expr_to_kir(
                 maps,
                 sets,
                 nullables,
+                tuples,
             )?;
             if !is_list_element_ty(value_ty) {
                 return Err(LowerError::unsupported(
@@ -895,6 +912,7 @@ pub(crate) fn ty_expr_to_kir(
                 maps,
                 sets,
                 nullables,
+                tuples,
             )?;
             if !is_list_element_ty(elem_ty) {
                 return Err(LowerError::unsupported(
@@ -909,7 +927,34 @@ pub(crate) fn ty_expr_to_kir(
             "inline struct type",
             ty.span.clone(),
         )),
-        TypeExpr::Tuple(_) => Err(LowerError::unsupported("tuple type", ty.span.clone())),
+        TypeExpr::Tuple(items) => {
+            // `TypeExpr::Tuple` holds bare `TypeExpr`s with no spans of their
+            // own, same situation as `TypeExpr::List` above.
+            let mut elems = Vec::with_capacity(items.len());
+            for item in items {
+                let item_node = keel_syntax::ast::Node::new(item.clone(), ty.span.clone());
+                let elem_ty = ty_expr_to_kir(
+                    &item_node,
+                    structs_by_name,
+                    enums_by_name,
+                    lists,
+                    maps,
+                    sets,
+                    nullables,
+                    tuples,
+                )?;
+                if !is_tuple_element_ty(elem_ty) {
+                    return Err(LowerError::unsupported(
+                        "tuple element type other than int/float/bool/str or a nested tuple \
+                         (container/struct/enum/nullable elements need the `Value` marshaling a \
+                         by-value tuple deliberately avoids)",
+                        ty.span.clone(),
+                    ));
+                }
+                elems.push(elem_ty);
+            }
+            Ok(KirType::Tuple(intern_tuple(tuples, elems)))
+        }
         TypeExpr::Func(_, _) => Err(LowerError::unsupported("function type", ty.span.clone())),
         TypeExpr::Generic(_, _) => Err(LowerError::unsupported("generic type", ty.span.clone())),
         TypeExpr::Dynamic => Err(LowerError::unsupported("dynamic type", ty.span.clone())),
@@ -963,6 +1008,35 @@ pub(crate) fn intern_set(sets: &std::cell::RefCell<Vec<KirType>>, elem: KirType)
     }
     sets.push(elem);
     sets.len() - 1
+}
+
+/// `true` for the element types a tuple can hold today. Wider than
+/// [`is_list_element_ty`] in one direction — nested tuples are allowed, since
+/// a by-value aggregate nests for free with no `Value` marshaling — and
+/// deliberately excludes containers, structs, enums, and nullables, which
+/// would need exactly that marshaling. See `ir.rs`'s `TupleLayout` doc.
+pub(crate) fn is_tuple_element_ty(ty: KirType) -> bool {
+    matches!(
+        ty,
+        KirType::I64 | KirType::F64 | KirType::Bool | KirType::Str | KirType::Tuple(_)
+    )
+}
+
+/// Interns `elems` into `tuples`, returning its `TupleId` — same structural-
+/// interning rationale as [`intern_list`]: `(str, int)` written twice in a
+/// program is one `TupleId` (`SPEC.md` §2.8 makes tuples structural), unlike
+/// `StructId`'s nominal, declaration-order interning.
+pub(crate) fn intern_tuple(
+    tuples: &std::cell::RefCell<Vec<TupleLayout>>,
+    elems: Vec<KirType>,
+) -> TupleId {
+    let mut tuples = tuples.borrow_mut();
+    if let Some(id) = tuples.iter().position(|t| t.elems == elems) {
+        return id;
+    }
+    let id = tuples.len();
+    tuples.push(TupleLayout { id, elems });
+    id
 }
 
 /// `true` for the inner types a nullable (`T?`) can wrap today —

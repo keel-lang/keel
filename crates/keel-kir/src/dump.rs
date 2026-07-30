@@ -50,6 +50,15 @@ fn fmt_ty(program: &KirProgram, ty: KirType) -> String {
         KirType::Map(id) => format!("map[str, {}]", fmt_ty(program, program.maps[id])),
         KirType::Set(id) => format!("set[{}]", fmt_ty(program, program.sets[id])),
         KirType::Nullable(id) => format!("{}?", fmt_ty(program, program.nullables[id])),
+        KirType::Tuple(id) => format!(
+            "({})",
+            program.tuples[id]
+                .elems
+                .iter()
+                .map(|elem| fmt_ty(program, *elem))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
         other => other.to_string(),
     }
 }
@@ -251,6 +260,17 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("{} {{ {fields} }}", layout.name)
+        }
+        Expr::MakeTuple { elems, .. } => format!(
+            "({})",
+            elems
+                .iter()
+                .map(|e| fmt_expr(program, func, e))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Expr::TupleGet { base, index, .. } => {
+            format!("{}.{index}", fmt_expr(program, func, base))
         }
         Expr::FieldGet {
             base, field_index, ..

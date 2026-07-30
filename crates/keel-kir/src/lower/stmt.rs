@@ -96,6 +96,11 @@ pub(crate) fn lower_stmt(
 ) -> Result<Vec<ir::Stmt>, LowerError> {
     match &stmt.kind {
         ast::Stmt::Let { binding, ty, value } => {
+            // `(a, b) = pair` binds N names from one subject, which
+            // `binding_ident` cannot express (it returns a single name).
+            if let ast::Binding::Destruct(pat) = binding {
+                return lower_destructure_let(pat, ty, value, ctx, lcx, table, &stmt.span);
+            }
             let name = binding_ident(binding, &stmt.span)?;
             if let ast::Expr::WhenExpr { subject, arms } = &value.kind {
                 return lower_when_expr_let(
@@ -116,6 +121,7 @@ pub(crate) fn lower_stmt(
                     lcx.maps,
                     lcx.sets,
                     lcx.nullables,
+                    lcx.tuples,
                 )?;
                 lower_expr_expecting(value, expected, ctx, lcx, table)?
             } else if let ast::Expr::StructSpreadUpdate { base, .. } = &value.kind {
@@ -511,6 +517,7 @@ fn lower_when_expr_let(
             lcx.maps,
             lcx.sets,
             lcx.nullables,
+            lcx.tuples,
         )?,
         None => {
             let probe = lower_block(&arms[0].body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
@@ -787,4 +794,92 @@ pub(crate) fn block_terminates(block: &Block) -> bool {
         }
         _ => false,
     }
+}
+
+/// Lowers `(a, b) = pair` — a positional tuple destructure — into a subject
+/// local plus one `TupleGet` binding per name.
+///
+/// The subject is bound to its own synthetic local first so the right-hand
+/// side is evaluated exactly once, however many names it feeds; reading
+/// `pair.0` and `pair.1` off a re-lowered RHS would duplicate any work (or
+/// any `raise`) inside it.
+///
+/// Struct destructuring (`{a, b} = value`) stays unsupported: it needs field-
+/// name resolution against a `StructLayout` and has no tuple fixture driving
+/// it, so it keeps the pre-existing "destructuring binding" error rather than
+/// a half-built path.
+fn lower_destructure_let(
+    pat: &ast::DestructPat,
+    annotation: &Option<Node<ast::TypeExpr>>,
+    value: &ast::SpannedExpr,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    span: &Span,
+) -> Result<Vec<ir::Stmt>, LowerError> {
+    let ast::DestructPat::Tuple(names) = pat else {
+        return Err(LowerError::unsupported(
+            "struct destructuring binding",
+            span.clone(),
+        ));
+    };
+
+    let init = if let Some(annotation) = annotation {
+        let expected = ty_expr_to_kir(
+            annotation,
+            lcx.structs_by_name,
+            lcx.enums_by_name,
+            lcx.lists,
+            lcx.maps,
+            lcx.sets,
+            lcx.nullables,
+            lcx.tuples,
+        )?;
+        lower_expr_expecting(value, expected, ctx, lcx, table)?
+    } else {
+        lower_expr(value, ctx, lcx, table)?
+    };
+
+    let subject_ty = init.ty();
+    let KirType::Tuple(tuple_id) = subject_ty else {
+        return Err(LowerError::unsupported(
+            "positional destructuring of a non-tuple value (list/struct destructuring is a \
+             later-M2/M3 concern)",
+            span.clone(),
+        ));
+    };
+    let elems = lcx.tuples.borrow()[tuple_id].elems.clone();
+    if elems.len() != names.len() {
+        return Err(LowerError::new(
+            format!(
+                "destructuring binds {} name(s) but the tuple has {} element(s) — the checker \
+                 should have rejected this",
+                names.len(),
+                elems.len()
+            ),
+            span.clone(),
+        ));
+    }
+
+    // Declared before the element locals so each `TupleGet` can reference it.
+    let subject_local = ctx.declare("<destructure.subject>", subject_ty);
+    let mut stmts = vec![ir::Stmt::Let {
+        local: subject_local,
+        init: Some(init),
+    }];
+    for (index, (name, elem_ty)) in names.iter().zip(&elems).enumerate() {
+        let local = ctx.declare(name, *elem_ty);
+        stmts.push(ir::Stmt::Let {
+            local,
+            init: Some(ir::Expr::TupleGet {
+                base: Box::new(ir::Expr::Local {
+                    id: subject_local,
+                    ty: subject_ty,
+                }),
+                index,
+                ty: *elem_ty,
+            }),
+        });
+    }
+    Ok(stmts)
 }

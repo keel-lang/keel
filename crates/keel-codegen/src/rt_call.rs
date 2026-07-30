@@ -354,13 +354,21 @@ pub(crate) fn unbox_value<'ctx>(
             Ok(b.into())
         }
         KirType::Str | KirType::List(_) | KirType::Map(_) | KirType::Set(_) => Ok(boxed.into()),
-        KirType::Unit | KirType::Struct(_) | KirType::Enum(_) | KirType::Nullable(_) => {
-            Err(CodegenError::Unsupported(
-                "a list element type other than int/float/bool/str (struct/enum/nullable \
-                 elements need Value marshaling, a later M2/M3 concern)"
-                    .to_string(),
-            ))
-        }
+        // `Tuple` is unreachable here in practice — `is_list_element_ty`
+        // rejects a tuple element at lowering time, so no boxed tuple can
+        // exist to unbox — but it is listed explicitly rather than folded
+        // into a fallthrough: there is no `keel_unbox_tuple`, and returning
+        // `boxed` like the pass-through arm above would hand codegen a
+        // pointer where it expects a by-value aggregate.
+        KirType::Unit
+        | KirType::Struct(_)
+        | KirType::Enum(_)
+        | KirType::Nullable(_)
+        | KirType::Tuple(_) => Err(CodegenError::Unsupported(
+            "a list element type other than int/float/bool/str (struct/enum/nullable/tuple \
+             elements need Value marshaling, a later M2/M3 concern)"
+                .to_string(),
+        )),
     }
 }
 

@@ -35,6 +35,9 @@ Nested access needs parentheses — `(t.0).1` rather than `t.0.1` — because
 `0.1` lexes as a float literal. See [issue #185](https://github.com/keel-lang/keel/issues/185)
 and the [Tuples guide](guide/types.md#tuples).
 
+Destructuring (`(a, b) = pair`) and positional reads both compile through
+the native backend as well, matching the interpreter byte for byte.
+
 ### `keel dap` — a step debugger over the Debug Adapter Protocol
 
 Any DAP-speaking editor can now set breakpoints, step, and inspect variables

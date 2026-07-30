@@ -9,7 +9,7 @@
 //! adding them is later-M2+ work, done alongside the lowering support that
 //! produces them.
 
-use crate::ir::{EnumId, KirProgram, ListId, MapId, NullableId, SetId, StructId};
+use crate::ir::{EnumId, KirProgram, ListId, MapId, NullableId, SetId, StructId, TupleId};
 
 /// A KIR-level type. Every KIR expression carries one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,6 +70,13 @@ pub enum KirType {
     /// has no pointer to repurpose at all, so it's an explicit
     /// `{ i1 has_value, T }` pair, by value.
     Nullable(NullableId),
+    /// A tuple shape (`(str, int)`) — see `KirProgram::tuples` for the
+    /// positional element types this id indexes. A **by-value** LLVM
+    /// aggregate: no heap allocation, no `ptr`, no RC, deliberately not the
+    /// container ABI (`designs/llvm-compilation.md` §1.1). Element types are
+    /// restricted to int/float/bool/str and nested tuples — see
+    /// `TupleLayout`'s doc for the `str`-element RC caveat.
+    Tuple(TupleId),
 }
 
 impl KirType {
@@ -92,6 +99,7 @@ impl KirType {
             KirType::Map(_) => "map",
             KirType::Set(_) => "set",
             KirType::Nullable(_) => "nullable",
+            KirType::Tuple(_) => "tuple",
         }
     }
 
@@ -112,6 +120,9 @@ impl KirType {
             KirType::Struct(id) => program.structs[id].is_heap(program),
             KirType::List(_) | KirType::Map(_) | KirType::Set(_) => true,
             KirType::I64 | KirType::F64 | KirType::Bool | KirType::Unit | KirType::Enum(_) => false,
+            // The aggregate itself is by value, but it *contains* RC'd data
+            // when any element does (a `str` element is a boxed `Value*`).
+            KirType::Tuple(id) => program.tuples[id].is_heap(program),
             // A nullable scalar is a by-value `{ i1, T }` pair, not a
             // pointer — everything else nullable wraps a `ptr` (see
             // `KirType::Nullable`'s doc). `is_nullable_inner_ty` guarantees
