@@ -112,6 +112,23 @@ pub(super) fn field_name() -> P<String> {
     .boxed()
 }
 
+/// Field name in *postfix* position (after `.` or `?.`) — a [`field_name`]
+/// plus a bare integer, so tuple positional access (`pair.0`, `SPEC.md`
+/// §2.8) parses. Deliberately separate from [`field_name`]: that parser is
+/// also used for `type X { field: T }` declarations, map-literal keys, and
+/// struct-literal fields, where a numeric name must stay a syntax error.
+///
+/// The index is carried as a `String` so `Expr::FieldAccess` needs no new
+/// AST variant — `field_name` can never yield an all-digit name, so there
+/// is no ambiguity with a real field.
+///
+/// Only *flat* indexing parses: `t.0.1` lexes `0.1` as a single
+/// `Token::Float` (logos picks the longest match — see `lexer.rs`'s `Float`
+/// regex), so nested tuple access needs `(t.0).1`. Tracked separately.
+pub(super) fn postfix_field_name() -> P<String> {
+    field_name().or(select! { Token::Integer(n) => n }).boxed()
+}
+
 /// Map / struct-literal key: a field_name or a string literal (strings
 /// are raw-decoded into the key).  Used for `StructSpreadUpdate` overrides,
 /// which are always identifier-shaped.

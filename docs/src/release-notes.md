@@ -4,6 +4,37 @@
 
 ## Unreleased
 
+### Tuple positional access — `pair.0`
+
+Reading a tuple element by position is documented in the spec but never
+parsed, so the spec's own example failed `keel check`. It works now:
+
+```keel
+use std/io
+
+pair: (str, int) = ("hello", 42)
+(name, count) = pair              # destructuring already worked
+x = pair.0                        # str
+io.show("{x} {pair.1} {name} {count}")   # hello 42 hello 42
+
+maybe: (str, int)? = ("hi", 7)
+io.show("{maybe?.0}")             # hi
+```
+
+Indices are bounds-checked when you compile, not when you run —
+`pair.5` on a 2-tuple is a type error. And because `.N` means *tuple
+position*, using it on a list or map tells you what to write instead:
+
+```keel
+xs: list[int] = [1, 2, 3]
+# xs.0   # error: positional access `.0` is only valid on tuples;
+         #        index `list[int]` with `[0]`
+```
+
+Nested access needs parentheses — `(t.0).1` rather than `t.0.1` — because
+`0.1` lexes as a float literal. See [issue #185](https://github.com/keel-lang/keel/issues/185)
+and the [Tuples guide](guide/types.md#tuples).
+
 ### `keel dap` — a step debugger over the Debug Adapter Protocol
 
 Any DAP-speaking editor can now set breakpoints, step, and inspect variables

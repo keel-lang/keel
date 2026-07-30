@@ -4,7 +4,7 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{CallArg, Expr, Node, SpannedExpr, StringPart, TypeExpr, UnOp};
+use crate::ast::{CallArg, Expr, Node, SpannedExpr, StringPart, TypeExpr, UnOp, tuple_index};
 
 use super::environment::Environment;
 use super::runtime_error;
@@ -397,6 +397,24 @@ impl Interpreter {
                                 .await
                                 .map(ExprFlow::Value)
                                 .map_err(|_| runtime_error(format!("Value has no field `{field}`")))
+                        }
+                        // Positional tuple access (`pair.0`, `SPEC.md` §2.8).
+                        // Tuples share the list repr in v0.1 (see
+                        // `cast_tuple` below), so this arm cannot tell a
+                        // tuple from a list — the type checker is the gate
+                        // that rejects `[1, 2].0`, since `Ty::Tuple` is
+                        // distinct from `Ty::List` there. Compiled tuples
+                        // are by-value LLVM structs, so the two engines
+                        // only diverge on input the checker already
+                        // rejects; do not "fix" that asymmetry here.
+                        Value::List(items) if tuple_index(field).is_some() => {
+                            let idx = tuple_index(field).expect("guarded above");
+                            items.get(idx).cloned().map(ExprFlow::Value).ok_or_else(|| {
+                                runtime_error(format!(
+                                    "tuple index {idx} is out of bounds (arity {})",
+                                    items.len()
+                                ))
+                            })
                         }
                         _ => {
                             // Zero-arg method fallback for properties

@@ -13,7 +13,7 @@ use crate::lexer::Token;
 
 use super::common::{
     P, block_with, field_name, field_sep, ident, if_body, map_key, map_lit_key, newlines,
-    string_lit, when_arm, when_body,
+    postfix_field_name, string_lit, when_arm, when_body,
 };
 use super::types::spanned_type_expr;
 
@@ -422,11 +422,11 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
         // not stored in the AST.
         let postfix_op = choice((
             just(Token::Dot)
-                .ignore_then(field_name())
+                .ignore_then(postfix_field_name())
                 .then(call_args.clone().or_not())
                 .map(|(field, args)| PostfixOp::DotAccess { field, args }),
             just(Token::NullDot)
-                .ignore_then(field_name())
+                .ignore_then(postfix_field_name())
                 .map(PostfixOp::NullDotAccess),
             just(Token::Bang).to(PostfixOp::NullAssert),
             call_args.clone().map(PostfixOp::Call),

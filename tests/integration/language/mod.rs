@@ -12,4 +12,5 @@ mod strings;
 mod structs;
 mod subscripts;
 mod testing;
+mod tuples;
 mod types;

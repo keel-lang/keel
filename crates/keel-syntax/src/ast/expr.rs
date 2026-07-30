@@ -233,6 +233,21 @@ pub enum DurationUnit {
     Weeks,
 }
 
+/// Reads a [`Expr::FieldAccess`] / [`Expr::NullFieldAccess`] field name as a
+/// tuple position: `"0"` → `Some(0)`, `"name"` → `None`.
+///
+/// The inverse of `parser::common::postfix_field_name`, which is the only
+/// parser that can produce an all-digit field name — so an all-digit name is
+/// unambiguously a tuple index and never a struct field (`SPEC.md` §2.8).
+/// Shared by the type checker and the interpreter, which both have to
+/// distinguish the two readings of the same `String`.
+pub fn tuple_index(field: &str) -> Option<usize> {
+    if field.is_empty() || !field.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    field.parse().ok()
+}
+
 impl DurationUnit {
     /// Canonical lower-case unit name for error messages and the formatter.
     pub fn canonical_name(self) -> &'static str {

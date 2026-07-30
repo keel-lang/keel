@@ -303,6 +303,18 @@ x = pair.0                        # positional access
 
 Tuples are structural, immutable. Single-element tuples are not a thing (`(str)` is `str`). `()` is `none`.
 
+Positional access is bounds-checked at compile time — `pair.2` on a 2-tuple is a type error, not a runtime one — and `.N` is valid only on tuples. Lists and maps use subscripts (`xs[0]`), which is why `xs.0` is rejected. `?.` works too: `maybe_pair?.0`.
+
+Nested positional access currently needs parentheses:
+
+```keel
+t: ((int, int), int) = ((1, 2), 3)
+b = (t.0).1                       # ok
+# b = t.0.1                       # parse error — see below
+```
+
+This is a lexer limitation rather than a language rule: `0.1` matches the float-literal pattern and is claimed as a single token before the grammar sees two indices. Tracked in [#185](https://github.com/keel-lang/keel/issues/185); the parenthesized form is not going away.
+
 ### 2.9 The `dynamic` type (FFI/interop only)
 
 `dynamic` exists for untyped boundaries: `extern` returns, `prompt as dynamic`, raw SQL rows, and JSON/cache interop. It must always be explicitly written — there is no implicit path to `dynamic`.

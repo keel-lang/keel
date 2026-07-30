@@ -12,6 +12,30 @@ All notable changes to Keel.
 
 ### Added
 
+- **Tuple positional access (`pair.0`).** `SPEC.md` §2.8 has always documented reading a tuple element by position, but the parser never accepted it — the postfix `.` parser took identifiers and a few contextual keywords, never an integer, so `SPEC`'s own example failed `keel check` with `found '0' expected something else`. Positional reads now parse, resolve to the element's declared type, and are bounds-checked at compile time against the tuple's arity. `?.` works too. Numeric names remain a syntax error in declarations (`type X { 0: int }`), because the postfix parser is deliberately separate from the one used for struct fields and map keys.
+
+```keel
+use std/io
+
+pair: (str, int) = ("hello", 42)
+(name, count) = pair              # destructuring already worked
+x = pair.0                        # str  — new
+io.show("{x} {pair.1} {name} {count}")   # hello 42 hello 42
+
+maybe: (str, int)? = ("hi", 7)
+io.show("{maybe?.0}")             # hi
+
+nested: ((int, int), int) = ((1, 2), 3)
+io.show("{(nested.0).1}")         # 2 — parentheses required, see #185
+```
+
+  Because tuples and lists share one runtime representation in v0.1, `.N` on a
+  non-tuple is rejected by the type checker rather than the interpreter:
+  `xs.0` on a `list[int]` reports *positional access `.0` is only valid on
+  tuples; index `list[int]` with `[0]`*. Nested access without parentheses
+  (`t.0.1`) still fails to parse — `0.1` matches the float-literal pattern and
+  is claimed as one token — tracked in #185.
+
 - **`keel dap` — an interpreter-backed step debugger over the Debug Adapter Protocol.** Any DAP-speaking editor (VS Code, `lldb-dap`-style clients) can now set source breakpoints, step over/in/out, inspect the call stack, and view locals and live agent `state` in a running Keel program — the same tree-walking interpreter every `keel run`/`keel test` already uses, paused in place rather than a separate execution path. `keel test --debug --filter <name>` debugs a single test the same way. Evaluating an expression while paused (`watch`/`hover`) reuses the program's own expression evaluator, so it sees the same values, types, and errors the paused statement would.
 
 ```keel
