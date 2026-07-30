@@ -45,6 +45,19 @@ pub(crate) fn llvm_type<'ctx>(
             }
         }
         KirType::Enum(_) => Ok(context.i32_type().into()),
+        // A tuple is the one genuinely by-value *aggregate* in the backend:
+        // an unnamed LLVM struct passed and stored directly, no `ptr`
+        // indirection and no heap allocation (§1.1). A `str` element is
+        // still an element-level boxed `Value*`, which does not change the
+        // aggregate's own representation.
+        KirType::Tuple(id) => {
+            let elem_types = program.tuples[id]
+                .elems
+                .iter()
+                .map(|elem| llvm_type(context, program, *elem))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(context.struct_type(&elem_types, false).into())
+        }
         KirType::List(_) | KirType::Map(_) | KirType::Set(_) => {
             Ok(context.ptr_type(AddressSpace::default()).into())
         }

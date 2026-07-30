@@ -14,6 +14,7 @@ use std::fmt;
 
 use crate::ir::{
     Block, CallTarget, EnumId, Expr, FuncId, KirFunction, KirProgram, LocalId, Stmt, StructId,
+    TupleId, TupleLayout,
 };
 use crate::types::KirType;
 
@@ -112,6 +113,18 @@ fn check_struct(program: &KirProgram, id: StructId) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+/// Bounds-checks a `TupleId` and hands back the layout, since every tuple
+/// check needs the element list immediately afterwards (unlike
+/// [`check_struct`], whose callers already hold the layout).
+fn check_tuple(program: &KirProgram, id: TupleId) -> Result<&TupleLayout, String> {
+    program.tuples.get(id).ok_or_else(|| {
+        format!(
+            "TupleId {id} out of range ({} tuple shapes)",
+            program.tuples.len()
+        )
+    })
 }
 
 fn check_enum(program: &KirProgram, id: EnumId) -> Result<(), String> {
@@ -394,6 +407,49 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
                         field.ty()
                     ));
                 }
+            }
+            Ok(())
+        }
+        Expr::MakeTuple { tuple_id, elems } => {
+            let layout = check_tuple(program, *tuple_id)?;
+            if layout.elems.len() != elems.len() {
+                return Err(format!(
+                    "tuple literal has {} element(s), shape declares {}",
+                    elems.len(),
+                    layout.elems.len()
+                ));
+            }
+            for (position, (elem, declared_ty)) in elems.iter().zip(&layout.elems).enumerate() {
+                verify_expr(program, func, elem)?;
+                if elem.ty() != *declared_ty {
+                    return Err(format!(
+                        "tuple element {position} is declared {declared_ty} but the literal \
+                         supplies {}",
+                        elem.ty()
+                    ));
+                }
+            }
+            Ok(())
+        }
+        Expr::TupleGet { base, index, ty } => {
+            verify_expr(program, func, base)?;
+            let KirType::Tuple(tuple_id) = base.ty() else {
+                return Err(format!(
+                    "tuple positional read `.{index}` on a {} base",
+                    base.ty()
+                ));
+            };
+            let layout = check_tuple(program, tuple_id)?;
+            let Some(declared_ty) = layout.elems.get(*index) else {
+                return Err(format!(
+                    "tuple index {index} is out of bounds for a {}-element shape",
+                    layout.elems.len()
+                ));
+            };
+            if *declared_ty != *ty {
+                return Err(format!(
+                    "tuple element {index} is {declared_ty} but the read claims {ty}"
+                ));
             }
             Ok(())
         }
