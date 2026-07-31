@@ -10,11 +10,27 @@
 //! `lower/mod.rs`'s `is_nullable_inner_ty`), and string interpolation
 //! (desugars to `str` concatenation plus a per-slot to-string runtime call —
 //! slots restricted to int/float/bool/str, format specs deferred — see
-//! [`lower_string_lit`]). Everything else (casts, `if`/`when` as
-//! expressions, lambdas, set/tuple literals, `!`/`!.` null-assert,
-//! pipelines, duration literals, rich (payload-carrying) enum variants,
-//! non-list method calls/indexing) is rejected; see module docs on
-//! `lower/mod.rs`.
+//! [`lower_string_lit`]), and `when` used as an expression in an arbitrary
+//! nested position (`f(when n {...})`, `1 + when n {...}`), which hoists a
+//! declare+`if`-chain pair ahead of the enclosing statement — see
+//! [`super::stmt::lower_when_expr_value`] and [`FnCtx::keep_order`].
+//! Everything else (casts, `if` as an expression, lambdas, `!`/`!.`
+//! null-assert, pipelines, duration literals, rich (payload-carrying) enum
+//! variants, non-container method calls/indexing) is rejected; see module
+//! docs on `lower/mod.rs`.
+//!
+//! # Evaluation order and hoisting
+//!
+//! Because a nested `when`-expression's statements are emitted *ahead of the
+//! whole enclosing statement*, any sibling sub-expression to its left would
+//! otherwise end up running after it. Every site below that lowers two or
+//! more sub-expressions in sequence therefore takes a [`FnCtx::hoist_mark`]
+//! before each one and calls [`FnCtx::keep_order`] with the siblings lowered
+//! so far, which spills them into temps bound ahead of the hoisted chain if
+//! (and only if) that chain materialized. Sites where a sub-expression is
+//! *not* evaluated exactly once — an `and`/`or` right operand, a `??`
+//! fallback — call [`FnCtx::forbid_hoist`] instead, since no spill can
+//! recover a conditional evaluation.
 
 use std::collections::HashMap;
 
@@ -131,9 +147,26 @@ pub(crate) fn lower_expr(
             Ok(Expr::Local { id: local, ty })
         }
         ast::Expr::BinaryOp { left, op, right } => {
-            let left_e = lower_expr(left, ctx, lcx, table)?;
+            let mut left_e = [lower_expr(left, ctx, lcx, table)?];
+            let mark = ctx.hoist_mark();
             let right_e = lower_expr(right, ctx, lcx, table)?;
             let kir_op = convert_binop(*op);
+            // `and`/`or` short-circuit: the right operand runs only when the
+            // left didn't already decide the result, so a hoisted chain — which
+            // would run unconditionally, ahead of the whole statement — can't
+            // model it. Every other operator evaluates both operands exactly
+            // once, left to right, which a spill of the left one preserves.
+            if matches!(kir_op, ir::BinOp::And | ir::BinOp::Or) {
+                ctx.forbid_hoist(
+                    mark,
+                    "the right-hand operand of `and`/`or` (short-circuiting means it may not \
+                     be evaluated at all)",
+                    &right.span,
+                )?;
+            } else {
+                ctx.keep_order(mark, &mut left_e, &expr.span)?;
+            }
+            let [left_e] = left_e;
             let ty = infer_binop_ty(kir_op, left_e.ty(), right_e.ty(), &expr.span)?;
             Ok(Expr::BinOp {
                 op: kir_op,
@@ -327,9 +360,11 @@ pub(crate) fn lower_expr(
             // Tuples are structural, so the shape is inferred bottom-up from
             // the element expressions — no expected-type context needed, in
             // contrast to struct literals (see `lower_expr_expecting`).
-            let mut elems = Vec::with_capacity(items.len());
+            let mut elems: Vec<Expr> = Vec::with_capacity(items.len());
             for item in items {
+                let mark = ctx.hoist_mark();
                 let elem_e = lower_expr(item, ctx, lcx, table)?;
+                ctx.keep_order(mark, &mut elems, &item.span)?;
                 if !super::is_tuple_element_ty(elem_e.ty()) {
                     return Err(LowerError::unsupported(
                         "tuple element type other than int/float/bool/str or a nested tuple \
@@ -353,7 +388,15 @@ pub(crate) fn lower_expr(
                 ));
             };
             let inner_ty = lcx.nullables.borrow()[nullable_id];
+            // The fallback runs only when the left-hand side is null — same
+            // conditional-evaluation problem as an `and`/`or` right operand.
+            let mark = ctx.hoist_mark();
             let fallback_e = lower_expr_expecting(fallback, inner_ty, ctx, lcx, table)?;
+            ctx.forbid_hoist(
+                mark,
+                "a `??` fallback (it is evaluated only when the left-hand side is null)",
+                &fallback.span,
+            )?;
             Ok(Expr::NullCoalesce {
                 nullable: Box::new(nullable_e),
                 fallback: Box::new(fallback_e),
@@ -399,20 +442,26 @@ pub(crate) fn lower_expr(
             "`if` expression",
             expr.span.clone(),
         )),
-        ast::Expr::WhenExpr { .. } => Err(LowerError::unsupported(
-            "`when` expression",
-            expr.span.clone(),
-        )),
+        // A `when` in a nested position with no expected type pinned by the
+        // surrounding syntax (a stdlib namespace argument, an interpolation
+        // slot, …) — the result type comes from the first arm's own tail
+        // value. `lower_expr_expecting` handles the pinned case.
+        ast::Expr::WhenExpr { subject, arms } => {
+            super::stmt::lower_when_expr_value(subject, arms, None, ctx, lcx, table, &expr.span)
+        }
         ast::Expr::Lambda { .. } => Err(LowerError::unsupported("lambda", expr.span.clone())),
         ast::Expr::Index { object, index } => {
-            let object_e = lower_expr(object, ctx, lcx, table)?;
-            let KirType::List(list_id) = object_e.ty() else {
+            let mut object_e = [lower_expr(object, ctx, lcx, table)?];
+            let KirType::List(list_id) = object_e[0].ty() else {
                 return Err(LowerError::unsupported(
                     "index access on a non-list value (strings/maps land in a later M2 issue)",
                     expr.span.clone(),
                 ));
             };
+            let mark = ctx.hoist_mark();
             let index_e = lower_expr(index, ctx, lcx, table)?;
+            ctx.keep_order(mark, &mut object_e, &expr.span)?;
+            let [object_e] = object_e;
             if index_e.ty() != KirType::I64 {
                 return Err(LowerError::new(
                     format!(
@@ -454,6 +503,22 @@ pub(crate) fn lower_expr_expecting(
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
 ) -> Result<Expr, LowerError> {
+    // A nested `when`-expression takes its result type straight from the
+    // pinned one, so each arm's tail value is coerced against it (the same
+    // `TailSink::Assign` path a `let`-position `when` uses) instead of being
+    // inferred from the first arm alone — which is also what lets an arm
+    // whose tail is a struct literal resolve to the *named* struct.
+    if let ast::Expr::WhenExpr { subject, arms } = &expr.kind {
+        return super::stmt::lower_when_expr_value(
+            subject,
+            arms,
+            Some(expected),
+            ctx,
+            lcx,
+            table,
+            &expr.span,
+        );
+    }
     if let KirType::Struct(struct_id) = expected {
         match &expr.kind {
             ast::Expr::StructLit(fields) => {
@@ -556,7 +621,13 @@ fn lower_struct_lit(
         }
     }
 
-    let mut fields = Vec::with_capacity(layout.fields.len());
+    // Fields are rebuilt in declared order, which is also the order they're
+    // evaluated in — so an earlier field must be spilled if a later one
+    // hoists. (Declared order is not necessarily the *source* order the
+    // interpreter evaluates in; that pre-existing difference is only
+    // observable for side-effecting field expressions and is out of scope
+    // here.)
+    let mut fields: Vec<Expr> = Vec::with_capacity(layout.fields.len());
     for (field_name, field_ty) in &layout.fields {
         let value = by_name.remove(field_name.as_str()).ok_or_else(|| {
             LowerError::new(
@@ -564,7 +635,10 @@ fn lower_struct_lit(
                 span.clone(),
             )
         })?;
-        fields.push(lower_expr_expecting(value, *field_ty, ctx, lcx, table)?);
+        let mark = ctx.hoist_mark();
+        let value_e = lower_expr_expecting(value, *field_ty, ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut fields, &value.span)?;
+        fields.push(value_e);
     }
     if let Some((extra_name, extra_value)) = by_name.into_iter().next() {
         return Err(LowerError::new(
@@ -622,10 +696,17 @@ fn lower_map_lit(
                 value.span.clone(),
             ));
         }
+        // The accumulator holds every pair inserted so far, so spilling it is
+        // exactly what keeps those earlier values ahead of a hoist from this
+        // one.
+        let mark = ctx.hoist_mark();
         let value_e = lower_expr_expecting(value, value_ty, ctx, lcx, table)?;
+        let mut prior = [acc];
+        ctx.keep_order(mark, &mut prior, &value.span)?;
+        let [prior] = prior;
         acc = Expr::Call {
             target: CallTarget::Rt(ir::RtFn::MapInsert),
-            args: vec![acc, Expr::ConstStr(key_str.to_string()), value_e],
+            args: vec![prior, Expr::ConstStr(key_str.to_string()), value_e],
             ty: map_ty,
             span: span_id,
         };
@@ -703,10 +784,15 @@ fn lower_struct_spread(
     }
 
     let layout = &lcx.struct_layouts[struct_id];
-    let mut fields = Vec::with_capacity(layout.fields.len());
+    let mut fields: Vec<Expr> = Vec::with_capacity(layout.fields.len());
     for (index, (field_name, field_ty)) in layout.fields.iter().enumerate() {
         let field_expr = if let Some(value) = overrides_by_name.remove(field_name.as_str()) {
-            lower_expr_expecting(value, *field_ty, ctx, lcx, table)?
+            let mark = ctx.hoist_mark();
+            let value_e = lower_expr_expecting(value, *field_ty, ctx, lcx, table)?;
+            // Spills both earlier overrides and the implicit `FieldGet` reads
+            // of `base` interleaved between them.
+            ctx.keep_order(mark, &mut fields, &value.span)?;
+            value_e
         } else {
             Expr::FieldGet {
                 base: Box::new(Expr::Local {
@@ -766,7 +852,13 @@ fn lower_string_lit(
                         e.span.clone(),
                     ));
                 }
+                // `acc` holds every segment emitted so far, so spilling it
+                // keeps them ahead of a hoist from this slot.
+                let mark = ctx.hoist_mark();
                 let lowered = lower_expr(e, ctx, lcx, table)?;
+                if let Some(prev) = acc.as_mut() {
+                    ctx.keep_order(mark, std::slice::from_mut(prev), &e.span)?;
+                }
                 let rt_fn = match lowered.ty() {
                     KirType::Str => None,
                     KirType::I64 => Some(ir::RtFn::IntToStr),
@@ -847,7 +939,7 @@ fn lower_call(
         ));
     }
 
-    let mut lowered_args = Vec::with_capacity(sig.params.len());
+    let mut lowered_args: Vec<Expr> = Vec::with_capacity(sig.params.len());
     for (arg, expected_ty) in args.iter().zip(&sig.params) {
         if arg.name.is_some() || arg.spread {
             return Err(LowerError::unsupported(
@@ -855,13 +947,10 @@ fn lower_call(
                 arg.value.span.clone(),
             ));
         }
-        lowered_args.push(lower_expr_expecting(
-            &arg.value,
-            *expected_ty,
-            ctx,
-            lcx,
-            table,
-        )?);
+        let mark = ctx.hoist_mark();
+        let arg_e = lower_expr_expecting(&arg.value, *expected_ty, ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut lowered_args, &arg.value.span)?;
+        lowered_args.push(arg_e);
     }
     // Every param beyond the supplied args is missing one — the arity check
     // above already proved each has a default (`lower_param_defaults` clones
@@ -925,7 +1014,7 @@ fn lower_ns_call(
         ));
     }
 
-    let mut lowered_args = Vec::with_capacity(args.len());
+    let mut lowered_args: Vec<Expr> = Vec::with_capacity(args.len());
     for arg in args {
         if arg.name.is_some() || arg.spread {
             return Err(LowerError::unsupported(
@@ -933,7 +1022,10 @@ fn lower_ns_call(
                 arg.value.span.clone(),
             ));
         }
-        lowered_args.push(lower_expr(&arg.value, ctx, lcx, table)?);
+        let mark = ctx.hoist_mark();
+        let arg_e = lower_expr(&arg.value, ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut lowered_args, &arg.value.span)?;
+        lowered_args.push(arg_e);
     }
 
     let ty = result_ty_to_kir(builtin.result, call_span)?;
@@ -1002,10 +1094,12 @@ fn lower_list_lit(
         ));
     }
 
-    let mut elements = Vec::with_capacity(items.len());
+    let mut elements: Vec<Expr> = Vec::with_capacity(items.len());
     elements.push(first_e);
     for item in rest {
+        let mark = ctx.hoist_mark();
         let item_e = lower_expr(item, ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut elements, &item.span)?;
         if item_e.ty() != elem_ty {
             return Err(LowerError::new(
                 format!(
@@ -1071,10 +1165,12 @@ fn lower_set_lit(
         ));
     }
 
-    let mut elements = Vec::with_capacity(items.len());
+    let mut elements: Vec<Expr> = Vec::with_capacity(items.len());
     elements.push(first_e);
     for item in rest {
+        let mark = ctx.hoist_mark();
         let item_e = lower_expr(item, ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut elements, &item.span)?;
         if item_e.ty() != elem_ty {
             return Err(LowerError::new(
                 format!(
@@ -1133,6 +1229,9 @@ fn lower_list_method_call(
 
     let elem_ty = lcx.lists.borrow()[list_id];
     let span_id = table.intern(call_span.clone());
+    // The receiver was lowered before any argument, so it's their left
+    // sibling in evaluation order.
+    let mut object_e = [object_e];
     match method {
         "push" => {
             let [arg] = args else {
@@ -1141,7 +1240,10 @@ fn lower_list_method_call(
                     call_span.clone(),
                 ));
             };
+            let mark = ctx.hoist_mark();
             let elem_e = lower_expr_expecting(&arg.value, elem_ty, ctx, lcx, table)?;
+            ctx.keep_order(mark, &mut object_e, call_span)?;
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::ListPush),
                 args: vec![object_e, elem_e],
@@ -1156,6 +1258,7 @@ fn lower_list_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::ListLen),
                 args: vec![object_e],
@@ -1200,10 +1303,14 @@ fn lower_map_method_call(
 
     let value_ty = lcx.maps.borrow()[map_id];
     let span_id = table.intern(call_span.clone());
+    // The receiver was lowered before any argument, so it's their left
+    // sibling in evaluation order — `prior` carries it into `keep_order`.
+    let mut object_e = [object_e];
 
     let one_str_arg = |args: &[ast::CallArg],
                        ctx: &mut FnCtx,
-                       table: &mut SpanTable|
+                       table: &mut SpanTable,
+                       prior: &mut [Expr]|
      -> Result<Expr, LowerError> {
         let [arg] = args else {
             return Err(LowerError::new(
@@ -1211,7 +1318,10 @@ fn lower_map_method_call(
                 call_span.clone(),
             ));
         };
-        lower_expr_expecting(&arg.value, KirType::Str, ctx, lcx, table)
+        let mark = ctx.hoist_mark();
+        let key_e = lower_expr_expecting(&arg.value, KirType::Str, ctx, lcx, table)?;
+        ctx.keep_order(mark, prior, &arg.value.span)?;
+        Ok(key_e)
     };
 
     match method {
@@ -1224,8 +1334,15 @@ fn lower_map_method_call(
                     call_span.clone(),
                 ));
             };
+            let key_mark = ctx.hoist_mark();
             let key_e = lower_expr_expecting(&key_arg.value, KirType::Str, ctx, lcx, table)?;
+            ctx.keep_order(key_mark, &mut object_e, &key_arg.value.span)?;
+            let [receiver] = object_e;
+            let mut prior = [receiver, key_e];
+            let val_mark = ctx.hoist_mark();
             let val_e = lower_expr_expecting(&val_arg.value, value_ty, ctx, lcx, table)?;
+            ctx.keep_order(val_mark, &mut prior, &val_arg.value.span)?;
+            let [object_e, key_e] = prior;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapInsert),
                 args: vec![object_e, key_e, val_e],
@@ -1234,7 +1351,8 @@ fn lower_map_method_call(
             })
         }
         "get" => {
-            let key_e = one_str_arg(args, ctx, table)?;
+            let key_e = one_str_arg(args, ctx, table, &mut object_e)?;
+            let [object_e] = object_e;
             let nullable_id = super::intern_nullable(lcx.nullables, value_ty);
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapGet),
@@ -1244,7 +1362,8 @@ fn lower_map_method_call(
             })
         }
         "contains" | "has" => {
-            let key_e = one_str_arg(args, ctx, table)?;
+            let key_e = one_str_arg(args, ctx, table, &mut object_e)?;
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapContains),
                 args: vec![object_e, key_e],
@@ -1259,6 +1378,7 @@ fn lower_map_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             let list_id = super::intern_list(lcx.lists, KirType::Str);
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapKeys),
@@ -1274,6 +1394,7 @@ fn lower_map_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             let list_id = super::intern_list(lcx.lists, value_ty);
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapValues),
@@ -1289,6 +1410,7 @@ fn lower_map_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapLen),
                 args: vec![object_e],
@@ -1303,6 +1425,7 @@ fn lower_map_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             let len_e = Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::MapLen),
                 args: vec![object_e],
@@ -1360,10 +1483,13 @@ fn lower_set_method_call(
 
     let elem_ty = lcx.sets.borrow()[set_id];
     let span_id = table.intern(call_span.clone());
+    // Same receiver-is-a-left-sibling handling as `lower_map_method_call`.
+    let mut object_e = [object_e];
 
     let one_elem_arg = |args: &[ast::CallArg],
                         ctx: &mut FnCtx,
-                        table: &mut SpanTable|
+                        table: &mut SpanTable,
+                        prior: &mut [Expr]|
      -> Result<Expr, LowerError> {
         let [arg] = args else {
             return Err(LowerError::new(
@@ -1371,12 +1497,16 @@ fn lower_set_method_call(
                 call_span.clone(),
             ));
         };
-        lower_expr_expecting(&arg.value, elem_ty, ctx, lcx, table)
+        let mark = ctx.hoist_mark();
+        let elem_e = lower_expr_expecting(&arg.value, elem_ty, ctx, lcx, table)?;
+        ctx.keep_order(mark, prior, &arg.value.span)?;
+        Ok(elem_e)
     };
 
     match method {
         "add" => {
-            let elem_e = one_elem_arg(args, ctx, table)?;
+            let elem_e = one_elem_arg(args, ctx, table, &mut object_e)?;
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::SetInsert),
                 args: vec![object_e, elem_e],
@@ -1385,7 +1515,8 @@ fn lower_set_method_call(
             })
         }
         "contains" => {
-            let elem_e = one_elem_arg(args, ctx, table)?;
+            let elem_e = one_elem_arg(args, ctx, table, &mut object_e)?;
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::SetContains),
                 args: vec![object_e, elem_e],
@@ -1400,6 +1531,7 @@ fn lower_set_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             Ok(Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::SetLen),
                 args: vec![object_e],
@@ -1414,6 +1546,7 @@ fn lower_set_method_call(
                     call_span.clone(),
                 ));
             }
+            let [object_e] = object_e;
             let len_e = Expr::Call {
                 target: CallTarget::Rt(ir::RtFn::SetLen),
                 args: vec![object_e],

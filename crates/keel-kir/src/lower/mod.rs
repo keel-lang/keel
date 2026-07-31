@@ -162,20 +162,36 @@ pub(crate) fn describe_ty(ty: KirType, lcx: &LowerCtx<'_>) -> String {
     }
 }
 
-/// Per-function lowering state: the locals table under construction and a
+/// Per-function lowering state: the locals table under construction, a
 /// stack of name -> `LocalId` scopes (innermost last), mirroring the
 /// interpreter's `Environment` block scoping closely enough for M0's `if`/
-/// `while` bodies.
+/// `while` bodies, the function's own return type (needed wherever a `return`
+/// or an implicit tail expression is lowered), and the *hoist buffer* — the
+/// statements a nested `when`-expression needs emitted ahead of the statement
+/// currently being lowered (see [`FnCtx::hoist`]).
 pub(crate) struct FnCtx {
     pub(crate) locals: Vec<crate::ir::Local>,
     scopes: Vec<HashMap<String, LocalId>>,
+    /// The lowered return type of the function this context belongs to.
+    /// Lives here rather than being threaded as a parameter because
+    /// *expression* lowering needs it too now that a `when`-expression can
+    /// appear in an arbitrary nested position and its arm bodies may contain
+    /// an explicit `return` (issue #170).
+    pub(crate) ret_ty: KirType,
+    /// Statements hoisted out of the expression currently being lowered, to
+    /// be emitted immediately before the enclosing statement. See
+    /// [`FnCtx::hoist`] for the full rationale; [`stmt::lower_stmt`] installs
+    /// a fresh buffer per statement and drains it.
+    hoisted: Vec<crate::ir::Stmt>,
 }
 
 impl FnCtx {
-    fn new() -> Self {
+    fn new(ret_ty: KirType) -> Self {
         Self {
             locals: Vec::new(),
             scopes: vec![HashMap::new()],
+            ret_ty,
+            hoisted: Vec::new(),
         }
     }
 
@@ -191,16 +207,26 @@ impl FnCtx {
     /// Declares a fresh local in the *current* (innermost) scope — matches
     /// Keel's `x = expr` always-declares-in-current-scope rule.
     pub(crate) fn declare(&mut self, name: &str, ty: KirType) -> LocalId {
+        let id = self.declare_temp(name, ty);
+        self.scopes
+            .last_mut()
+            .expect("root scope always present")
+            .insert(name.to_string(), id);
+        id
+    }
+
+    /// Declares a compiler-generated local that is deliberately *not* entered
+    /// into any scope map: a hoisted `when`-expression's result temp or an
+    /// evaluation-order spill (see [`FnCtx::keep_order`]) is referenced only
+    /// by the `LocalId` returned here, never resolved by name, so it can
+    /// neither shadow a user binding nor be captured by one.
+    pub(crate) fn declare_temp(&mut self, name: &str, ty: KirType) -> LocalId {
         let id = self.locals.len();
         self.locals.push(crate::ir::Local {
             id,
             name: name.to_string(),
             ty,
         });
-        self.scopes
-            .last_mut()
-            .expect("root scope always present")
-            .insert(name.to_string(), id);
         id
     }
 
@@ -213,6 +239,136 @@ impl FnCtx {
             .rev()
             .find_map(|scope| scope.get(name))
             .copied()
+    }
+
+    /// Swaps in a fresh, empty hoist buffer and returns the enclosing one,
+    /// to be handed back to [`FnCtx::end_hoist`]. Paired around each
+    /// statement (so an `if` body's hoists stay inside that body rather than
+    /// escaping past the `if`) and around the discarded first-arm type probe
+    /// in [`stmt::lower_when_expr_value`].
+    pub(crate) fn begin_hoist(&mut self) -> Vec<crate::ir::Stmt> {
+        std::mem::take(&mut self.hoisted)
+    }
+
+    /// Restores the enclosing hoist buffer `begin_hoist` returned, yielding
+    /// the statements hoisted since.
+    pub(crate) fn end_hoist(&mut self, outer: Vec<crate::ir::Stmt>) -> Vec<crate::ir::Stmt> {
+        std::mem::replace(&mut self.hoisted, outer)
+    }
+
+    /// Records a statement to be emitted immediately before the statement
+    /// currently being lowered.
+    ///
+    /// KIR's `Expr` is a tree with no statement-sequencing of its own, so a
+    /// `when` used as an expression in a nested position (`f(when n {...})`,
+    /// `1 + when n {...}`) can't be lowered to an `Expr` directly — it
+    /// desugars to a declare-only `Let` plus an `if`-chain that assigns into
+    /// it, and those statements have to go *somewhere*. That somewhere is
+    /// this buffer, which [`stmt::lower_stmt`] drains ahead of the statement
+    /// it belongs to (issue #170; generalizes the `let`/`return`-position
+    /// desugaring of issue #160).
+    pub(crate) fn hoist(&mut self, stmt: crate::ir::Stmt) {
+        self.hoisted.push(stmt);
+    }
+
+    /// A snapshot of the hoist buffer's length, taken before lowering a
+    /// sub-expression so [`FnCtx::keep_order`] / [`FnCtx::forbid_hoist`] can
+    /// tell whether that sub-expression hoisted anything.
+    pub(crate) fn hoist_mark(&self) -> usize {
+        self.hoisted.len()
+    }
+
+    /// Rejects a sub-expression that hoisted, at a position where the hoisted
+    /// statements cannot legally be moved ahead of the enclosing statement:
+    /// either because the sub-expression isn't evaluated exactly once there
+    /// (a `while` condition runs per iteration; an `and`/`or` right operand,
+    /// a `??` fallback and a `when` arm's own pattern test are all
+    /// conditional), or because there is no enclosing statement at all (a
+    /// task's parameter default, lowered standalone).
+    ///
+    /// This is the *default* posture: any site that lowers a sub-expression
+    /// and does not explicitly opt into [`FnCtx::keep_order`] calls this
+    /// instead, so an unhandled position produces a clear error rather than
+    /// silently miscompiling evaluation order.
+    pub(crate) fn forbid_hoist(
+        &mut self,
+        mark: usize,
+        what: &str,
+        span: &Span,
+    ) -> Result<(), LowerError> {
+        if self.hoisted.len() == mark {
+            return Ok(());
+        }
+        self.hoisted.truncate(mark);
+        Err(LowerError::unsupported(
+            &format!("`when` expression in {what}"),
+            span.clone(),
+        ))
+    }
+
+    /// Preserves left-to-right evaluation order when a sub-expression hoists
+    /// past siblings that were already lowered.
+    ///
+    /// Hoisting moves a `when`-expression's `if`-chain *ahead of* the whole
+    /// enclosing statement, which would reorder it before every sibling to
+    /// its left: `f(h(), when x { ... })` would run the chain before `h()`.
+    /// So whenever lowering the newest sibling grew the buffer past `mark`,
+    /// every previously-lowered sibling in `prior` is spilled into a temp
+    /// bound at `mark` — i.e. still before the hoisted chain, but after
+    /// everything hoisted by an earlier sibling — and rewritten to read that
+    /// temp. Constants are skipped (nothing can observe when they're
+    /// "evaluated"); a plain `Local` read is *not*, since a `when` arm body
+    /// can reassign an outer local via `+=`. That includes a `Local` that is
+    /// itself an earlier hoist temp (`f(when a {...}, when b {...})` spills
+    /// the first result into a second local) — redundant, but cheaper than
+    /// tracking every temp's provenance to prove the copy away.
+    ///
+    /// `prior` is in evaluation order and is rewritten in place. Call it with
+    /// the siblings lowered so far, *before* pushing the newest one.
+    pub(crate) fn keep_order(
+        &mut self,
+        mark: usize,
+        prior: &mut [crate::ir::Expr],
+        span: &Span,
+    ) -> Result<(), LowerError> {
+        use crate::ir::Expr;
+        if self.hoisted.len() == mark {
+            return Ok(());
+        }
+        let mut spills = Vec::new();
+        for slot in prior.iter_mut() {
+            if matches!(
+                slot,
+                Expr::ConstInt(_)
+                    | Expr::ConstFloat(_)
+                    | Expr::ConstBool(_)
+                    | Expr::ConstStr(_)
+                    | Expr::MakeEnum { .. }
+                    | Expr::NullLit { .. }
+            ) {
+                continue;
+            }
+            let ty = slot.ty();
+            if ty == KirType::Unit {
+                // No `Expr` variant denotes a unit value, so there's nothing
+                // to put back in `slot` after spilling it to a statement. The
+                // checker doesn't accept a `none`-typed sub-expression in any
+                // of these positions today, so this is a guard against a
+                // future one arriving silently, not a reachable diagnostic.
+                return Err(LowerError::unsupported(
+                    "a `none`-typed sub-expression evaluated before a `when`-expression sibling",
+                    span.clone(),
+                ));
+            }
+            let temp = self.declare_temp("<spill>", ty);
+            let value = std::mem::replace(slot, Expr::Local { id: temp, ty });
+            spills.push(crate::ir::Stmt::Let {
+                local: temp,
+                init: Some(value),
+            });
+        }
+        self.hoisted.splice(mark..mark, spills);
+        Ok(())
     }
 }
 
@@ -455,7 +611,7 @@ pub fn lower_program(
     // Toplevel: every `Decl::Stmt` compiles into one synthetic function,
     // mirroring `Interpreter::execute`'s treatment of top-level statements.
     let toplevel_id = functions.len();
-    let mut ctx = FnCtx::new();
+    let mut ctx = FnCtx::new(KirType::Unit);
     let mut body = Vec::new();
     for decl in &program.declarations {
         if let Decl::Stmt(stmt) = &decl.kind {
@@ -464,7 +620,6 @@ pub fn lower_program(
                 &mut ctx,
                 &lcx,
                 &mut span_table,
-                KirType::Unit,
                 stmt::TailSink::Discard,
             )?);
         }

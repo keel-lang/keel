@@ -4,6 +4,52 @@
 
 ## Unreleased
 
+### The native backend compiles a `when`-expression anywhere a value goes
+
+`when` used as a value already compiled in `let` and `return` position.
+Anywhere else — a call argument, a stdlib namespace argument, a binary-op
+operand, a list element, an interpolation slot — `keel build --emit=kir`
+rejected the program even though `keel check` accepted it. That gap is
+closed:
+
+```keel
+use std/io
+
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+task describe(n: int) -> str {
+  return shout(when n {
+    0 => "zero"
+    _ => "nonzero"
+  })
+}
+
+task rank(n: int) -> int {
+  return 100 + when n {
+    0 => 1
+    _ => 2
+  }
+}
+
+io.show(describe(0))   # zero!
+io.show(rank(7))       # 102
+```
+
+Nothing changes for `keel run` — the interpreter always accepted these. The
+compiled binary now produces byte-identical output, checked by the
+interpreter-vs-compiled conformance suite.
+
+Under the hood a nested `when` desugars to a declare-only local plus the same
+`if`-chain the `let` form builds, emitted just before the enclosing
+statement. Because that moves the chain ahead of the whole statement, any
+sibling to its left is bound to a temporary first, so `f(g(), when ...)`
+still evaluates `g()` before the `when`. Three positions stay rejected by
+name, because no such rewrite can reproduce their evaluation rule: a `while`
+condition (re-evaluated per iteration), an `and`/`or` right operand, and a
+`??` fallback (both may not be evaluated at all).
+
 ### Sets deduplicate, and maps and sets can be extended
 
 `set[T]` used to share the list representation, which meant it wasn't really

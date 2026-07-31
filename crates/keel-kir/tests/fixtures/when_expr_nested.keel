@@ -1,0 +1,24 @@
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+task describe(n: int) -> str {
+  return shout(when n {
+    0 => "zero"
+    _ => "nonzero"
+  })
+}
+
+task rank(n: int) -> int {
+  return 100 + when n {
+    0 => 1
+    _ => 2
+  }
+}
+
+task tag(n: int, label: str) -> str {
+  return label + shout(when n {
+    0 => "zero"
+    _ => "nonzero"
+  })
+}

@@ -20,6 +20,35 @@ task grade(score: str) -> str {
   result
 }
 
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+# `when` as an expression in nested positions: a call argument, a stdlib
+# namespace argument, and a binary-op operand — each hoists a declare+chain
+# pair ahead of the enclosing statement, and `banner`'s left operand is
+# spilled so it still evaluates before the chain.
+task nested(score: str) -> str {
+  return shout(when score {
+    "A" => "top"
+    _ => "rest"
+  })
+}
+
+task banner(score: str, prefix: str) -> str {
+  return prefix + shout(when score {
+    "A" => "top"
+    _ => "rest"
+  })
+}
+
+task bonus(n: int) -> int {
+  return 100 + when n {
+    0 => 1
+    _ => 2
+  }
+}
+
 task announce(p: Priority) {
   when p {
     low => { io.show("low seen") }
@@ -33,4 +62,13 @@ io.show(label(Priority.low))
 io.show(label(Priority.high))
 io.show(grade("A"))
 io.show(grade("D"))
+io.show(nested("A"))
+io.show(nested("D"))
+io.show(banner("A", "grade: "))
+io.show("{bonus(0)} {bonus(7)}")
+sample = "B"
+io.show(when sample {
+  "A" => "namespace-arg top"
+  _ => "namespace-arg rest"
+})
 announce(Priority.medium)
