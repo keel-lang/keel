@@ -12,6 +12,35 @@ All notable changes to Keel.
 
 ### Added
 
+- **The native backend compiles a `when`-expression in any nested position.** `when` already lowered as a value in `let` and `return` position; used anywhere else — a call argument, a stdlib namespace argument, a binary-op operand, a list element, an interpolation slot — `keel build --emit=kir` rejected it, even though `keel check` accepted the program. KIR's expressions are a tree with no statement sequencing of their own, so a nested `when` now desugars to a declare-only local plus the same `if`-chain the `let` form uses, hoisted ahead of the enclosing statement.
+
+```keel
+use std/io
+
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+task describe(n: int) -> str {
+  return shout(when n {
+    0 => "zero"
+    _ => "nonzero"
+  })
+}
+
+task rank(n: int) -> int {
+  return 100 + when n {
+    0 => 1
+    _ => 2
+  }
+}
+
+io.show(describe(0))   # zero!
+io.show(rank(7))       # 102
+```
+
+  Evaluation order is preserved rather than approximated: because the chain moves ahead of the whole statement, any sibling sub-expression to its left is spilled into a temporary bound before it, so `f(g(), when ...)` still runs `g()` first. Positions where a sub-expression isn't evaluated exactly once — a `while` condition, an `and`/`or` right operand, a `??` fallback — are rejected by name instead, since no spill can reproduce a conditional or per-iteration evaluation.
+
 - **Map and set mutation: `map.insert(k, v)` and `set.add(v)`.** Maps had no way to add an entry after construction, and sets had no methods at all. Both follow the `list.push` convention — a value method returning a **new** container, so the result has to be bound. `insert` overwrites an existing key; `add` on an element already present is a no-op rather than an error. Sets also get the `.count`/`.len`/`.size`, `.contains(v)`, and `.is_empty` methods `SPEC.md` had promised but nothing implemented, and they type-check properly now instead of inferring as unknown.
 
 ```keel

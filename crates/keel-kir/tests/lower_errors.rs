@@ -454,29 +454,85 @@ task f(n: int) -> str {
 }
 
 #[test]
-fn when_expression_as_a_call_argument_is_still_rejected() {
-    // `when` as an expression lowers in `let`/`return` position (issue
-    // #160), but a call-argument or other nested-sub-expression position
-    // would need every `lower_expr`/`lower_expr_expecting` call site to
-    // thread out hoisted statements — out of scope for that issue, see
-    // `lower/stmt.rs`'s `lower_when_expr_let` doc. Plain `lower_expr` still
-    // rejects a bare `WhenExpr` outright, so this position still errors.
+fn when_expression_in_a_while_condition_is_rejected() {
+    // A `while` condition is re-evaluated once per iteration, but a hoisted
+    // `when`-chain runs exactly once, ahead of the loop — no spill can
+    // recover that, so it's rejected rather than miscompiled (issue #170).
     let msg = lower_err(
         r#"
-task describe(n: int) -> str {
-  return f(when n {
-    0 => "zero"
-    _ => "nonzero"
-  })
-}
-
-task f(s: str) -> str {
-  return s
+task f(n: int) -> int {
+  while when n {
+    0 => true
+    _ => false
+  } {
+    n += 1
+  }
+  return n
 }
 "#,
     );
     assert!(
-        msg.contains("when` expression"),
+        msg.contains("`while` condition"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn when_expression_in_a_short_circuit_operand_is_rejected() {
+    // `and`/`or` may not evaluate their right operand at all; a hoisted
+    // chain would run unconditionally.
+    let msg = lower_err(
+        r#"
+task f(n: int, flag: bool) -> bool {
+  return flag and when n {
+    0 => true
+    _ => false
+  }
+}
+"#,
+    );
+    assert!(
+        msg.contains("right-hand operand of `and`/`or`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn when_expression_in_a_null_coalesce_fallback_is_rejected() {
+    // Same conditional-evaluation problem as `and`/`or`: the fallback runs
+    // only when the left-hand side is null.
+    let msg = lower_err(
+        r#"
+task f(maybe: int?, n: int) -> int {
+  return maybe ?? when n {
+    0 => 1
+    _ => 2
+  }
+}
+"#,
+    );
+    assert!(msg.contains("`??` fallback"), "unexpected message: {msg}");
+}
+
+#[test]
+fn when_expression_in_a_parameter_default_cannot_resolve_a_subject() {
+    // A default is lowered standalone, in a param-free scope (see
+    // `lower/decl.rs`'s `lower_param_defaults`), so a `when`'s identifier
+    // scrutinee never resolves there — the position is unreachable for
+    // hoisting, which is why `lower_param_defaults`' own hoist guard is
+    // defense-in-depth rather than a diagnostic any program reaches.
+    let msg = lower_err(
+        r#"
+task f(n: int, label: str = when n {
+  0 => "zero"
+  _ => "other"
+}) -> str {
+  return label
+}
+"#,
+    );
+    assert!(
+        msg.contains("unknown identifier `n`"),
         "unexpected message: {msg}"
     );
 }

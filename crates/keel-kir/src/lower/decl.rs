@@ -96,14 +96,26 @@ pub(crate) fn lower_param_defaults(
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
 ) -> Result<Vec<Option<Expr>>, LowerError> {
-    let mut ctx = FnCtx::new();
+    // A default is lowered standalone, into a bare `Expr` cloned into each
+    // omitting call site — there is no enclosing statement for a nested
+    // `when`-expression's hoisted declare+chain to attach to, so hoisting is
+    // forbidden outright here rather than silently dropped.
+    let mut ctx = FnCtx::new(KirType::Unit);
     task.params
         .iter()
         .zip(sig_params)
         .map(|(param, ty)| match &param.default {
-            Some(expr) => Ok(Some(super::expr::lower_expr_expecting(
-                expr, *ty, &mut ctx, lcx, table,
-            )?)),
+            Some(expr) => {
+                let mark = ctx.hoist_mark();
+                let lowered = super::expr::lower_expr_expecting(expr, *ty, &mut ctx, lcx, table)?;
+                ctx.forbid_hoist(
+                    mark,
+                    "a parameter default (a default is lowered once, standalone, with no \
+                     enclosing statement the hoisted arms could run in)",
+                    &expr.span,
+                )?;
+                Ok(Some(lowered))
+            }
             None => Ok(None),
         })
         .collect()
@@ -116,7 +128,7 @@ pub(crate) fn lower_task_body(
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
 ) -> Result<KirFunction, LowerError> {
-    let mut ctx = FnCtx::new();
+    let mut ctx = FnCtx::new(sig.ret);
     let mut params = Vec::with_capacity(task.params.len());
     for (param, ty) in task.params.iter().zip(&sig.params) {
         let name = binding_ident(&param.name, &param.name_span)?;
@@ -124,8 +136,7 @@ pub(crate) fn lower_task_body(
         params.push(Param { local, ty: *ty });
     }
 
-    let body =
-        super::stmt::lower_block(&task.body, &mut ctx, lcx, table, sig.ret, TailSink::Return)?;
+    let body = super::stmt::lower_block(&task.body, &mut ctx, lcx, table, TailSink::Return)?;
     if sig.ret != KirType::Unit && !super::stmt::block_terminates(&body) {
         return Err(LowerError::new(
             format!(

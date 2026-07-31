@@ -1,14 +1,14 @@
 //! Statement lowering — the M0 scalar subset plus M1's `for`-over-ranges
 //! and M2's named-struct literals in `let`/`return` position, `when` as
 //! a statement (over a simple-enum or a str/int scrutinee with a wildcard
-//! arm — see [`lower_when_stmt`]) and *as an expression* in `let`/`return`
-//! position (see [`TailSink::Assign`] and [`lower_when_expr_let`]), and
-//! `for x in xs` over a `list[T]` (lowered to [`keel_kir::ir::Stmt::ForEach`]):
-//! `let`/assign, `if`/`else`, `while`, `for x in a..b`, `for x in xs`,
-//! `return`, `when`, and bare expression statements. Everything else
-//! (`try`/`catch`, `raise`, `assert`, `break`/`continue`, `self.field = ...`,
-//! `for` with a `where` filter or a non-range, non-list iterable) is
-//! rejected; see module docs on `lower/mod.rs`.
+//! arm — see [`lower_when_stmt`]) and *as an expression* anywhere a value is
+//! expected (see [`TailSink::Assign`], [`lower_when_expr_let`] and
+//! [`lower_when_expr_value`]), and `for x in xs` over a `list[T]` (lowered to
+//! [`keel_kir::ir::Stmt::ForEach`]): `let`/assign, `if`/`else`, `while`,
+//! `for x in a..b`, `for x in xs`, `return`, `when`, and bare expression
+//! statements. Everything else (`assert`, `break`/`continue`,
+//! `self.field = ...`, `for` with a `where` filter or a non-range, non-list
+//! iterable) is rejected; see module docs on `lower/mod.rs`.
 
 use keel_syntax::ast::{self, Node};
 use keel_syntax::lexer::Span;
@@ -53,7 +53,6 @@ pub(crate) fn lower_block(
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    ret_ty: KirType,
     sink: TailSink,
 ) -> Result<Block, LowerError> {
     ctx.push_scope();
@@ -65,19 +64,28 @@ pub(crate) fn lower_block(
         } else {
             TailSink::Discard
         };
-        out.extend(lower_stmt(stmt, ctx, lcx, table, ret_ty, stmt_sink)?);
+        out.extend(lower_stmt(stmt, ctx, lcx, table, stmt_sink)?);
     }
     ctx.pop_scope();
     Ok(out)
 }
 
-/// Lowers a single statement, possibly to more than one [`ir::Stmt`] (a
-/// `let`/`return` whose value is a `when`-expression desugars to a
-/// declare-only `Let` followed by an `if`-chain that assigns into it, or
-/// the chain itself — see [`lower_when_expr_let`]). Does not open its own
-/// scope — callers that need block scoping (`if`/`while` bodies) go through
-/// [`lower_block`]; the synthetic top-level function lowers its statements
-/// directly into the function's single root scope.
+/// Lowers a single statement, possibly to more than one [`ir::Stmt`].
+///
+/// Two things produce extra statements. A `let`/`return` whose value is a
+/// `when`-expression desugars to a declare-only `Let` plus an `if`-chain
+/// that assigns into it, or to the chain itself (see
+/// [`lower_when_expr_let`]). And a `when`-expression in an arbitrary
+/// *nested* position (`f(when n {...})`) hoists the same declare+chain pair
+/// through [`FnCtx::hoist`] — this function installs a fresh hoist buffer
+/// per statement and emits whatever landed in it ahead of the statement's
+/// own lowering, which is what confines a hoist to the nearest enclosing
+/// statement instead of letting it escape past an `if`/loop body.
+///
+/// Does not open its own scope — callers that need block scoping (`if`/
+/// `while` bodies) go through [`lower_block`]; the synthetic top-level
+/// function lowers its statements directly into the function's single root
+/// scope.
 ///
 /// `sink` is only ever non-[`TailSink::Discard`] for a statement that is
 /// the last statement of a block reached in tail position from the task's
@@ -91,9 +99,23 @@ pub(crate) fn lower_stmt(
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    ret_ty: KirType,
     sink: TailSink,
 ) -> Result<Vec<ir::Stmt>, LowerError> {
+    let outer = ctx.begin_hoist();
+    let lowered = lower_stmt_inner(stmt, ctx, lcx, table, sink);
+    let mut out = ctx.end_hoist(outer);
+    out.extend(lowered?);
+    Ok(out)
+}
+
+fn lower_stmt_inner(
+    stmt: &Node<ast::Stmt>,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    sink: TailSink,
+) -> Result<Vec<ir::Stmt>, LowerError> {
+    let ret_ty = ctx.ret_ty;
     match &stmt.kind {
         ast::Stmt::Let { binding, ty, value } => {
             // `(a, b) = pair` binds N names from one subject, which
@@ -103,9 +125,7 @@ pub(crate) fn lower_stmt(
             }
             let name = binding_ident(binding, &stmt.span)?;
             if let ast::Expr::WhenExpr { subject, arms } = &value.kind {
-                return lower_when_expr_let(
-                    name, ty, subject, arms, ctx, lcx, table, ret_ty, &stmt.span,
-                );
+                return lower_when_expr_let(name, ty, subject, arms, ctx, lcx, table, &stmt.span);
             }
             // An explicit annotation pins the expected type up front — this
             // is what lets a struct literal (which the checker always types
@@ -150,7 +170,19 @@ pub(crate) fn lower_stmt(
                 LowerError::new(format!("unknown identifier `{name}`"), name_span.clone())
             })?;
             let local_ty = ctx.locals[local].ty;
+            // `x += <rhs>` reads `x` *before* evaluating `rhs`, so the read is
+            // a sibling of `rhs` in evaluation order: if `rhs` hoists (its
+            // `when` arms could themselves do `x += 1`), the read has to be
+            // spilled ahead of the hoisted chain rather than left to happen
+            // after it.
+            let mut read = [ir::Expr::Local {
+                id: local,
+                ty: local_ty,
+            }];
+            let mark = ctx.hoist_mark();
             let rhs_expr = lower_expr(rhs, ctx, lcx, table)?;
+            ctx.keep_order(mark, &mut read, &stmt.span)?;
+            let [read] = read;
             let op = super::expr::convert_binop(*op);
             let result_ty = super::expr::infer_binop_ty(op, local_ty, rhs_expr.ty(), &stmt.span)?;
             if result_ty != local_ty {
@@ -163,10 +195,7 @@ pub(crate) fn lower_stmt(
             }
             let value = ir::Expr::BinOp {
                 op,
-                left: Box::new(ir::Expr::Local {
-                    id: local,
-                    ty: local_ty,
-                }),
+                left: Box::new(read),
                 right: Box::new(rhs_expr),
                 ty: result_ty,
             };
@@ -190,16 +219,8 @@ pub(crate) fn lower_stmt(
                 // `TailSink::Return` instead of whatever sink this `return`
                 // itself was lowered under (a `return` is always a genuine
                 // return regardless of its own tail position).
-                let chain = lower_when_stmt(
-                    subject,
-                    arms,
-                    ctx,
-                    lcx,
-                    table,
-                    ret_ty,
-                    TailSink::Return,
-                    &stmt.span,
-                )?;
+                let chain =
+                    lower_when_stmt(subject, arms, ctx, lcx, table, TailSink::Return, &stmt.span)?;
                 return Ok(vec![chain]);
             }
             let expr = lower_expr_expecting(value, ret_ty, ctx, lcx, table)?;
@@ -217,9 +238,13 @@ pub(crate) fn lower_stmt(
                     cond.span.clone(),
                 ));
             }
-            let then_branch = lower_block(then_body, ctx, lcx, table, ret_ty, sink)?;
+            // No hoist guard on the condition: it's evaluated exactly once,
+            // unconditionally, before either branch — so hoisting a `when`
+            // out of it and emitting it ahead of the whole `if` preserves
+            // both the order and the number of evaluations.
+            let then_branch = lower_block(then_body, ctx, lcx, table, sink)?;
             let else_branch = match else_body {
-                Some(body) => lower_block(body, ctx, lcx, table, ret_ty, sink)?,
+                Some(body) => lower_block(body, ctx, lcx, table, sink)?,
                 None => Vec::new(),
             };
             Ok(vec![ir::Stmt::If {
@@ -229,14 +254,25 @@ pub(crate) fn lower_stmt(
             }])
         }
         ast::Stmt::While { cond, body } => {
+            // Unlike an `if` condition, a `while` condition is re-evaluated
+            // once per iteration — hoisting out of it would emit the chain
+            // ahead of the loop and evaluate it exactly once, so it's
+            // rejected rather than silently miscompiled.
+            let mark = ctx.hoist_mark();
             let cond_expr = lower_expr(cond, ctx, lcx, table)?;
+            ctx.forbid_hoist(
+                mark,
+                "a `while` condition (the condition is re-evaluated once per iteration, but \
+                 the hoisted arms would run only once, ahead of the loop)",
+                &cond.span,
+            )?;
             if cond_expr.ty() != KirType::Bool {
                 return Err(LowerError::new(
                     format!("`while` condition is `{}`, expected `bool`", cond_expr.ty()),
                     cond.span.clone(),
                 ));
             }
-            let body = lower_block(body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
+            let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
             Ok(vec![ir::Stmt::While {
                 cond: cond_expr,
                 body,
@@ -281,7 +317,8 @@ pub(crate) fn lower_stmt(
             let name = binding_ident(binding, &stmt.span)?;
             let ast::Expr::Range(start, end) = &iter.kind else {
                 // Not a range literal — try a `list[T]` iterable instead of
-                // rejecting outright.
+                // rejecting outright. The iterable is evaluated exactly once,
+                // before the loop, so a hoist out of it is fine unguarded.
                 let iter_e = lower_expr(iter, ctx, lcx, table)?;
                 let KirType::List(list_id) = iter_e.ty() else {
                     return Err(LowerError::unsupported(
@@ -293,7 +330,7 @@ pub(crate) fn lower_stmt(
                 let elem_ty = lcx.lists.borrow()[list_id];
                 ctx.push_scope();
                 let var = ctx.declare(name, elem_ty);
-                let body = lower_block(body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
+                let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
                 ctx.pop_scope();
                 return Ok(vec![ir::Stmt::ForEach {
                     var,
@@ -304,14 +341,19 @@ pub(crate) fn lower_stmt(
             };
             // Bounds are evaluated once, before `var` exists, so they lower
             // in the enclosing scope and cannot reference the loop variable.
-            let low = lower_expr(start, ctx, lcx, table)?;
-            if low.ty() != KirType::I64 {
+            // They are siblings of each other, though — `for i in f()..(when
+            // ...)` must not reorder the two.
+            let mut low = [lower_expr(start, ctx, lcx, table)?];
+            if low[0].ty() != KirType::I64 {
                 return Err(LowerError::new(
-                    format!("`for` range start is `{}`, expected `int`", low.ty()),
+                    format!("`for` range start is `{}`, expected `int`", low[0].ty()),
                     start.span.clone(),
                 ));
             }
+            let mark = ctx.hoist_mark();
             let high = lower_expr(end, ctx, lcx, table)?;
+            ctx.keep_order(mark, &mut low, &end.span)?;
+            let [low] = low;
             if high.ty() != KirType::I64 {
                 return Err(LowerError::new(
                     format!("`for` range end is `{}`, expected `int`", high.ty()),
@@ -320,7 +362,7 @@ pub(crate) fn lower_stmt(
             }
             ctx.push_scope();
             let var = ctx.declare(name, KirType::I64);
-            let body = lower_block(body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
+            let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
             ctx.pop_scope();
             Ok(vec![ir::Stmt::ForIndex {
                 var,
@@ -330,10 +372,10 @@ pub(crate) fn lower_stmt(
             }])
         }
         ast::Stmt::When { subject, arms } => Ok(vec![lower_when_stmt(
-            subject, arms, ctx, lcx, table, ret_ty, sink, &stmt.span,
+            subject, arms, ctx, lcx, table, sink, &stmt.span,
         )?]),
         ast::Stmt::TryCatch { body, catches } => Ok(vec![lower_try_catch(
-            body, catches, ctx, lcx, table, ret_ty, &stmt.span,
+            body, catches, ctx, lcx, table, &stmt.span,
         )?]),
         ast::Stmt::Raise(message) => Ok(vec![lower_raise(message, ctx, lcx, table)?]),
         ast::Stmt::Assert { .. } => Err(LowerError::unsupported("assert", stmt.span.clone())),
@@ -353,14 +395,12 @@ pub(crate) fn lower_stmt(
 /// of its own, so a non-trivial subject would otherwise get re-evaluated
 /// once per arm comparison — same restriction, and same rationale, as
 /// `expr::struct_spread_base`'s spread-update base.
-#[allow(clippy::too_many_arguments)]
 fn lower_when_stmt(
     subject: &ast::SpannedExpr,
     arms: &[ast::WhenArm],
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    ret_ty: KirType,
     sink: TailSink,
     stmt_span: &Span,
 ) -> Result<ir::Stmt, LowerError> {
@@ -390,7 +430,6 @@ fn lower_when_stmt(
         ctx,
         lcx,
         table,
-        ret_ty,
         sink,
         stmt_span,
     )
@@ -411,7 +450,6 @@ fn build_when_chain(
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    ret_ty: KirType,
     sink: TailSink,
     stmt_span: &Span,
 ) -> Result<ir::Stmt, LowerError> {
@@ -422,7 +460,7 @@ fn build_when_chain(
             guard.span.clone(),
         ));
     }
-    let then_branch = lower_block(&arm.body, ctx, lcx, table, ret_ty, sink)?;
+    let then_branch = lower_block(&arm.body, ctx, lcx, table, sink)?;
     let is_last = idx + 1 == arms.len();
     let cond = if is_last {
         ir::Expr::ConstBool(true)
@@ -448,7 +486,6 @@ fn build_when_chain(
             ctx,
             lcx,
             table,
-            ret_ty,
             sink,
             stmt_span,
         )?]
@@ -470,26 +507,23 @@ fn build_when_chain(
 /// each arm's tail value is written into `local` via [`TailSink::Assign`]
 /// instead of returned.
 ///
-/// A call-argument or other nested-sub-expression position (`f(when ...
-/// {...})`, `1 + when ... {...}`) is *not* supported by this issue: KIR's
-/// `Expr` is a tree with no statement-sequencing of its own, so hoisting a
-/// `when`-expression out of an arbitrary nested position would need every
-/// `lower_expr`/`lower_expr_expecting` call site to thread out an
-/// accumulator of hoisted statements — real plumbing, out of proportion to
-/// what this issue's fixtures need (`let`/`return` position only); such a
-/// position still hits `lower/expr.rs`'s plain `WhenExpr` rejection.
+/// A `when`-expression in an arbitrary *nested* position (`f(when ...
+/// {...})`, `1 + when ... {...}`) builds the same declare+chain pair, but
+/// binds it to a synthetic temp and hoists it — see
+/// [`lower_when_expr_value`]. This function stays separate because it can
+/// bind the user's own name directly, with no temp and no copy.
 ///
 /// With no annotation, the result type is inferred from the *first* arm's
 /// tail value, lowered once purely to read off its type and then discarded
-/// — the same "local structural inference" already used for list-literal
-/// element types (`lower/expr.rs`'s module doc) — rather than consulting
-/// `CheckArtifacts::expr_types` (which would need a new checker-`Ty` ->
-/// `KirType` converter this crate doesn't have yet, see `lower/mod.rs`'s
-/// `CheckArtifacts` doc). Every arm (including the first, lowered again for
-/// real) is then coerced against that inferred type via the same
-/// `TailSink::Assign` path `lower_stmt`'s `ast::Stmt::Expr` arm uses, so a
-/// type mismatch between arms surfaces as an ordinary `lower_expr_expecting`
-/// error, not a silent pick of one arm's type.
+/// (see [`probe_arm_ty`]) — the same "local structural inference" already
+/// used for list-literal element types (`lower/expr.rs`'s module doc) —
+/// rather than consulting `CheckArtifacts::expr_types` (which would need a
+/// new checker-`Ty` -> `KirType` converter this crate doesn't have yet, see
+/// `lower/mod.rs`'s `CheckArtifacts` doc). Every arm (including the first,
+/// lowered again for real) is then coerced against that inferred type via the
+/// same `TailSink::Assign` path `lower_stmt`'s `ast::Stmt::Expr` arm uses, so
+/// a type mismatch between arms surfaces as an ordinary
+/// `lower_expr_expecting` error, not a silent pick of one arm's type.
 #[allow(clippy::too_many_arguments)]
 fn lower_when_expr_let(
     name: &str,
@@ -499,7 +533,6 @@ fn lower_when_expr_let(
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    ret_ty: KirType,
     stmt_span: &Span,
 ) -> Result<Vec<ir::Stmt>, LowerError> {
     if arms.is_empty() {
@@ -519,19 +552,7 @@ fn lower_when_expr_let(
             lcx.nullables,
             lcx.tuples,
         )?,
-        None => {
-            let probe = lower_block(&arms[0].body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
-            match probe.last() {
-                Some(ir::Stmt::Expr(e)) => e.ty(),
-                _ => {
-                    return Err(LowerError::unsupported(
-                        "`when`-expression arm whose body doesn't end in a value-producing \
-                         expression",
-                        stmt_span.clone(),
-                    ));
-                }
-            }
-        }
+        None => probe_arm_ty(&arms[0], ctx, lcx, table, stmt_span)?,
     };
     let local = ctx.declare(name, result_ty);
     let declare = ir::Stmt::Let { local, init: None };
@@ -541,11 +562,95 @@ fn lower_when_expr_let(
         ctx,
         lcx,
         table,
-        ret_ty,
         TailSink::Assign(local),
         stmt_span,
     )?;
     Ok(vec![declare, chain])
+}
+
+/// Lowers a `when`-expression used in an arbitrary nested position — a call
+/// argument, a binary-op operand, a list element, an interpolation slot — to
+/// the `ir::Expr` that *reads* its result, hoisting the statements that
+/// produce it (issue #170).
+///
+/// The desugaring is exactly [`lower_when_expr_let`]'s, over a synthetic
+/// `<when.result>` temp instead of a user-named local: a declare-only
+/// `Stmt::Let` plus the nested `if`-chain [`lower_when_stmt`] builds, both
+/// pushed through [`FnCtx::hoist`] so [`lower_stmt`] emits them ahead of the
+/// enclosing statement. Nothing new reaches `keel-codegen` — these are the
+/// same two statement shapes issue #160 already emits.
+///
+/// `expected` is the type the surrounding syntax pins, when it pins one (a
+/// call argument's declared param type, a list element's type, …). With
+/// `None` — a plain [`super::expr::lower_expr`] position such as a stdlib
+/// namespace argument, whose catalog params are `dynamic` — the result type
+/// falls back to the same discarded first-arm probe `lower_when_expr_let`
+/// uses with no annotation.
+pub(crate) fn lower_when_expr_value(
+    subject: &ast::SpannedExpr,
+    arms: &[ast::WhenArm],
+    expected: Option<KirType>,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    span: &Span,
+) -> Result<ir::Expr, LowerError> {
+    if arms.is_empty() {
+        return Err(LowerError::new(
+            "`when` has no arms".to_string(),
+            subject.span.clone(),
+        ));
+    }
+    let result_ty = match expected {
+        Some(ty) => ty,
+        None => probe_arm_ty(&arms[0], ctx, lcx, table, span)?,
+    };
+    let local = ctx.declare_temp("<when.result>", result_ty);
+    ctx.hoist(ir::Stmt::Let { local, init: None });
+    let chain = lower_when_stmt(
+        subject,
+        arms,
+        ctx,
+        lcx,
+        table,
+        TailSink::Assign(local),
+        span,
+    )?;
+    ctx.hoist(chain);
+    Ok(ir::Expr::Local {
+        id: local,
+        ty: result_ty,
+    })
+}
+
+/// Reads off the `KirType` a `when`-expression's first arm produces, by
+/// lowering that arm's body and throwing the result away.
+///
+/// The probe runs in its own hoist buffer and its own slice of `ctx.locals`,
+/// both discarded afterwards: the arm is about to be lowered *again* for
+/// real, and leaving either behind would duplicate the arm's hoisted
+/// statements or leave dead locals in the function (visible in golden dumps).
+/// Truncating `locals` is safe precisely because everything the probe
+/// produced is dropped here — no surviving `Expr` holds one of those ids.
+fn probe_arm_ty(
+    arm: &ast::WhenArm,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    span: &Span,
+) -> Result<KirType, LowerError> {
+    let outer = ctx.begin_hoist();
+    let locals_mark = ctx.locals.len();
+    let probe = lower_block(&arm.body, ctx, lcx, table, TailSink::Discard);
+    ctx.end_hoist(outer);
+    ctx.locals.truncate(locals_mark);
+    match probe?.last() {
+        Some(ir::Stmt::Expr(e)) => Ok(e.ty()),
+        _ => Err(LowerError::unsupported(
+            "`when`-expression arm whose body doesn't end in a value-producing expression",
+            span.clone(),
+        )),
+    }
 }
 
 /// ORs together the per-pattern equality tests for one `when` arm (an arm
@@ -562,7 +667,15 @@ fn lower_arm_condition(
 ) -> Result<ir::Expr, LowerError> {
     let mut cond: Option<ir::Expr> = None;
     for pattern in patterns {
+        // An arm's own pattern test sits inside the `else` chain, so it runs
+        // only when every earlier arm failed to match — hoisting out of one
+        // would move it ahead of the whole `when`, running it unconditionally.
+        // The parser only admits literal patterns here, so this is a guard
+        // against a future pattern form arriving silently, not a diagnostic
+        // any program reaches today.
+        let mark = ctx.hoist_mark();
         let test = lower_pattern_test(pattern, local, scrutinee_ty, ctx, lcx, table, stmt_span)?;
+        ctx.forbid_hoist(mark, "a `when` arm pattern", stmt_span)?;
         cond = Some(match cond {
             None => test,
             Some(prev) => ir::Expr::BinOp {
@@ -702,7 +815,6 @@ fn lower_try_catch(
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-    ret_ty: KirType,
     stmt_span: &Span,
 ) -> Result<ir::Stmt, LowerError> {
     let [catch] = catches else {
@@ -738,12 +850,12 @@ fn lower_try_catch(
     // itself proves. A `try`/`catch` whose own arms both explicitly
     // `return` already terminates fine — see `block_terminates`'s
     // `TryCatch` arm.
-    let body = lower_block(body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
+    let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
 
     let binder_ty = KirType::Struct(struct_id);
     ctx.push_scope();
     let binder = ctx.declare(&catch.name, binder_ty);
-    let handler = lower_block(&catch.body, ctx, lcx, table, ret_ty, TailSink::Discard)?;
+    let handler = lower_block(&catch.body, ctx, lcx, table, TailSink::Discard)?;
     ctx.pop_scope();
 
     Ok(ir::Stmt::TryCatch {
