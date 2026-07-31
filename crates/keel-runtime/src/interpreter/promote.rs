@@ -9,6 +9,7 @@ use super::value::{MapKey, Value};
 /// Handles:
 /// - `Named(T)` → promotes `Value::Map` (string-keyed only) to `Value::Struct(T, …)`
 /// - `List(Named(T))` → promotes each `Value::Map` element in a `Value::List`
+/// - `Set(Named(T))` → promotes each `Value::Map` element in a `Value::Set`
 /// - `Map(_, Named(T))` → promotes each value inside a `Value::Map` (for `map[K, T]`)
 /// - `Nullable(inner)` → peels the wrapper and recurses on `inner`
 ///
@@ -49,6 +50,19 @@ pub(crate) fn promote_value(
         },
         TypeExpr::List(inner) => match v {
             Value::List(items) => Value::List(
+                items
+                    .into_iter()
+                    .map(|item| promote_value(item, inner, struct_types, struct_aliases))
+                    .collect(),
+            ),
+            other => other,
+        },
+        // `set[Named(T)]` promotes element-wise like `list[Named(T)]`.
+        // Promotion cannot introduce duplicates that weren't already there:
+        // two maps equal after tagging were equal before it, and the set was
+        // deduplicated at construction.
+        TypeExpr::Set(inner) => match v {
+            Value::Set(items) => Value::Set(
                 items
                     .into_iter()
                     .map(|item| promote_value(item, inner, struct_types, struct_aliases))

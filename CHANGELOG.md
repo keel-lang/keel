@@ -12,6 +12,36 @@ All notable changes to Keel.
 
 ### Added
 
+- **Map and set mutation: `map.insert(k, v)` and `set.add(v)`.** Maps had no way to add an entry after construction, and sets had no methods at all. Both follow the `list.push` convention — a value method returning a **new** container, so the result has to be bound. `insert` overwrites an existing key; `add` on an element already present is a no-op rather than an error. Sets also get the `.count`/`.len`/`.size`, `.contains(v)`, and `.is_empty` methods `SPEC.md` had promised but nothing implemented, and they type-check properly now instead of inferring as unknown.
+
+```keel
+use std/io
+
+stock: map[str, int] = {apples: 12}
+aliased = stock
+stock = stock.insert("pears", 5)
+io.show(stock.len())        # 2
+io.show(aliased.len())      # 1 — the alias never saw the insert
+
+ids = set[1, 2]
+ids.add(3)                  # no-op: the result was discarded
+ids = ids.add(3)            # set[1, 2, 3]
+ids = ids.add(2)            # unchanged — already present
+io.show(ids.contains(3))    # true
+io.show(ids.count())        # 3
+```
+
+  Sets additionally accept the read-only list methods (`.map`, `.filter`,
+  `.join`, `.sort`, …) over their elements in insertion order, each yielding a
+  list or a scalar, never a set. `.push` is not among them — use `.add`.
+
+  The native backend compiles all of it: `map.insert` and `set.add`/
+  `.contains`/`.len`/`.count`/`.size`/`.is_empty` lower through KIR to new
+  `keel_set_*` runtime ops, and the compiled and interpreted engines share one
+  definition of set dedup, so membership agrees by construction rather than by
+  differential test. Two new conformance cases pin the copy-on-write aliasing
+  behavior for both containers.
+
 - **Tuple positional access (`pair.0`).** `SPEC.md` §2.8 has always documented reading a tuple element by position, but the parser never accepted it — the postfix `.` parser took identifiers and a few contextual keywords, never an integer, so `SPEC`'s own example failed `keel check` with `found '0' expected something else`. Positional reads now parse, resolve to the element's declared type, and are bounds-checked at compile time against the tuple's arity. `?.` works too. Numeric names remain a syntax error in declarations (`type X { 0: int }`), because the postfix parser is deliberately separate from the one used for struct fields and map keys.
 
 ```keel
@@ -119,6 +149,27 @@ Known D0 gaps (see `docs/src/guide/debugging.md`): code inside `Async.spawn` run
 
 ### Changed
 
+- **`set[T]` is a real set now — it deduplicates.** Sets used to share the list representation (`Value::List`, "v0.1: sets share list repr"), so `set[1, 1, 2]` held three elements and behaved as a list in every observable way. A set is now its own runtime value with dedup by the language's own `==`, preserving first-insertion order. Four behaviors changed for existing programs:
+
+  - `set[1, 1, 2].count()` is `2`, was `3`.
+  - `typeof(set[1, 2])` is `"set"`, was `"list"`.
+  - A set renders as `set[1, 2, 3]` in interpolation, `to_str()`, and error messages, where it used to render as `[1, 2, 3]`. `io.show` is unchanged (still the numbered-item list).
+  - A set no longer compares equal to a list with the same elements.
+
+  Element types stay unrestricted — unlike map keys, `set[float]` and `set[SomeStruct]` are legal, and structs deduplicate by field values. (One consequence of reusing `==`: NaN is never equal to itself, so NaN elements never collapse.)
+
+```keel
+use std/io
+
+pts = set[{x: 1, y: 2}, {x: 1, y: 2}]
+io.show(pts.count())        # 1 — equal field values, one element
+
+ids = set[3, 1, 3, 2]
+io.show("{ids}")            # set[3, 1, 2] — first-insertion order
+io.show(typeof(ids))        # set
+```
+
+- **`for x in someSet` type-checks.** Spreading a set into variadic slots (`...someSet`) was already specified and working while the equivalent `for` loop was rejected by the checker — the same capability, arbitrarily split. A set iterates in insertion order.
 - **Dependency upgrades.** `rustyline` 15→18, `logos` 0.14→0.16, `colored` 2→3, `rusqlite` 0.32→0.40, `sha2` 0.10→0.11, `getrandom` 0.2→0.4, `async-native-tls` 0.5→0.6, plus a routine `cargo update` of compatible transitive versions. No user-facing behavior change; internal call sites (`getrandom::fill`, digest-to-hex formatting, a logos comment-token lint annotation) were updated to match each library's new API surface.
 - **Removed `Value::to_display_string`.** All call sites now go through the `Display` impl on `Value` directly (`.to_string()`), which was already functionally identical. No user-facing behavior change.
 - **Deduplicated the interpreter's per-agent-turn bookkeeping.** `@on_start`/`@on_stop`, event handler dispatch, and scheduled-closure firing each hand-rolled the same save/set/restore of `current_agent`, `current_module_id`, and `call_depth`; a fifth site (an HTTP handler closure, which has no `self`) skipped `current_agent` without that choice being visible anywhere. All five now go through shared `begin_agent_turn`/`end_agent_turn` helpers, so the HTTP-handler case now passes `None` explicitly instead of omitting a line. No user-facing behavior change.

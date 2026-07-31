@@ -6,6 +6,7 @@ mod lists;
 mod loops;
 mod maps;
 mod operators;
+mod sets;
 mod spread;
 mod stringable;
 mod strings;

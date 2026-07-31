@@ -86,19 +86,14 @@ pub struct KirProgram {
     /// not declaration order — see `MapId`'s doc). Only int/float/bool/str
     /// values are modeled, same restriction as `lists`; the key is always
     /// `str` (non-`str` keys are a later issue, see `KirType::Map`'s doc).
-    /// No mutation op is exposed yet — issue #162's construct/read scope
-    /// (the interpreter itself has no `map.insert`-style method to match).
+    /// `.insert(k, v)` is the one mutation op, keyed by `str` like the rest.
     pub maps: Vec<KirType>,
     /// Every distinct `set[T]` element type interned so far (structural, not
     /// declaration order — see `SetId`'s doc). Only int/float/bool/str
-    /// elements are modeled, same restriction as `lists`. `Set` is purely a
-    /// *static* type distinct from `List` — at runtime a set is the exact
-    /// same `Value::List` a list is (see `KirType::Set`'s doc), so no method
-    /// call lowers on it yet: the interpreter itself doesn't type-check any
-    /// set method or `for`-over-`set[T]` today (every set method call
-    /// resolves to `Ty::Unknown(InferenceLimitation)`, and `for` explicitly
-    /// requires `Ty::List`) — there is nothing for the compiled backend to
-    /// match yet.
+    /// elements are modeled, same restriction as `lists` — narrower than the
+    /// `set[T]` the checker accepts (which admits structs and nested
+    /// containers), because those elements would need the `Value` marshaling
+    /// `lists` also defers.
     pub sets: Vec<KirType>,
     /// Every distinct nullable inner type interned so far (structural, not
     /// declaration order — see `NullableId`'s doc). Only int/float/bool/str/
@@ -509,17 +504,18 @@ pub enum RtFn {
     /// `keel_map_values(map) -> list[V]`, ordered by sorted key. See
     /// [`RtFn::MapKeys`].
     MapValues,
-    /// Builds an empty `set[T]` — codegen calls `keel_list_new` directly
-    /// (a distinct `RtFn` variant from [`RtFn::ListNew`] only so `keel-kir`'s
-    /// verify pass can require this call's result to be `KirType::Set`, not
-    /// `KirType::List` — see `KirType::Set`'s doc for why they share a
-    /// runtime representation but stay distinct static types).
+    /// `keel_set_new() -> set` — builds an empty `set[T]`.
     SetNew,
-    /// `set[T]` literal's per-element fold — codegen calls `keel_list_push`
-    /// directly, no dedup (matches the interpreter's own `SetLit` evaluation
-    /// — see `KirType::Set`'s doc). See [`RtFn::SetNew`] for why this is a
-    /// distinct variant from [`RtFn::ListPush`].
+    /// `keel_set_insert(set, elem) -> set'` — adds `elem` unless an equal
+    /// element is already present, always cloning (same convention as
+    /// [`RtFn::ListPush`]). Backs both the `set[...]` literal fold and the
+    /// `.add(v)` method, which are the same operation.
     SetInsert,
+    /// `keel_set_len(set) -> int` — post-dedup count.
+    SetLen,
+    /// `keel_set_contains(set, elem) -> bool` — membership by the runtime's
+    /// value equality, the same rule [`RtFn::SetInsert`] dedups on.
+    SetContains,
 }
 
 impl Expr {

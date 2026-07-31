@@ -10,7 +10,7 @@ use super::environment::Environment;
 use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
 use super::stmt::{ExprFlow, StmtOutcome};
-use super::value::{MapKey, Value};
+use super::value::{self, MapKey, Value};
 use super::{eval_binary, is_pascal_case};
 
 /// Parsed components of a format spec string.
@@ -538,11 +538,17 @@ impl Interpreter {
                     let mut out = Vec::with_capacity(items.len());
                     for it in items {
                         match self.eval_expr(it, env).await? {
-                            ExprFlow::Value(v) => out.push(v),
+                            // Duplicate literal elements collapse here rather
+                            // than being an error — `set[1, 1]` is a set of
+                            // one, matching how every other set operation
+                            // treats a re-added element.
+                            ExprFlow::Value(v) => {
+                                value::set_insert(&mut out, v);
+                            }
                             early => return Ok(early),
                         }
                     }
-                    Ok(ExprFlow::Value(Value::List(out))) // v0.1: sets share list repr
+                    Ok(ExprFlow::Value(Value::Set(out)))
                 }
 
                 Expr::TupleLit(items) => {
@@ -955,9 +961,12 @@ impl Interpreter {
                 ExprFlow::Return(v) => return Ok(ArgsResult::Return(v)),
             };
             if a.spread {
-                // Expand list (sets share the list repr in v0.1) into individual positional args.
+                // Expand a list or set into individual positional args
+                // (SPEC §11: `...expr` requires `list[T]` or `set[T]`). A set
+                // expands in insertion order, so the slot assignment is
+                // deterministic.
                 let items = match v {
-                    Value::List(items) => items,
+                    Value::List(items) | Value::Set(items) => items,
                     other => {
                         return Err(super::runtime_error(format!(
                             "spread `...` requires a list or set, got {}",

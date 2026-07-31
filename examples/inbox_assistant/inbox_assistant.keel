@@ -169,8 +169,12 @@ agent InboxAssistant {
     })
     priorities = [Urgency.low, Urgency.medium, Urgency.high]
     counts = { total: 0, archived: 0 }
-    known_senders = set["alice@example.com", "ops@example.com"]
+    # A set drops the duplicate; .add returns a new set, so rebind it.
+    known_senders = set["alice@example.com", "ops@example.com", "alice@example.com"]
+    known_senders = known_senders.add("release-bot@example.com")
+    counts = counts.insert("skipped", 0)
     log.debug("boot state: {priorities.count} priorities staged")
+    log.debug("{known_senders.count} known senders, alice known: {known_senders.contains("alice@example.com")}")
     io.show(counts)
     io.show(known_senders)
   }

@@ -1,13 +1,17 @@
-//! Exit criterion for issue #162 (set containers, construct+pass-through
-//! subset): a `set[T]` literal built, bound, and passed/printed through —
-//! compiles, links, and matches the interpreter byte-for-byte.
+//! Exit criterion for issue #172 (set containers, end to end): a program
+//! building a `set[T]`, mutating and reading it, and observing correct
+//! copy-on-write behavior on aliased bindings compiles, links, and matches
+//! the interpreter byte-for-byte.
 //!
-//! The interpreter has no `Value::Set` variant — a `set[...]` literal
-//! evaluates to a plain, non-deduplicating `Value::List` ("v0.1: sets share
-//! list repr", see `KirType::Set`'s doc) — so there's no dedup behavior to
-//! observe and no set methods lowered yet (`unknown_...` cases live in
-//! `keel-kir`'s `lower_errors.rs`, not here). This file only pins the
-//! construct+pass-through shape that #151's fixtures actually need.
+//! A set is now its own `Value::Set` with real dedup, not the `Value::List`
+//! issue #162 deferred it as. Both engines dedup through the *same* function
+//! — `keel-runtime`'s `value::set_insert`, which `keel-rt-ffi`'s
+//! `keel_set_insert` calls — so membership agrees by construction; these
+//! tests pin the surrounding lowering and rendering, which don't.
+//!
+//! Mutation is always-clone, same as list's `.push` (see
+//! `keel-codegen/tests/lists.rs`'s module doc for why that makes the
+//! aliasing case correct by construction rather than by luck).
 
 use std::process::Command;
 
@@ -46,15 +50,60 @@ fn assert_matches_interpreter(source: &str, expected_stdout: &[u8]) {
 }
 
 #[test]
-fn set_literal_construction_and_pass_through_matches_the_interpreter() {
+fn aliased_bindings_do_not_observe_each_others_add() {
+    // The differential aliasing test, mirroring `lists.rs`'s
+    // `aliased_bindings_do_not_observe_each_others_push`: `b` aliases `a`
+    // *before* `a` is reassigned via `.add`, and both are printed *after*.
+    // A bare `a.add(4)` discarding the result would make this pass vacuously.
+    let source = r#"
+use std/io
+
+a = set[1, 2, 3]
+b = a
+a = a.add(4)
+io.show(a)
+io.show(b)
+"#;
+    assert_matches_interpreter(
+        source,
+        b"  1. 1\n  2. 2\n  3. 3\n  4. 4\n  1. 1\n  2. 2\n  3. 3\n",
+    );
+}
+
+#[test]
+fn duplicate_elements_collapse_in_both_engines() {
+    // The behavior issue #162 could not test: dedup at literal construction
+    // *and* through `.add`, observable in both the element count and the
+    // rendered output. Re-adding an existing element is a no-op, not an
+    // error and not a second entry.
+    let source = r#"
+use std/io
+
+nums = set[1, 2, 2, 3]
+io.show(nums.len())
+io.show(nums)
+again = nums.add(2)
+io.show(again.len())
+io.show(again)
+"#;
+    assert_matches_interpreter(
+        source,
+        b"  3\n  1. 1\n  2. 2\n  3. 3\n  3\n  1. 1\n  2. 2\n  3. 3\n",
+    );
+}
+
+#[test]
+fn contains_len_and_is_empty_match_the_interpreter() {
     let source = r#"
 use std/io
 
 nums = set[1, 2, 3]
-other = nums
-io.show(other)
+io.show(nums.contains(2))
+io.show(nums.contains(9))
+io.show(nums.count())
+io.show(nums.is_empty())
 "#;
-    assert_matches_interpreter(source, b"  1. 1\n  2. 2\n  3. 3\n");
+    assert_matches_interpreter(source, b"  true\n  false\n  3\n  false\n");
 }
 
 #[test]
@@ -62,8 +111,11 @@ fn set_of_str_elements_matches_the_interpreter() {
     let source = r#"
 use std/io
 
-names = set["alice", "bob"]
+names = set["alice", "bob", "alice"]
+names = names.add("carol")
+io.show(names.len())
+io.show(names.contains("bob"))
 io.show(names)
 "#;
-    assert_matches_interpreter(source, b"  1. alice\n  2. bob\n");
+    assert_matches_interpreter(source, b"  3\n  true\n  1. alice\n  2. bob\n  3. carol\n");
 }

@@ -232,6 +232,7 @@ stock: map[str, int] = {apples: 12, pears: 5, plums: 0}
 | `map.len()` / `map.count()` / `map.size()` | `int` |
 | `map.is_empty()` | `bool` |
 | `map.contains(k)` / `map.has(k)` | `bool` |
+| `map.insert(k, v)` | `map[K, V]` — a **new** map |
 
 ```keel
 stock: map[str, int] = {apples: 12, pears: 5}
@@ -244,6 +245,88 @@ stock.values()             # [12, 5]
 # get returns V? — coalesce or assert before using as V.
 pears = stock.get("pears") ?? 0      # 5
 missing = stock.get("oranges") ?? 0  # 0
+```
+
+### insert — add or overwrite a key
+
+Like `list.push`, `insert` returns a new map instead of modifying the
+receiver, so the result has to be bound:
+
+```keel
+stock: map[str, int] = {apples: 12}
+
+stock.insert("pears", 5)            # no-op — the result was discarded
+stock = stock.insert("pears", 5)    # {apples: 12, pears: 5}
+stock = stock.insert("apples", 20)  # overwrites: {apples: 20, pears: 5}
+```
+
+## Sets
+
+A `set[T]` holds at most one element equal to any given value. Duplicates
+collapse on the way in, whether from the literal or from `add`:
+
+```keel
+ids: set[int] = set[1, 2, 2, 3]
+ids.count()    # 3 — the second 2 was dropped
+```
+
+Elements keep **first-insertion order** — that is the order a set prints,
+iterates, and spreads in. Nothing is sorted.
+
+```keel
+set[3, 1, 2]   # set[3, 1, 2]
+```
+
+Equality is the same `==` used everywhere else, so the element type is
+unrestricted — unlike map keys, which must be `str`, `int`, or `bool`:
+
+```keel
+type Point { x: int, y: int }
+
+a: Point = {x: 1, y: 2}
+b: Point = {x: 1, y: 2}
+set[a, b].count()   # 1 — equal field values, one element
+```
+
+### Set methods
+
+| Method | Returns |
+|---|---|
+| `set.add(v)` | `set[T]` — a **new** set |
+| `set.contains(v)` | `bool` |
+| `set.len()` / `set.count()` / `set.size()` | `int` |
+| `set.is_empty()` | `bool` |
+
+`add` follows the same value-method rule as `list.push` and `map.insert` —
+it returns a new set, and adding an element that is already present is a
+no-op rather than an error:
+
+```keel
+ids = set[1, 2]
+
+ids.add(3)          # no-op — the result was discarded
+ids = ids.add(3)    # set[1, 2, 3]
+ids = ids.add(2)    # set[1, 2, 3] — already present
+```
+
+Sets iterate and spread like lists:
+
+```keel
+for id in set[3, 1, 2] {
+  io.show(id)       # 3, then 1, then 2
+}
+
+total(...set[1, 2, 2, 3])   # spreads 3 values, not 4
+```
+
+They also accept the read-only list methods — `map`, `filter`, `find`,
+`any`, `all`, `reduce`, `sum`, `min`, `max`, `join`, `sort`, `reverse`,
+`take`, `skip`, and friends — each returning a list or a scalar, never a
+set. `push` is not among them; use `add`.
+
+```keel
+set[1, 2, 2, 3].map(n => n * 2)   # [2, 4, 6] — a list
+set[1, 2, 3].join("-")            # "1-2-3"
 ```
 
 ## String methods

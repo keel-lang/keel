@@ -124,11 +124,11 @@ fn install_min_max(host: &mut dyn Host) {
                         .filter(|a| a.name.is_none())
                         .map(|a| a.value)
                         .collect();
-                    // A single list argument is auto-spread so that
-                    // `min(items, by: |x| x.score)` iterates the list elements,
+                    // A single list or set argument is auto-spread so that
+                    // `min(items, by: |x| x.score)` iterates the elements,
                     // mirroring Python's min(iterable, key=...) convention.
                     let items: Vec<Value> = match positional.as_slice() {
-                        [Value::List(v)] => v.clone(),
+                        [Value::List(v)] | [Value::Set(v)] => v.clone(),
                         _ => positional,
                     };
                     if items.is_empty() {

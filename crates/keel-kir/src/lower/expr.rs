@@ -388,6 +388,9 @@ pub(crate) fn lower_expr(
                 KirType::Map(_) => {
                     lower_map_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
                 }
+                KirType::Set(_) => {
+                    lower_set_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
+                }
                 _ => Err(LowerError::unsupported("method call", expr.span.clone())),
             }
         }
@@ -1036,11 +1039,15 @@ fn lower_list_lit(
     Ok(acc)
 }
 
-/// Lowers `set[expr, ...]` — folds into a `SetNew`/`SetInsert` chain, same
-/// shape [`lower_list_lit`] builds, with no dedup (`RtFn::SetInsert`'s doc
-/// has the rationale: the interpreter's own `SetLit` doesn't dedup either,
-/// "v0.1: sets share list repr" — matching that, not a "more correct"
-/// deduplicating set the interpreter doesn't have, is the whole point).
+/// Lowers `set[expr, ...]` — folds into a `SetNew`/`SetInsert` chain, the
+/// same shape [`lower_list_lit`] builds.
+///
+/// Duplicate elements are *not* rejected here, unlike [`lower_map_lit`]'s
+/// duplicate keys: `set[1, 1]` is a well-defined set of one, and each
+/// `SetInsert` drops the redundant element at runtime via the interpreter's
+/// own dedup (`keel-runtime`'s `value::set_insert`). A duplicate map key, by
+/// contrast, silently discards a *value* the program supplied, which is why
+/// that one is an error.
 fn lower_set_lit(
     items: &[SpannedExpr],
     span: &Span,
@@ -1208,6 +1215,24 @@ fn lower_map_method_call(
     };
 
     match method {
+        // Mirrors `lower_list_method_call`'s `push`: a value method whose
+        // result type is the receiver's, not a mutation of the receiver.
+        "insert" => {
+            let [key_arg, val_arg] = args else {
+                return Err(LowerError::new(
+                    format!("`insert` takes 2 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            };
+            let key_e = lower_expr_expecting(&key_arg.value, KirType::Str, ctx, lcx, table)?;
+            let val_e = lower_expr_expecting(&val_arg.value, value_ty, ctx, lcx, table)?;
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::MapInsert),
+                args: vec![object_e, key_e, val_e],
+                ty: KirType::Map(map_id),
+                span: span_id,
+            })
+        }
         "get" => {
             let key_e = one_str_arg(args, ctx, table)?;
             let nullable_id = super::intern_nullable(lcx.nullables, value_ty);
@@ -1293,8 +1318,119 @@ fn lower_map_method_call(
         }
         other => Err(LowerError::unsupported(
             &format!(
-                "map method `{other}` (only `get`/`keys`/`values`/`len`/`count`/`size`/\
+                "map method `{other}` (only `insert`/`get`/`keys`/`values`/`len`/`count`/`size`/\
                  `is_empty`/`contains`/`has` are lowered so far)"
+            ),
+            call_span.clone(),
+        )),
+    }
+}
+
+/// Lowers a value method call on a `set[T]`-typed receiver (`s.add(v)`,
+/// `s.contains(v)`, `s.len()`/`.count()`/`.size()`, `s.is_empty()`).
+///
+/// The read-only list pipeline a set also accepts at runtime
+/// (`.map`/`.filter`/… — see `keel-runtime`'s `SET_LIST_METHODS`) is not
+/// lowered here, for the same reason the equivalent list methods aren't
+/// lowered in [`lower_list_method_call`]: they take lambdas, which arrive
+/// with closure support in M3.
+///
+/// Like `lower_map_method_call`, `is_empty` is synthesized as `len == 0`
+/// rather than given its own FFI symbol.
+fn lower_set_method_call(
+    object_e: Expr,
+    method: &str,
+    args: &[ast::CallArg],
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    call_span: &Span,
+) -> Result<Expr, LowerError> {
+    let KirType::Set(set_id) = object_e.ty() else {
+        unreachable!("caller only invokes lower_set_method_call on a KirType::Set receiver");
+    };
+    for arg in args {
+        if arg.name.is_some() || arg.spread {
+            return Err(LowerError::unsupported(
+                "named or spread arguments to a set method call",
+                arg.value.span.clone(),
+            ));
+        }
+    }
+
+    let elem_ty = lcx.sets.borrow()[set_id];
+    let span_id = table.intern(call_span.clone());
+
+    let one_elem_arg = |args: &[ast::CallArg],
+                        ctx: &mut FnCtx,
+                        table: &mut SpanTable|
+     -> Result<Expr, LowerError> {
+        let [arg] = args else {
+            return Err(LowerError::new(
+                format!("`{method}` takes 1 argument, got {}", args.len()),
+                call_span.clone(),
+            ));
+        };
+        lower_expr_expecting(&arg.value, elem_ty, ctx, lcx, table)
+    };
+
+    match method {
+        "add" => {
+            let elem_e = one_elem_arg(args, ctx, table)?;
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::SetInsert),
+                args: vec![object_e, elem_e],
+                ty: KirType::Set(set_id),
+                span: span_id,
+            })
+        }
+        "contains" => {
+            let elem_e = one_elem_arg(args, ctx, table)?;
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::SetContains),
+                args: vec![object_e, elem_e],
+                ty: KirType::Bool,
+                span: span_id,
+            })
+        }
+        "len" | "count" | "size" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`{method}` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            Ok(Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::SetLen),
+                args: vec![object_e],
+                ty: KirType::I64,
+                span: span_id,
+            })
+        }
+        "is_empty" => {
+            if !args.is_empty() {
+                return Err(LowerError::new(
+                    format!("`is_empty` takes 0 arguments, got {}", args.len()),
+                    call_span.clone(),
+                ));
+            }
+            let len_e = Expr::Call {
+                target: CallTarget::Rt(ir::RtFn::SetLen),
+                args: vec![object_e],
+                ty: KirType::I64,
+                span: span_id,
+            };
+            Ok(Expr::BinOp {
+                op: ir::BinOp::Eq,
+                left: Box::new(len_e),
+                right: Box::new(Expr::ConstInt(0)),
+                ty: KirType::Bool,
+            })
+        }
+        other => Err(LowerError::unsupported(
+            &format!(
+                "set method `{other}` (only `add`/`contains`/`len`/`count`/`size`/\
+                 `is_empty` are lowered so far)"
             ),
             call_span.clone(),
         )),

@@ -642,21 +642,42 @@ task f() -> int {
 }
 
 #[test]
-fn set_value_method_call_is_rejected() {
-    // Issue #162 scopes construct/pass-through only for `set[T]` (the
-    // interpreter has no `Value::Set` variant and no set methods to match
-    // against yet — see `KirType::Set`'s doc) — a method call on a set
-    // falls through to the generic "method call" rejection, same as any
-    // other unsupported receiver type.
+fn unknown_set_method_is_rejected() {
+    // `add`/`contains`/`len`/`count`/`size`/`is_empty` lower (issue #172);
+    // anything else must name the receiver kind rather than falling through
+    // to the generic "method call" rejection, so the message tells you which
+    // set methods exist. `.map` is the interesting case: it *works* in the
+    // interpreter (a set borrows the list read pipeline) and is unsupported
+    // here only because lambdas arrive in M3.
     let msg = lower_err(
         r#"
 task f() -> int {
   nums = set[1, 2, 3]
-  return nums.len()
+  ys = nums.map(x => x)
+  return 0
 }
 "#,
     );
-    assert!(msg.contains("method call"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("set method `map`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn set_method_arity_is_checked() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  nums = set[1, 2, 3]
+  return nums.len(1)
+}
+"#,
+    );
+    assert!(
+        msg.contains("`len` takes 0 arguments"),
+        "unexpected message: {msg}"
+    );
 }
 
 #[test]

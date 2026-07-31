@@ -38,7 +38,12 @@ pub fn value_to_json(v: &Value) -> serde_json::Value {
         Value::String(s) => serde_json::Value::String(s.clone()),
         Value::Uuid(id) => serde_json::Value::String(id.clone()),
         Value::EnumVariant(_, v, _) => serde_json::Value::String(v.clone()),
-        Value::List(items) => serde_json::Value::Array(items.iter().map(value_to_json).collect()),
+        // JSON has no set type — a set serializes as an array in insertion
+        // order. `json_to_value` has no inverse for it (arrays always parse
+        // back as lists), so this is a one-way projection by design.
+        Value::List(items) | Value::Set(items) => {
+            serde_json::Value::Array(items.iter().map(value_to_json).collect())
+        }
         Value::Map(m) => {
             let mut obj = serde_json::Map::new();
             for (k, v) in m {

@@ -57,6 +57,21 @@ pub enum Value {
 
     /// List of values
     List(Vec<Value>),
+    /// Deduplicated collection of values, in insertion order.
+    ///
+    /// Backed by a `Vec` rather than a `HashSet` because `Value` has no `Hash`
+    /// impl and cannot get one: `set[T]` accepts any `T` the checker accepts
+    /// (structs, floats, nested lists), whereas hashing would force `MapKey`'s
+    /// str/int/bool restriction onto sets that don't need it. Membership uses
+    /// the hand-written [`PartialEq`] below, so dedup follows exactly the same
+    /// equality rules as `==` everywhere else in the language — including the
+    /// consequence that `float` NaN never dedups against itself.
+    ///
+    /// Insertion order is preserved, which is what makes set output
+    /// deterministic without the sort-on-observation that `Map` needs.
+    /// Construct and extend it through [`set_insert`] so the interpreter and
+    /// `keel-rt-ffi`'s `keel_set_insert` share one definition of dedup.
+    Set(Vec<Value>),
     /// Lazy inclusive integer range — stores only lo and hi, never materializes.
     Range(i64, i64),
     /// Anonymous map literal — keys are str, int, or bool (`MapKey`).
@@ -135,6 +150,24 @@ pub enum Value {
     Module(Arc<ModuleValue>),
 }
 
+/// Appends `value` to a set's backing vector unless an equal element is
+/// already present, and reports whether it was added.
+///
+/// The single definition of set dedup. Both engines route through it — the
+/// interpreter for `set[...]` literals and `.add(v)`, `keel-rt-ffi` for
+/// `keel_set_new`/`keel_set_insert` — so compiled and interpreted programs
+/// agree on set membership by construction rather than by differential test.
+///
+/// Equality is `Value`'s own [`PartialEq`], so a set of structs dedups on
+/// field values and a set of floats inherits IEEE NaN semantics.
+pub fn set_insert(items: &mut Vec<Value>, value: Value) -> bool {
+    if items.contains(&value) {
+        return false;
+    }
+    items.push(value);
+    true
+}
+
 /// Runtime view of a local module: its name and exposed member names.
 #[derive(Debug)]
 pub struct ModuleValue {
@@ -154,6 +187,7 @@ impl Value {
             Value::Bool(_) => "bool",
             Value::None => "none",
             Value::List(_) | Value::Range(_, _) => "list",
+            Value::Set(_) => "set",
             Value::Map(_) => "map",
             Value::Struct(_, _) => "struct",
             Value::EnumVariant(_, _, _) => "enum",
@@ -179,6 +213,7 @@ impl Value {
             Value::Integer(0) => false,
             Value::String(s) if s.is_empty() => false,
             Value::List(l) if l.is_empty() => false,
+            Value::Set(s) if s.is_empty() => false,
             Value::Range(lo, hi) if lo > hi => false,
             Value::DbConnection(_, _) | Value::MockTarget { .. } | Value::MockHandle { .. } => true,
             _ => true,
@@ -246,6 +281,19 @@ impl fmt::Display for Value {
             Value::None => write!(f, "none"),
             Value::List(items) => {
                 write!(f, "[")?;
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{item}")?;
+                }
+                write!(f, "]")
+            }
+            // Rendered as the literal that would rebuild it, so a set is
+            // never mistaken for a list (`[…]`) or a map (`{…}`) in hover
+            // text, error messages, or interpolation.
+            Value::Set(items) => {
+                write!(f, "set[")?;
                 for (i, item) in items.iter().enumerate() {
                     if i > 0 {
                         write!(f, ", ")?;
@@ -335,6 +383,11 @@ impl PartialEq for Value {
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::None, Value::None) => true,
             (Value::List(a), Value::List(b)) => a == b,
+            // Order-independent: two sets built from the same elements in
+            // different orders are equal, even though each preserves its own
+            // insertion order for display and iteration. Both sides are
+            // deduplicated, so equal lengths plus one-way containment suffice.
+            (Value::Set(a), Value::Set(b)) => a.len() == b.len() && a.iter().all(|x| b.contains(x)),
             (Value::Range(a1, a2), Value::Range(b1, b2)) => a1 == b1 && a2 == b2,
             (Value::Map(a), Value::Map(b)) => a == b,
             (Value::Struct(_, a), Value::Struct(_, b)) => a == b,

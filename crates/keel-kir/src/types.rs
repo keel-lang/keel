@@ -46,17 +46,16 @@ pub enum KirType {
     /// always `str` — see `KirProgram::maps`'s doc; non-`str` keys are a
     /// later issue) — a `ptr` to an RC'd, always-clone-on-mutation
     /// `Value::Map` (opaque to codegen, same `CallTarget::Rt` treatment as
-    /// `List`). No mutation op is exposed yet (issue #162's construct/read
-    /// scope — see `KirProgram::maps`'s doc for why).
+    /// `List`). `.insert(k, v)` is the one mutation op, and like every Keel
+    /// mutation it returns a fresh map rather than updating in place.
     Map(MapId),
     /// `set[T]` (`T` restricted to int/float/bool/str, same as `List`) — a
-    /// `ptr` to an RC'd `Value::List` under the hood: the interpreter itself
-    /// has no distinct `Value::Set` representation yet (`SetLit` evaluates
-    /// to a plain, non-deduplicating `Value::List` — "v0.1: sets share list
-    /// repr"), so the compiled backend deliberately matches that rather than
-    /// diverging with a "more correct" deduplicating set the interpreter
-    /// doesn't have. `Set` is purely a *static* type distinction from
-    /// `List` — see `KirProgram::sets`'s doc.
+    /// `ptr` to an RC'd, always-clone-on-mutation `Value::Set`, opaque to
+    /// codegen exactly like `List` and `Map`. Distinct from `List` at runtime
+    /// as well as statically: a set deduplicates on insert (by the runtime's
+    /// value equality) and preserves insertion order. Dedup lives in
+    /// `keel-runtime`'s `value::set_insert`, which both `keel-rt-ffi`'s
+    /// `keel_set_insert` and the interpreter call — see `KirProgram::sets`.
     Set(SetId),
     /// `T?` (inner restricted to int/float/bool/str/list/struct — see
     /// `KirProgram::nullables`'s doc and `lower::is_nullable_inner_ty`). Per

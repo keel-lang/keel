@@ -7,7 +7,20 @@ use crate::ast::TaskDecl;
 use super::environment::Environment;
 use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
-use super::value::{MapKey, Value};
+use super::value::{self, MapKey, Value};
+
+/// List methods a set may be dispatched to by borrowing the list arms.
+///
+/// Every one of these reads the elements and returns a list or a scalar —
+/// none returns a set — so a set can be rebound as a list for the duration of
+/// the call without any set invariant escaping. Membership-changing methods
+/// (`push`) and the methods sets define for themselves (`count`/`len`/`size`,
+/// `contains`, `is_empty`, `add`) are deliberately absent: `push` would hand
+/// back a list, and the rest have set-specific arms that must not be shadowed.
+const SET_LIST_METHODS: &[&str] = &[
+    "map", "filter", "find", "any", "all", "reduce", "sum", "min", "max", "join", "sort",
+    "reverse", "flatten", "take", "skip", "zip", "first", "last",
+];
 
 /// Total ordering over key values produced by `sort_by` closures.
 /// Matches the same primitive ordering used by `.sort()`.
@@ -101,6 +114,15 @@ impl Interpreter {
             call_args.extend(args);
             return self.call_task(method, &task, call_args).await;
         }
+
+        // Rebind a set as a list for the read-only pipeline it borrows from
+        // lists (see `SET_LIST_METHODS`), so those arms need no set variants.
+        // Insertion order is what the list arms then see, which is what makes
+        // `.join()`, `.first()`, and `.sort()` deterministic over a set.
+        let obj = match &obj {
+            Value::Set(items) if SET_LIST_METHODS.contains(&method) => Value::List(items.clone()),
+            _ => obj,
+        };
 
         // Minimal built-in methods for v0.1. Extend as examples need.
         match (&obj, method) {
@@ -738,6 +760,43 @@ impl Interpreter {
             (Value::Struct(_, m), "contains" | "has") => {
                 let key = expect_str_arg(&args, 0, "struct.contains")?;
                 Ok(Value::Bool(m.contains_key(key)))
+            }
+            // Returns a fresh map — like `list.push`, and like every other
+            // Keel "mutation", this is a value method: `m.insert(k, v)` on its
+            // own is a no-op, the result has to be rebound.
+            (Value::Map(m), "insert") => {
+                let (Some(key_arg), Some(val_arg)) = (args.first(), args.get(1)) else {
+                    return Err(runtime_error("map.insert expects a key and a value"));
+                };
+                let Some(key) = MapKey::from_value(&key_arg.value) else {
+                    return Err(runtime_error(format!(
+                        "map keys must be str, int, or bool — got {}",
+                        key_arg.value.type_name()
+                    )));
+                };
+                let mut result = m.clone();
+                result.insert(key, val_arg.value.clone());
+                Ok(Value::Map(result))
+            }
+            (Value::Set(items), "count" | "len" | "size") => Ok(Value::Integer(items.len() as i64)),
+            (Value::Set(items), "is_empty") => Ok(Value::Bool(items.is_empty())),
+            (Value::Set(items), "contains") => {
+                let Some(arg) = args.first() else {
+                    return Err(runtime_error("set.contains expects one argument"));
+                };
+                Ok(Value::Bool(items.contains(&arg.value)))
+            }
+            // The set counterpart of `map.insert`: a fresh set, with the
+            // element added only if no equal element is already present.
+            // Re-adding is silently a no-op, not an error — that is what
+            // makes it a set.
+            (Value::Set(items), "add") => {
+                let Some(arg) = args.first() else {
+                    return Err(runtime_error("set.add expects one argument"));
+                };
+                let mut result = items.clone();
+                value::set_insert(&mut result, arg.value.clone());
+                Ok(Value::Set(result))
             }
             (Value::Integer(n), "abs") => Ok(Value::Integer(n.abs())),
             (Value::Integer(n), "floor" | "ceil" | "round") => Ok(Value::Integer(*n)),

@@ -177,7 +177,10 @@ impl Interpreter {
                         }
                     }
                     let iter: ForIter = match iter_v {
-                        Value::List(items) => ForIter::List(items.into_iter()),
+                        // A set iterates in insertion order — the same order
+                        // it displays and spreads in — so `for` over a set is
+                        // deterministic, not hash-order dependent.
+                        Value::List(items) | Value::Set(items) => ForIter::List(items.into_iter()),
                         Value::Range(lo, hi) => ForIter::Range(lo..=hi),
                         other => {
                             return Err(runtime_error(format!(

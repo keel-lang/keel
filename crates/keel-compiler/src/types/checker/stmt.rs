@@ -669,7 +669,11 @@ impl Checker<'_, '_> {
             } => {
                 let iter_ty = self.infer_expr(iter, scope);
                 let element_ty = match iter_ty.strip_nullable() {
-                    Ty::List(inner) => *inner.clone(),
+                    // A set iterates its elements in insertion order. It was
+                    // rejected here before `Value::Set` existed, which left
+                    // `...someSet` (SPEC §11) legal while `for x in someSet`
+                    // was not — the two are the same capability.
+                    Ty::List(inner) | Ty::Set(inner) => *inner.clone(),
                     other if other.is_opaque() => {
                         // Iterable type is opaque — element type is also opaque.
                         other.clone()
