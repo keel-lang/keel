@@ -926,6 +926,42 @@ fn verify_rt_call(
             }
             Ok(())
         }
+        RtFn::SetLen => {
+            let [set] = args else {
+                return Err(format!("rt.set_len takes 1 arg, got {}", args.len()));
+            };
+            let KirType::Set(set_id) = set.ty() else {
+                return Err(format!("rt.set_len base is {}, expected a set", set.ty()));
+            };
+            check_set(program, set_id)?;
+            if ty != KirType::I64 {
+                return Err(format!("rt.set_len result is {ty}, expected int"));
+            }
+            Ok(())
+        }
+        RtFn::SetContains => {
+            let [set, elem] = args else {
+                return Err(format!("rt.set_contains takes 2 args, got {}", args.len()));
+            };
+            let KirType::Set(set_id) = set.ty() else {
+                return Err(format!(
+                    "rt.set_contains base is {}, expected a set",
+                    set.ty()
+                ));
+            };
+            check_set(program, set_id)?;
+            let elem_ty = program.sets[set_id];
+            if elem.ty() != elem_ty {
+                return Err(format!(
+                    "rt.set_contains element is {} but the set holds {elem_ty}",
+                    elem.ty()
+                ));
+            }
+            if ty != KirType::Bool {
+                return Err(format!("rt.set_contains result is {ty}, expected bool"));
+            }
+            Ok(())
+        }
         RtFn::IntToStr | RtFn::FloatToStr | RtFn::BoolToStr => {
             let [value] = args else {
                 return Err(format!(

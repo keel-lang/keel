@@ -1,13 +1,13 @@
-//! Exit criterion for issue #162 (map containers, construct+read subset):
-//! a program building a `map[str, V]`, reading it back through every
-//! lowered method (`get`, `contains`/`has`, `keys`, `values`, `len`,
-//! `is_empty`), and iterating it — compiles, links, and matches the
+//! Exit criterion for issue #172 (map containers, end to end): a program
+//! building a `map[str, V]`, mutating it via `.insert`, reading it back
+//! through every lowered method (`get`, `contains`/`has`, `keys`, `values`,
+//! `len`, `is_empty`), iterating it, and observing correct copy-on-write
+//! behavior on aliased bindings — compiles, links, and matches the
 //! interpreter byte-for-byte.
 //!
-//! Mutation (`map.insert`-style) isn't modeled yet — the interpreter itself
-//! has no map mutation method to match against — so there's no CoW-aliasing
-//! test here (unlike `lists.rs`); #151 already gets its "CoW case" from
-//! list (#163). See `KirType::Map`'s doc for the full scope note.
+//! `.insert` is always-clone, same as list's `.push` (see
+//! `keel-codegen/tests/lists.rs`'s module doc for why that makes the
+//! aliasing case correct by construction rather than by luck).
 //!
 //! `get`'s miss path is the highest-risk shape in this file: it exercises a
 //! genuinely different LLVM basic block (the `keel_is_none`-guarded none
@@ -49,6 +49,41 @@ fn assert_matches_interpreter(source: &str, expected_stdout: &[u8]) {
         "compiled exit code must match the interpreter's"
     );
     assert_eq!(compiled.stdout, expected_stdout);
+}
+
+#[test]
+fn aliased_bindings_do_not_observe_each_others_insert() {
+    // The differential aliasing test, mirroring `lists.rs`'s
+    // `aliased_bindings_do_not_observe_each_others_push`: `b` aliases `a`
+    // *before* `a` is reassigned via `.insert`, and both are read *after*.
+    // `.len()` is the observation rather than `io.show(a)` because a map
+    // renders as a multi-line box; the counts alone distinguish the two
+    // bindings, which is all the aliasing question turns on.
+    let source = r#"
+use std/io
+
+a: map[str, int] = {apples: 1}
+b = a
+a = a.insert("pears", 2)
+io.show(a.len())
+io.show(b.len())
+io.show(a.get("pears") ?? -1)
+io.show(b.get("pears") ?? -1)
+"#;
+    assert_matches_interpreter(source, b"  2\n  1\n  2\n  -1\n");
+}
+
+#[test]
+fn insert_overwrites_an_existing_key_in_both_engines() {
+    let source = r#"
+use std/io
+
+stock: map[str, int] = {apples: 1}
+stock = stock.insert("apples", 9)
+io.show(stock.len())
+io.show(stock.get("apples") ?? -1)
+"#;
+    assert_matches_interpreter(source, b"  1\n  9\n");
 }
 
 #[test]

@@ -4,6 +4,63 @@
 
 ## Unreleased
 
+### Sets deduplicate, and maps and sets can be extended
+
+`set[T]` used to share the list representation, which meant it wasn't really
+a set: `set[1, 1, 2]` held three elements. A set is now its own value type
+that deduplicates by the same `==` used everywhere else, keeping
+first-insertion order.
+
+```keel
+ids = set[3, 1, 3, 2]
+ids.count()      # 3
+"{ids}"          # set[3, 1, 2] — insertion order, no sorting
+typeof(ids)      # "set"
+```
+
+Element types stay unrestricted, unlike map keys — `set[float]` and sets of
+structs are legal, and structs deduplicate by field values:
+
+```keel
+type Point { x: int, y: int }
+
+a: Point = {x: 1, y: 2}
+b: Point = {x: 1, y: 2}
+set[a, b].count()   # 1
+```
+
+Alongside that, maps and sets gained mutation methods, and sets gained the
+read methods the spec had promised but nothing implemented:
+
+```keel
+stock: map[str, int] = {apples: 12}
+stock = stock.insert("pears", 5)   # insert overwrites an existing key
+
+ids = set[1, 2]
+ids = ids.add(3)                   # set[1, 2, 3]
+ids = ids.add(2)                   # unchanged — already present
+ids.contains(3)                    # true
+ids.count()                        # 3
+```
+
+Both follow the `list.push` rule: they return a **new** container rather than
+modifying the receiver, so `ids.add(3)` on its own is a no-op — bind the
+result. `set.contains`/`.count`/`.is_empty` now infer proper types instead of
+resolving to unknown, so a mistake like `n: int = ids.contains(1)` is caught
+at check time.
+
+Sets also accept the read-only list methods (`.map`, `.filter`, `.join`,
+`.sort`, …) over their elements in insertion order, each returning a list or
+a scalar, never a set. `.push` is not among them — use `.add`. And
+`for x in someSet` type-checks now; previously only `...someSet` did, which
+was the same capability arbitrarily split in two.
+
+**Upgrading.** Four behaviors changed for programs already using sets:
+`count()` drops duplicates; `typeof` reports `"set"` instead of `"list"`;
+string interpolation and `to_str()` render `set[1, 2, 3]` rather than
+`[1, 2, 3]` (`io.show` is unchanged); and a set no longer compares equal to a
+list with the same elements.
+
 ### Tuple positional access — `pair.0`
 
 Reading a tuple element by position is documented in the spec but never

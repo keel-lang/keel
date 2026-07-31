@@ -52,7 +52,7 @@ impl VariablesArena {
 /// unbounded/huge) — it always renders as a leaf via `Value`'s `Display`.
 fn has_children(value: &Value) -> bool {
     match value {
-        Value::List(items) => !items.is_empty(),
+        Value::List(items) | Value::Set(items) => !items.is_empty(),
         Value::Map(m) => !m.is_empty(),
         Value::Struct(_, fields) => !fields.is_empty(),
         Value::EnumVariant(_, _, Some(fields)) => !fields.is_empty(),
@@ -62,7 +62,10 @@ fn has_children(value: &Value) -> bool {
 
 fn expand(arena: &mut VariablesArena, value: &Value) -> Vec<DapVariable> {
     match value {
-        Value::List(items) => items
+        // A set expands under its insertion-order indices, same as a list —
+        // the index is a stable handle for the debugger, not a claim that
+        // sets are ordered by position.
+        Value::List(items) | Value::Set(items) => items
             .iter()
             .enumerate()
             .map(|(i, item)| {

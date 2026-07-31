@@ -41,9 +41,17 @@ pub fn show_with_repl(value: &Value, repl_mode: bool) {
         Value::Range(lo, hi) => {
             println!("  {}", format!("{lo}..{hi}").bright_yellow());
         }
-        Value::List(items) => {
+        // Sets render exactly like lists here: numbering is honest because a
+        // set iterates in insertion order, and reusing the shape keeps
+        // `io.show` output stable for the set programs that already exist.
+        Value::List(items) | Value::Set(items) => {
             if items.is_empty() {
-                println!("  {}", "(empty list)".dimmed());
+                let empty = if matches!(value, Value::Set(_)) {
+                    "(empty set)"
+                } else {
+                    "(empty list)"
+                };
+                println!("  {}", empty.dimmed());
                 return;
             }
             // Check if items are maps (table display)
@@ -148,6 +156,10 @@ fn format_display_value(val: &Value) -> String {
         Value::List(items) => {
             let inner: Vec<String> = items.iter().map(format_display_value).collect();
             format!("[{}]", inner.join(", "))
+        }
+        Value::Set(items) => {
+            let inner: Vec<String> = items.iter().map(format_display_value).collect();
+            format!("set[{}]", inner.join(", "))
         }
         Value::Map(fields) => {
             let mut pairs: Vec<(&MapKey, &Value)> = fields.iter().collect();

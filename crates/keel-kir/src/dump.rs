@@ -362,6 +362,8 @@ fn rt_fn_name(rt_fn: crate::ir::RtFn) -> &'static str {
         crate::ir::RtFn::MapValues => "map_values",
         crate::ir::RtFn::SetNew => "set_new",
         crate::ir::RtFn::SetInsert => "set_insert",
+        crate::ir::RtFn::SetLen => "set_len",
+        crate::ir::RtFn::SetContains => "set_contains",
     }
 }
 

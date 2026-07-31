@@ -183,13 +183,13 @@ pub(crate) fn emit_rt_call<'ctx>(
             });
             call_ptr_fn(fcx, f, &[map_ptr.into()])
         }
-        // `set[T]` shares `list[T]`'s exact runtime representation (see
-        // `KirType::Set`'s doc) — these two variants exist only so
-        // `keel-kir`'s verify pass can require the *static* result type to
-        // be `KirType::Set`, not `KirType::List`; codegen calls the
-        // identical `keel_list_*` symbols `RtFn::ListNew`/`ListPush` do.
+        // `set[T]` has its own `Value::Set` runtime representation with real
+        // dedup, so these call the `keel_set_*` symbols rather than aliasing
+        // `keel_list_*`: routing a set through the list ops would hand
+        // `io.show` a `Value::List` and diverge from the interpreter on both
+        // element count and rendering.
         RtFn::SetNew => {
-            let f = declare_or_get(fcx.module, "keel_list_new", || ptr_type.fn_type(&[], false));
+            let f = declare_or_get(fcx.module, "keel_set_new", || ptr_type.fn_type(&[], false));
             call_ptr_fn(fcx, f, &[])
         }
         RtFn::SetInsert => {
@@ -198,10 +198,51 @@ pub(crate) fn emit_rt_call<'ctx>(
             };
             let set_ptr = crate::expr::emit_expr(fcx, set)?.into_pointer_value();
             let elem_ptr = emit_box_arg(fcx, elem)?;
-            let f = declare_or_get(fcx.module, "keel_list_push", || {
+            let f = declare_or_get(fcx.module, "keel_set_insert", || {
                 ptr_type.fn_type(&[ptr_type.into(), ptr_type.into()], false)
             });
             call_ptr_fn(fcx, f, &[set_ptr.into(), elem_ptr.into()])
+        }
+        RtFn::SetLen => {
+            let [set] = args else {
+                unreachable!("verified KIR: RtFn::SetLen always takes exactly 1 arg");
+            };
+            let set_ptr = crate::expr::emit_expr(fcx, set)?.into_pointer_value();
+            let f = declare_or_get(fcx.module, "keel_set_len", || {
+                fcx.context.i64_type().fn_type(&[ptr_type.into()], false)
+            });
+            let call = fcx
+                .builder
+                .build_call(f, &[set_ptr.into()], "set_len")
+                .map_err(llvm_err)?;
+            match call.try_as_basic_value() {
+                ValueKind::Basic(v) => Ok(v),
+                ValueKind::Instruction(_) => unreachable!("keel_set_len returns i64, never void"),
+            }
+        }
+        RtFn::SetContains => {
+            let [set, elem] = args else {
+                unreachable!("verified KIR: RtFn::SetContains always takes exactly 2 args");
+            };
+            let set_ptr = crate::expr::emit_expr(fcx, set)?.into_pointer_value();
+            let elem_ptr = emit_box_arg(fcx, elem)?;
+            let f = declare_or_get(fcx.module, "keel_set_contains", || {
+                fcx.context
+                    .i8_type()
+                    .fn_type(&[ptr_type.into(), ptr_type.into()], false)
+            });
+            let raw = call_scalar_fn(
+                fcx,
+                f,
+                &[set_ptr.into(), elem_ptr.into()],
+                "set_contains_u8",
+            )?
+            .into_int_value();
+            let b = fcx
+                .builder
+                .build_int_truncate(raw, fcx.context.bool_type(), "set_contains")
+                .map_err(llvm_err)?;
+            Ok(b.into())
         }
     }
 }

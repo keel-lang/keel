@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use std::slice;
 use std::sync::Arc;
 
-use keel_runtime::interpreter::value::{MapKey, Value};
+use keel_runtime::interpreter::value::{self, MapKey, Value};
 
 /// Boxes an `int` constant. Returns a strong (+1) reference the caller owns
 /// and must eventually pass to [`rc::keel_box_release`].
@@ -401,6 +401,69 @@ pub unsafe extern "C" fn keel_map_values(map: *const Value) -> *const Value {
     boxed(Value::List(
         keys.into_iter().map(|k| entries[k].clone()).collect(),
     ))
+}
+
+/// Builds an empty `set[T]`. See [`keel_box_int`] for ownership.
+#[unsafe(no_mangle)]
+pub extern "C" fn keel_set_new() -> *const Value {
+    Arc::into_raw(Arc::new(Value::Set(Vec::new())))
+}
+
+/// Returns a **fresh** set with `elem` added, or an equal copy of `set` when
+/// an equal element is already present — the same deliberate always-clone
+/// convention as [`keel_list_push`] (see its doc for why).
+///
+/// Dedup is delegated to `keel-runtime`'s `value::set_insert`, the same
+/// function the interpreter's `set[...]` literal and `.add(v)` method call.
+/// That shared call is what makes compiled and interpreted set membership
+/// identical by construction rather than by differential test — reimplementing
+/// the comparison here would be a second definition of set equality to keep in
+/// sync.
+///
+/// # Safety
+///
+/// `set` must be a live `KeelBox` whose `Value` is `Value::Set`; `elem` must
+/// be a live `KeelBox` (any variant — it becomes one of the set's elements
+/// as-is).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_set_insert(set: *const Value, elem: *const Value) -> *const Value {
+    let Value::Set(items) = (unsafe { &*set }) else {
+        unreachable!("keel-codegen only calls keel_set_insert on a KirType::Set value");
+    };
+    let mut items = items.clone();
+    value::set_insert(&mut items, unsafe { borrow(elem) });
+    boxed(Value::Set(items))
+}
+
+/// Returns a set's element count — post-dedup, so `set[1, 1]` reports `1`.
+///
+/// # Safety
+///
+/// `set` must be a live `KeelBox` whose `Value` is `Value::Set`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_set_len(set: *const Value) -> i64 {
+    let Value::Set(items) = (unsafe { &*set }) else {
+        unreachable!("keel-codegen only calls keel_set_len on a KirType::Set value");
+    };
+    items.len() as i64
+}
+
+/// Reports whether an element equal to `elem` is present. Returns `1`/`0`,
+/// matching [`keel_str_eq`]'s convention.
+///
+/// Membership uses `Value`'s `PartialEq`, the same equality [`keel_set_insert`]
+/// dedups on and the same one the interpreter's `set.contains` uses.
+///
+/// # Safety
+///
+/// `set` must be a live `KeelBox` whose `Value` is `Value::Set`; `elem` must
+/// be a live `KeelBox` (any variant).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn keel_set_contains(set: *const Value, elem: *const Value) -> u8 {
+    let Value::Set(items) = (unsafe { &*set }) else {
+        unreachable!("keel-codegen only calls keel_set_contains on a KirType::Set value");
+    };
+    u8::from(items.contains(unsafe { &*elem }))
 }
 
 /// Reads a `KeelBox`'s value without consuming the caller's reference —

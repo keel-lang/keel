@@ -250,7 +250,10 @@ fn visit_stmt_bindings<F: FnMut(&Binding, &Span, Ty)>(
             let mut scope = Scope::new();
             let iter_ty = c.infer_expr(iter, &mut scope);
             let elem = match iter_ty.strip_nullable() {
-                Ty::List(inner) => *inner.clone(),
+                // Mirrors the checker's `Stmt::For` element-type rule — a set
+                // is iterable, so hovering its binding must name the element
+                // type rather than falling through to "unknown".
+                Ty::List(inner) | Ty::Set(inner) => *inner.clone(),
                 _ => Ty::Unknown(UnknownReason::InferenceLimitation),
             };
             visitor(binding, stmt_span, elem);

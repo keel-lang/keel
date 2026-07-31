@@ -962,6 +962,36 @@ impl Checker<'_, '_> {
                     (Ty::Map(_, _), "len" | "count" | "size") => Ty::Int,
                     (Ty::Map(_, _), "is_empty") => Ty::Bool,
                     (Ty::Map(_, _), "contains" | "has") => Ty::Bool,
+                    // Value methods: `.insert`/`.add` return a fresh container
+                    // rather than mutating the receiver, exactly like `.push`.
+                    (Ty::Map(k, v), "insert") => Ty::Map(k.clone(), v.clone()),
+                    (Ty::Set(elem), "add") => Ty::Set(elem.clone()),
+                    // `push` is deliberately not a set method (it would hand
+                    // back a list). Catching it here turns what would be a
+                    // runtime "method not available" into a fix-it.
+                    (Ty::Set(_), "push") => {
+                        self.err(
+                            "`push` is a list method — use `.add(v)` to add an element to a set"
+                                .to_string(),
+                        );
+                        Ty::Error
+                    }
+                    (Ty::Set(_), "len" | "count" | "size") => Ty::Int,
+                    (Ty::Set(_), "is_empty") => Ty::Bool,
+                    (Ty::Set(_), "contains") => Ty::Bool,
+                    // The read-only list pipeline a set borrows at runtime
+                    // (`interpreter/methods.rs`'s `SET_LIST_METHODS`) yields
+                    // lists, never sets — inference here is as shallow as the
+                    // list arms it mirrors, deliberately.
+                    (Ty::Set(elem), "sort" | "reverse" | "filter" | "take" | "skip") => {
+                        Ty::List(elem.clone())
+                    }
+                    (Ty::Set(elem), "first" | "last" | "find") => Ty::Nullable(elem.clone()),
+                    (Ty::Set(_), "any" | "all") => Ty::Bool,
+                    (Ty::Set(_), "join") => Ty::Str,
+                    (Ty::Set(_), "map" | "flatten") => {
+                        Ty::List(Box::new(Ty::Unknown(UnknownReason::InferenceLimitation)))
+                    }
                     (Ty::Int, "abs" | "floor" | "ceil" | "round") => Ty::Int,
                     (Ty::Float, "abs" | "floor" | "ceil" | "round") => Ty::Float,
                     // Datetime.parts returns a struct whose fields depend on the

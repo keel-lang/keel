@@ -116,6 +116,8 @@ ids: set[int]        = set[1, 2, 3]
 
 Rules: `[...]` is a list. `{k: v}` is a map. `set[...]` is a set (the only place `set` is special: it's a keyword-like form, not a type application).
 
+**Set semantics:** a set holds at most one element equal to any given value, using the same `==` every other comparison uses — so `set[1, 1, 2]` has two elements, and structs deduplicate by field values. Unlike map keys, the element type `T` is unrestricted: `set[float]` and `set[SomeStruct]` are legal. (One consequence of reusing `==`: `float` NaN is never equal to itself, so NaN elements never deduplicate.) Elements keep **first-insertion order**, which is the order a set displays, iterates (`for x in s`), and spreads (`...s`) in — no sorting is applied.
+
 **Subscript access** (`expr[index]`): lists and strings support integer indexing. The result type is `T` for `list[T]` and `str` for strings. Out-of-bounds and negative indices are runtime errors — check `len()` first or use `try/catch` when the index may be invalid:
 
 ```keel
@@ -153,7 +155,11 @@ ch = word[0]   # str — "k"
 | `.contains(v)` | `bool` | |
 | `.zip(list[U])` | `list[(T, U)]` | stops at the shorter list |
 
-Maps expose `.count`, `.keys`, `.values`, `.get(k) → V?`, `.contains(k)`. Sets expose `.count`, `.contains(v)`, `.is_empty`.
+Maps expose `.count`/`.len`/`.size`, `.keys`, `.values`, `.get(k) → V?`, `.contains(k)`/`.has(k)`, `.is_empty`, and `.insert(k, v) → map[K, V]`. Sets expose `.count`/`.len`/`.size`, `.contains(v)`, `.is_empty`, and `.add(v) → set[T]`.
+
+**Mutation methods return new containers.** `.push`, `.insert`, and `.add` never modify the receiver — like every value method, they return a fresh container and the result must be bound to take effect. `s.add(v)` on its own is a no-op; write `s = s.add(v)`. `.insert` overwrites an existing key; `.add` on an element already present is a no-op, not an error.
+
+Sets also accept the read-only list methods — `.map`, `.filter`, `.find`, `.any`, `.all`, `.reduce`, `.sum`, `.min`, `.max`, `.join`, `.sort`, `.reverse`, `.flatten`, `.take`, `.skip`, `.zip`, `.first`, `.last` — operating over the elements in insertion order. Each yields a list or a scalar, never a set. `.push` is not among them: use `.add`.
 
 **Map key constraints:** The key type `K` in `map[K, V]` must be a hashable primitive — `str`, `int`, or `bool`. Using `float` is a compile-time error (NaN violates hash equality). Nullable types (`K?`) are rejected as keys. Struct and enum keys are not supported in v0.1; they will be enabled in v0.2 via `interface Hashable`. The runtime stores each distinct key type — `map[int, str]` has integer keys, `map[bool, str]` has boolean keys; `.keys()` returns values of the declared key type.
 

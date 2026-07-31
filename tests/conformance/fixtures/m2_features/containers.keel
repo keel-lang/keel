@@ -27,6 +27,17 @@ io.show(stock.get("bananas") ?? -1)
 io.show(stock.keys())
 io.show(stock.values())
 
-nums = set[1, 2, 3]
+# Map CoW aliasing: `aliased` must not see the insert.
+aliased = stock
+stock = stock.insert("plums", 3)
+io.show(stock.len())
+io.show(aliased.len())
+
+nums = set[1, 2, 2, 3]
 other = nums
+nums = nums.add(4)
+io.show(nums.len())
+io.show(other.len())
 io.show(other)
+io.show(nums.contains(4))
+io.show(other.contains(4))
