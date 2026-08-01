@@ -1,0 +1,41 @@
+struct P { x: int, y: int }
+struct Q { a: int, b: int, c: int }
+struct Inner { a: int, b: int }
+struct Outer { x: Inner, y: int }
+
+fn note(n: int) -> int {
+  return n
+}
+
+fn out_of_order() -> P {
+  let <pin.0>: int = note(1)
+  let <pin.1>: int = note(2)
+  return P { x: <pin.1>, y: <pin.0> }
+}
+
+fn in_order() -> P {
+  return P { x: note(1), y: note(2) }
+}
+
+fn pure_out_of_order(m: int, n: int) -> P {
+  return P { x: n, y: (m + 1) }
+}
+
+fn spread_out_of_order(base: Q) -> Q {
+  let <pin.0>: int = base.a
+  let <pin.1>: int = note(3)
+  let <pin.2>: int = note(4)
+  return Q { a: <pin.0>, b: <pin.2>, c: <pin.1> }
+}
+
+fn nested_out_of_order() -> Outer {
+  let <spill>: int = note(3)
+  let <pin.0>: int = note(1)
+  let <pin.1>: int = note(2)
+  return Outer { x: Inner { a: <pin.1>, b: <pin.0> }, y: <spill> }
+}
+
+fn <toplevel>() -> none {
+  let p: P = out_of_order()
+  let result: int = p.x
+}

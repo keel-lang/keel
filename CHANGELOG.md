@@ -213,6 +213,29 @@ io.show(typeof(ids))        # set
 
 ### Fixed
 
+- **The native backend evaluated struct-literal fields in declared order, not the order they were written.** Because a struct literal's fields are matched to the target type by *name*, they may be listed in any order — and the interpreter has always evaluated their expressions left to right as written. KIR lowering, though, rebuilt them straight into the struct's declared field order, which is also the order `keel-codegen` emits them in, so the two engines observably disagreed the moment a field expression had a side effect. A literal (or spread-update) whose fields are written out of declared order now binds each value to a temporary in source order first, and assembles the struct from those; a literal already in declared order, or one whose field expressions can't be observed to run at a particular moment, is unchanged and emits no temporaries. `SPEC.md` §2.4 now states the source-order rule explicitly.
+
+```keel
+use std/io
+
+type P { x: int, y: int }
+
+task note(s: str) -> int {
+  io.show(s)
+  return 1
+}
+
+task make() -> P {
+  p: P = { y: note("y first in source"), x: note("x second in source") }
+  return p
+}
+
+q = make()
+io.show("{q.x}")   # y first in source / x second in source / 1
+```
+
+  The same applies to a spread-update: the base is read once up front, then each override runs in the order written. The conformance harness now pins this with a fixture whose every field expression prints, so any future divergence between the two engines fails the differential run.
+
 - **Default parameter and state-field values were never checked against their declared type.** `task f(n: int = "oops") -> int` and an agent `state { count: int = "oops" }` both passed `keel check` cleanly — the HIR lowering pass visited every default expression for name resolution, but nothing in the second-pass checker ever validated the default's inferred type against the declared one, for any type. Task and agent-task parameter defaults and agent state-field defaults are now checked with the same `expect_at` check that call arguments and return values already use; a nullable default of bare `none` (`n: int? = none`) is unaffected. Interface method params, extern params, on-handler params, and variadic params are unaffected too, but only because the parser never allows a default to appear at those sites in the first place.
 - **`impl` method bodies were never type-checked at all.** The second-pass validation walk dispatched on task, test, agent, and top-level-statement declarations and dropped `Decl::Impl` on the floor, so a method body was parsed and name-resolved but never inferred — `keel check` passed cleanly on any type error inside one. `impl` bodies are now walked exactly like task bodies, with `self` bound to the implementing type: `self.field` resolves to the field's declared type (and an undeclared field is an error), and `self` can be passed anywhere a value of that type is expected. Two constructs that the interpreter has always rejected are now compile-time errors instead of run-time ones: `self.field = value` (the receiver is passed by value, so the write can never outlive the call) and `self.method(...)` (which always dispatches to the enclosing *agent's* task, never to another `impl` method — extract a top-level task and call it as `method(self)`).
 

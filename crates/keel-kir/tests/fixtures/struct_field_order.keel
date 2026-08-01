@@ -1,0 +1,57 @@
+type P {
+  x: int
+  y: int
+}
+
+type Q {
+  a: int
+  b: int
+  c: int
+}
+
+type Inner {
+  a: int
+  b: int
+}
+
+type Outer {
+  x: Inner
+  y: int
+}
+
+task note(n: int) -> int {
+  return n
+}
+
+task out_of_order() -> P {
+  # Written y-then-x, evaluated y-then-x, stored x-then-y: the two calls
+  # pin into pin.N temps first.
+  return { y: note(1), x: note(2) }
+}
+
+task in_order() -> P {
+  # Source order already matches declared order, so no temps at all.
+  return { x: note(1), y: note(2) }
+}
+
+task pure_out_of_order(m: int, n: int) -> P {
+  # Reordered, but nothing here can observe when it runs, so still no temps.
+  return { y: m + 1, x: n }
+}
+
+task spread_out_of_order(base: Q) -> Q {
+  # Copies of a come first, then the overrides in the order written.
+  return { ...base, c: note(3), b: note(4) }
+}
+
+task nested_out_of_order() -> Outer {
+  # Both literals are reordered. The inner one pins first, which grows the
+  # hoist buffer past the outer literal's mark, so keep_order spills the
+  # already-lowered note(3) ahead of it — leaving 3, 1, 2, the source order.
+  # The outer literal then needs no pin of its own: every value it assembles
+  # is already a temp read.
+  return { y: note(3), x: { b: note(1), a: note(2) } }
+}
+
+p = out_of_order()
+result = p.x

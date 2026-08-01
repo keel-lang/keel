@@ -31,8 +31,16 @@
 //! *not* evaluated exactly once — an `and`/`or` right operand, a `??`
 //! fallback — call [`FnCtx::forbid_hoist`] instead, since no spill can
 //! recover a conditional evaluation.
+//!
+//! Struct literals hoist for a second, unrelated reason. Their fields are
+//! matched to the target type by name and so may be *written* in any order,
+//! but `Expr::MakeStruct` holds them in declared order and codegen evaluates
+//! its operands in the order they appear. A literal written out of declared
+//! order therefore binds its field values to temps ahead of the enclosing
+//! statement — see [`lower_struct_lit`] and [`FnCtx::pin_order`] — leaving
+//! `MakeStruct` holding only order-transparent reads.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use keel_syntax::ast::{self, SpannedExpr};
 use keel_syntax::lexer::Span;
@@ -598,6 +606,15 @@ pub(crate) fn lower_expr_expecting(
 /// (mirrors the checker's structural assignability rule,
 /// `crates/keel-compiler/src/types/checker.rs`), and rebuilds them in the
 /// struct's declared field order.
+///
+/// The field *expressions*, though, are evaluated in **source** order
+/// (`SPEC.md` §2.4), which is what the interpreter does
+/// (`keel-runtime`'s `interpreter/expr.rs`, `Expr::StructLit`). Since
+/// `Expr::MakeStruct` holds its operands in declared order and codegen
+/// evaluates them in the order they appear, a literal whose fields are
+/// written out of declared order has its values pinned into temps ahead of
+/// the enclosing statement first — see [`FnCtx::pin_order`] and
+/// [`expr_is_order_transparent`] for when that's needed (issue #190).
 fn lower_struct_lit(
     lit_fields: &[(ast::MapLitKey, SpannedExpr)],
     struct_id: StructId,
@@ -608,12 +625,12 @@ fn lower_struct_lit(
 ) -> Result<Expr, LowerError> {
     let layout = &lcx.struct_layouts[struct_id];
 
-    let mut by_name: HashMap<&str, &SpannedExpr> = HashMap::with_capacity(lit_fields.len());
-    for (key, value) in lit_fields {
+    let mut by_name: HashMap<&str, usize> = HashMap::with_capacity(lit_fields.len());
+    for (source, (key, value)) in lit_fields.iter().enumerate() {
         let name = key.as_str().ok_or_else(|| {
             LowerError::unsupported("non-identifier struct-literal key", value.span.clone())
         })?;
-        if by_name.insert(name, value).is_some() {
+        if by_name.insert(name, source).is_some() {
             return Err(LowerError::new(
                 format!("duplicate field `{name}` in struct literal"),
                 value.span.clone(),
@@ -621,33 +638,120 @@ fn lower_struct_lit(
         }
     }
 
-    // Fields are rebuilt in declared order, which is also the order they're
-    // evaluated in — so an earlier field must be spilled if a later one
-    // hoists. (Declared order is not necessarily the *source* order the
-    // interpreter evaluates in; that pre-existing difference is only
-    // observable for side-effecting field expressions and is out of scope
-    // here.)
-    let mut fields: Vec<Expr> = Vec::with_capacity(layout.fields.len());
+    // Resolve the name matching up front, before lowering anything: `slots`
+    // maps each declared field to the source position that supplies it, and
+    // `field_tys` gives each source position its expected type. Together with
+    // the leftover check below they also prove `slots` is a permutation of
+    // `0..lit_fields.len()`, which the assembly step relies on.
+    let mut slots: Vec<usize> = Vec::with_capacity(layout.fields.len());
+    let mut field_tys: Vec<KirType> = vec![KirType::Unit; lit_fields.len()];
     for (field_name, field_ty) in &layout.fields {
-        let value = by_name.remove(field_name.as_str()).ok_or_else(|| {
+        let source = by_name.remove(field_name.as_str()).ok_or_else(|| {
             LowerError::new(
                 format!("missing field `{field_name}` for struct `{}`", layout.name),
                 span.clone(),
             )
         })?;
-        let mark = ctx.hoist_mark();
-        let value_e = lower_expr_expecting(value, *field_ty, ctx, lcx, table)?;
-        ctx.keep_order(mark, &mut fields, &value.span)?;
-        fields.push(value_e);
+        field_tys[source] = *field_ty;
+        slots.push(source);
     }
-    if let Some((extra_name, extra_value)) = by_name.into_iter().next() {
+    if let Some((extra_name, extra_source)) = by_name.into_iter().next() {
         return Err(LowerError::new(
             format!("struct `{}` has no field `{extra_name}`", layout.name),
-            extra_value.span.clone(),
+            lit_fields[extra_source].1.span.clone(),
         ));
     }
 
+    let mut values: Vec<Expr> = Vec::with_capacity(lit_fields.len());
+    for (source, (_, value)) in lit_fields.iter().enumerate() {
+        let mark = ctx.hoist_mark();
+        let value_e = lower_expr_expecting(value, field_tys[source], ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut values, &value.span)?;
+        values.push(value_e);
+    }
+
+    if needs_order_pinning(&values, slots.iter().copied()) {
+        ctx.pin_order(&mut values, span)?;
+    }
+
+    let mut values: Vec<Option<Expr>> = values.into_iter().map(Some).collect();
+    let fields = slots
+        .iter()
+        .map(|&source| {
+            values[source]
+                .take()
+                .expect("every declared field maps to a distinct source position")
+        })
+        .collect();
+
     Ok(Expr::MakeStruct { struct_id, fields })
+}
+
+/// Whether values evaluated in one order but assembled into a struct's
+/// declared field order have to be pinned into temps to preserve that
+/// evaluation order.
+///
+/// `slots` is the permutation relating the two — either direction, since a
+/// permutation is the identity exactly when its inverse is
+/// ([`lower_struct_lit`] passes declared-slot → source position,
+/// [`lower_struct_spread`] passes evaluation position → declared slot). An
+/// identity mapping means the assembled node already evaluates its operands
+/// in the order they were written, so nothing is needed. Otherwise the
+/// reordering only *matters* if some value can be observed to run at a
+/// particular moment — see [`expr_is_order_transparent`].
+///
+/// Skipping the pin for an all-transparent
+/// literal is not just an optimization: pinning emits hoisted statements,
+/// which are rejected outright in the positions [`FnCtx::forbid_hoist`]
+/// guards (a `while` condition, a `??` fallback, …), so an unconditional pin
+/// would stop `x ?? { y: n, x: m }` from compiling at all.
+fn needs_order_pinning(values: &[Expr], slots: impl Iterator<Item = usize>) -> bool {
+    let reorders = slots
+        .enumerate()
+        .any(|(declared, source)| declared != source);
+    reorders && !values.iter().all(expr_is_order_transparent)
+}
+
+/// Whether reordering `expr` relative to its sibling field expressions is
+/// unobservable.
+///
+/// Only a `Call` (I/O, `raise`, arbitrary user code) or an `Index` (an
+/// out-of-bounds exit — see `keel-rt-ffi`'s `keel_list_get`) has a moment of
+/// evaluation anything can observe. Every other variant is arithmetic over,
+/// or a read of, values no sibling can perturb: KIR has no closures and
+/// tasks take their arguments by value, so no field expression can mutate a
+/// local that another field reads. (A `when` arm body *can*, via `+=` on an
+/// outer local — but a nested `when` hoists, and [`FnCtx::keep_order`] has
+/// already pinned every earlier sibling at that hoist point by the time this
+/// runs.) Integer division by zero lowers to a bare `sdiv`, not a raise, so
+/// `BinOp` has no observable moment of its own either.
+fn expr_is_order_transparent(expr: &Expr) -> bool {
+    match expr {
+        Expr::ConstInt(_)
+        | Expr::ConstFloat(_)
+        | Expr::ConstBool(_)
+        | Expr::ConstStr(_)
+        | Expr::Local { .. }
+        | Expr::MakeEnum { .. }
+        | Expr::NullLit { .. } => true,
+        Expr::Call { .. } | Expr::Index { .. } => false,
+        Expr::BinOp { left, right, .. } => {
+            expr_is_order_transparent(left) && expr_is_order_transparent(right)
+        }
+        Expr::NullCoalesce {
+            nullable: left,
+            fallback: right,
+            ..
+        } => expr_is_order_transparent(left) && expr_is_order_transparent(right),
+        Expr::UnOp { operand: inner, .. } | Expr::NullSome { value: inner, .. } => {
+            expr_is_order_transparent(inner)
+        }
+        Expr::FieldGet { base, .. }
+        | Expr::TupleGet { base, .. }
+        | Expr::NullFieldGet { base, .. } => expr_is_order_transparent(base),
+        Expr::MakeStruct { fields, .. } => fields.iter().all(expr_is_order_transparent),
+        Expr::MakeTuple { elems, .. } => elems.iter().all(expr_is_order_transparent),
+    }
 }
 
 /// Lowers a bareword/`str`-keyed `{key: value, ...}` literal against its
@@ -752,6 +856,14 @@ pub(crate) fn struct_spread_base(
 /// type: copies every non-overridden field from `base`, takes overridden
 /// ones from `overrides`, and rebuilds in declared field order (same as
 /// [`lower_struct_lit`]).
+///
+/// Evaluation order mirrors the interpreter (`interpreter/expr.rs`'s
+/// `Expr::StructSpreadUpdate`), which reads `base` once up front and then
+/// applies the overrides in source order: the copied `FieldGet` reads come
+/// first, then each override in the order written. As in
+/// [`lower_struct_lit`] the values are pinned into temps first when that
+/// order differs from the declared order the `MakeStruct` assembles into
+/// and any of them is not order-transparent.
 fn lower_struct_spread(
     base: &SpannedExpr,
     overrides: &[(String, SpannedExpr)],
@@ -772,10 +884,16 @@ fn lower_struct_spread(
         ));
     }
 
-    let mut overrides_by_name: HashMap<&str, &SpannedExpr> =
-        HashMap::with_capacity(overrides.len());
+    let layout = &lcx.struct_layouts[struct_id];
+    let mut overridden: HashSet<&str> = HashSet::with_capacity(overrides.len());
     for (name, value) in overrides {
-        if overrides_by_name.insert(name.as_str(), value).is_some() {
+        if layout.field_index(name).is_none() {
+            return Err(LowerError::new(
+                format!("struct `{}` has no field `{name}`", layout.name),
+                value.span.clone(),
+            ));
+        }
+        if !overridden.insert(name.as_str()) {
             return Err(LowerError::new(
                 format!("duplicate field `{name}` in spread-update"),
                 value.span.clone(),
@@ -783,34 +901,52 @@ fn lower_struct_spread(
         }
     }
 
-    let layout = &lcx.struct_layouts[struct_id];
-    let mut fields: Vec<Expr> = Vec::with_capacity(layout.fields.len());
+    // `values` is in evaluation order — the `base` copies, then the overrides
+    // as written — and `slots[i]` is the declared field `values[i]` supplies.
+    let mut values: Vec<Expr> = Vec::with_capacity(layout.fields.len());
+    let mut slots: Vec<usize> = Vec::with_capacity(layout.fields.len());
     for (index, (field_name, field_ty)) in layout.fields.iter().enumerate() {
-        let field_expr = if let Some(value) = overrides_by_name.remove(field_name.as_str()) {
-            let mark = ctx.hoist_mark();
-            let value_e = lower_expr_expecting(value, *field_ty, ctx, lcx, table)?;
-            // Spills both earlier overrides and the implicit `FieldGet` reads
-            // of `base` interleaved between them.
-            ctx.keep_order(mark, &mut fields, &value.span)?;
-            value_e
-        } else {
-            Expr::FieldGet {
-                base: Box::new(Expr::Local {
-                    id: base_local,
-                    ty: base_ty,
-                }),
-                field_index: index,
-                ty: *field_ty,
-            }
-        };
-        fields.push(field_expr);
+        if overridden.contains(field_name.as_str()) {
+            continue;
+        }
+        values.push(Expr::FieldGet {
+            base: Box::new(Expr::Local {
+                id: base_local,
+                ty: base_ty,
+            }),
+            field_index: index,
+            ty: *field_ty,
+        });
+        slots.push(index);
     }
-    if let Some((extra_name, extra_value)) = overrides_by_name.into_iter().next() {
-        return Err(LowerError::new(
-            format!("struct `{}` has no field `{extra_name}`", layout.name),
-            extra_value.span.clone(),
-        ));
+    for (name, value) in overrides {
+        let index = layout
+            .field_index(name)
+            .expect("every override name was checked against the layout above");
+        let mark = ctx.hoist_mark();
+        let value_e = lower_expr_expecting(value, layout.fields[index].1, ctx, lcx, table)?;
+        // Spills the `base` copies and any earlier override — a hoisted
+        // `when` arm can `+=` an outer local, including `base` itself.
+        ctx.keep_order(mark, &mut values, &value.span)?;
+        values.push(value_e);
+        slots.push(index);
     }
+
+    if needs_order_pinning(&values, slots.iter().copied()) {
+        ctx.pin_order(&mut values, &base.span)?;
+    }
+
+    // `slots` is a permutation of the declared fields (every field is either
+    // copied or overridden, exactly once), so this inverts it to place each
+    // value in its declared position.
+    let mut fields: Vec<Option<Expr>> = vec![None; layout.fields.len()];
+    for (index, value) in slots.into_iter().zip(values) {
+        fields[index] = Some(value);
+    }
+    let fields = fields
+        .into_iter()
+        .map(|f| f.expect("every declared field is either copied from `base` or overridden"))
+        .collect();
 
     Ok(Expr::MakeStruct { struct_id, fields })
 }

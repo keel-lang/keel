@@ -300,10 +300,65 @@ impl FnCtx {
             return Ok(());
         }
         self.hoisted.truncate(mark);
+        // Two constructs hoist today — a nested `when` expression (issue #170)
+        // and a struct literal/spread-update whose fields are written out of
+        // declared order (issue #190) — so this message names the need, not
+        // one specific syntax.
         Err(LowerError::unsupported(
-            &format!("`when` expression in {what}"),
+            &format!(
+                "a sub-expression that must be evaluated ahead of the enclosing statement, in {what}"
+            ),
             span.clone(),
         ))
+    }
+
+    /// Binds `slot` to a fresh temp, replacing it in place with a read of
+    /// that temp and returning the `Let` that has to run wherever the
+    /// caller decides evaluation order demands.
+    ///
+    /// Returns `None` for a constant, which needs no sequencing at all —
+    /// nothing can observe *when* a literal is "evaluated", so leaving it
+    /// inline keeps the common case free of temps.
+    ///
+    /// Shared by [`FnCtx::keep_order`] (which splices the `Let`s in ahead of
+    /// a hoisted chain) and [`FnCtx::pin_order`] (which appends them), so
+    /// both agree on exactly which values are spillable.
+    fn spill(
+        &mut self,
+        name: &str,
+        slot: &mut crate::ir::Expr,
+        span: &Span,
+    ) -> Result<Option<crate::ir::Stmt>, LowerError> {
+        use crate::ir::Expr;
+        if matches!(
+            slot,
+            Expr::ConstInt(_)
+                | Expr::ConstFloat(_)
+                | Expr::ConstBool(_)
+                | Expr::ConstStr(_)
+                | Expr::MakeEnum { .. }
+                | Expr::NullLit { .. }
+        ) {
+            return Ok(None);
+        }
+        let ty = slot.ty();
+        if ty == KirType::Unit {
+            // No `Expr` variant denotes a unit value, so there's nothing
+            // to put back in `slot` after spilling it to a statement. The
+            // checker doesn't accept a `none`-typed sub-expression in any
+            // of these positions today, so this is a guard against a
+            // future one arriving silently, not a reachable diagnostic.
+            return Err(LowerError::unsupported(
+                "a `none`-typed sub-expression that needs to be evaluated ahead of a sibling",
+                span.clone(),
+            ));
+        }
+        let temp = self.declare_temp(name, ty);
+        let value = std::mem::replace(slot, Expr::Local { id: temp, ty });
+        Ok(Some(crate::ir::Stmt::Let {
+            local: temp,
+            init: Some(value),
+        }))
     }
 
     /// Preserves left-to-right evaluation order when a sub-expression hoists
@@ -316,12 +371,12 @@ impl FnCtx {
     /// every previously-lowered sibling in `prior` is spilled into a temp
     /// bound at `mark` — i.e. still before the hoisted chain, but after
     /// everything hoisted by an earlier sibling — and rewritten to read that
-    /// temp. Constants are skipped (nothing can observe when they're
-    /// "evaluated"); a plain `Local` read is *not*, since a `when` arm body
-    /// can reassign an outer local via `+=`. That includes a `Local` that is
-    /// itself an earlier hoist temp (`f(when a {...}, when b {...})` spills
-    /// the first result into a second local) — redundant, but cheaper than
-    /// tracking every temp's provenance to prove the copy away.
+    /// temp. Constants are skipped (see [`FnCtx::spill`]); a plain `Local`
+    /// read is *not*, since a `when` arm body can reassign an outer local via
+    /// `+=`. That includes a `Local` that is itself an earlier hoist temp
+    /// (`f(when a {...}, when b {...})` spills the first result into a second
+    /// local) — redundant, but cheaper than tracking every temp's provenance
+    /// to prove the copy away.
     ///
     /// `prior` is in evaluation order and is rewritten in place. Call it with
     /// the siblings lowered so far, *before* pushing the newest one.
@@ -331,43 +386,51 @@ impl FnCtx {
         prior: &mut [crate::ir::Expr],
         span: &Span,
     ) -> Result<(), LowerError> {
-        use crate::ir::Expr;
         if self.hoisted.len() == mark {
             return Ok(());
         }
         let mut spills = Vec::new();
         for slot in prior.iter_mut() {
-            if matches!(
-                slot,
-                Expr::ConstInt(_)
-                    | Expr::ConstFloat(_)
-                    | Expr::ConstBool(_)
-                    | Expr::ConstStr(_)
-                    | Expr::MakeEnum { .. }
-                    | Expr::NullLit { .. }
-            ) {
-                continue;
+            if let Some(stmt) = self.spill("<spill>", slot, span)? {
+                spills.push(stmt);
             }
-            let ty = slot.ty();
-            if ty == KirType::Unit {
-                // No `Expr` variant denotes a unit value, so there's nothing
-                // to put back in `slot` after spilling it to a statement. The
-                // checker doesn't accept a `none`-typed sub-expression in any
-                // of these positions today, so this is a guard against a
-                // future one arriving silently, not a reachable diagnostic.
-                return Err(LowerError::unsupported(
-                    "a `none`-typed sub-expression evaluated before a `when`-expression sibling",
-                    span.clone(),
-                ));
-            }
-            let temp = self.declare_temp("<spill>", ty);
-            let value = std::mem::replace(slot, Expr::Local { id: temp, ty });
-            spills.push(crate::ir::Stmt::Let {
-                local: temp,
-                init: Some(value),
-            });
         }
         self.hoisted.splice(mark..mark, spills);
+        Ok(())
+    }
+
+    /// Pins already-lowered siblings into temps *now*, in the order given, so
+    /// that a node which assembles them in some *other* order can no longer
+    /// reorder their evaluation.
+    ///
+    /// This is the struct-literal case (issue #190): a literal's fields are
+    /// evaluated in source order but `Expr::MakeStruct` stores them in
+    /// declared order, and codegen evaluates `MakeStruct`'s operands in the
+    /// order they appear. Binding each field's value to a temp ahead of the
+    /// enclosing statement leaves `MakeStruct` holding nothing but `Local`
+    /// reads and constants, which are order-transparent, so assembling them
+    /// in declared order is no longer observable.
+    ///
+    /// Unlike [`FnCtx::keep_order`] the `Let`s are *appended* rather than
+    /// spliced at a mark: they must land after everything the siblings
+    /// themselves hoisted, and `keep_order` has already bound any value that
+    /// a hoist could have invalidated at the precise point it was still
+    /// valid.
+    ///
+    /// Each temp is named `<pin.N>` after its position in `values`, so a KIR
+    /// dump shows the evaluation order directly — the whole point of the
+    /// transform, and otherwise indistinguishable once the values have been
+    /// shuffled into declared order.
+    pub(crate) fn pin_order(
+        &mut self,
+        values: &mut [crate::ir::Expr],
+        span: &Span,
+    ) -> Result<(), LowerError> {
+        for (index, slot) in values.iter_mut().enumerate() {
+            if let Some(stmt) = self.spill(&format!("<pin.{index}>"), slot, span)? {
+                self.hoisted.push(stmt);
+            }
+        }
         Ok(())
     }
 }

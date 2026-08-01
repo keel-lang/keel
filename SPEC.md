@@ -204,6 +204,19 @@ task triage(email: {body: str, from: str}) -> Urgency { ... }
 
 **Width subtyping.** An anonymous literal assigned to a named struct type `B` must have all required fields of `B` with compatible types. Extra fields are allowed.
 
+**Field expressions evaluate in source order.** A struct literal's fields are matched to the target type by *name*, so they may be written in any order — but their expressions are evaluated left to right in the order written, not in the target type's declared field order. The distinction is observable when a field expression has a side effect:
+
+```keel
+type P { x: int, y: int }
+
+task note(s: str) -> int {
+  io.show(s)
+  return 1
+}
+
+p: P = { y: note("first"), x: note("second") }   # prints "first" then "second"
+```
+
 **Impl dispatch requires a type tag.** `impl` methods are dispatched by the value's declared type name. A bare literal `{val: 30}` is an untagged map with no type name — to dispatch an `impl` method, the value must first be tagged by assigning to a typed variable or passing to a typed parameter:
 
 ```keel
@@ -248,6 +261,7 @@ Rules:
 - **Struct base:** override field names must exist in the base struct; unknown fields are a type error (and a runtime error on dynamic paths). The result preserves the base's type tag so `impl` dispatch continues to work.
 - **Map base:** any key may be added or overridden; override values must match the map's declared value type. The result is the same `map[K, V]` type.
 - Spreading `none` raises at runtime.
+- **Evaluation order:** the base is evaluated once, first; then each override in the order written — the same source-order rule as a plain struct literal.
 
 ### 2.5 Enum types (algebraic data types)
 
