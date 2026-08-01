@@ -4,6 +4,41 @@
 
 ## Unreleased
 
+### Struct-literal fields compile in the order they're written
+
+A struct literal's fields are matched to the target type by name, so they can
+be listed in any order. `keel run` has always evaluated their expressions left
+to right as written; the native backend rebuilt them into the struct's
+*declared* field order and evaluated them there instead. With a side-effecting
+field expression the two engines printed different things:
+
+```keel
+use std/io
+
+type P { x: int, y: int }
+
+task note(s: str) -> int {
+  io.show(s)
+  return 1
+}
+
+task make() -> P {
+  p: P = { y: note("y first in source"), x: note("x second in source") }
+  return p
+}
+
+q = make()
+io.show("{q.x}")   # y first in source / x second in source / 1
+```
+
+The compiled binary now prints those three lines in the same order the
+interpreter does. Spread-update follows the same rule: the base is read once
+up front, then each override runs in the order written. Nothing changes for
+`keel run`, and a literal already written in declared order compiles to exactly
+the same code as before. `SPEC.md` §2.4 now states the rule explicitly, and a
+conformance fixture whose every field expression prints keeps the two engines
+pinned together.
+
 ### The native backend compiles a `when`-expression anywhere a value goes
 
 `when` used as a value already compiled in `let` and `return` position.

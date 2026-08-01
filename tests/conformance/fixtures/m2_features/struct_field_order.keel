@@ -1,0 +1,103 @@
+# Struct-literal and spread-update field expressions are evaluated in the
+# order they are *written*, not the order the struct declares its fields in
+# (issue #190). Every field expression below prints as a side effect, so the
+# interpreter and the compiled binary only agree if both orders match.
+#
+# Each type carries a `str` field because all-scalar structs don't have
+# by-value aggregate codegen wired up yet (see keel-codegen's struct layout);
+# it is unrelated to the ordering under test.
+
+use std/io
+
+type P {
+  x: int
+  y: int
+  tag: str
+}
+
+type Q {
+  a: int
+  b: int
+  c: int
+  tag: str
+}
+
+type Inner {
+  a: int
+  b: int
+  tag: str
+}
+
+type Outer {
+  x: Inner
+  y: int
+  tag: str
+}
+
+task note(label: str, n: int) -> int {
+  io.show(label)
+  return n
+}
+
+task literal_out_of_order() -> P {
+  p: P = {
+    tag: "out-of-order",
+    y: note("literal: y written first", 1),
+    x: note("literal: x written second", 2)
+  }
+  return p
+}
+
+task literal_in_order() -> P {
+  p: P = {
+    x: note("in order: x written first", 3),
+    y: note("in order: y written second", 4),
+    tag: "in-order"
+  }
+  return p
+}
+
+task spread_out_of_order(base: Q) -> Q {
+  q: Q = {
+    ...base,
+    c: note("spread: c written first", 5),
+    b: note("spread: b written second", 6)
+  }
+  return q
+}
+
+task nested_out_of_order() -> Outer {
+  o: Outer = {
+    tag: "outer",
+    y: note("nested: outer y written first", 7),
+    x: {
+      tag: "inner",
+      b: note("nested: inner b written second", 8),
+      a: note("nested: inner a written third", 9)
+    }
+  }
+  return o
+}
+
+first = literal_out_of_order()
+io.show("{first.x}")
+io.show("{first.y}")
+io.show(first.tag)
+
+second = literal_in_order()
+io.show("{second.x}")
+io.show("{second.y}")
+io.show(second.tag)
+
+base: Q = { a: 10, b: 20, c: 30, tag: "base" }
+updated = spread_out_of_order(base)
+io.show("{updated.a}")
+io.show("{updated.b}")
+io.show("{updated.c}")
+io.show(updated.tag)
+
+nested = nested_out_of_order()
+io.show("{nested.y}")
+io.show("{nested.x.a}")
+io.show("{nested.x.b}")
+io.show(nested.x.tag)

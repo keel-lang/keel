@@ -515,6 +515,57 @@ task f(maybe: int?, n: int) -> int {
 }
 
 #[test]
+fn out_of_order_effectful_struct_literal_in_a_conditional_position_is_rejected() {
+    // A struct literal whose fields are written out of declared order pins
+    // each field value into a temp bound ahead of the enclosing statement, so
+    // it hits the same conditional-evaluation wall a nested `when` does
+    // (issue #190): the fallback runs only when the left-hand side is null,
+    // but the pinned `note` calls would run unconditionally. Rejected rather
+    // than silently evaluated in the wrong order — which is what the compiled
+    // backend used to do.
+    let msg = lower_err(
+        r#"
+type P { x: int, y: int }
+
+task note(n: int) -> int {
+  return n
+}
+
+task f(maybe: P?) -> P {
+  return maybe ?? { y: note(1), x: note(2) }
+}
+"#,
+    );
+    assert!(msg.contains("`??` fallback"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("must be evaluated ahead of the enclosing statement"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn in_order_struct_literal_in_a_conditional_position_is_accepted() {
+    // The counterpart to the test above, pinning that the rejection is gated
+    // on the reordering and not on struct literals in general: same program,
+    // fields written in declared order, nothing to pin, lowers fine.
+    let source = r#"
+type P { x: int, y: int }
+
+task note(n: int) -> int {
+  return n
+}
+
+task f(maybe: P?) -> P {
+  return maybe ?? { x: note(1), y: note(2) }
+}
+"#;
+    let (program, _named) = keel_syntax::parse_source(source, "t.keel").expect("must parse");
+    let (_diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    keel_kir::lower(&program, "t.keel", &artifacts).expect("must lower");
+}
+
+#[test]
 fn when_expression_in_a_parameter_default_cannot_resolve_a_subject() {
     // A default is lowered standalone, in a param-free scope (see
     // `lower/decl.rs`'s `lower_param_defaults`), so a `when`'s identifier

@@ -130,6 +130,24 @@ move(o)                         # error — Offset is not assignable to Point
 move({ x: 1, y: 2 })           # ok — anonymous literal is compatible with Point
 ```
 
+Because fields are matched to the target type by **name**, a literal may list
+them in any order. The expressions themselves are still evaluated left to right
+in the order written — which matters as soon as a field expression has a side
+effect:
+
+```keel
+use std/io
+
+type P { x: int, y: int }
+
+task note(s: str) -> int {
+  io.show(s)
+  return 1
+}
+
+p: P = { y: note("first"), x: note("second") }   # prints "first", then "second"
+```
+
 An untyped struct literal `{ x: 1, y: 2 }` is an anonymous shape. It is
 structurally compatible with any named struct type that has the required fields.
 Assign to a typed variable or pass to a typed parameter to tag it:
@@ -199,6 +217,7 @@ Rules:
 - The `...base` spread must appear **first**, exactly once.
 - Zero or more `field: value` overrides follow, separated by commas or newlines.
 - Spreading a `none` value raises at runtime.
+- The base is evaluated once, first; then each override in the order written.
 
 **Struct base** — override field names must exist in the base struct; unknown fields are a compile-time error (and a runtime error on dynamic paths). The result preserves the base's type tag so `impl` dispatch continues to work.
 
