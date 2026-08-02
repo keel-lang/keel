@@ -39,6 +39,64 @@ the same code as before. `SPEC.md` §2.4 now states the rule explicitly, and a
 conformance fixture whose every field expression prints keeps the two engines
 pinned together.
 
+### The native backend compiles a `when` over any subject expression
+
+`when` lowered only when its scrutinee was a plain variable already in scope.
+`when make(n) { … }` — a call, a field access, any computed subject — was
+rejected by `keel build --emit=kir` even though `keel check` accepted it and
+`keel run` executed it:
+
+```keel
+use std/io
+
+type Priority = low | medium | high
+
+task make(n: int) -> Priority {
+  if n == 0 { return Priority.low }
+  if n == 1 { return Priority.medium }
+  return Priority.high
+}
+
+task probe(n: int) -> int {
+  io.show("probe")   # once per call to classify, not once per arm
+  return n
+}
+
+task classify(n: int) -> str {
+  return when probe(n) {
+    0 => "zero"
+    1 => "one"
+    _ => "many"
+  }
+}
+
+task announce(n: int) {
+  when make(n) {
+    low => { io.show("low seen") }
+    medium => { io.show("medium seen") }
+    high => { io.show("high seen") }
+  }
+}
+
+io.show(classify(7))   # probe / many
+announce(0)            # low seen
+```
+
+The subject is bound to a synthetic local evaluated once, unconditionally,
+before the arm chain — so it runs exactly once however many arms are compared
+against it, which is what makes a side-effecting or expensive subject safe. A
+bare-variable subject still reads its existing local directly, with no
+temporary and no copy, so nothing that compiled before compiles differently
+now. Both the statement form and the value-producing expression form are
+covered.
+
+Because the subject's binding moves ahead of the enclosing statement, it
+follows the same positional rules as every other hoisting construct: a sibling
+to its left is spilled into a temporary so it still evaluates first, and the
+form is rejected by name where there is no enclosing statement to run ahead of
+(a parameter default). A conformance fixture whose subject prints keeps the
+interpreter and the compiled binary pinned to the same evaluation count.
+
 ### The native backend compiles a `when`-expression anywhere a value goes
 
 `when` used as a value already compiled in `let` and `return` position.

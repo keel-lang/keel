@@ -243,3 +243,90 @@ io.show(classify(3, 0))
     let stdout = assert_stdout_matches_interpreter(source);
     assert_eq!(stdout, b"  both zero\n  n zero\n  n nonzero\n");
 }
+
+#[test]
+fn when_expression_over_a_non_identifier_subject_matches_the_interpreter() {
+    // Issue #191's exit criterion: the subject is an arbitrary expression,
+    // bound to a synthetic `<when.subject>` temp ahead of the chain rather
+    // than rejected.
+    let source = r#"
+use std/io
+
+task sub(n: int) -> int { return n }
+
+task g(n: int) -> str {
+  return when sub(n) {
+    0 => "zero"
+    _ => "other"
+  }
+}
+
+io.show(g(0))
+io.show(g(4))
+"#;
+    let stdout = assert_stdout_matches_interpreter(source);
+    assert_eq!(stdout, b"  zero\n  other\n");
+}
+
+#[test]
+fn a_non_identifier_when_subject_is_evaluated_exactly_once() {
+    // The heart of #191: the subject temp exists so the subject runs once,
+    // not once per arm comparison. Four arms with a value that falls through
+    // to `_` means a re-evaluating lowering would print `probe` three times
+    // (once per failed comparison) instead of once — two arms wouldn't
+    // distinguish the two implementations nearly as sharply.
+    let source = r#"
+use std/io
+
+task probe(n: int) -> int {
+  io.show("probe")
+  return n
+}
+
+task classify(n: int) -> str {
+  return when probe(n) {
+    0 => "zero"
+    1 => "one"
+    2 => "two"
+    _ => "many"
+  }
+}
+
+io.show(classify(7))
+"#;
+    let stdout = assert_stdout_matches_interpreter(source);
+    assert_eq!(stdout, b"  probe\n  many\n");
+}
+
+#[test]
+fn a_sibling_left_of_a_non_identifier_when_subject_keeps_its_evaluation_order() {
+    // `a_sibling_left_of_a_when_expression_keeps_its_evaluation_order`'s
+    // shape, but the hoist now originates in the *subject* rather than in
+    // the arms — a position `FnCtx::keep_order` had never seen a hoist come
+    // from before #191. `note("left")` must still spill to a temp bound
+    // ahead of the `<when.subject>` `Let`, or the subject would run first.
+    let source = r#"
+use std/io
+
+task note(s: str) -> str {
+  io.show(s)
+  return s
+}
+
+task subject(n: int) -> int {
+  io.show("subject")
+  return n
+}
+
+task both(n: int) -> str {
+  return note("left") + when subject(n) {
+    0 => "zero"
+    _ => "nonzero"
+  }
+}
+
+io.show(both(0))
+"#;
+    let stdout = assert_stdout_matches_interpreter(source);
+    assert_eq!(stdout, b"  left\n  subject\n  leftzero\n");
+}

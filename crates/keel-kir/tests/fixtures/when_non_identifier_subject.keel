@@ -1,0 +1,44 @@
+use std/io
+
+type Priority = low | medium | high
+
+task make(n: int) -> Priority {
+  if n == 0 { return Priority.low }
+  if n == 1 { return Priority.medium }
+  return Priority.high
+}
+
+task probe(n: int) -> int {
+  return n
+}
+
+# Statement form over a call subject: the subject is bound once, ahead of
+# the chain, and every arm compares against that temp.
+task announce(n: int) {
+  when make(n) {
+    low => { io.show("low") }
+    medium => { io.show("medium") }
+    high => { io.show("high") }
+  }
+}
+
+# Expression form over a call subject, in return position.
+task classify(n: int) -> str {
+  return when probe(n) {
+    0 => "zero"
+    1 => "one"
+    _ => "many"
+  }
+}
+
+# Nested position, with a sibling to the left that must keep its order.
+task tag(n: int, label: str) -> str {
+  return label + when probe(n) {
+    0 => "zero"
+    _ => "nonzero"
+  }
+}
+
+announce(0)
+io.show(classify(2))
+io.show(tag(0, "n="))
