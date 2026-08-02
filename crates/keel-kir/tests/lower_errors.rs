@@ -396,9 +396,14 @@ task f() -> Priority {
 }
 
 #[test]
-fn when_over_a_non_identifier_subject_is_rejected() {
-    let msg = lower_err(
-        r#"
+fn when_over_a_non_identifier_subject_is_accepted() {
+    // Was `when_over_a_non_identifier_subject_is_rejected` until #191: the
+    // subject is now bound to a `<when.subject>` temp ahead of the chain
+    // instead of being refused, so this fixture lowers. Kept here, as a
+    // positive assertion, because this file is where the restriction was
+    // pinned — the runtime behaviour it now has lives in `keel-codegen`'s
+    // `enums_when.rs`.
+    let source = r#"
 type Priority = low | medium | high
 
 task make() -> Priority {
@@ -412,12 +417,11 @@ task f() -> str {
     high => { return "high" }
   }
 }
-"#,
-    );
-    assert!(
-        msg.contains("non-identifier subject"),
-        "unexpected message: {msg}"
-    );
+"#;
+    let (program, _named) = keel_syntax::parse_source(source, "t.keel").expect("must parse");
+    let (_diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    keel_kir::lower(&program, "t.keel", &artifacts).expect("must lower");
 }
 
 #[test]
@@ -568,10 +572,11 @@ task f(maybe: P?) -> P {
 #[test]
 fn when_expression_in_a_parameter_default_cannot_resolve_a_subject() {
     // A default is lowered standalone, in a param-free scope (see
-    // `lower/decl.rs`'s `lower_param_defaults`), so a `when`'s identifier
-    // scrutinee never resolves there — the position is unreachable for
-    // hoisting, which is why `lower_param_defaults`' own hoist guard is
-    // defense-in-depth rather than a diagnostic any program reaches.
+    // `lower/decl.rs`'s `lower_param_defaults`), so an *identifier*
+    // scrutinee never resolves there — this fixture fails at name
+    // resolution, before the hoist machinery is reached at all. A
+    // non-identifier subject does reach it; see
+    // `when_over_a_non_identifier_subject_in_a_parameter_default_is_rejected`.
     let msg = lower_err(
         r#"
 task f(n: int, label: str = when n {
@@ -584,6 +589,34 @@ task f(n: int, label: str = when n {
     );
     assert!(
         msg.contains("unknown identifier `n`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn when_over_a_non_identifier_subject_in_a_parameter_default_is_rejected() {
+    // #191 makes `lower_param_defaults`' hoist guard load-bearing for the
+    // first time. A non-identifier subject needs no name resolution, so it
+    // lowers fine and then hoists its `<when.subject>` `Let` — but a default
+    // is lowered standalone, with no enclosing statement for that `Let` to
+    // run ahead of, so `forbid_hoist` has to catch it. Without that guard
+    // this program would silently drop the subject's evaluation.
+    //
+    // The subject is arithmetic rather than the more natural call, because
+    // a call in a parameter default panics in `lower_call` today (issue
+    // #195) — an unrelated, pre-existing gap this test must not depend on.
+    let msg = lower_err(
+        r#"
+task f(label: str = when 1 + 1 {
+  0 => "zero"
+  _ => "other"
+}) -> str {
+  return label
+}
+"#,
+    );
+    assert!(
+        msg.contains("a parameter default"),
         "unexpected message: {msg}"
     );
 }

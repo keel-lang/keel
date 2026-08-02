@@ -1,8 +1,9 @@
 //! Statement lowering — the M0 scalar subset plus M1's `for`-over-ranges
 //! and M2's named-struct literals in `let`/`return` position, `when` as
 //! a statement (over a simple-enum or a str/int scrutinee with a wildcard
-//! arm — see [`lower_when_stmt`]) and *as an expression* anywhere a value is
-//! expected (see [`TailSink::Assign`], [`lower_when_expr_let`] and
+//! arm, named by a bare local or produced by an arbitrary subject
+//! expression — see [`lower_when_stmt`]) and *as an expression* anywhere a
+//! value is expected (see [`TailSink::Assign`], [`lower_when_expr_let`] and
 //! [`lower_when_expr_value`]), and `for x in xs` over a `list[T]` (lowered to
 //! [`keel_kir::ir::Stmt::ForEach`]): `let`/assign, `if`/`else`, `while`,
 //! `for x in a..b`, `for x in xs`, `return`, `when`, and bare expression
@@ -390,11 +391,24 @@ fn lower_stmt_inner(
 /// according to `sink` exactly like any other tail position (see
 /// [`lower_block`]).
 ///
-/// `subject` must be a plain identifier (a local/param already in scope),
-/// not an arbitrary expression: KIR's `Expr` is a tree with no let-binding
-/// of its own, so a non-trivial subject would otherwise get re-evaluated
-/// once per arm comparison — same restriction, and same rationale, as
-/// `expr::struct_spread_base`'s spread-update base.
+/// The arm chain compares against a *local*, never against `subject`'s own
+/// `Expr`: KIR's `Expr` is a tree with no let-binding of its own, so an
+/// inline subject would be re-evaluated once per arm comparison. A bare
+/// identifier already names a local, so it is used directly — no temp, no
+/// copy, and an unresolvable name still reports as `unknown identifier`.
+/// Any other subject expression is bound to a synthetic `<when.subject>`
+/// temp pushed through [`FnCtx::hoist`] (issue #191), which runs it exactly
+/// once, unconditionally, ahead of the enclosing statement — precisely the
+/// contract that buffer models, and the same reason `lower_stmt`'s `if`
+/// condition needs no hoist guard.
+///
+/// Hoisting means a `when` over a non-identifier subject inherits the
+/// positional restrictions every other hoisting construct has: it is
+/// rejected by [`FnCtx::forbid_hoist`] where there is no enclosing statement
+/// to run ahead of (a parameter default — see `decl.rs`'s
+/// `lower_param_defaults`) or where the subject would not be evaluated
+/// exactly once (a `while` condition, an `and`/`or` right operand, a `??`
+/// fallback, a `when` arm's own pattern test).
 fn lower_when_stmt(
     subject: &ast::SpannedExpr,
     arms: &[ast::WhenArm],
@@ -404,24 +418,32 @@ fn lower_when_stmt(
     sink: TailSink,
     stmt_span: &Span,
 ) -> Result<ir::Stmt, LowerError> {
-    let ast::Expr::Ident(name) = &subject.kind else {
-        return Err(LowerError::unsupported(
-            "`when` over a non-identifier subject (only a bare local/param scrutinee is \
-             lowered today)",
-            subject.span.clone(),
-        ));
-    };
-    let local = ctx.resolve(name).ok_or_else(|| {
-        LowerError::new(format!("unknown identifier `{name}`"), subject.span.clone())
-    })?;
-    let scrutinee_ty = ctx.locals[local].ty;
-
+    // Checked before the subject is lowered so an arm-less `when` doesn't
+    // leave a `<when.subject>` `Let` in the hoist buffer on the way out.
     if arms.is_empty() {
         return Err(LowerError::new(
             "`when` has no arms".to_string(),
             subject.span.clone(),
         ));
     }
+    let (local, scrutinee_ty) = match &subject.kind {
+        ast::Expr::Ident(name) => {
+            let local = ctx.resolve(name).ok_or_else(|| {
+                LowerError::new(format!("unknown identifier `{name}`"), subject.span.clone())
+            })?;
+            (local, ctx.locals[local].ty)
+        }
+        _ => {
+            let value = lower_expr(subject, ctx, lcx, table)?;
+            let ty = value.ty();
+            let local = ctx.declare_temp("<when.subject>", ty);
+            ctx.hoist(ir::Stmt::Let {
+                local,
+                init: Some(value),
+            });
+            (local, ty)
+        }
+    };
     build_when_chain(
         arms,
         0,

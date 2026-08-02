@@ -1,0 +1,57 @@
+use std/io
+
+type Priority = low | medium | high
+
+task make(n: int) -> Priority {
+  if n == 0 { return Priority.low }
+  if n == 1 { return Priority.medium }
+  return Priority.high
+}
+
+# The subject prints, so a lowering that re-evaluated it once per arm
+# comparison would show up as extra `probe` lines rather than a wrong value.
+# Four arms with a value falling through to `_` makes that gap three lines
+# wide.
+task probe(n: int) -> int {
+  io.show("probe")
+  return n
+}
+
+task classify(n: int) -> str {
+  return when probe(n) {
+    0 => "zero"
+    1 => "one"
+    2 => "two"
+    _ => "many"
+  }
+}
+
+# Statement form over an enum-returning call.
+task announce(n: int) {
+  when make(n) {
+    low => { io.show("low seen") }
+    medium => { io.show("medium seen") }
+    high => { io.show("high seen") }
+  }
+  io.show("done")
+}
+
+# A sibling to the left of a `when` whose *subject* hoists — the sibling has
+# to be spilled so it still evaluates before the subject.
+task note(s: str) -> str {
+  io.show(s)
+  return s
+}
+
+task both(n: int) -> str {
+  return note("left") + when probe(n) {
+    0 => "zero"
+    _ => "nonzero"
+  }
+}
+
+io.show(classify(7))
+io.show(classify(1))
+announce(0)
+announce(2)
+io.show(both(0))

@@ -12,6 +12,46 @@ All notable changes to Keel.
 
 ### Added
 
+- **The native backend compiles a `when` over any subject expression, not just a bare variable.** `when` lowered only when its scrutinee was a plain identifier already in scope; `when make(n) { … }` was rejected by `keel build --emit=kir` even though `keel check` accepted it and `keel run` executed it. An arbitrary subject now binds to a synthetic local evaluated once, unconditionally, ahead of the arm chain — so the subject runs exactly once no matter how many arms are compared, rather than once per comparison. Applies to both the statement form and the expression form.
+
+```keel
+use std/io
+
+type Priority = low | medium | high
+
+task make(n: int) -> Priority {
+  if n == 0 { return Priority.low }
+  if n == 1 { return Priority.medium }
+  return Priority.high
+}
+
+task probe(n: int) -> int {
+  io.show("probe")   # printed once per call to classify, not once per arm
+  return n
+}
+
+task classify(n: int) -> str {
+  return when probe(n) {
+    0 => "zero"
+    1 => "one"
+    _ => "many"
+  }
+}
+
+task announce(n: int) {
+  when make(n) {
+    low => { io.show("low seen") }
+    medium => { io.show("medium seen") }
+    high => { io.show("high seen") }
+  }
+}
+
+io.show(classify(7))   # probe / many
+announce(0)            # low seen
+```
+
+  A bare-identifier subject still reads the existing local directly, with no temporary and no copy. Because the subject's binding moves ahead of the enclosing statement, it inherits the same positional rules every other hoisting construct has: a sibling to its left is spilled so it still evaluates first, and a `when` over a non-identifier subject is rejected by name where there is no enclosing statement to run ahead of (a parameter default).
+
 - **The native backend compiles a `when`-expression in any nested position.** `when` already lowered as a value in `let` and `return` position; used anywhere else — a call argument, a stdlib namespace argument, a binary-op operand, a list element, an interpolation slot — `keel build --emit=kir` rejected it, even though `keel check` accepted the program. KIR's expressions are a tree with no statement sequencing of their own, so a nested `when` now desugars to a declare-only local plus the same `if`-chain the `let` form uses, hoisted ahead of the enclosing statement.
 
 ```keel

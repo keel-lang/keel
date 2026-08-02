@@ -136,3 +136,49 @@ io.show(grade("C"))
     );
     assert_eq!(compiled.stdout, b"  good\n  good\n  needs work\n");
 }
+
+#[test]
+fn when_statement_over_an_enum_returning_call_matches_the_interpreter() {
+    // Issue #191 at the *statement* form (`ast::Stmt::When`), over an enum
+    // scrutinee produced by a call rather than named by a local. The enum
+    // case matters on its own: `lower_pattern_test` dispatches on the
+    // scrutinee's `KirType`, and identifier patterns (`low`, `medium`) are
+    // only legal against `KirType::Enum` — so the subject temp has to carry
+    // the enum type through, not just any type.
+    let source = r#"
+use std/io
+
+type Priority = low | medium | high
+
+task make(n: int) -> Priority {
+  if n == 0 { return Priority.low }
+  if n == 1 { return Priority.medium }
+  return Priority.high
+}
+
+task announce(n: int) {
+  when make(n) {
+    low => { io.show("low seen") }
+    medium => { io.show("medium seen") }
+    high => { io.show("high seen") }
+  }
+  io.show("done")
+}
+
+announce(0)
+announce(2)
+"#;
+
+    let compiled = compile_and_run(source);
+    let interpreted = support::run_interpreter(source);
+
+    assert_eq!(
+        String::from_utf8_lossy(&compiled.stdout),
+        String::from_utf8_lossy(&interpreted.stdout),
+        "compiled stdout must match the interpreter's"
+    );
+    assert_eq!(
+        compiled.stdout,
+        b"  low seen\n  done\n  high seen\n  done\n"
+    );
+}

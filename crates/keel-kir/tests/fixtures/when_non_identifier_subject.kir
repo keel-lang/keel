@@ -1,0 +1,65 @@
+enum Priority { low, medium, high }
+
+fn make(n: int) -> Priority {
+  if (n == 0) {
+    return Priority.low
+  }
+  if (n == 1) {
+    return Priority.medium
+  }
+  return Priority.high
+}
+
+fn probe(n: int) -> int {
+  return n
+}
+
+fn announce(n: int) -> none {
+  let <when.subject>: Priority = make(n)
+  if (<when.subject> == Priority.low) {
+    io.show("low")
+  } else {
+    if (<when.subject> == Priority.medium) {
+      io.show("medium")
+    } else {
+      if true {
+        io.show("high")
+      }
+    }
+  }
+}
+
+fn classify(n: int) -> str {
+  let <when.subject>: int = probe(n)
+  if (<when.subject> == 0) {
+    return "zero"
+  } else {
+    if (<when.subject> == 1) {
+      return "one"
+    } else {
+      if true {
+        return "many"
+      }
+    }
+  }
+}
+
+fn tag(n: int, label: str) -> str {
+  let <spill>: str = label
+  let <when.result>: str
+  let <when.subject>: int = probe(n)
+  if (<when.subject> == 0) {
+    <when.result> = "zero"
+  } else {
+    if true {
+      <when.result> = "nonzero"
+    }
+  }
+  return (<spill> + <when.result>)
+}
+
+fn <toplevel>() -> none {
+  announce(0)
+  io.show(classify(2))
+  io.show(tag(0, "n="))
+}
