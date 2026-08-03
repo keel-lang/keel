@@ -1124,3 +1124,141 @@ task f(n: int) -> int {
         "unexpected message: {msg}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// `if` used as an expression (issue #192)
+//
+// The four positional rejections below are the same guards issue #170 added
+// for `when`, asserted here against `if`. They needed no new code: an
+// `if`-expression in a nested position hoists its declare+chain pair through
+// `FnCtx::hoist`, and `forbid_hoist` keys off that buffer growing rather than
+// off any particular syntax, so it already covers every hoisting construct.
+// These tests exist to pin that coverage, not to describe new behaviour.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn one_armed_if_used_as_an_expression_is_rejected() {
+    // The parser admits this (`else_body` defaults to an empty block) and the
+    // two existing engines disagree about it: the checker types the whole
+    // expression as `int`, while the interpreter yields `none` on the false
+    // path. Lowering refuses to pick a side.
+    let msg = lower_err(
+        r#"
+task f(c: bool) -> int {
+  x = if c { 1 }
+  return x
+}
+"#,
+    );
+    assert!(
+        msg.contains("needs an `else` branch"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn else_if_chain_without_a_final_else_is_rejected() {
+    // The *outer* `else_body` is non-empty here — the parser spells an
+    // `else if` as a one-statement block wrapping the next `if` — so the
+    // rejection has to come from the recursion reaching the inner `if`.
+    let msg = lower_err(
+        r#"
+task f(a: bool, b: bool) -> int {
+  x = if a { 1 } else if b { 2 }
+  return x
+}
+"#,
+    );
+    assert!(
+        msg.contains("needs an `else` branch"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn unannotated_if_expression_whose_then_branch_returns_is_rejected() {
+    // With no annotation the result type comes from a discarded probe of the
+    // `then` branch, which here ends in `return` and so produces no value to
+    // read a type from. The checker accepts this (it propagates the `else`
+    // branch's type past the `return`); this is the same pre-existing probe
+    // limitation `when` has, not one specific to `if`. Annotating it
+    // (`x: int = ...`) lowers fine — see the `clamp` task in the `if_expr`
+    // golden fixture.
+    let msg = lower_err(
+        r#"
+task f(c: bool) -> int {
+  x = if c { return 0 } else { 1 }
+  return x
+}
+"#,
+    );
+    assert!(
+        msg.contains("doesn't end in a value-producing expression"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn if_expression_in_a_while_condition_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(n: int, c: bool) -> int {
+  while if c { true } else { false } {
+    n += 1
+  }
+  return n
+}
+"#,
+    );
+    assert!(
+        msg.contains("`while` condition"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn if_expression_in_a_short_circuit_operand_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f(n: int, flag: bool) -> bool {
+  return flag and if n == 0 { true } else { false }
+}
+"#,
+    );
+    assert!(
+        msg.contains("right-hand operand of `and`/`or`"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn if_expression_in_a_null_coalesce_fallback_is_rejected() {
+    let msg = lower_err(
+        r#"
+task g(maybe: int?, n: int) -> int {
+  return maybe ?? if n == 0 { 1 } else { 2 }
+}
+"#,
+    );
+    assert!(msg.contains("`??` fallback"), "unexpected message: {msg}");
+}
+
+#[test]
+fn if_expression_in_a_parameter_default_is_rejected() {
+    // Call-free on purpose: a call inside a parameter default panics in
+    // `lower_call` today (issue #195), an unrelated pre-existing gap this
+    // test must not depend on — the same dodge
+    // `when_over_a_non_identifier_subject_in_a_parameter_default_is_rejected`
+    // makes just above.
+    let msg = lower_err(
+        r#"
+task f(label: str = if 1 + 1 == 2 { "yes" } else { "no" }) -> str {
+  return label
+}
+"#,
+    );
+    assert!(
+        msg.contains("a parameter default"),
+        "unexpected message: {msg}"
+    );
+}

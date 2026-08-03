@@ -12,6 +12,32 @@ All notable changes to Keel.
 
 ### Added
 
+- **The native backend compiles `if` used as an expression.** `if` in value position was rejected outright by `keel build --emit=kir` in every position — including `let` and `return`, which the `when`-expression has supported for several releases — even though `keel check` accepted the program and `keel run` executed it. It now lowers everywhere a value is expected: `let`, `return`, call arguments, stdlib namespace arguments, binary-op operands, and interpolation slots, including `else if` chains.
+
+```keel
+use std/io
+
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+task pick(n: int) -> str {
+  return shout(if n == 0 { "zero" } else { "other" })
+}
+
+task band(score: int) -> str {
+  label = if score > 90 { "A" } else if score > 80 { "B" } else { "C" }
+  return label
+}
+
+io.show(pick(0))      # zero!
+io.show(band(85))     # B
+```
+
+  The desugaring is the `when`-expression's: a declare-only local plus the `if` itself, with each branch's tail value written into that local. In `return` position each branch returns directly, with no temporary at all. A nested `if` hoists its declare-plus-branch pair ahead of the enclosing statement, so it inherits the same positional rules every other hoisting construct has — a sibling to its left is spilled so it still evaluates first, and it is rejected by name where it would not be evaluated exactly once (a `while` condition, an `and`/`or` right operand, a `??` fallback, a parameter default).
+
+  Two forms are rejected rather than compiled. An `if` used as an expression with no `else` (`x = if c { 1 }`) has no value to produce when the condition is false. `SPEC.md` §8.1 has always called this a compile error, but nothing enforced it: the type checker silently types it as the `then` branch's type and `keel run` evaluates it to `none`. `keel build` is the first engine to hold the line — so this program is now rejected by the compiler while the interpreter still accepts it, until the checker catches up. And an *unannotated* `if`-expression whose `then` branch exits via `return` (`x = if c { return 0 } else { 1 }`) has no tail value to infer the result type from; annotating it (`x: int = …`) or using it in any position that pins a type compiles fine. Both restrictions match the `when`-expression's existing behaviour.
+
 - **The native backend compiles a `when` over any subject expression, not just a bare variable.** `when` lowered only when its scrutinee was a plain identifier already in scope; `when make(n) { … }` was rejected by `keel build --emit=kir` even though `keel check` accepted it and `keel run` executed it. An arbitrary subject now binds to a synthetic local evaluated once, unconditionally, ahead of the arm chain — so the subject runs exactly once no matter how many arms are compared, rather than once per comparison. Applies to both the statement form and the expression form.
 
 ```keel

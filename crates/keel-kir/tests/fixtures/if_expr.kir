@@ -1,0 +1,46 @@
+fn grade(score: int) -> str {
+  let result: str
+  if (score > 90) {
+    result = "excellent"
+  } else {
+    result = "needs work"
+  }
+  return result
+}
+
+fn band(score: int) -> str {
+  let label: str
+  if (score > 90) {
+    label = "A"
+  } else {
+    let <if.result>: str
+    if (score > 80) {
+      <if.result> = "B"
+    } else {
+      <if.result> = "C"
+    }
+    label = <if.result>
+  }
+  return label
+}
+
+fn pick(flag: bool) -> int {
+  if flag {
+    return 1
+  } else {
+    return 2
+  }
+}
+
+fn clamp(n: int) -> int {
+  let bounded: int
+  if (n > 10) {
+    return 10
+  } else {
+    bounded = n
+  }
+  return bounded
+}
+
+fn <toplevel>() -> none {
+}

@@ -1,0 +1,18 @@
+task grade(score: int) -> str {
+  result = if score > 90 { "excellent" } else { "needs work" }
+  return result
+}
+
+task band(score: int) -> str {
+  label = if score > 90 { "A" } else if score > 80 { "B" } else { "C" }
+  return label
+}
+
+task pick(flag: bool) -> int {
+  return if flag { 1 } else { 2 }
+}
+
+task clamp(n: int) -> int {
+  bounded: int = if n > 10 { return 10 } else { n }
+  return bounded
+}
