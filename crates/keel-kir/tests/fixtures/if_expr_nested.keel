@@ -1,0 +1,29 @@
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+task describe(n: int) -> str {
+  return shout(if n == 0 { "zero" } else { "nonzero" })
+}
+
+task rank(n: int) -> int {
+  return 100 + if n == 0 { 1 } else { 2 }
+}
+
+task tag(n: int, label: str) -> str {
+  return label + shout(if n == 0 { "zero" } else { "nonzero" })
+}
+
+task mix(n: int) -> str {
+  return shout(if n == 0 { "zero" } else { when n {
+    1 => "one"
+    _ => "many"
+  } })
+}
+
+task arm(n: int, c: bool) -> str {
+  return when n {
+    0 => if c { "a" } else { "b" }
+    _ => "z"
+  }
+}

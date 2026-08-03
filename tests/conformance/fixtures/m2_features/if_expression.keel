@@ -1,0 +1,78 @@
+use std/io
+
+# `if` used as an expression (issue #192) — the sibling of
+# `when_non_identifier_subject.keel`, exercising the same mechanisms
+# (`TailSink::Assign`, the hoist buffer, sibling spilling) through the
+# other construct that uses them.
+
+# `let` position: binds the user's own name directly, no temp.
+task grade(score: int) -> str {
+  result = if score > 90 { "excellent" } else { "needs work" }
+  return result
+}
+
+# `return` position: each branch returns directly, also no temp.
+task pick(flag: bool) -> int {
+  return if flag { 1 } else { 2 }
+}
+
+# An `else if` chain nests a `<if.result>` temp per level. All three arms
+# have to stay reachable — a chain that collapsed to its first or last
+# branch would still typecheck and still print *something*.
+task band(score: int) -> str {
+  label = if score > 90 { "A" } else if score > 80 { "B" } else { "C" }
+  return label
+}
+
+# The condition prints, so a lowering that evaluated it more than once —
+# or skipped it — shows up as a wrong number of `cond` lines rather than
+# a wrong value.
+task probe(n: int) -> bool {
+  io.show("cond")
+  return n == 0
+}
+
+task describe(n: int) -> str {
+  return if probe(n) { "zero" } else { "nonzero" }
+}
+
+# A sibling to the left of a hoisted `if` — `note` must still run before
+# the condition does, which requires spilling it into a temp.
+task note(s: str) -> str {
+  io.show(s)
+  return s
+}
+
+task both(n: int) -> str {
+  return note("left") + if probe(n) { "zero" } else { "nonzero" }
+}
+
+# An annotation pins the result type, freeing the `then` branch to return
+# out of the enclosing task rather than produce a value.
+task clamp(n: int) -> int {
+  bounded: int = if n > 10 { return 10 } else { n }
+  return bounded
+}
+
+# `if` and `when` compose: the `when` sits in the `if`'s else-branch tail
+# position and assigns into the same result local.
+task mix(n: int) -> str {
+  return if n == 0 { "zero" } else { when n {
+    1 => "one"
+    _ => "many"
+  } }
+}
+
+io.show(grade(95))
+io.show(grade(40))
+io.show("{pick(true)} {pick(false)}")
+io.show(band(95))
+io.show(band(85))
+io.show(band(10))
+io.show(describe(0))
+io.show(describe(7))
+io.show(both(0))
+io.show("{clamp(50)} {clamp(3)}")
+io.show(mix(0))
+io.show(mix(1))
+io.show(mix(5))

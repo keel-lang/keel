@@ -25,6 +25,20 @@ reply = if guidance != none {
 } ?? "(draft failed)"
 ```
 
+Use it anywhere a value is expected — assignment, `return`, a call argument, an interpolation slot — and chain it with `else if`. Both branches must produce the same type.
+
+```keel
+task band(score: int) -> str {
+  return if score > 90 { "A" } else if score > 80 { "B" } else { "C" }
+}
+
+task pick(n: int) -> str {
+  return shout(if n == 0 { "zero" } else { "other" })
+}
+```
+
+`else` really is required in expression position: an `if` with no `else` has no value to produce when the condition is false. [`keel build`](../cli/build.md) enforces that — today it is the only engine that does, since `keel check` still accepts the form and `keel run` evaluates it to `none`. It likewise rejects an *unannotated* `if`-expression whose `then` branch exits via `return`, which leaves no tail value to infer the result type from; annotate it (`x: int = …`) or use it where the surrounding syntax already pins a type.
+
 ## when (pattern matching)
 
 `when` is an exhaustive pattern match. The compiler **requires all cases to be handled**.

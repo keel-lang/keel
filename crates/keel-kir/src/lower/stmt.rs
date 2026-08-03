@@ -4,12 +4,18 @@
 //! arm, named by a bare local or produced by an arbitrary subject
 //! expression — see [`lower_when_stmt`]) and *as an expression* anywhere a
 //! value is expected (see [`TailSink::Assign`], [`lower_when_expr_let`] and
-//! [`lower_when_expr_value`]), and `for x in xs` over a `list[T]` (lowered to
+//! [`lower_when_expr_value`]), `if` used as an expression in those same
+//! positions (issue #192 — [`lower_if_expr_let`] and [`lower_if_expr_value`]
+//! over the shared [`lower_if_expr_chain`]), and `for x in xs` over a
+//! `list[T]` (lowered to
 //! [`keel_kir::ir::Stmt::ForEach`]): `let`/assign, `if`/`else`, `while`,
 //! `for x in a..b`, `for x in xs`, `return`, `when`, and bare expression
 //! statements. Everything else (`assert`, `break`/`continue`,
 //! `self.field = ...`, `for` with a `where` filter or a non-range, non-list
-//! iterable) is rejected; see module docs on `lower/mod.rs`.
+//! iterable) is rejected; see module docs on `lower/mod.rs`. An `if` used as
+//! an expression with no `else` is rejected too, but as a *diagnostic* rather
+//! than an unsupported-construct notice: `SPEC.md` §8.1 calls that a compile
+//! error, and this is the first engine to enforce it (see [`require_else`]).
 
 use keel_syntax::ast::{self, Node};
 use keel_syntax::lexer::Span;
@@ -36,11 +42,12 @@ pub(crate) enum TailSink {
     /// The task's own implicit return (issue #159): a bare tail expression
     /// becomes `return <expr>`.
     Return,
-    /// A `when`-expression's result local (issue #160): a bare tail
-    /// expression becomes `<local> = <expr>` instead of a `return` — used
-    /// while lowering each arm of a `when` used as an expression, where the
-    /// arm's "tail value" is the value the whole `when`-expression produces,
-    /// not the enclosing function's return value.
+    /// A `when`- or `if`-expression's result local (issues #160, #192): a
+    /// bare tail expression becomes `<local> = <expr>` instead of a `return`
+    /// — used while lowering each arm of a `when`, or each branch of an `if`,
+    /// used as an expression, where the arm's/branch's "tail value" is the
+    /// value the whole expression produces, not the enclosing function's
+    /// return value.
     Assign(LocalId),
 }
 
@@ -74,14 +81,15 @@ pub(crate) fn lower_block(
 /// Lowers a single statement, possibly to more than one [`ir::Stmt`].
 ///
 /// Two things produce extra statements. A `let`/`return` whose value is a
-/// `when`-expression desugars to a declare-only `Let` plus an `if`-chain
-/// that assigns into it, or to the chain itself (see
-/// [`lower_when_expr_let`]). And a `when`-expression in an arbitrary
-/// *nested* position (`f(when n {...})`) hoists the same declare+chain pair
-/// through [`FnCtx::hoist`] — this function installs a fresh hoist buffer
-/// per statement and emits whatever landed in it ahead of the statement's
-/// own lowering, which is what confines a hoist to the nearest enclosing
-/// statement instead of letting it escape past an `if`/loop body.
+/// `when`- or `if`-expression desugars to a declare-only `Let` plus the
+/// `if`-chain that assigns into it, or to the chain itself (see
+/// [`lower_when_expr_let`] and [`lower_if_expr_let`]). And either of those
+/// in an arbitrary *nested* position (`f(when n {...})`, `f(if c {...} else
+/// {...})`) hoists the same declare+chain pair through [`FnCtx::hoist`] —
+/// this function installs a fresh hoist buffer per statement and emits
+/// whatever landed in it ahead of the statement's own lowering, which is
+/// what confines a hoist to the nearest enclosing statement instead of
+/// letting it escape past an `if`/loop body.
 ///
 /// Does not open its own scope — callers that need block scoping (`if`/
 /// `while` bodies) go through [`lower_block`]; the synthetic top-level
@@ -127,6 +135,16 @@ fn lower_stmt_inner(
             let name = binding_ident(binding, &stmt.span)?;
             if let ast::Expr::WhenExpr { subject, arms } = &value.kind {
                 return lower_when_expr_let(name, ty, subject, arms, ctx, lcx, table, &stmt.span);
+            }
+            if let ast::Expr::IfExpr {
+                cond,
+                then_body,
+                else_body,
+            } = &value.kind
+            {
+                return lower_if_expr_let(
+                    name, ty, cond, then_body, else_body, ctx, lcx, table, &stmt.span,
+                );
             }
             // An explicit annotation pins the expected type up front — this
             // is what lets a struct literal (which the checker always types
@@ -222,6 +240,27 @@ fn lower_stmt_inner(
                 // return regardless of its own tail position).
                 let chain =
                     lower_when_stmt(subject, arms, ctx, lcx, table, TailSink::Return, &stmt.span)?;
+                return Ok(vec![chain]);
+            }
+            if let ast::Expr::IfExpr {
+                cond,
+                then_body,
+                else_body,
+            } = &value.kind
+            {
+                // `return if cond { ... } else { ... }` — same reasoning as
+                // the `when` case above: each branch's tail value returns
+                // directly, so no result temp is needed.
+                let chain = lower_if_expr_chain(
+                    cond,
+                    then_body,
+                    else_body,
+                    ctx,
+                    lcx,
+                    table,
+                    TailSink::Return,
+                    &stmt.span,
+                )?;
                 return Ok(vec![chain]);
             }
             let expr = lower_expr_expecting(value, ret_ty, ctx, lcx, table)?;
@@ -537,7 +576,7 @@ fn build_when_chain(
 ///
 /// With no annotation, the result type is inferred from the *first* arm's
 /// tail value, lowered once purely to read off its type and then discarded
-/// (see [`probe_arm_ty`]) — the same "local structural inference" already
+/// (see [`probe_block_ty`]) — the same "local structural inference" already
 /// used for list-literal element types (`lower/expr.rs`'s module doc) —
 /// rather than consulting `CheckArtifacts::expr_types` (which would need a
 /// new checker-`Ty` -> `KirType` converter this crate doesn't have yet, see
@@ -574,7 +613,7 @@ fn lower_when_expr_let(
             lcx.nullables,
             lcx.tuples,
         )?,
-        None => probe_arm_ty(&arms[0], ctx, lcx, table, stmt_span)?,
+        None => probe_block_ty(&arms[0].body, ctx, lcx, table, stmt_span)?,
     };
     let local = ctx.declare(name, result_ty);
     let declare = ir::Stmt::Let { local, init: None };
@@ -625,7 +664,7 @@ pub(crate) fn lower_when_expr_value(
     }
     let result_ty = match expected {
         Some(ty) => ty,
-        None => probe_arm_ty(&arms[0], ctx, lcx, table, span)?,
+        None => probe_block_ty(&arms[0].body, ctx, lcx, table, span)?,
     };
     let local = ctx.declare_temp("<when.result>", result_ty);
     ctx.hoist(ir::Stmt::Let { local, init: None });
@@ -645,17 +684,26 @@ pub(crate) fn lower_when_expr_value(
     })
 }
 
-/// Reads off the `KirType` a `when`-expression's first arm produces, by
-/// lowering that arm's body and throwing the result away.
+/// Reads off the `KirType` a `when`-expression's first arm — or an
+/// `if`-expression's `then` branch — produces, by lowering that block and
+/// throwing the result away.
 ///
 /// The probe runs in its own hoist buffer and its own slice of `ctx.locals`,
-/// both discarded afterwards: the arm is about to be lowered *again* for
-/// real, and leaving either behind would duplicate the arm's hoisted
-/// statements or leave dead locals in the function (visible in golden dumps).
-/// Truncating `locals` is safe precisely because everything the probe
-/// produced is dropped here — no surviving `Expr` holds one of those ids.
-fn probe_arm_ty(
-    arm: &ast::WhenArm,
+/// both discarded afterwards: the block is about to be lowered *again* for
+/// real, and leaving either behind would duplicate its hoisted statements or
+/// leave dead locals in the function (visible in golden dumps). Truncating
+/// `locals` is safe precisely because everything the probe produced is
+/// dropped here — no surviving `Expr` holds one of those ids.
+///
+/// Probing only the *first* branch means `x = if c { return 0 } else { 1 }`
+/// is rejected even though the checker accepts it (it propagates the other
+/// branch's type past a `return` — see `keel-compiler`'s `IfExpr` inference).
+/// That is the same pre-existing limitation this probe has always had for
+/// `when`, and it only bites where no type is pinned: an annotation
+/// (`x: int = ...`) or any position that calls `lower_expr_expecting` skips
+/// the probe entirely.
+fn probe_block_ty(
+    body: &ast::Block,
     ctx: &mut FnCtx,
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
@@ -663,16 +711,187 @@ fn probe_arm_ty(
 ) -> Result<KirType, LowerError> {
     let outer = ctx.begin_hoist();
     let locals_mark = ctx.locals.len();
-    let probe = lower_block(&arm.body, ctx, lcx, table, TailSink::Discard);
+    let probe = lower_block(body, ctx, lcx, table, TailSink::Discard);
     ctx.end_hoist(outer);
     ctx.locals.truncate(locals_mark);
     match probe?.last() {
         Some(ir::Stmt::Expr(e)) => Ok(e.ty()),
         _ => Err(LowerError::unsupported(
-            "`when`-expression arm whose body doesn't end in a value-producing expression",
+            "an unannotated `when`/`if` expression whose first branch doesn't end in a \
+             value-producing expression",
             span.clone(),
         )),
     }
+}
+
+/// Rejects a one-armed `if` used where a value is expected — which `SPEC.md`
+/// §8.1 already calls a compile error ("An `if` without `else` used as an
+/// expression is a compile error").
+///
+/// Nothing enforced that rule before this. The parser admits the form
+/// (`else_body` defaults to an empty block — see `keel-syntax`'s `if_expr`),
+/// the checker types the whole expression as the `then` branch's type, and
+/// the interpreter yields `none` on the false path. This is the first engine
+/// to hold the line, so a program rejected here still runs under `keel run`
+/// until the checker catches up.
+fn require_else(else_body: &ast::Block, span: &Span) -> Result<(), LowerError> {
+    if else_body.is_empty() {
+        return Err(LowerError::new(
+            "`if` used as an expression needs an `else` branch (there is no value to produce \
+             when the condition is false)"
+                .to_string(),
+            span.clone(),
+        ));
+    }
+    Ok(())
+}
+
+/// Builds the `ir::Stmt::If` backing an `if` used as an *expression* — the
+/// same shape `lower_stmt`'s `ast::Stmt::If` arm emits for the statement
+/// form, except each branch's tail value desugars according to `sink` (see
+/// [`TailSink`]), exactly like a `when` arm's body in [`build_when_chain`].
+/// Nothing new reaches `keel-codegen`.
+///
+/// An `else if` chain arrives here as an `else_body` holding the single
+/// statement `Stmt::Expr(Expr::IfExpr { .. })` — that is how the parser
+/// spells its own recursion — so it needs no special case: the block's tail
+/// position carries `sink` into the nested `if` through the ordinary
+/// [`lower_block`] path. In a value position that costs one `<if.result>`
+/// temp per `else if` level, which keeps this function ignorant of chaining.
+#[allow(clippy::too_many_arguments)]
+fn lower_if_expr_chain(
+    cond: &ast::SpannedExpr,
+    then_body: &ast::Block,
+    else_body: &ast::Block,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    sink: TailSink,
+    span: &Span,
+) -> Result<ir::Stmt, LowerError> {
+    require_else(else_body, span)?;
+    // No hoist guard on the condition, for the same reason the statement form
+    // needs none: it is evaluated exactly once, unconditionally, before either
+    // branch, so anything hoisted out of it still runs exactly once and in
+    // order ahead of the enclosing statement.
+    let cond_expr = lower_expr(cond, ctx, lcx, table)?;
+    if cond_expr.ty() != KirType::Bool {
+        return Err(LowerError::new(
+            format!("`if` condition is `{}`, expected `bool`", cond_expr.ty()),
+            cond.span.clone(),
+        ));
+    }
+    let then_branch = lower_block(then_body, ctx, lcx, table, sink)?;
+    let else_branch = lower_block(else_body, ctx, lcx, table, sink)?;
+    Ok(ir::Stmt::If {
+        cond: cond_expr,
+        then_branch,
+        else_branch,
+    })
+}
+
+/// Lowers `name = if cond { ... } else { ... }` / `name: ty = ...` — issue
+/// #192's `if`-as-expression in `let` position, the sibling of
+/// [`lower_when_expr_let`] and desugared identically: a declare-only
+/// `Stmt::Let { local, init: None }` followed by the `if` itself, with each
+/// branch's tail value written into `local` via [`TailSink::Assign`].
+///
+/// As with `when`, the result type comes from an explicit annotation when
+/// there is one and otherwise from a discarded probe of the `then` branch
+/// (see [`probe_block_ty`]); every branch is then coerced against it through
+/// the same `lower_expr_expecting` path, so a mismatch between branches
+/// surfaces as an ordinary type error rather than a silent pick of one side.
+#[allow(clippy::too_many_arguments)]
+fn lower_if_expr_let(
+    name: &str,
+    annotation: &Option<Node<ast::TypeExpr>>,
+    cond: &ast::SpannedExpr,
+    then_body: &ast::Block,
+    else_body: &ast::Block,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    stmt_span: &Span,
+) -> Result<Vec<ir::Stmt>, LowerError> {
+    // Ahead of the probe: a missing `else` should report as a missing `else`,
+    // not as an empty block that produced no value to read a type from.
+    require_else(else_body, stmt_span)?;
+    let result_ty = match annotation {
+        Some(ann) => ty_expr_to_kir(
+            ann,
+            lcx.structs_by_name,
+            lcx.enums_by_name,
+            lcx.lists,
+            lcx.maps,
+            lcx.sets,
+            lcx.nullables,
+            lcx.tuples,
+        )?,
+        None => probe_block_ty(then_body, ctx, lcx, table, stmt_span)?,
+    };
+    let local = ctx.declare(name, result_ty);
+    let declare = ir::Stmt::Let { local, init: None };
+    let chain = lower_if_expr_chain(
+        cond,
+        then_body,
+        else_body,
+        ctx,
+        lcx,
+        table,
+        TailSink::Assign(local),
+        stmt_span,
+    )?;
+    Ok(vec![declare, chain])
+}
+
+/// Lowers an `if`-expression used in an arbitrary nested position — a call
+/// argument, a binary-op operand, an interpolation slot — to the `ir::Expr`
+/// that *reads* its result, hoisting the statements that produce it. The
+/// exact shape of [`lower_when_expr_value`], over an `<if.result>` temp.
+///
+/// Because it hoists, an `if`-expression inherits every positional
+/// restriction the hoist buffer already enforces — [`FnCtx::forbid_hoist`]
+/// rejects it in a `while` condition, an `and`/`or` right operand, a `??`
+/// fallback, a `when` arm's pattern test, and a parameter default. Those
+/// guards key off the buffer growing, not off any particular syntax, so they
+/// needed no change to cover this construct.
+///
+/// `expected` is the type the surrounding syntax pins, when it pins one; with
+/// `None` the result type falls back to the same discarded `then`-branch
+/// probe [`lower_if_expr_let`] uses without an annotation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn lower_if_expr_value(
+    cond: &ast::SpannedExpr,
+    then_body: &ast::Block,
+    else_body: &ast::Block,
+    expected: Option<KirType>,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    span: &Span,
+) -> Result<ir::Expr, LowerError> {
+    require_else(else_body, span)?;
+    let result_ty = match expected {
+        Some(ty) => ty,
+        None => probe_block_ty(then_body, ctx, lcx, table, span)?,
+    };
+    let local = ctx.declare_temp("<if.result>", result_ty);
+    ctx.hoist(ir::Stmt::Let { local, init: None });
+    let chain = lower_if_expr_chain(
+        cond,
+        then_body,
+        else_body,
+        ctx,
+        lcx,
+        table,
+        TailSink::Assign(local),
+        span,
+    )?;
+    ctx.hoist(chain);
+    Ok(ir::Expr::Local {
+        id: local,
+        ty: result_ty,
+    })
 }
 
 /// ORs together the per-pattern equality tests for one `when` arm (an arm

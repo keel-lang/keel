@@ -446,10 +446,16 @@ pub(crate) fn lower_expr(
             }
         }
         ast::Expr::Cast { .. } => Err(LowerError::unsupported("`as` cast", expr.span.clone())),
-        ast::Expr::IfExpr { .. } => Err(LowerError::unsupported(
-            "`if` expression",
-            expr.span.clone(),
-        )),
+        // An `if` in a nested position with no expected type pinned by the
+        // surrounding syntax — the result type comes from the `then` branch's
+        // own tail value. `lower_expr_expecting` handles the pinned case.
+        ast::Expr::IfExpr {
+            cond,
+            then_body,
+            else_body,
+        } => super::stmt::lower_if_expr_value(
+            cond, then_body, else_body, None, ctx, lcx, table, &expr.span,
+        ),
         // A `when` in a nested position with no expected type pinned by the
         // surrounding syntax (a stdlib namespace argument, an interpolation
         // slot, …) — the result type comes from the first arm's own tail
@@ -520,6 +526,26 @@ pub(crate) fn lower_expr_expecting(
         return super::stmt::lower_when_expr_value(
             subject,
             arms,
+            Some(expected),
+            ctx,
+            lcx,
+            table,
+            &expr.span,
+        );
+    }
+    // Same reasoning for a nested `if`-expression: pinning the type coerces
+    // each branch's tail value against it rather than inferring from the
+    // `then` branch alone.
+    if let ast::Expr::IfExpr {
+        cond,
+        then_body,
+        else_body,
+    } = &expr.kind
+    {
+        return super::stmt::lower_if_expr_value(
+            cond,
+            then_body,
+            else_body,
             Some(expected),
             ctx,
             lcx,

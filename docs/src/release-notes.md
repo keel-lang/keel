@@ -4,6 +4,63 @@
 
 ## Unreleased
 
+### The native backend compiles `if` used as an expression
+
+`if/else` has always been an expression in Keel, but the native backend
+rejected it in *every* value position — including `let` and `return`, which the
+`when`-expression has supported for several releases. `keel check` accepted the
+program and `keel run` executed it; `keel build --emit=kir` refused it. That
+gap is closed:
+
+```keel
+use std/io
+
+task shout(s: str) -> str {
+  return s + "!"
+}
+
+task pick(n: int) -> str {
+  return shout(if n == 0 { "zero" } else { "other" })
+}
+
+task band(score: int) -> str {
+  label = if score > 90 { "A" } else if score > 80 { "B" } else { "C" }
+  return label
+}
+
+io.show(pick(0))      # zero!
+io.show(band(85))     # B
+```
+
+It compiles anywhere a value is expected — `let`, `return`, a call argument, a
+stdlib namespace argument, a binary-op operand, an interpolation slot — and
+`else if` chains work throughout. The desugaring is the `when`-expression's: a
+declare-only local plus the `if` itself, with each branch's tail value written
+into that local. In `return` position each branch returns directly, with no
+temporary at all.
+
+A nested `if` moves its declare-plus-branch pair ahead of the enclosing
+statement, so it follows the same positional rules as every other hoisting
+construct: a sibling to its left is spilled into a temporary so it still
+evaluates first, and the form is rejected by name where it would not be
+evaluated exactly once (a `while` condition, an `and`/`or` right operand, a
+`??` fallback, a parameter default). A conformance fixture whose condition
+prints keeps the interpreter and the compiled binary pinned to the same
+evaluation count.
+
+Two forms are rejected rather than compiled, both matching the
+`when`-expression's existing behaviour. An `if` used as a value with **no
+`else`** (`x = if c { 1 }`) has no value to produce when the condition is
+false. `SPEC.md` §8.1 has always called that a compile error, but nothing
+enforced it — the type checker quietly types the expression as the `then`
+branch's type, and `keel run` evaluates it to `none`. `keel build` is the first
+engine to hold the line, so such a program is now rejected by the compiler
+while the interpreter still runs it; closing that gap in the checker is
+tracked separately. And an **unannotated** `if`-expression whose `then` branch
+exits via `return` (`x = if c { return 0 } else { 1 }`) has no tail value to
+infer the result type from; annotating it (`x: int = …`) or using it where the
+surrounding syntax already pins a type compiles fine.
+
 ### Struct-literal fields compile in the order they're written
 
 A struct literal's fields are matched to the target type by name, so they can
