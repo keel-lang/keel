@@ -4,6 +4,50 @@
 
 ## Unreleased
 
+### A value-position `if`/`when` branch that produces no value is now an error
+
+`SPEC.md` §8.1 has always said an `if` without `else` used as an expression is a
+compile error. Nothing enforced it. The checker typed `x = if c { 1 }` as `int`
+while `keel run` evaluated it to `none` — a binding the checker guaranteed was
+`int`, holding `none`. The mismatch surfaced only later, and at runtime:
+
+```keel
+task f(c: bool) -> int {
+  x = if c { 1 }
+  return x + 1     # runtime: Cannot apply `Add` to none and int
+}
+```
+
+The cause was one type standing for two different things. `block_type` returned
+`Ty::None_` both for a branch that exited via `return` and for a branch that
+simply produced nothing, and the `if` inference could not tell them apart, so it
+propagated the other branch's type in both cases. Those outcomes are now
+distinct, which closes the hole for `if` branches and `when` arms alike:
+
+```keel
+x = if c { 1 }                    # Error — no `else`
+x = if c { 1 } else { }           # Error — `else` produces no value
+x = if c { } else { 1 }           # Error — `then` produces no value
+x = if c { y = 1 } else { 2 }     # Error — branch ends in a `let`
+x = when n { 0 => { }  _ => 1 }   # Error — arm produces no value
+```
+
+A branch that exits via `return` or `raise` is still exempt — that was the case
+the old conflation existed to serve, and it keeps working:
+
+```keel
+score: int = if ready { compute() } else { return 0 }
+```
+
+So is a branch ending in a nested `if`/`when`/`try` whose own branches all
+produce values: a trailing `when` statement really does yield its arm's value,
+and rejecting it would have broken working programs.
+
+One form that used to run now fails to check: `if c { x } ?? fallback`. The `??`
+did catch the `none` at runtime, but §8.1 admits no exception for it and
+`keel build` already rejected the form, so accepting it here would have kept the
+two engines disagreeing. Add an explicit `else` branch.
+
 ### The native backend compiles `if` used as an expression
 
 `if/else` has always been an expression in Keel, but the native backend

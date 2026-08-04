@@ -15,7 +15,7 @@ use crate::types::scope::Scope;
 use crate::types::ty::{Ty, UnknownReason, describe_ty};
 
 use super::{
-    Checker,
+    BlockValue, Checker,
     binop::{check_binop, infer_binary},
 };
 
@@ -1021,22 +1021,44 @@ impl Checker<'_, '_> {
             } => {
                 let c = self.infer_expr(cond, scope);
                 self.expect(&c, &Ty::Bool, "`if` condition");
-                let then_ty = self.block_type(then_body, scope);
-                let else_ty = self.block_type(else_body, scope);
-                // When one branch exits via `return` its block_type is None_.
-                // In that case propagate the other branch's type. When both
-                // are concrete, verify they match.
-                match (&then_ty, &else_ty) {
-                    (Ty::None_, other) if !other.is_opaque() && !matches!(other, Ty::None_) => {
-                        other.clone()
+                let then_v = self.block_value(then_body, scope);
+                let else_v = self.block_value(else_body, scope);
+                // Every `Expr::IfExpr` is in value position — the statement
+                // form parses to `Stmt::If` (whose `else_body` is an
+                // `Option<Block>`), so a branch that produces no value here is
+                // always a defect, never a plain `if` statement being checked.
+                // A missing `else` reaches this as an empty block: the parser
+                // folds its absence into `else_body.unwrap_or_default()`.
+                match (then_v, else_v) {
+                    (BlockValue::NoValue, _) => {
+                        self.err_valueless_branch(
+                            then_body,
+                            "the `then` branch of this `if` expression",
+                            &spanned.span,
+                        );
+                        Ty::Error
                     }
-                    (_, Ty::None_) => then_ty,
-                    _ => {
-                        if !then_ty.is_opaque()
-                            && !matches!(then_ty, Ty::None_)
-                            && !else_ty.is_opaque()
-                            && !matches!(else_ty, Ty::None_)
-                        {
+                    (_, BlockValue::NoValue) => {
+                        self.err_valueless_branch(
+                            else_body,
+                            "the `else` branch of this `if` expression",
+                            &spanned.span,
+                        );
+                        Ty::Error
+                    }
+                    // Both branches leave via `return`/`raise`, so the `if`
+                    // never yields a value to anyone and any binding it feeds
+                    // is unreachable. Opaque rather than `Ty::None_`: `None_`
+                    // is a real type that would go on to fail against the
+                    // binding's use ("expected int, got none") for dead code
+                    // that never runs.
+                    (BlockValue::Diverges, BlockValue::Diverges) => {
+                        Ty::Unknown(UnknownReason::InferenceLimitation)
+                    }
+                    (BlockValue::Diverges, BlockValue::Value(ty))
+                    | (BlockValue::Value(ty), BlockValue::Diverges) => ty,
+                    (BlockValue::Value(then_ty), BlockValue::Value(else_ty)) => {
+                        if !then_ty.is_opaque() && !else_ty.is_opaque() {
                             self.expect(
                                 &else_ty,
                                 &then_ty,
@@ -1053,8 +1075,12 @@ impl Checker<'_, '_> {
                 let when_span = self.current_span.clone().unwrap_or_default();
                 // Reuse exhaustiveness checking from the statement path.
                 self.check_when_arms(&subject_ty, arms, scope, when_span);
-                // Unify arm result types.
-                let mut result_ty = Ty::None_;
+                // Unify arm result types. `None` until an arm actually
+                // contributes one, so that "no arm has been seen yet" is not
+                // spelled with a real type that could be mistaken for an arm's
+                // own — which is what let a `when` whose every arm diverges type
+                // as `none` and then fail against the binding's use.
+                let mut result_ty: Option<Ty> = None;
                 for arm in arms {
                     scope.push();
                     for p in &arm.patterns {
@@ -1088,22 +1114,42 @@ impl Checker<'_, '_> {
                             _ => {}
                         }
                     }
-                    let arm_ty = self.block_type(&arm.body, scope);
+                    let arm_v = self.block_value(&arm.body, scope);
                     scope.pop();
-                    match (&result_ty, &arm_ty) {
-                        (Ty::None_, _) => result_ty = arm_ty,
-                        (_, _) if arm_ty.is_opaque() || matches!(arm_ty, Ty::None_) => {}
-                        _ if result_ty.is_opaque() => {}
-                        _ => {
-                            self.expect(
-                                &arm_ty,
-                                &result_ty,
-                                "`when` expression arms must all have the same type",
+                    let arm_ty = match arm_v {
+                        // Same defect as an `if` branch that produces no value:
+                        // the arm evaluates to `none` at runtime whatever type
+                        // the other arms pinned (issue #197).
+                        BlockValue::NoValue => {
+                            self.err_valueless_branch(
+                                &arm.body,
+                                "this `when` expression arm",
+                                &spanned.span,
                             );
+                            Ty::Error
+                        }
+                        // An arm that exits via `return`/`raise` contributes no
+                        // type, and legitimately so — the remaining arms decide.
+                        BlockValue::Diverges => continue,
+                        BlockValue::Value(ty) => ty,
+                    };
+                    match &result_ty {
+                        None => result_ty = Some(arm_ty),
+                        Some(pinned) => {
+                            if !arm_ty.is_opaque() && !pinned.is_opaque() {
+                                self.expect(
+                                    &arm_ty,
+                                    &pinned.clone(),
+                                    "`when` expression arms must all have the same type",
+                                );
+                            }
                         }
                     }
                 }
-                result_ty
+                // No arm contributed a type — every one of them diverged, so the
+                // expression is unreachable. Opaque rather than `Ty::None_`, for
+                // the reason given on the `if` both-diverge arm above.
+                result_ty.unwrap_or(Ty::Unknown(UnknownReason::InferenceLimitation))
             }
 
             Expr::Lambda { params, body } => {

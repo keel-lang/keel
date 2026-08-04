@@ -279,6 +279,24 @@ io.show(typeof(ids))        # set
 
 ### Fixed
 
+- **The type checker now rejects a branch of a value-position `if`/`when` that produces no value.** `SPEC.md` §8.1 has always called `x = if c { 1 }` a compile error, but nothing enforced it: the checker typed the expression as the `then` branch's type while `keel run` evaluated it to `none`. A binding the checker guaranteed was `int` held `none` at runtime, and the mismatch only surfaced later — `x + 1` failed with "Cannot apply `Add` to none and int" at *runtime*, past every static check.
+
+```keel
+x = if c { 1 }                    # Error — no `else`, so no value when `c` is false
+x = if c { 1 } else { }           # Error — `else` produces no value
+x = if c { } else { 1 }           # Error — `then` produces no value
+x = if c { y = 1 } else { 2 }     # Error — branch ends in a `let`, not an expression
+x = when n { 0 => { }  _ => 1 }   # Error — `when` arms had the identical hole
+```
+
+  The root cause was `block_type` collapsing two different outcomes into `Ty::None_`: "this branch exited via `return`" and "this branch produced nothing". The `if` inference then propagated the *other* branch's type in both cases. Those are now distinguished, so a branch that exits via `return` or `raise` is still exempt — the remaining branches decide the type, as before:
+
+```keel
+score: int = if ready { compute() } else { return 0 }   # still fine
+```
+
+  A branch ending in a nested `if`/`when`/`try` whose own branches all produce values is also still accepted — a trailing `when` statement really does yield its arm's value. `??` does not exempt an `if` from the rule: `if c { x } ?? fallback` evaluated correctly but §8.1 admits no exception, and `keel build` already rejected it, so accepting it in the checker would have kept the two engines disagreeing. Add an explicit `else` branch.
+
 - **The native backend evaluated struct-literal fields in declared order, not the order they were written.** Because a struct literal's fields are matched to the target type by *name*, they may be listed in any order — and the interpreter has always evaluated their expressions left to right as written. KIR lowering, though, rebuilt them straight into the struct's declared field order, which is also the order `keel-codegen` emits them in, so the two engines observably disagreed the moment a field expression had a side effect. A literal (or spread-update) whose fields are written out of declared order now binds each value to a temporary in source order first, and assembles the struct from those; a literal already in declared order, or one whose field expressions can't be observed to run at a particular moment, is unchanged and emits no temporaries. `SPEC.md` §2.4 now states the source-order rule explicitly.
 
 ```keel

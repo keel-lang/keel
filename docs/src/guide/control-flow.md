@@ -37,7 +37,21 @@ task pick(n: int) -> str {
 }
 ```
 
-`else` really is required in expression position: an `if` with no `else` has no value to produce when the condition is false. [`keel build`](../cli/build.md) enforces that — today it is the only engine that does, since `keel check` still accepts the form and `keel run` evaluates it to `none`. It likewise rejects an *unannotated* `if`-expression whose `then` branch exits via `return`, which leaves no tail value to infer the result type from; annotate it (`x: int = …`) or use it where the surrounding syntax already pins a type.
+`else` really is required in expression position, and more generally **every branch must produce a value** — it has to end in an expression, or in a nested `if`/`when`/`try` whose own branches all do. A branch that ends in an empty block, a `let`, or a loop is a compile error, because it would evaluate to `none` whatever type the expression was inferred to have. `??` does not exempt an `if` from this; add a real `else`.
+
+```keel
+x = if c { 1 }                    # Error — no value when `c` is false
+x = if c { } else { 1 }           # Error — `then` produces no value
+x = when n { 0 => { }  _ => 1 }   # Error — same rule for `when` arms
+```
+
+A branch that exits via `return` or `raise` is exempt: it never falls through, so the other branches determine the type.
+
+```keel
+score: int = if ready { compute() } else { return 0 }   # fine
+```
+
+[`keel build`](../cli/build.md) additionally rejects an *unannotated* `if`-expression whose `then` branch exits via `return`, which leaves no tail value to infer the result type from; annotate it (`x: int = …`) or use it where the surrounding syntax already pins a type.
 
 ## when (pattern matching)
 
