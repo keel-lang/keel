@@ -26,6 +26,7 @@ use crate::types::interface::{self as iface, Signature};
 // Re-export so existing call-sites (`crate::types::checker::Ty`, etc.) remain valid.
 pub use crate::types::diagnostics::TypeDiagnostic;
 pub use crate::types::ty::Ty;
+use crate::types::ty::UnknownReason;
 // Re-export IDE helpers so `lsp.rs` call-sites remain valid without churn.
 pub use crate::ide::hover::type_at;
 pub use crate::ide::symbols::{
@@ -45,6 +46,88 @@ struct TaskSig {
     return_type: Ty,
     /// True if the last param is variadic (`...name: T`).
     variadic: bool,
+}
+
+/// What a block contributes where a value is expected — an `if` branch or a
+/// `when` arm used as an expression.
+///
+/// Splitting [`BlockValue::Diverges`] from [`BlockValue::NoValue`] is what
+/// `Ty::None_` alone could not express: both produce no type, but one is legal
+/// and the other is a defect. See [`Checker::block_value`].
+enum BlockValue {
+    /// Ends in an expression producing this type.
+    Value(Ty),
+    /// Every path leaves via `return`/`raise`, so the block never falls through
+    /// to produce a value. Legal in an `if` branch or `when` arm: the *other*
+    /// branch supplies the expression's type, and this one is simply never the
+    /// one that yields it.
+    Diverges,
+    /// Runs to completion without producing a value — an empty block, or one
+    /// whose last statement is a `let`, a loop, or anything else that isn't an
+    /// expression. In value position this is an error: at runtime the block
+    /// evaluates to `none`, whatever concrete type the checker inferred.
+    NoValue,
+}
+
+/// Whether every path through `block` leaves via `return` or `raise`.
+///
+/// The AST-level counterpart of `keel-kir`'s `block_terminates`, which does the
+/// same job over `ir::Block` after lowering. The two can't share code —
+/// `keel-kir` depends on this crate, not the reverse — so they are deliberate
+/// mirrors: a change to what counts as divergence belongs in both.
+///
+/// An `if` diverges only when it has an `else` and both branches diverge; a
+/// `try`/`catch` when its body and every handler do; a `when` when every arm
+/// does (exhaustiveness is proven separately by `check_when_arms`, so a
+/// non-exhaustive `when` is already an error by the time this matters). Loops
+/// never diverge — a `while` may run zero times.
+fn block_diverges(block: &Block) -> bool {
+    match block.last().map(|node| &node.kind) {
+        Some(Stmt::Return(_)) | Some(Stmt::Raise(_)) => true,
+        Some(Stmt::If {
+            then_body,
+            else_body: Some(else_body),
+            ..
+        }) => block_diverges(then_body) && block_diverges(else_body),
+        Some(Stmt::TryCatch { body, catches }) => {
+            block_diverges(body) && catches.iter().all(|c| block_diverges(&c.body))
+        }
+        Some(Stmt::When { arms, .. }) => {
+            !arms.is_empty() && arms.iter().all(|arm| block_diverges(&arm.body))
+        }
+        _ => false,
+    }
+}
+
+/// Whether every path through `block` ends in something that yields a value —
+/// an expression, a `return`/`raise` (vacuously, since it never falls through),
+/// or a trailing `if`/`when` *statement* whose every branch does the same.
+///
+/// That last case is why this exists separately from checking for a trailing
+/// `Stmt::Expr`. A `when` statement in tail position really does produce a
+/// value — the interpreter yields its arm's `StmtOutcome::Value`, and
+/// `keel-kir` lowers it by propagating the enclosing `TailSink` into each arm —
+/// so rejecting it would break working programs such as
+/// `if n == 0 { "zero" } else { when n { 1 => "one"  _ => "many" } }`.
+///
+/// Purely syntactic: the statements themselves have already been checked by the
+/// time this runs, so it must not re-infer anything.
+fn block_yields_value(block: &Block) -> bool {
+    match block.last().map(|node| &node.kind) {
+        Some(Stmt::Expr(_)) | Some(Stmt::Return(_)) | Some(Stmt::Raise(_)) => true,
+        Some(Stmt::If {
+            then_body,
+            else_body: Some(else_body),
+            ..
+        }) => block_yields_value(then_body) && block_yields_value(else_body),
+        Some(Stmt::TryCatch { body, catches }) => {
+            block_yields_value(body) && catches.iter().all(|c| block_yields_value(&c.body))
+        }
+        Some(Stmt::When { arms, .. }) => {
+            !arms.is_empty() && arms.iter().all(|arm| block_yields_value(&arm.body))
+        }
+        _ => false,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -784,6 +867,27 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
         self.errors.push(TypeDiagnostic::other(msg, span));
     }
 
+    /// Reports a branch of a value-position `if`/`when` that runs to completion
+    /// without producing a value (issue #197). `what` names the offending
+    /// branch, e.g. ``"the `else` branch of this `if` expression"``.
+    ///
+    /// Spans the branch itself when it has one. A block with no statements has
+    /// no span to point at — that is the missing-`else` case, which the parser
+    /// folds into an empty block — so those fall back to the whole expression.
+    fn err_valueless_branch(&mut self, block: &Block, what: &str, fallback: &Span) {
+        let span = match (block.first(), block.last()) {
+            (Some(first), Some(last)) => first.span.start..last.span.end,
+            _ => fallback.clone(),
+        };
+        self.err_at(
+            format!(
+                "{what} produces no value — every branch used where a value is expected must \
+                 end in an expression, otherwise it evaluates to `none` at runtime"
+            ),
+            span,
+        );
+    }
+
     /// Record the resolved type of an expression at `span`, when artifacts
     /// collection is enabled for this pass (no-op otherwise). Takes `&self`
     /// so it is callable from the `&self` resolution helpers, not just from
@@ -1032,9 +1136,31 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
         }
     }
 
+    /// The type a block contributes when its value is *not* used — `Ty::None_`
+    /// stands for every non-value outcome alike. Callers that care whether the
+    /// block actually produced a value must use [`Self::block_value`] instead;
+    /// this wrapper exists for the one caller that already distinguishes the
+    /// cases itself (a task's implicit tail return, which guards on its last
+    /// statement being an expression before looking at this type at all).
     fn block_type(&mut self, block: &Block, scope: &mut Scope) -> Ty {
+        match self.block_value(block, scope) {
+            BlockValue::Value(ty) => ty,
+            BlockValue::Diverges | BlockValue::NoValue => Ty::None_,
+        }
+    }
+
+    /// Checks every statement in `block` and classifies what the block
+    /// contributes as a value.
+    ///
+    /// The classification is the point: `Ty::None_` alone cannot distinguish a
+    /// branch that exited via `return` (legal in value position — the *other*
+    /// branch supplies the type) from one that simply ran to completion without
+    /// producing anything (not legal — the expression would evaluate to `none`
+    /// while the checker promised a concrete type). Conflating them is what let
+    /// `x = if c { 1 }` typecheck as `int` and evaluate to `none` (issue #197).
+    fn block_value(&mut self, block: &Block, scope: &mut Scope) -> BlockValue {
         scope.push();
-        let mut last = Ty::None_;
+        let mut last = None;
         for node in block {
             last = match &node.kind {
                 Stmt::Expr(e) => {
@@ -1043,16 +1169,30 @@ impl<'hir, 'ast> Checker<'hir, 'ast> {
                     // raised during inference carry this statement's location
                     // instead of the enclosing declaration's.
                     self.current_span = Some(node.span.clone());
-                    self.infer_expr(e, scope)
+                    Some(self.infer_expr(e, scope))
                 }
                 other => {
                     self.check_stmt(other, node.span.clone(), scope);
-                    Ty::None_
+                    None
                 }
             };
         }
         scope.pop();
-        last
+        match last {
+            Some(ty) => BlockValue::Value(ty),
+            // No trailing expression, so the type isn't tracked here. Either
+            // every path left via `return`/`raise` (no value, legitimately)...
+            None if block_diverges(block) => BlockValue::Diverges,
+            // ...or a trailing `if`/`when` statement yields one whose type this
+            // path doesn't compute. Opaque rather than `NoValue`: unification
+            // skips opaque types, so the sibling branch pins the result and
+            // nothing is falsely rejected. See [`block_yields_value`].
+            None if block_yields_value(block) => {
+                BlockValue::Value(Ty::Unknown(UnknownReason::InferenceLimitation))
+            }
+            // ...or the block just ends, which is the defect.
+            None => BlockValue::NoValue,
+        }
     }
 
     fn expect(&mut self, actual: &Ty, expected: &Ty, context: &str) {
@@ -4378,6 +4518,292 @@ task greet(p: Person) -> str {
         assert!(
             !plain.is_empty(),
             "test source must actually produce an error"
+        );
+    }
+
+    // ─── #197: a value-position branch that produces no value ───────────────
+    //
+    // `block_type` used to collapse "this branch exited via `return`" and
+    // "this branch produced nothing" into the same `Ty::None_`, so the `if`
+    // inference propagated the *other* branch's type and the binding got a
+    // concrete type it does not hold at runtime. `SPEC.md` §8.1 already called
+    // the missing-`else` case a compile error; nothing enforced it.
+
+    #[test]
+    fn error_one_armed_if_used_as_an_expression() {
+        // The case SPEC §8.1 names. `keel run` evaluates this to `none` while
+        // the checker called it `int`.
+        expect_error(
+            r#"
+task f(c: bool) -> int {
+  x = if c { 1 }
+  return x
+}
+"#,
+            "produces no value",
+        );
+    }
+
+    #[test]
+    fn error_if_expression_with_an_explicitly_empty_else() {
+        expect_error(
+            r#"
+task f(c: bool) -> int {
+  x = if c { 1 } else { }
+  return x
+}
+"#,
+            "produces no value",
+        );
+    }
+
+    #[test]
+    fn error_if_expression_with_an_empty_then_branch() {
+        // The `then` side of the same defect — reported against that branch.
+        expect_error(
+            r#"
+task f(c: bool) -> int {
+  x = if c { } else { 1 }
+  return x
+}
+"#,
+            "the `then` branch of this `if` expression produces no value",
+        );
+    }
+
+    #[test]
+    fn error_if_expression_branch_ending_in_a_non_expression_statement() {
+        // Not just empty branches: a branch whose last statement is a `let`
+        // falls through without a value just the same.
+        expect_error(
+            r#"
+task f(c: bool) -> int {
+  x = if c { y = 1 } else { 2 }
+  return x
+}
+"#,
+            "produces no value",
+        );
+    }
+
+    #[test]
+    fn error_if_expression_branch_ending_in_a_loop() {
+        // A `while` may run zero times, so it never counts as producing a
+        // value or as diverging.
+        expect_error(
+            r#"
+task f(c: bool) -> int {
+  x = if c { while false { } } else { 2 }
+  return x
+}
+"#,
+            "produces no value",
+        );
+    }
+
+    #[test]
+    fn error_nested_if_without_an_else_inside_a_branch() {
+        // The inner `if` has no `else`, so the outer `then` branch can fall
+        // through without a value.
+        expect_error(
+            r#"
+task f(c: bool, d: bool) -> int {
+  x = if c { if d { 1 } } else { 2 }
+  return x
+}
+"#,
+            "produces no value",
+        );
+    }
+
+    #[test]
+    fn error_when_expression_arm_that_produces_no_value() {
+        // `when` arms shared the identical hole.
+        expect_error(
+            r#"
+task f(n: int) -> str {
+  x = when n {
+    0 => { }
+    _ => "z"
+  }
+  return x
+}
+"#,
+            "this `when` expression arm produces no value",
+        );
+    }
+
+    #[test]
+    fn error_one_armed_if_is_rejected_even_with_a_null_coalesce_fallback() {
+        // `if c { x } ?? fallback` evaluates correctly at runtime, but §8.1
+        // admits no exception for `??` — and `keel build` rejects it, so
+        // accepting it here would reopen a checker/backend divergence.
+        expect_error(
+            r#"
+task f(c: bool) -> str {
+  x = if c { "yes" } ?? "fallback"
+  return x
+}
+"#,
+            "produces no value",
+        );
+    }
+
+    #[test]
+    fn if_expression_branch_that_returns_is_still_accepted() {
+        // The case the old `Ty::None_` conflation existed to serve: a branch
+        // that exits via `return` contributes no value legitimately, and the
+        // other branch supplies the type. This must keep working.
+        type_ok(
+            r#"
+task f(c: bool) -> int {
+  x = if c { return 0 } else { 2 }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_branch_that_raises_is_still_accepted() {
+        type_ok(
+            r#"
+task f(c: bool) -> int {
+  x = if c { raise "bad" } else { 2 }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_with_both_branches_diverging_is_accepted() {
+        type_ok(
+            r#"
+task f(c: bool) -> int {
+  x = if c { return 0 } else { return 1 }
+  return 9
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn when_expression_arm_that_returns_is_still_accepted() {
+        type_ok(
+            r#"
+task f(n: int) -> str {
+  x = when n {
+    0 => { return "r" }
+    _ => "z"
+  }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_branch_ending_in_a_when_statement_is_accepted() {
+        // A trailing `when` statement really does yield a value — the
+        // interpreter returns its arm's `StmtOutcome::Value` and `keel-kir`
+        // propagates the enclosing `TailSink` into each arm — so the branch
+        // must not be treated as valueless. See `block_yields_value`.
+        type_ok(
+            r#"
+task mix(n: int) -> str {
+  return if n == 0 { "zero" } else { when n {
+    1 => "one"
+    _ => "many"
+  } }
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_branch_ending_in_an_if_statement_is_accepted() {
+        type_ok(
+            r#"
+task f(c: bool, d: bool) -> int {
+  x = if c { if d { 1 } else { 2 } } else { 3 }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_with_both_branches_diverging_does_not_poison_its_binding() {
+        // Nothing is left to unify, so the expression has no type — but the
+        // binding is dead code, and typing it `none` made a later use fail with
+        // a bogus "expected int, got none". It must stay opaque instead.
+        type_ok(
+            r#"
+task f(c: bool) -> int {
+  x = if c { return 0 } else { return 1 }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn when_expression_with_every_arm_diverging_does_not_poison_its_binding() {
+        // The `when` counterpart of the case above — the two constructs must
+        // agree, which they did not before issue #197's pass.
+        type_ok(
+            r#"
+task f(n: int) -> str {
+  x = when n {
+    0 => { return "a" }
+    _ => { return "b" }
+  }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_branch_ending_in_a_try_catch_is_accepted() {
+        // `block_yields_value` treats a trailing `try`/`catch` as yielding when
+        // its body and every handler do.
+        type_ok(
+            r#"
+task f(c: bool) -> int {
+  x = if c { try { 1 } catch e: Error { 2 } } else { 3 }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn if_expression_branch_whose_try_catch_diverges_is_accepted() {
+        // And `block_diverges` treats one as diverging when both sides do.
+        type_ok(
+            r#"
+task f(c: bool) -> int {
+  x = if c { try { return 0 } catch e: Error { return 1 } } else { 2 }
+  return x
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn plain_if_statement_without_an_else_is_still_accepted() {
+        // Statement-form `if` parses to `Stmt::If`, never `Expr::IfExpr`, so
+        // none of the above can fire on it. Pinned so a future parser change
+        // that routed statements through `IfExpr` would fail loudly here.
+        type_ok(
+            r#"
+use std/io
+task f(c: bool) {
+  if c { io.show("hi") }
+}
+"#,
         );
     }
 }

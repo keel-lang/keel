@@ -1216,6 +1216,17 @@ reply = if guidance != none {
 
 An `if` without `else` used as an expression is a compile error.
 
+More generally, **every branch of an `if` or `when` used where a value is expected must produce a value.** A branch produces a value when it ends in an expression, or in a nested `if`/`when`/`try` whose own branches all do. A branch that ends in anything else — an empty block, a `let`, a loop — is a compile error, because it would evaluate to `none` regardless of the type inferred for the expression as a whole. The `??` operator does not exempt an `if` from this rule.
+
+A branch that exits via `return` or `raise` is exempt: it never falls through to produce a value, so the remaining branches determine the expression's type.
+
+```keel
+score: int = if ready { compute() } else { return 0 }   # OK — else diverges
+label = if ready { "go" }                               # Error — no else
+label = if ready { "go" } else { }                      # Error — else produces no value
+tally = when n { 0 => { }  _ => 1 }                     # Error — arm produces no value
+```
+
 ### 8.2 `when` (pattern matching)
 
 `when` works as both a **statement** and an **expression**.
@@ -2309,6 +2320,7 @@ Everything else — HTTP, IMAP/SMTP, LLM clients, databases, vector stores — i
 | Nullable access without `?.` / `??` / `when` | Error |
 | Unknown identifier | Error |
 | Missing `else` on `if`-expression | Error |
+| Branch of a value-position `if`/`when` that produces no value | Error |
 | Missing `_` in non-enum `when` | Error |
 | `self` outside an agent | Error |
 | `ai.prompt(...)` without `as T` | Error |
