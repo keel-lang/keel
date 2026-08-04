@@ -4,3 +4,18 @@ task greet(name: str, greeting: str = "Hello") -> str {
 
 with_greeting = greet("Ada", "Hi")
 without_greeting = greet("Ada")
+
+# A default may call another task. The call is lowered once, at the
+# declaration, and cloned into every call site that omits the argument —
+# so `bump()` appears inline in each `scale(...)` below, not hoisted.
+task bump() -> int {
+  return 1
+}
+
+task scale(value: int, by: int = bump() + 1) -> int {
+  return value * by
+}
+
+explicit_factor = scale(10, 5)
+default_factor = scale(10)
+default_factor_again = scale(7)

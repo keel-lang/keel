@@ -101,6 +101,26 @@ pub(crate) struct FuncSig {
     pub(crate) ret: KirType,
 }
 
+/// One parameter's default state, as seen by a call site.
+///
+/// A call site needs two different things from a callee's defaults, and they
+/// become available at different times: *whether* a parameter has one (to
+/// check arity and decide what to fill) is known from the AST as soon as
+/// signatures are collected, while the default's lowered `Expr` (to actually
+/// fill an omitted argument) only exists after pass 2c has run. Splitting the
+/// two lets a call inside a parameter default — lowered *during* pass 2c —
+/// resolve normally instead of tripping over a half-built table.
+pub(crate) enum ParamDefault {
+    /// No default declared: an argument must be supplied at every call site.
+    Required,
+    /// A default is declared but not lowered yet — pass 2c is still running,
+    /// and this call is itself inside some task's parameter default. Only
+    /// blocks a call that *omits* this argument; supplying it is fine.
+    NotLoweredYet,
+    /// A lowered default, cloned into each call site that omits the argument.
+    Lowered(crate::ir::Expr),
+}
+
 /// Shared, read-only lowering state threaded through every lowering
 /// function (bundled into one struct rather than growing the parameter
 /// list further — M2's per-feature issues each add another whole-program
@@ -127,13 +147,12 @@ pub(crate) struct LowerCtx<'a> {
     pub(crate) nullables: &'a std::cell::RefCell<Vec<KirType>>,
     /// Same interior-mutability rationale as `lists`, for tuple shapes.
     pub(crate) tuples: &'a std::cell::RefCell<Vec<TupleLayout>>,
-    /// Each task's per-parameter default-value expression (`None` for a
-    /// parameter with no default), indexed by `FuncId`, parallel to that
-    /// task's own param list. Lowered once per declaration in a separate,
-    /// param-free scope — see `lower_program`'s pass 2c — not per call site;
-    /// [`crate::lower::expr::lower_call`] clones the stored `Expr` into each
-    /// call that omits a trailing arg.
-    pub(crate) param_defaults: &'a HashMap<FuncId, Vec<Option<crate::ir::Expr>>>,
+    /// Each task's per-parameter default state, indexed by `FuncId`,
+    /// parallel to that task's own param list. Lowered once per declaration
+    /// in a separate, param-free scope — see `lower_program`'s pass 2c — not
+    /// per call site; [`crate::lower::expr::lower_call`] clones the stored
+    /// `Expr` into each call that omits a trailing arg.
+    pub(crate) param_defaults: &'a HashMap<FuncId, Vec<ParamDefault>>,
     /// Not consumed yet — #145 (named structs) resolves everything through
     /// context-threaded expected types instead (see `expr::lower_expr_expecting`).
     /// Becomes load-bearing for a construct the checker must resolve and
@@ -614,14 +633,33 @@ pub fn lower_program(
 
     // Pass 2c: lower each task's parameter default-value expressions, now
     // that every task signature and namespace binding is known (in case a
-    // default references either). Done via a bootstrap `LowerCtx` with an
-    // empty `param_defaults` — a default expression may not itself omit a
-    // defaulted argument of another call (an obscure case none of this
-    // codebase's examples need); everything else about default expressions
-    // (calls, namespace methods, literals) resolves normally. Each default
-    // is lowered once, in a fresh param-free `FnCtx`, not per call site.
-    let empty_param_defaults: HashMap<FuncId, Vec<Option<crate::ir::Expr>>> = HashMap::new();
-    let mut param_defaults: HashMap<FuncId, Vec<Option<crate::ir::Expr>>> = HashMap::new();
+    // default references either). Done via a bootstrap `LowerCtx` whose
+    // `param_defaults` records only which parameters *have* a default
+    // (`NotLoweredYet`), read straight off the AST — enough for a call inside
+    // a default to arity-check its callee, which is all `lower_call` needs
+    // unless it also omits a defaulted argument. That one case (a default
+    // that relies on another default) is rejected rather than ordered around:
+    // resolving it means lowering callees' defaults first, which has no answer
+    // when two defaults call each other. Everything else about default
+    // expressions (calls, namespace methods, literals) resolves normally.
+    // Each default is lowered once, in a fresh param-free `FnCtx`, not per
+    // call site.
+    let bootstrap_param_defaults: HashMap<FuncId, Vec<ParamDefault>> = task_order
+        .iter()
+        .map(|task| {
+            let sig = &funcs[&task.name];
+            let states = task
+                .params
+                .iter()
+                .map(|param| match param.default {
+                    Some(_) => ParamDefault::NotLoweredYet,
+                    None => ParamDefault::Required,
+                })
+                .collect();
+            (sig.func_id, states)
+        })
+        .collect();
+    let mut param_defaults: HashMap<FuncId, Vec<ParamDefault>> = HashMap::new();
     {
         let bootstrap_lcx = LowerCtx {
             funcs: &funcs,
@@ -635,7 +673,7 @@ pub fn lower_program(
             sets: &sets,
             nullables: &nullables,
             tuples: &tuples,
-            param_defaults: &empty_param_defaults,
+            param_defaults: &bootstrap_param_defaults,
             artifacts,
             user_raised_struct_id,
         };

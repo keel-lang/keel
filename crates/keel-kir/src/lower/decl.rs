@@ -7,8 +7,8 @@ use std::collections::HashMap;
 use keel_syntax::ast::TaskDecl;
 
 use super::stmt::TailSink;
-use super::{FnCtx, FuncSig, LowerCtx, LowerError, binding_ident, ty_expr_to_kir};
-use crate::ir::{EnumId, Expr, KirFunction, Param, StructId, TupleLayout};
+use super::{FnCtx, FuncSig, LowerCtx, LowerError, ParamDefault, binding_ident, ty_expr_to_kir};
+use crate::ir::{EnumId, KirFunction, Param, StructId, TupleLayout};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
 
@@ -95,7 +95,7 @@ pub(crate) fn lower_param_defaults(
     sig_params: &[KirType],
     lcx: &LowerCtx<'_>,
     table: &mut SpanTable,
-) -> Result<Vec<Option<Expr>>, LowerError> {
+) -> Result<Vec<ParamDefault>, LowerError> {
     // A default is lowered standalone, into a bare `Expr` cloned into each
     // omitting call site — there is no enclosing statement for a nested
     // `when`-expression's hoisted declare+chain to attach to, so hoisting is
@@ -114,9 +114,9 @@ pub(crate) fn lower_param_defaults(
                      enclosing statement the hoisted arms could run in)",
                     &expr.span,
                 )?;
-                Ok(Some(lowered))
+                Ok(ParamDefault::Lowered(lowered))
             }
-            None => Ok(None),
+            None => Ok(ParamDefault::Required),
         })
         .collect()
 }

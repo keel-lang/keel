@@ -54,6 +54,32 @@ io.show(greeting_for("Ada"))
 }
 
 #[test]
+fn a_default_that_calls_another_task_runs_once_per_omitting_call_site() {
+    // Issue #195. The default is lowered once at the declaration and its
+    // `Expr` cloned into each omitting call site, so the interesting question
+    // is *when* the call runs: the interpreter evaluates a default per call,
+    // and `bump`'s `io.show` makes that observable — two omitting call sites
+    // must print "bumped" twice, not once.
+    let source = r#"
+use std/io
+
+task bump() -> int {
+  io.show("bumped")
+  return 1
+}
+
+task scale(value: int, by: int = bump() + 1) -> int {
+  return value * by
+}
+
+io.show(scale(10, 5))
+io.show(scale(10))
+io.show(scale(7))
+"#;
+    assert_matches_interpreter(source, b"  50\n  bumped\n  20\n  bumped\n  14\n");
+}
+
+#[test]
 fn multiple_trailing_defaults_can_be_partially_omitted() {
     let source = r#"
 use std/io

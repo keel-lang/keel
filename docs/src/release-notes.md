@@ -4,6 +4,54 @@
 
 ## Unreleased
 
+### A call in a parameter default no longer crashes `keel build`
+
+`keel build --emit=kir` panicked — `no entry found for key`, with no span, no
+message, and nothing naming the construct at fault — on any task whose
+parameter default called another task. `keel check` accepted the same program
+and `keel run` executed it, so this was a hard crash *and* a divergence between
+the two engines. It now compiles:
+
+```keel
+use std/io
+
+task bump() -> int {
+  return 1
+}
+
+task scale(value: int, by: int = bump() + 1) -> int {
+  return value * by
+}
+
+io.show(scale(10, 5))   # 50
+io.show(scale(10))      # 20 — `bump()` runs here
+io.show(scale(7))       # 14 — and again here
+```
+
+Every default is lowered once, at the declaration, before any of them is
+available to clone into a call site — and the arity check at a call site read
+that table before it was built. It now reads only which parameters *have* a
+default, which the declaration states outright and needs no lowering, so a call
+inside a default resolves like a call anywhere else. Evaluation still happens
+per call, matching the interpreter: each call site that omits the argument runs
+`bump()` again.
+
+One shape stays rejected, but by name rather than by panic — a default that
+*omits* another call's defaulted argument:
+
+```keel
+task a(x: int = 1) -> int {
+  return x
+}
+
+task b(y: int = a()) -> int {   # Error — pass the argument explicitly: `a(1)`
+  return y
+}
+```
+
+Supporting that means lowering callees' defaults before callers', which has no
+answer when two defaults call each other.
+
 ### A value-position `if`/`when` branch that produces no value is now an error
 
 `SPEC.md` §8.1 has always said an `if` without `else` used as an expression is a

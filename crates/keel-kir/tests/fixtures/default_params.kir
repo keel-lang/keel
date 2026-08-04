@@ -2,7 +2,18 @@ fn greet(name: str, greeting: str) -> str {
   return (((greeting + ", ") + name) + "!")
 }
 
+fn bump() -> int {
+  return 1
+}
+
+fn scale(value: int, by: int) -> int {
+  return (value * by)
+}
+
 fn <toplevel>() -> none {
   let with_greeting: str = greet("Ada", "Hi")
   let without_greeting: str = greet("Ada", "Hello")
+  let explicit_factor: int = scale(10, 5)
+  let default_factor: int = scale(10, (bump() + 1))
+  let default_factor_again: int = scale(7, (bump() + 1))
 }

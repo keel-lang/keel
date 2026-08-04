@@ -602,12 +602,18 @@ fn when_over_a_non_identifier_subject_in_a_parameter_default_is_rejected() {
     // run ahead of, so `forbid_hoist` has to catch it. Without that guard
     // this program would silently drop the subject's evaluation.
     //
-    // The subject is arithmetic rather than the more natural call, because
-    // a call in a parameter default panics in `lower_call` today (issue
-    // #195) — an unrelated, pre-existing gap this test must not depend on.
+    // The assertion names the hoist guard's own wording, not just "a
+    // parameter default": #195 gave defaults a *second* rejection path (a
+    // default that omits another call's defaulted argument), and matching
+    // the shared half of both messages would let this test pass on the
+    // wrong one.
     let msg = lower_err(
         r#"
-task f(label: str = when 1 + 1 {
+task sub() -> int {
+  return 1
+}
+
+task f(label: str = when sub() {
   0 => "zero"
   _ => "other"
 }) -> str {
@@ -616,7 +622,7 @@ task f(label: str = when 1 + 1 {
 "#,
     );
     assert!(
-        msg.contains("a parameter default"),
+        msg.contains("must be evaluated ahead of the enclosing statement, in a parameter default"),
         "unexpected message: {msg}"
     );
 }
@@ -847,6 +853,31 @@ task f(a: int = 1, b: int) -> int {
     );
     assert!(
         msg.contains("defaults must be trailing"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn a_parameter_default_omitting_another_call_s_defaulted_argument_is_rejected() {
+    // Defaults are lowered in one pass (`lower_program`'s pass 2c), so a call
+    // inside a default sees which of the callee's params have defaults but not
+    // yet the lowered `Expr` to clone for an omitted one. Ordering the pass by
+    // callee would fix `b` here but has no answer once two defaults call each
+    // other, so this is rejected rather than ordered around. Supplying the
+    // argument explicitly (`a(1)`) lowers fine.
+    let msg = lower_err(
+        r#"
+task a(x: int = 1) -> int {
+  return x
+}
+
+task b(y: int = a()) -> int {
+  return y
+}
+"#,
+    );
+    assert!(
+        msg.contains("omitting a defaulted argument in a call inside a parameter default"),
         "unexpected message: {msg}"
     );
 }
@@ -1245,20 +1276,23 @@ task g(maybe: int?, n: int) -> int {
 
 #[test]
 fn if_expression_in_a_parameter_default_is_rejected() {
-    // Call-free on purpose: a call inside a parameter default panics in
-    // `lower_call` today (issue #195), an unrelated pre-existing gap this
-    // test must not depend on — the same dodge
+    // Same shape, and the same assertion caveat, as
     // `when_over_a_non_identifier_subject_in_a_parameter_default_is_rejected`
-    // makes just above.
+    // above: an `if` in value position hoists a declare-then-assign chain,
+    // and a default has no enclosing statement to hoist ahead of.
     let msg = lower_err(
         r#"
-task f(label: str = if 1 + 1 == 2 { "yes" } else { "no" }) -> str {
+task sub() -> int {
+  return 1
+}
+
+task f(label: str = if sub() == 2 { "yes" } else { "no" }) -> str {
   return label
 }
 "#,
     );
     assert!(
-        msg.contains("a parameter default"),
+        msg.contains("must be evaluated ahead of the enclosing statement, in a parameter default"),
         "unexpected message: {msg}"
     );
 }
