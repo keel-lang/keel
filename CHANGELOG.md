@@ -279,6 +279,28 @@ io.show(typeof(ids))        # set
 
 ### Fixed
 
+- **A call inside a parameter default crashed the native backend; it now compiles.** `keel build --emit=kir` panicked outright — `no entry found for key`, a raw `HashMap` index panic with no span, no message, and no mention of what in the program caused it — on any task whose parameter default called another task. `keel check` accepted the program and `keel run` executed it, so this was both a hard crash and an interpreter/backend divergence.
+
+```keel
+use std/io
+
+task bump() -> int {
+  return 1
+}
+
+task scale(value: int, by: int = bump() + 1) -> int {
+  return value * by
+}
+
+io.show(scale(10, 5))   # 50
+io.show(scale(10))      # 20 — `bump()` runs here
+io.show(scale(7))       # 14 — and again here
+```
+
+  Defaults are lowered once per declaration, before any is available to clone into a call site, and the arity check at a call unconditionally read the not-yet-built table. It now reads only which parameters *have* a default — known from the declaration itself, no lowering required — so a call inside a default resolves like any other. The default's expression is still evaluated per call, matching the interpreter: two call sites that omit the argument each run `bump()`.
+
+  One shape remains rejected, by name rather than by panic: a default that *omits* another call's defaulted argument (`task b(y: int = a())`, where `a`'s own parameter has a default). Lowering that means lowering callees' defaults first, which has no answer when two defaults call each other. Pass the argument explicitly.
+
 - **The type checker now rejects a branch of a value-position `if`/`when` that produces no value.** `SPEC.md` §8.1 has always called `x = if c { 1 }` a compile error, but nothing enforced it: the checker typed the expression as the `then` branch's type while `keel run` evaluated it to `none`. A binding the checker guaranteed was `int` held `none` at runtime, and the mismatch only surfaced later — `x + 1` failed with "Cannot apply `Add` to none and int" at *runtime*, past every static check.
 
 ```keel

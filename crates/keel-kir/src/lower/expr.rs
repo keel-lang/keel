@@ -47,7 +47,7 @@ use keel_syntax::lexer::Span;
 
 use keel_catalog::builtins::BuiltinResult;
 
-use super::{FnCtx, LowerCtx, LowerError, describe_ty};
+use super::{FnCtx, LowerCtx, LowerError, ParamDefault, describe_ty};
 use crate::ir::{self, CallTarget, Expr, MapId, StructId};
 use crate::span_table::SpanTable;
 use crate::types::KirType;
@@ -1083,8 +1083,19 @@ fn lower_call(
     let sig = lcx.funcs.get(name).ok_or_else(|| {
         LowerError::new(format!("unknown function `{name}`"), callee.span.clone())
     })?;
-    let defaults = &lcx.param_defaults[&sig.func_id];
-    let required = defaults.iter().filter(|d| d.is_none()).count();
+    // Every task gets an entry when signatures are collected, so a miss means
+    // a `FuncSig` reached this call site from outside `lower_program`'s own
+    // passes — a diagnostic, never an index panic.
+    let defaults = lcx.param_defaults.get(&sig.func_id).ok_or_else(|| {
+        LowerError::new(
+            format!("no parameter-default information recorded for `{name}`"),
+            callee.span.clone(),
+        )
+    })?;
+    let required = defaults
+        .iter()
+        .filter(|d| matches!(d, ParamDefault::Required))
+        .count();
 
     if args.len() > sig.params.len() || args.len() < required {
         return Err(LowerError::new(
@@ -1119,11 +1130,22 @@ fn lower_call(
     // the same pre-lowered `Expr` into every omitting call site, since KIR
     // `Expr` trees aren't shared/interned).
     for default in &defaults[args.len()..] {
-        lowered_args.push(
-            default
-                .clone()
-                .expect("arity check above proved every trailing param here has a default"),
-        );
+        match default {
+            ParamDefault::Lowered(expr) => lowered_args.push(expr.clone()),
+            // Reached only from inside another task's parameter default, while
+            // pass 2c is still lowering them — there is no `Expr` to clone yet.
+            // See `LowerCtx::param_defaults` and pass 2c in `lower/mod.rs`.
+            ParamDefault::NotLoweredYet => {
+                return Err(LowerError::unsupported(
+                    "omitting a defaulted argument in a call inside a parameter default (the \
+                     callee's own default isn't lowered yet — pass the argument explicitly)",
+                    call_span.clone(),
+                ));
+            }
+            ParamDefault::Required => {
+                unreachable!("arity check above proved every trailing param here has a default")
+            }
+        }
     }
 
     Ok(Expr::Call {
