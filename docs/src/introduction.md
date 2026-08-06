@@ -1,6 +1,6 @@
 <section class="keel-hero">
   <img class="keel-hero-logo" src="keel-logo.svg" alt="Keel" />
-  <a class="keel-version-pill" href="release-notes.html">v0.2.4 — latest release</a>
+  <a class="keel-version-pill" href="release-notes.html">v0.3.0 — latest release</a>
   <h1 class="keel-hero-title">The Keel Language</h1>
   <p class="keel-hero-tagline">A small, statically-typed language where AI agents are first-class citizens.</p>
   <div class="keel-hero-actions">
@@ -103,7 +103,7 @@ keel run examples/showcase.keel
 
 > **Alpha.** Keel is pre-1.0. Semver is **not** respected between 0.x minor versions, and breaking changes can land in patch releases.
 
-- **0.2.x** — current alpha. One module system (`use std/<name>` and local file imports), deny-by-default `@tools`, built-in `test` blocks.
+- **0.3.x** — current alpha. Debug Adapter Protocol (DAP) support, real sets with deduplication, tuple positional access, map/set mutation, and further progress on the native LLVM backend.
 - **0.x** — further pre-1.0 releases will keep breaking things where the design demands it. The [changelog](./changelog.md) flags every break.
 - **1.0.x** — first API-stable release. Semver begins.
 
