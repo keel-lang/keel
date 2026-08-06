@@ -13,7 +13,7 @@ use crate::lexer::Token;
 
 use super::common::{
     P, block_with, field_name, field_sep, ident, if_body, map_key, map_lit_key, newlines,
-    postfix_field_name, string_lit, when_arm, when_body,
+    postfix_field_name, string_lit, tuple_index_pair, when_arm, when_body,
 };
 use super::types::spanned_type_expr;
 
@@ -28,6 +28,17 @@ enum PostfixOp {
         args: Option<Vec<CallArg>>,
     },
     NullDotAccess(String),
+    /// Nested positional access, `t.0.1` — both indices arrive as one
+    /// `Token::Float` (see [`tuple_index_pair`]). `first_end` is where the
+    /// first index ends in the source; `null_dot` records whether the leading
+    /// operator was `?.`, which applies to the *first* index only.
+    NestedIndex {
+        first: String,
+        second: String,
+        first_end: usize,
+        args: Option<Vec<CallArg>>,
+        null_dot: bool,
+    },
     NullAssert,
     Call(Vec<CallArg>),
     /// Type cast: `as T` — the target annotation carries its source span.
@@ -428,6 +439,21 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
             just(Token::NullDot)
                 .ignore_then(postfix_field_name())
                 .map(PostfixOp::NullDotAccess),
+            // `t.0.1` / `t?.0.1` — one `Token::Float` holding two indices.
+            // Trailing `(args)` attaches to the second index, matching what
+            // `(t.0).1(x)` parses to.
+            choice((just(Token::Dot).to(false), just(Token::NullDot).to(true)))
+                .then(tuple_index_pair())
+                .then(call_args.clone().or_not())
+                .map(
+                    |((null_dot, (first, second, first_end)), args)| PostfixOp::NestedIndex {
+                        first,
+                        second,
+                        first_end,
+                        args,
+                        null_dot,
+                    },
+                ),
             just(Token::Bang).to(PostfixOp::NullAssert),
             call_args.clone().map(PostfixOp::Call),
             just(Token::As)
@@ -477,6 +503,39 @@ pub(super) fn expr_parser() -> P<SpannedExpr> {
                         Expr::NullFieldAccess(Box::new(lhs_spanned), field),
                         full_span,
                     ),
+                    PostfixOp::NestedIndex {
+                        first,
+                        second,
+                        first_end,
+                        args,
+                        null_dot,
+                    } => {
+                        // Expand to the same shape the parenthesised form
+                        // builds: `t.0.1` is `(t.0).1`.
+                        let inner_span = full_span.start..first_end;
+                        let object = Box::new(lhs_spanned);
+                        let inner = Node::new(
+                            if null_dot {
+                                Expr::NullFieldAccess(object, first)
+                            } else {
+                                Expr::FieldAccess(object, first)
+                            },
+                            inner_span,
+                        );
+                        match args {
+                            Some(args) => Node::new(
+                                Expr::MethodCall {
+                                    object: Box::new(inner),
+                                    method: second,
+                                    args,
+                                },
+                                full_span,
+                            ),
+                            None => {
+                                Node::new(Expr::FieldAccess(Box::new(inner), second), full_span)
+                            }
+                        }
+                    }
                     PostfixOp::NullAssert => {
                         Node::new(Expr::NullAssert(Box::new(lhs_spanned)), full_span)
                     }

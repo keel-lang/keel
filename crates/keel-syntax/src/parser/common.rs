@@ -122,11 +122,40 @@ pub(super) fn field_name() -> P<String> {
 /// AST variant — `field_name` can never yield an all-digit name, so there
 /// is no ambiguity with a real field.
 ///
-/// Only *flat* indexing parses: `t.0.1` lexes `0.1` as a single
-/// `Token::Float` (logos picks the longest match — see `lexer.rs`'s `Float`
-/// regex), so nested tuple access needs `(t.0).1`. Tracked separately.
+/// Handles one index per `.`; the two-indices-in-one-token case (`t.0.1`)
+/// is [`tuple_index_pair`].
 pub(super) fn postfix_field_name() -> P<String> {
     field_name().or(select! { Token::Integer(n) => n }).boxed()
+}
+
+/// The two indices of a *nested* positional access (`t.0.1`), recovered from
+/// the single token the lexer produced for them.
+///
+/// `0.1` matches the `Float` regex (`[0-9]+\.[0-9]+`) and logos picks the
+/// longest match, so the grammar never sees `Integer Dot Integer` here — see
+/// `lexer.rs`. Rather than make the lexer context-sensitive, postfix position
+/// splits the float's own text back apart. The split is total: the regex
+/// guarantees exactly one `.` with digits on both sides, so both halves are
+/// non-empty integer literals.
+///
+/// Only reachable after a `.` or `?.`, so a float literal in value position
+/// (`x = 0.1`) is untouched.
+///
+/// Yields the two indices plus the source offset just past the first one, so
+/// the caller can span the inner access exactly.
+pub(super) fn tuple_index_pair() -> P<(String, String, usize)> {
+    select! { Token::Float(f) => f }
+        .map_with_span(|f, span| {
+            let (first, second) = f
+                .split_once('.')
+                .expect("lexer's Float regex always contains a '.'");
+            (
+                first.to_string(),
+                second.to_string(),
+                span.start + first.len(),
+            )
+        })
+        .boxed()
 }
 
 /// Map / struct-literal key: a field_name or a string literal (strings

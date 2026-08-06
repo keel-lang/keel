@@ -376,9 +376,10 @@ xs: list[int] = [1, 2, 3]
          #        index `list[int]` with `[0]`
 ```
 
-Nested access needs parentheses — `(t.0).1` rather than `t.0.1` — because
-`0.1` lexes as a float literal. See [issue #185](https://github.com/keel-lang/keel/issues/185)
-and the [Tuples guide](guide/types.md#tuples).
+Nested access chains too — `t.0.1` reads the second element of the first —
+even though `0.1` looks like a float literal to the lexer. Parentheses are
+optional; `(t.0).1` means the same thing. See the
+[Tuples guide](guide/types.md#tuples).
 
 Destructuring (`(a, b) = pair`) and positional reads both compile through
 the native backend as well, matching the interpreter byte for byte.
