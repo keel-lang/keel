@@ -325,15 +325,15 @@ Tuples are structural, immutable. Single-element tuples are not a thing (`(str)`
 
 Positional access is bounds-checked at compile time — `pair.2` on a 2-tuple is a type error, not a runtime one — and `.N` is valid only on tuples. Lists and maps use subscripts (`xs[0]`), which is why `xs.0` is rejected. `?.` works too: `maybe_pair?.0`.
 
-Nested positional access currently needs parentheses:
+Nested positional access chains to any depth, with or without parentheses:
 
 ```keel
 t: ((int, int), int) = ((1, 2), 3)
-b = (t.0).1                       # ok
-# b = t.0.1                       # parse error — see below
+b = t.0.1                         # 2
+c = (t.0).1                       # 2 — identical
 ```
 
-This is a lexer limitation rather than a language rule: `0.1` matches the float-literal pattern and is claimed as a single token before the grammar sees two indices. Tracked in [#185](https://github.com/keel-lang/keel/issues/185); the parenthesized form is not going away.
+Each index is bounds-checked against its own tuple. `?.` applies to the index it is written on, so a nullable at every level needs `maybe?.0?.1`.
 
 ### 2.9 The `dynamic` type (FFI/interop only)
 

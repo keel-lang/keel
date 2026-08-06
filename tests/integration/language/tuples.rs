@@ -111,30 +111,141 @@ io.show("{maybe?.0}")
 }
 
 #[test]
-fn nested_tuple_access_requires_parentheses() {
-    // `t.0.1` cannot parse: the lexer's Float regex (`[0-9]+\.[0-9]+`) claims
-    // `0.1` as one token, and logos picks the longest match. Parenthesizing
-    // is the documented workaround; lifting the restriction is tracked
-    // separately. This test pins both halves so the follow-up has a target.
-    let parenthesized = r#"
+fn nested_tuple_access_parses_without_parentheses() {
+    // Issue #185: the lexer's Float regex (`[0-9]+\.[0-9]+`) claims `0.1` as
+    // one token, so the grammar never sees `Integer Dot Integer`. Postfix
+    // position splits that token back into two indices; both forms must give
+    // the same answer.
+    let src = r#"
+use std/io
+t: ((int, int), int) = ((1, 2), 3)
+io.show("{t.0.1} {(t.0).1}")
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "`t.0.1` must parse: {stderr}");
+    assert!(
+        stdout.contains("2 2"),
+        "bare and parenthesized forms must agree: {stdout}"
+    );
+}
+
+#[test]
+fn three_deep_positional_access() {
+    // `deep.0.0.1` lexes as `Ident Dot Float("0.0") Dot Integer("1")` — the
+    // split arm and the flat arm have to compose.
+    let src = r#"
+use std/io
+deep: (((int, str), int), int) = (((7, "x"), 8), 9)
+io.show("{deep.0.0.0} {deep.0.0.1} {deep.0.1} {deep.1}")
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "three-deep positional access must parse: {stderr}");
+    assert!(stdout.contains("7 x 8 9"), "expected `7 x 8 9`: {stdout}");
+}
+
+#[test]
+fn nested_index_bounds_errors_name_the_right_tuple() {
+    // The two indices must be checked against their own tuples, which only
+    // holds if the split produced nested `FieldAccess` nodes in the right
+    // order (outer index first).
+    let src = r#"
+t: ((int, int), int) = ((1, 2), 3)
+b = t.0.5
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "`.5` on the inner 2-tuple is out of bounds");
+    assert!(
+        stderr.contains("index 5") && stderr.contains("(int, int)"),
+        "inner index should be checked against the inner tuple: {stderr}"
+    );
+
+    let src = r#"
+t: ((int, int), int) = ((1, 2), 3)
+b = t.2.1
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "`.2` on the outer 2-tuple is out of bounds");
+    assert!(
+        stderr.contains("index 2") && stderr.contains("((int, int), int)"),
+        "outer index should be checked against the outer tuple: {stderr}"
+    );
+}
+
+#[test]
+fn float_literals_are_untouched_by_the_split() {
+    // The split arm only fires after `.` / `?.`. A float in value position —
+    // and the `5.minutes` duration sugar that shares the same lexer mechanic —
+    // must keep working.
+    let src = r#"
+use std/io
+f = 0.1
+io.show("{f} {5.minutes}")
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "float literals must still parse: {stderr}");
+    assert!(stdout.contains("0.1"), "expected the float back: {stdout}");
+}
+
+#[test]
+fn nested_positional_access_after_null_safe_index() {
+    // `?.` opens the access but covers the first index only — exactly like
+    // `o?.a.b` on a nullable struct, where the second `.` is a plain access.
+    // Both spellings must agree; `?.0?.1` is the short-circuiting form.
+    let present = r#"
+use std/io
+maybe: ((int, int), int)? = ((4, 5), 6)
+io.show("{maybe?.0.1} {(maybe?.0).1} {maybe?.0?.1}")
+"#;
+    let (ok, stdout, stderr) = run_inline(present, false);
+    assert!(ok, "`maybe?.0.1` must parse: {stderr}");
+    assert!(stdout.contains("5 5 5"), "all three must agree: {stdout}");
+
+    // On `none`, the trailing plain `.1` raises — the pre-existing behavior of
+    // any `?.`-opened chain, not something the split introduces.
+    let absent = r#"
+use std/io
+maybe: ((int, int), int)? = none
+io.show("{maybe?.0.1}")
+"#;
+    let (ok, _stdout, stderr) = run_inline(absent, false);
+    assert!(!ok, "a plain `.1` past a `none` must not silently succeed");
+    assert!(
+        stderr.contains("Cannot access `.1` on none"),
+        "expected the same error `(maybe?.0).1` raises: {stderr}"
+    );
+
+    let short_circuit = r#"
+use std/io
+maybe: ((int, int), int)? = none
+io.show("{maybe?.0?.1}")
+"#;
+    let (ok, stdout, stderr) = run_inline(short_circuit, false);
+    assert!(ok, "`?.0?.1` must short-circuit: {stderr}");
+    assert!(stdout.contains("none"), "expected `none`: {stdout}");
+}
+
+#[test]
+fn nested_positional_access_formatter_roundtrip() {
+    // The formatter drops the redundant parentheses in `(t.0).1`, so before
+    // #185 it turned working source into source that no longer parsed.
+    let src = r#"
 use std/io
 t: ((int, int), int) = ((1, 2), 3)
 io.show("{(t.0).1}")
 "#;
-    let (ok, stdout, stderr) = run_inline(parenthesized, false);
-    assert!(ok, "`(t.0).1` must work: {stderr}");
-    assert!(stdout.contains('2'), "expected `2`: {stdout}");
-
-    let unparenthesized = r#"
-t: ((int, int), int) = ((1, 2), 3)
-b = t.0.1
-"#;
-    let (ok, _stdout, stderr) = run_inline(unparenthesized, false);
-    assert!(!ok, "`t.0.1` is a known parse limitation, not valid today");
-    assert!(
-        stderr.contains("0.1"),
-        "error should show the Float token that swallowed the indices: {stderr}"
+    let once = keel_lang::session::fmt_source(src, "t.keel").expect("fmt once");
+    let twice = keel_lang::session::fmt_source(&once, "t.keel").expect("fmt twice");
+    assert_eq!(
+        once, twice,
+        "formatter not idempotent:\n--- once ---\n{once}\n--- twice ---\n{twice}"
     );
+    assert!(
+        once.contains("t.0.1"),
+        "formatter should print the unparenthesized form: {once}"
+    );
+    let (ok, stdout, stderr) = run_inline(&once, false);
+    assert!(ok, "formatted output must still run: {stderr}");
+    assert!(stdout.contains('2'), "expected `2`: {stdout}");
 }
 
 #[test]

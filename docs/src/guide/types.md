@@ -384,16 +384,25 @@ maybe: (str, int)? = ("hi", 7)
 io.show("{maybe?.0}")         # hi
 ```
 
-Nested positional access needs parentheses:
+Nested positional access chains, to any depth:
 
 ```keel
 t: ((int, int), int) = ((1, 2), 3)
 
-b = (t.0).1                   # 2
-# b = t.0.1                   # parse error
+b = t.0.1                     # 2
+c = (t.0).1                   # 2 — same thing, parentheses optional
 ```
 
-This is a lexer limitation, not a language rule — `0.1` matches the float-literal pattern and is claimed as a single token before the grammar sees two separate indices. Tracked in [issue #185](https://github.com/keel-lang/keel/issues/185). The parenthesised form works and will keep working.
+Each index is bounds-checked against its own tuple, so `t.0.5` reports against the inner `(int, int)` and `t.2.1` against the outer `((int, int), int)`.
+
+`?.` covers the index it is written on, not the whole chain — the same rule as `o?.a.b` on a nullable struct. Give every step that can be absent its own `?.`:
+
+```keel
+maybe: ((int, int), int)? = none
+
+io.show("{maybe?.0?.1}")      # none — short-circuits
+# io.show("{maybe?.0.1}")     # raises: cannot access `.1` on none
+```
 
 ## Function types
 

@@ -112,12 +112,13 @@ io.show(pair.1)
 fn nested_tuple_nests_as_a_nested_aggregate() {
     // Nested tuples are allowed where nested containers are not: a by-value
     // aggregate nests for free, with no `Value` marshaling
-    // (`is_tuple_element_ty`). Parenthesised read per SPEC §2.8 / #185.
+    // (`is_tuple_element_ty`). Both spellings of the nested read — `t.0.1`
+    // and `(t.0).1` — parse to the same AST, so one KIR path covers both.
     let source = r#"
 use std/io
 
 t: ((int, int), int) = ((1, 2), 3)
-io.show((t.0).1)
+io.show(t.0.1)
 io.show(t.1)
 "#;
     let compiled = compile_and_run(source);

@@ -151,15 +151,27 @@ maybe: (str, int)? = ("hi", 7)
 io.show("{maybe?.0}")             # hi
 
 nested: ((int, int), int) = ((1, 2), 3)
-io.show("{(nested.0).1}")         # 2 — parentheses required, see #185
+io.show("{nested.0.1}")           # 2 — chains to any depth
 ```
 
   Because tuples and lists share one runtime representation in v0.1, `.N` on a
   non-tuple is rejected by the type checker rather than the interpreter:
   `xs.0` on a `list[int]` reports *positional access `.0` is only valid on
-  tuples; index `list[int]` with `[0]`*. Nested access without parentheses
-  (`t.0.1`) still fails to parse — `0.1` matches the float-literal pattern and
-  is claimed as one token — tracked in #185.
+  tuples; index `list[int]` with `[0]`*.
+
+  Nested access (`t.0.1`) parses as well, which took a lexical fix rather than
+  a grammar one: `0.1` matches the float-literal regex and logos keeps the
+  longest match, so where two indices were written the parser saw a single
+  `Token::Float`. Postfix position — and only postfix position — now splits
+  that token back into its two indices, so a float literal in value position
+  (`x = 0.1`) and the `5.minutes` duration sugar are unaffected. `t.0.1` builds
+  exactly what `(t.0).1` builds, each index bounds-checked against its own
+  tuple. `?.` opens a nested access as well (`t?.0.1`), covering the index it
+  is written on — a nullable at every level wants `t?.0?.1`, the same rule that
+  already governs `o?.a.b` on a nullable struct. The fix also repairs `keel fmt`
+  on the old parenthesized workaround: the formatter drops redundant
+  parentheses, so it used to rewrite the working `(t.0).1` into `t.0.1`, which
+  then failed to parse.
 
   The native backend compiles tuples too: construction, positional reads, and
   positional destructuring (`(a, b) = pair`) lower through KIR and codegen, and
