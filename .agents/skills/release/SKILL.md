@@ -96,7 +96,18 @@ Must exit clean with no errors and no broken links.
 
 ### Stamp the release date and tagline (required — never skip)
 
-`CHANGELOG.md` and `docs/src/release-notes.md` both use an `[Unreleased]` section at the top. `docs/src/introduction.md` uses `%%VERSION%%` and `%%TAGLINE%%` placeholders. Stamp all of them now:
+`CHANGELOG.md` and `docs/src/release-notes.md` both use an `[Unreleased]` section at the top. Stamp both now.
+
+`docs/src/introduction.md`'s **version pill needs no edit** — it holds a
+`%%VERSION%%` placeholder that `.github/workflows/docs.yml` substitutes from
+`Cargo.toml` at docs-build time. Leave the placeholder in place; never write a
+literal version into it. The release tagline does not appear on that page at
+all: the hero's tagline is the permanent product one, and the per-release
+sentence lives in `CHANGELOG.md` and `docs/src/release-notes.md`.
+
+Its **"Versioning and Breaking Changes" bullet is hand-edited**, and only on a
+minor bump. On 0.N.0, rewrite the `- **0.N.x** — current alpha. …` line to name
+that release's headline capabilities. On a patch release, leave it alone.
 
 ```bash
 VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
@@ -113,29 +124,31 @@ Once the tagline is correct, stamp everything:
 ```bash
 # macOS requires sed -i '' (empty string); Linux accepts sed -i without it.
 # Use this portable form for both:
-sed -i '' "s/%%TAGLINE%%/${TAGLINE}/" docs/src/introduction.md
-sed -i '' "s/%%VERSION%%/${VERSION}/" docs/src/introduction.md
 sed -i '' '/^%%TAGLINE%%/d' CHANGELOG.md
 sed -i '' "s/^## \[Unreleased\]/## [${VERSION}] — ${TODAY}/" CHANGELOG.md
 sed -i '' "s/^## \[${VERSION}\]/## [Unreleased]\n\n%%TAGLINE%% update this line before releasing — one sentence summary of the release\n\n---\n\n## [${VERSION}]/" CHANGELOG.md
 sed -i '' "s/^## Unreleased/## v${VERSION} — ${TODAY}/" docs/src/release-notes.md
 sed -i '' "s/^## v${VERSION}/## Unreleased\n\n---\n\n## v${VERSION}/" docs/src/release-notes.md
-sed -i '' "s/\[${VERSION}\]/[%%VERSION%%]/" docs/src/introduction.md
 ```
 
 Verify:
 
 ```bash
-grep "Latest:" docs/src/introduction.md
+head -12 CHANGELOG.md
+grep -n '%%VERSION%%' docs/src/introduction.md
 ```
 
-Must show the real tagline (not `%%TAGLINE%%`) and `%%VERSION%%` restored as a placeholder.
+`CHANGELOG.md` must show a fresh `[Unreleased]` with the `%%TAGLINE%%` placeholder
+restored, above the stamped `[VERSION] — DATE` section. `introduction.md` must
+still contain `%%VERSION%%` — if that grep comes back empty, a literal version
+was written into the pill and the docs build will stop tracking `Cargo.toml`.
 
 ### Verify before committing:
 
 - `SPEC.md` — updated if the language surface changed.
 - `CHANGELOG.md` — `[Unreleased]` stamped to `[VERSION] — DATE`.
 - `Cargo.toml` — `version` bumped.
+- `docs/src/introduction.md` — `%%VERSION%%` still a placeholder; on a minor bump, the "Versioning and Breaking Changes" bullet rewritten for the new `0.N.x`.
 - `docs/status/features.json` — updated for any changed namespace, attribute, or CLI entry. `features.json` is the source of truth.
 
 ## Step 7a — Status Consistency
