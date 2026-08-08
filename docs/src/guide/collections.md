@@ -53,6 +53,14 @@ more = all.push("e")            # ["a", "b", "c", "d", "e"]
 
 All methods accept lambdas (`x => expr`) or task references.
 
+> **Lambdas don't capture outer variables.** A lambda body can only see its
+> own parameters and global names (tasks, agents, `self` inside an agent). It
+> cannot read a local declared outside it — `n = 10; xs.map(x => x + n)` is a
+> check error. Pass the value in another way instead, e.g. as a second
+> parameter via a named task: `xs.map(add_n)` where `add_n(x: int) -> int`
+> closes over nothing and takes everything it needs as arguments. See
+> [SPEC §7](https://github.com/keel-lang/keel/blob/main/SPEC.md#7-lambdas-and-first-class-functions).
+
 ### map — transform each element
 
 ```keel

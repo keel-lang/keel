@@ -8,7 +8,18 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% update this line before releasing — one sentence summary of the release
+%%TAGLINE%% Lambdas are now formally non-capturing, closing a check-vs-run soundness gap where a lambda reading an outer variable passed `keel check` and then failed at runtime.
+
+### Fixed
+
+- **A lambda reading an outer local variable passed `keel check` and then failed at `keel run`.** The interpreter's closures have never captured anything — `call_closure_inner` builds a fresh, disconnected environment for every call — but the checker type-checked a lambda body as a nested scope of the enclosing function, so it silently accepted a read of an outer local that would fail at runtime with `Undefined: <name>`. Lambdas are now formally non-capturing (SPEC §7): the checker rejects a lambda body that reads a name bound only in an enclosing local scope, with a diagnostic pointing at the identifier. `self.<field>` access inside a lambda is unaffected — it resolves through ambient per-call agent state, not lexical capture.
+
+```keel
+task main() {
+  n = 10
+  add_n = x => x + n   # now a check error: lambdas do not capture outer variables
+}
+```
 
 ---
 
