@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+---
+
+## v0.3.0 — 2026-08-06
+
 ### A call in a parameter default no longer crashes `keel build`
 
 `keel build --emit=kir` panicked — `no entry found for key`, with no span, no

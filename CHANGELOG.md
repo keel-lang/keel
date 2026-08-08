@@ -2,13 +2,19 @@
 
 All notable changes to Keel.
 
-> **Alpha.** Keel is v0.1. Breaking changes are expected between 0.x releases. Do not build production systems on 0.x.
+> **Alpha.** Keel is pre-1.0. Breaking changes are expected between 0.x releases. Do not build production systems on 0.x.
 
 > **Doc-update rule.** Any feature or spec change — added, updated, or removed — must update the docs in the same release. At minimum: `docs/src/release-notes.md` plus every guide page in `docs/src/guide/` (and `docs/src/examples/`, `docs/src/cli/`, `docs/src/config/` where applicable) that the change touches. `SPEC.md` is part of this rule. A release is not shipped until `mdbook build` runs clean over the updated pages.
 
 ## [Unreleased]
 
-%%TAGLINE%% A stdio Debug Adapter Protocol server lets editors like VS Code set breakpoints, step, and inspect variables — including live agent state — in a running Keel program, alongside the native LLVM backend now compiling, linking, and running the full M2 feature set (structs, enums, containers, tuples, nullable, string interpolation, raise/try/catch) byte-for-byte identical to the interpreter.
+%%TAGLINE%% update this line before releasing — one sentence summary of the release
+
+---
+
+## [0.3.0] — 2026-08-06
+
+Step through a running Keel program in any DAP-speaking editor — breakpoints, stepping, and live agent state — with sets that finally deduplicate, tuple positional access, and map/set mutation, while the LLVM backend behind `keel build` grows to compile and run the full M2 feature set byte-for-byte identical to the interpreter.
 
 ### Added
 
