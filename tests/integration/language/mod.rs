@@ -2,6 +2,7 @@ mod builtin_interfaces;
 mod control_flow;
 mod errors;
 mod interfaces;
+mod lambdas;
 mod lists;
 mod loops;
 mod maps;

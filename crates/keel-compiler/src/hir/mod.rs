@@ -275,6 +275,11 @@ struct Lowerer<'ast> {
     literal_kinds: HashMap<(usize, usize), LiteralKind>,
     diagnostics: Vec<TypeDiagnostic>,
     scopes: Vec<HashMap<String, SymbolId>>,
+    /// `scopes` indices at which a lambda body begins, innermost last.
+    /// Lambdas are non-capturing (SPEC §7): name resolution inside a lambda
+    /// body only searches `scopes[*lambda_boundaries.last()..]`, never the
+    /// frames belonging to the enclosing function.
+    lambda_boundaries: Vec<usize>,
     aliases: HashMap<String, TypeExpr>,
     structs: HashMap<String, Vec<Field>>,
     top_tasks: HashMap<String, Vec<Param>>,
@@ -295,6 +300,7 @@ impl<'ast> Lowerer<'ast> {
             literal_kinds: HashMap::new(),
             diagnostics: Vec::new(),
             scopes: vec![HashMap::new()],
+            lambda_boundaries: Vec::new(),
             aliases: HashMap::new(),
             structs: HashMap::new(),
             top_tasks: HashMap::new(),
@@ -854,6 +860,7 @@ impl<'ast> Lowerer<'ast> {
                 self.lower_when_arms(arms, expected);
             }
             crate::ast::Expr::Lambda { params, body } => {
+                self.lambda_boundaries.push(self.scopes.len());
                 self.push_scope();
                 for param in params {
                     self.define_local(&param.name, expr.span.clone());
@@ -863,6 +870,7 @@ impl<'ast> Lowerer<'ast> {
                     LambdaBody::Block(block) => self.lower_block(block, None),
                 }
                 self.pop_scope();
+                self.lambda_boundaries.pop();
             }
             crate::ast::Expr::Index { object, index } => {
                 self.lower_expr(object, None);
@@ -1004,8 +1012,11 @@ impl<'ast> Lowerer<'ast> {
         span: Span,
         emit_diagnostic: bool,
     ) -> Resolution {
-        let resolution = self
-            .scopes
+        // Lambdas are non-capturing: a name lookup started inside a lambda
+        // body may only see frames pushed at or after the lambda's own
+        // boundary, never the enclosing function's locals.
+        let boundary = self.lambda_boundaries.last().copied().unwrap_or(0);
+        let resolution = self.scopes[boundary..]
             .iter()
             .rev()
             .find_map(|scope| scope.get(name).copied())
@@ -1020,14 +1031,28 @@ impl<'ast> Lowerer<'ast> {
                     .unwrap_or(Resolution::UNRESOLVED)
             });
         if emit_diagnostic && matches!(resolution.kind, NameKind::Unresolved) {
-            match legacy_ambient_hint(name) {
-                Some(hint) => self
-                    .diagnostics
-                    .push(TypeDiagnostic::other(hint, span.clone())),
-                None => self.diagnostics.push(TypeDiagnostic::UndefinedName {
-                    name: name.to_string(),
-                    span: span.clone(),
-                }),
+            let outer_local = boundary > 0
+                && self.scopes[..boundary]
+                    .iter()
+                    .any(|scope| scope.contains_key(name));
+            if outer_local {
+                self.diagnostics.push(TypeDiagnostic::other(
+                    format!(
+                        "lambdas do not capture outer variables — `{name}` is declared \
+                         outside this lambda; pass it as a parameter instead"
+                    ),
+                    span.clone(),
+                ));
+            } else {
+                match legacy_ambient_hint(name) {
+                    Some(hint) => self
+                        .diagnostics
+                        .push(TypeDiagnostic::other(hint, span.clone())),
+                    None => self.diagnostics.push(TypeDiagnostic::UndefinedName {
+                        name: name.to_string(),
+                        span: span.clone(),
+                    }),
+                }
             }
         }
         self.references.insert(span_key(&span), resolution);

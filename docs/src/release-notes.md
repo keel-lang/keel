@@ -4,6 +4,24 @@
 
 ## Unreleased
 
+### A lambda reading an outer variable no longer passes `keel check`
+
+Closures have never captured anything at runtime — every lambda call built a
+fresh, disconnected environment — but the checker type-checked a lambda body
+as a nested scope of its enclosing function, so it silently accepted a read
+of an outer local that then failed at `keel run` with `Undefined: <name>`.
+Lambdas are now formally non-capturing: the checker rejects a lambda body
+that reads a name bound only in an enclosing local scope, pointing at the
+identifier. `self.<field>` access inside a lambda is unaffected — it
+resolves through ambient per-call agent state, not lexical capture.
+
+```keel
+task main() {
+  n = 10
+  add_n = x => x + n   # now a check error: lambdas do not capture outer variables
+}
+```
+
 ---
 
 ## v0.3.0 — 2026-08-06

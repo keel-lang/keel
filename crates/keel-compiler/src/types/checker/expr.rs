@@ -1153,7 +1153,7 @@ impl Checker<'_, '_> {
             }
 
             Expr::Lambda { params, body } => {
-                scope.push();
+                scope.push_lambda();
                 for p in params {
                     // Unannotated lambda parameters — type inference is not yet
                     // implemented; bind as InferenceLimitation to avoid cascade errors.
@@ -1179,7 +1179,7 @@ impl Checker<'_, '_> {
                         last
                     }
                 };
-                scope.pop();
+                scope.pop_lambda();
                 Ty::Func(
                     params
                         .iter()

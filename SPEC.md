@@ -1185,6 +1185,27 @@ scored = emails.map(e => {
 results = emails.map(triage)
 ```
 
+### Lambdas are non-capturing
+
+A lambda body sees only its own parameters, `self` (inside an agent context —
+ambient per-call state, not lexical capture), and global names (tasks, agents,
+imported symbols). It cannot read a local variable declared in an enclosing
+scope, including an enclosing lambda's parameters:
+
+```keel
+n = 10
+add_n = x => x + n        # check error: `n` is declared outside this lambda
+
+outer = x => (y => x + y) # check error: inner lambda can't see `x` either
+
+double = n => n * 2       # fine — `n` here is the lambda's own parameter
+```
+
+To use an outer value inside a lambda, pass it in explicitly — as a parameter,
+or by having the caller supply it as an argument to the function the lambda is
+passed to. Lambdas compile to plain function pointers; there is no captured
+environment to allocate or reference-count.
+
 ### Function types
 
 ```keel
