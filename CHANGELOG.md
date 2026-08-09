@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% The LLVM backend closes the gap on stdlib calls and string methods, and lambdas get formal non-capturing semantics.
+%%TAGLINE%% Named functions now work everywhere a lambda does, lambdas get formal non-capturing semantics, and the LLVM backend closes the gap on stdlib calls and string methods.
 
 ### Added
 
@@ -29,6 +29,18 @@ io.show("{"hello world".contains("world")}")  # true — now compiles
 task main() {
   n = 10
   add_n = x => x + n   # now a check error: lambdas do not capture outer variables
+}
+```
+
+- **A named task passed as a function value (`xs.map(triage)`) — documented in SPEC §7 as "named function as a value" — failed at runtime on every closure-taking value method.** `map`, `filter`, `find`, `any`, `all`, `reduce`, `sort(by:)`, and `Range.map`/`.filter` all matched only `Value::Closure` (a lambda literal), never `Value::Task` (what a bare reference to a top-level task evaluates to), so `keel check` accepted the call — its `Ty::Func` inference doesn't distinguish the two — and `keel run` rejected it with "argument must be a function." These 9 sites now dispatch through `Host::call_task` for a `Value::Task` argument, alongside the existing `Host::call_closure` path for a lambda:
+
+```keel
+task triage(x: int) -> int {
+  x * 2
+}
+
+task main() {
+  results = [1, 2, 3].map(triage)   # now works — was "map argument must be a function"
 }
 ```
 
