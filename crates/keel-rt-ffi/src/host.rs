@@ -69,7 +69,13 @@ impl Host for CompiledHost {
     }
 
     fn find_impl_task(&self, _value: &Value, _method: &str) -> Option<Arc<TaskDecl>> {
-        todo!("impl method dispatch is not compiled yet")
+        // Correct today, not just a stub: only a `Value::Struct` receiver can
+        // ever have an impl method, and no compiled call site can construct
+        // one yet — there is no value-method lowering in `keel-kir` at all
+        // (see `call_method_on_value` below), so this is never reached with
+        // a struct that might actually have one. Revisit once struct
+        // receivers lower.
+        None
     }
 
     fn call_namespace_method<'a>(
@@ -96,6 +102,17 @@ impl Host for CompiledHost {
             );
         };
         Box::pin(async move { closure(self, args).await })
+    }
+
+    fn call_method_on_value<'a>(
+        &'a mut self,
+        obj: Value,
+        method: &'a str,
+        args: Vec<CallArgValue>,
+    ) -> HostFuture<'a, Value> {
+        Box::pin(keel_runtime::interpreter::call_method_on_value(
+            self, obj, method, args,
+        ))
     }
 
     fn start_agent<'a>(&'a mut self, _name: &'a str) -> HostFuture<'a, ()> {

@@ -7,6 +7,7 @@ use miette::Result;
 use crate::ast::{CallArg, Expr, Node, SpannedExpr, StringPart, TypeExpr, UnOp, tuple_index};
 
 use super::environment::Environment;
+use super::host::Host;
 use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
 use super::stmt::{ExprFlow, StmtOutcome};
@@ -192,7 +193,7 @@ impl Interpreter {
                                 // Format specs receive this string for alignment; float
                                 // specs bypass it and coerce the raw numeric value.
                                 let base = match self
-                                    .call_method_on_value(v.clone(), "to_str", vec![], env)
+                                    .call_method_on_value(v.clone(), "to_str", vec![])
                                     .await
                                 {
                                     Ok(Value::String(s)) => s,
@@ -393,7 +394,7 @@ impl Interpreter {
                                 return Ok(ExprFlow::Value(v.clone()));
                             }
                             // Fall through to property-style method call.
-                            self.call_method_on_value(obj_v.clone(), field, vec![], env)
+                            self.call_method_on_value(obj_v.clone(), field, vec![])
                                 .await
                                 .map(ExprFlow::Value)
                                 .map_err(|_| runtime_error(format!("Value has no field `{field}`")))
@@ -419,7 +420,7 @@ impl Interpreter {
                         _ => {
                             // Zero-arg method fallback for properties
                             // like `.count`, `.length`, `.is_empty`.
-                            self.call_method_on_value(obj_v.clone(), field, vec![], env)
+                            self.call_method_on_value(obj_v.clone(), field, vec![])
                                 .await
                                 .map(ExprFlow::Value)
                                 .map_err(|_| {
@@ -750,7 +751,7 @@ impl Interpreter {
                         )));
                     }
                     // Otherwise: method on a value (e.g., list.map).
-                    self.call_method_on_value(obj_val, method, arg_values, env)
+                    self.call_method_on_value(obj_val, method, arg_values)
                         .await
                         .map(ExprFlow::Value)
                 }

@@ -70,6 +70,14 @@ pub trait Host: Send {
         args: Vec<CallArgValue>,
     ) -> HostFuture<'a, Value>;
 
+    /// Dispatch a value method (`xs.map`, `s.upper`, …) by name.
+    fn call_method_on_value<'a>(
+        &'a mut self,
+        obj: Value,
+        method: &'a str,
+        args: Vec<CallArgValue>,
+    ) -> HostFuture<'a, Value>;
+
     // ── agent lifecycle ───────────────────────────────────────────────────
 
     /// Start an agent (runs `@on_start` and registers the live instance).
@@ -222,6 +230,17 @@ impl Host for Interpreter {
         args: Vec<CallArgValue>,
     ) -> HostFuture<'a, Value> {
         Box::pin(Interpreter::call_namespace_method(self, ns, method, args))
+    }
+
+    fn call_method_on_value<'a>(
+        &'a mut self,
+        obj: Value,
+        method: &'a str,
+        args: Vec<CallArgValue>,
+    ) -> HostFuture<'a, Value> {
+        Box::pin(super::methods::call_method_on_value(
+            self, obj, method, args,
+        ))
     }
 
     fn start_agent<'a>(&'a mut self, name: &'a str) -> HostFuture<'a, ()> {
@@ -453,6 +472,15 @@ impl Host for MockHost {
         _args: Vec<CallArgValue>,
     ) -> HostFuture<'a, Value> {
         unimplemented!("MockHost does not support call_namespace_method")
+    }
+
+    fn call_method_on_value<'a>(
+        &'a mut self,
+        _obj: Value,
+        _method: &'a str,
+        _args: Vec<CallArgValue>,
+    ) -> HostFuture<'a, Value> {
+        unimplemented!("MockHost does not support call_method_on_value")
     }
 
     fn start_agent<'a>(&'a mut self, _name: &'a str) -> HostFuture<'a, ()> {
