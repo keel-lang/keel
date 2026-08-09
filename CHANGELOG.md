@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Lambdas are now formally non-capturing, closing a check-vs-run soundness gap where a lambda reading an outer variable passed `keel check` and then failed at runtime.
+%%TAGLINE%% Lambdas are now formally non-capturing, closing a check-vs-run soundness gap, and the LLVM backend gains full-type namespace-call results toward M3.
 
 ### Fixed
 
@@ -19,6 +19,15 @@ task main() {
   n = 10
   add_n = x => x + n   # now a check error: lambdas do not capture outer variables
 }
+```
+
+- **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
+
+```keel
+use std/math
+use std/io
+
+io.show("{math.sqrt(4.0)}")   # now compiles and runs — was a codegen panic
 ```
 
 ---

@@ -223,7 +223,7 @@ fn emit_call<'ctx>(
     let func_id = match target {
         CallTarget::Fn(id) => id,
         CallTarget::Ns { ns_id, method_id } => {
-            return crate::ns_call::emit_ns_call(fcx, ns_id, method_id, args, span);
+            return crate::ns_call::emit_ns_call(fcx, ns_id, method_id, args, ty, span);
         }
         CallTarget::Rt(rt_fn) => return crate::rt_call::emit_rt_call(fcx, rt_fn, args, ty),
     };
