@@ -4,6 +4,26 @@
 
 ## Unreleased
 
+### A named task now works everywhere a lambda does
+
+`results = emails.map(triage)` — SPEC §7's own documented "named function as
+a value" example — failed at runtime on every closure-taking value method
+(`map`, `filter`, `find`, `any`, `all`, `reduce`, `sort(by:)`, `Range.map`/
+`.filter`). Each one matched only a lambda literal, never a bare reference
+to a top-level task, so `keel check` accepted the call but `keel run`
+rejected it with "argument must be a function." Named tasks now dispatch
+correctly alongside lambdas everywhere a function value is expected:
+
+```keel
+task triage(x: int) -> int {
+  x * 2
+}
+
+task main() {
+  results = [1, 2, 3].map(triage)   # now works
+}
+```
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method

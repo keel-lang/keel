@@ -22,6 +22,33 @@ const SET_LIST_METHODS: &[&str] = &[
     "reverse", "flatten", "take", "skip", "zip", "first", "last",
 ];
 
+/// Whether `v` is something [`call_fn_value`] can invoke — used by
+/// closure-taking arms to fail fast, with their own specific message, before
+/// entering a loop that calls it repeatedly.
+fn is_fn_value(v: &Value) -> bool {
+    matches!(v, Value::Closure(..) | Value::Task(..))
+}
+
+/// Invokes a value used as a function argument to a closure-taking method
+/// (`map`, `filter`, `sort(by:)`, …) — issue #216. `Value::Closure` (a
+/// lambda literal) dispatches through `Host::call_closure` as before;
+/// `Value::Task` (a named task used as a value, SPEC §7 "named function as a
+/// value" — `globals` holds one `Value::Task` per top-level task,
+/// `interpreter/decl.rs`) now dispatches through `Host::call_task` instead
+/// of being rejected. Callers that need a fast, specific "expects a
+/// function" error before their loop starts should check [`is_fn_value`]
+/// first; this function's own fallback message is generic.
+async fn call_fn_value(host: &mut dyn Host, f: &Value, args: Vec<CallArgValue>) -> Result<Value> {
+    match f {
+        Value::Closure(params, body) => host.call_closure(params, body, args).await,
+        Value::Task(name, decl) => host.call_task(name, decl, args).await,
+        other => Err(runtime_error(format!(
+            "expected a function, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
 /// Total ordering over key values produced by `sort_by` closures.
 /// Matches the same primitive ordering used by `.sort()`.
 fn compare_keys(a: &Value, b: &Value) -> std::cmp::Ordering {
@@ -299,52 +326,48 @@ pub async fn call_method_on_value(
             Value::None
         }),
         (Value::Range(lo, hi), "map") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("map expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("map argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("map argument must be a function"));
+            }
             let count = if lo <= hi { (hi - lo + 1) as usize } else { 0 };
             let mut out = Vec::with_capacity(count);
             for n in *lo..=*hi {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: Value::Integer(n),
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: Value::Integer(n),
+                    }],
+                )
+                .await?;
                 out.push(res);
             }
             Ok(Value::List(out))
         }
         (Value::Range(lo, hi), "filter") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("filter expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("filter argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("filter argument must be a function"));
+            }
             let mut out = Vec::new();
             for n in *lo..=*hi {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: Value::Integer(n),
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: Value::Integer(n),
+                    }],
+                )
+                .await?;
                 if res.is_truthy() {
                     out.push(Value::Integer(n));
                 }
@@ -367,51 +390,47 @@ pub async fn call_method_on_value(
         (Value::List(items), "first") => Ok(items.first().cloned().unwrap_or(Value::None)),
         (Value::List(items), "last") => Ok(items.last().cloned().unwrap_or(Value::None)),
         (Value::List(items), "map") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("map expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("map argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("map argument must be a function"));
+            }
             let mut out = Vec::with_capacity(items.len());
             for item in items.iter().cloned() {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: item,
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: item,
+                    }],
+                )
+                .await?;
                 out.push(res);
             }
             Ok(Value::List(out))
         }
         (Value::List(items), "filter") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("filter expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("filter argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("filter argument must be a function"));
+            }
             let mut out = Vec::new();
             for item in items.iter().cloned() {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: item.clone(),
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: item.clone(),
+                    }],
+                )
+                .await?;
                 if res.is_truthy() {
                     out.push(item);
                 }
@@ -426,25 +445,23 @@ pub async fn call_method_on_value(
             Ok(Value::List(result))
         }
         (Value::List(items), "any") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("any expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("any: argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("any: argument must be a function"));
+            }
             for item in items.iter().cloned() {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: item,
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: item,
+                    }],
+                )
+                .await?;
                 if res.is_truthy() {
                     return Ok(Value::Bool(true));
                 }
@@ -452,25 +469,23 @@ pub async fn call_method_on_value(
             Ok(Value::Bool(false))
         }
         (Value::List(items), "all") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("all expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("all: argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("all: argument must be a function"));
+            }
             for item in items.iter().cloned() {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: item,
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: item,
+                    }],
+                )
+                .await?;
                 if !res.is_truthy() {
                     return Ok(Value::Bool(false));
                 }
@@ -478,25 +493,23 @@ pub async fn call_method_on_value(
             Ok(Value::Bool(true))
         }
         (Value::List(items), "find") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("find expects a function argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("find: argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("find: argument must be a function"));
+            }
             for item in items.iter().cloned() {
-                let res = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![CallArgValue {
-                            name: None,
-                            value: item.clone(),
-                        }],
-                    )
-                    .await?;
+                let res = call_fn_value(
+                    host,
+                    &f,
+                    vec![CallArgValue {
+                        name: None,
+                        value: item.clone(),
+                    }],
+                )
+                .await?;
                 if res.is_truthy() {
                     return Ok(item);
                 }
@@ -504,32 +517,30 @@ pub async fn call_method_on_value(
             Ok(Value::None)
         }
         (Value::List(items), "reduce") => {
-            let closure = args
+            let f = args
                 .first()
                 .map(|a| a.value.clone())
                 .ok_or_else(|| runtime_error("reduce expects a function as first argument"))?;
-            let (params, body) = match closure {
-                Value::Closure(p, b) => (p, b),
-                _ => return Err(runtime_error("reduce: first argument must be a function")),
-            };
+            if !is_fn_value(&f) {
+                return Err(runtime_error("reduce: first argument must be a function"));
+            }
             let mut acc = args.get(1).map(|a| a.value.clone()).unwrap_or(Value::None);
             for item in items.iter().cloned() {
-                acc = host
-                    .call_closure(
-                        &params,
-                        &body,
-                        vec![
-                            CallArgValue {
-                                name: None,
-                                value: acc,
-                            },
-                            CallArgValue {
-                                name: None,
-                                value: item,
-                            },
-                        ],
-                    )
-                    .await?;
+                acc = call_fn_value(
+                    host,
+                    &f,
+                    vec![
+                        CallArgValue {
+                            name: None,
+                            value: acc,
+                        },
+                        CallArgValue {
+                            name: None,
+                            value: item,
+                        },
+                    ],
+                )
+                .await?;
             }
             Ok(acc)
         }
@@ -584,23 +595,21 @@ pub async fn call_method_on_value(
                 .find(|a| a.name.as_deref() == Some("by"))
                 .map(|a| a.value.clone());
             if let Some(by) = by_closure {
-                let (params, body) = match by {
-                    Value::Closure(p, b) => (p, b),
-                    _ => return Err(runtime_error("sort `by:` argument must be a function")),
-                };
+                if !is_fn_value(&by) {
+                    return Err(runtime_error("sort `by:` argument must be a function"));
+                }
                 // Phase 1: compute all keys async, then sort synchronously.
                 let mut keyed: Vec<(Value, Value)> = Vec::with_capacity(items.len());
                 for item in items.iter().cloned() {
-                    let key = host
-                        .call_closure(
-                            &params,
-                            &body,
-                            vec![CallArgValue {
-                                name: None,
-                                value: item.clone(),
-                            }],
-                        )
-                        .await?;
+                    let key = call_fn_value(
+                        host,
+                        &by,
+                        vec![CallArgValue {
+                            name: None,
+                            value: item.clone(),
+                        }],
+                    )
+                    .await?;
                     match &key {
                         Value::Integer(_) | Value::Float(_) | Value::String(_) => {}
                         other => {
