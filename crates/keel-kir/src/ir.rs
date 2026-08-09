@@ -447,7 +447,7 @@ pub enum Expr {
 }
 
 /// What an `Expr::Call` invokes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CallTarget {
     /// Direct call to another compiled Keel task.
     Fn(FuncId),
@@ -461,6 +461,16 @@ pub enum CallTarget {
     /// to codegen... synchronous `CallTarget::Rt` calls into the container
     /// ABI from day one"), never inline LLVM logic.
     Rt(RtFn),
+    /// A value-method dispatch (`s.upper()`, `s.contains(x)`, …) — issue
+    /// #214. Unlike `Ns`, there's no numeric id: value methods aren't in
+    /// the `keel-catalog` namespace registry, they're a hardcoded match in
+    /// `keel_runtime::interpreter::call_method_on_value`, so `method` is
+    /// carried as a name and resolved by `keel_rt_call_value_method` at
+    /// runtime. The associated `Expr::Call`'s `args[0]` is the receiver;
+    /// `args[1..]` are the method's own arguments (`lower_str_method_call`).
+    /// Only a `Str` receiver lowers today — see its doc for the closure-free
+    /// method subset.
+    ValueMethod { method: String },
 }
 
 /// One `keel-rt-ffi` container-ABI entry point. Each maps to exactly one

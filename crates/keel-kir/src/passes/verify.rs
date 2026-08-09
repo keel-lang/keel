@@ -385,6 +385,7 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
                     verify_ns_call(*ns_id, *method_id, args, *ty)
                 }
                 CallTarget::Rt(rt_fn) => verify_rt_call(program, *rt_fn, args, *ty),
+                CallTarget::ValueMethod { method } => verify_value_method_call(method, args, *ty),
             }
         }
         Expr::MakeStruct { struct_id, fields } => {
@@ -680,6 +681,37 @@ fn verify_ns_call(ns_id: u16, method_id: u16, args: &[Expr], ty: KirType) -> Res
         ));
     }
     Ok(())
+}
+
+/// Verifies a `CallTarget::ValueMethod` call shape. Unlike `Ns`, there is no
+/// catalog to cross-check arity/result type against (value methods aren't
+/// registered there — `lower_str_method_call` is the sole source of truth
+/// for which methods/arities exist), so this only checks the structural
+/// invariant every value-method call must satisfy: a `Str` receiver in
+/// `args[0]` and a result type in the closure-free subset `keel-codegen`
+/// can actually unbox (`rt_call::unbox_value`). Keep this arm's type set in
+/// sync when extending `lower_str_method_call`'s allowlist — e.g. adding
+/// `split` (a `List` result) needs a new arm here too, or it fails as a
+/// confusing verify error instead of a clear "not yet supported" one at the
+/// codegen boundary that actually can't handle it.
+fn verify_value_method_call(method: &str, args: &[Expr], ty: KirType) -> Result<(), String> {
+    let [receiver, ..] = args else {
+        return Err(format!(
+            "value-method call `.{method}` has no receiver argument"
+        ));
+    };
+    if receiver.ty() != KirType::Str {
+        return Err(format!(
+            "value-method call `.{method}` receiver is {}, only Str lowers today",
+            receiver.ty()
+        ));
+    }
+    match ty {
+        KirType::I64 | KirType::Bool | KirType::Str => Ok(()),
+        other => Err(format!(
+            "value-method call `.{method}` result is {other}, expected int/bool/str"
+        )),
+    }
 }
 
 /// Verifies a `CallTarget::Rt` call shape against the arity/type each
