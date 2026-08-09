@@ -7,10 +7,26 @@
 //! ABI shapes byte-for-byte identical to `keel-rt-ffi`'s `#[repr(C)]`
 //! definitions (`abi::keel_box_*`, `ns_dispatch::KeelRes`).
 //!
-//! M1 only wires `Unit`-returning methods (`io.show`, `log.*` — enforced by
-//! `keel-kir` rejecting any other result type for now), so the returned
-//! `KeelRes` is built with the right calling convention but never inspected:
-//! there is no `try`/`catch` lowering yet to branch on `is_err`.
+//! A non-`Unit`-returning method's `KeelRes` payload (a boxed `*const
+//! Value`) is unboxed to the call's declared `KirType` via
+//! `rt_call::unbox_value` on the way out — `Unit`-returning methods
+//! (`io.show`, `log.*`) skip that step, same as a void `CallTarget::Fn`
+//! call. `keel-kir`'s `result_ty_to_kir` (`lower/expr.rs`) rejects any
+//! catalog result other than `Unit`/`Int`/`Float`/`Bool`/`Str` at lowering
+//! time — `Nullable`/`Uuid`/`Dynamic`/list-shaped results all need Value
+//! marshaling that doesn't exist yet — so those are the only `KirType`s
+//! `unbox_value` ever has to handle here; its `Struct`/`Enum`/`Nullable`/
+//! `Tuple` error arms are unreachable from this call site.
+//!
+//! There is no `try`/`catch` lowering yet for `CallTarget::Ns`, so `is_err`
+//! is not branched on (`raise.rs`): a namespace method that raises still
+//! unboxes `payload`, which `keel_rt_call_ns` always sets to a boxed
+//! `Value::String(report.to_string())` on the error path (`ns_dispatch.rs`)
+//! — never null. Unboxing it against a non-`Str` result type therefore hits
+//! `keel_unbox_*`'s own `unreachable!()` variant check (a clean panic, not
+//! UB), not a crash on a dangling pointer. Wiring the error path into
+//! Keel-level `raise`/`try`/`catch` is a later M3 concern tracked
+//! separately from this issue.
 
 use inkwell::AddressSpace;
 use inkwell::module::Module;
@@ -169,6 +185,7 @@ pub(crate) fn emit_ns_call<'ctx>(
     ns_id: u16,
     method_id: u16,
     args: &[Expr],
+    ty: KirType,
     span_id: u32,
 ) -> Result<BasicValueEnum<'ctx>, CodegenError> {
     let ptr_type = fcx.context.ptr_type(AddressSpace::default());
@@ -242,7 +259,8 @@ pub(crate) fn emit_ns_call<'ctx>(
         )
     });
 
-    fcx.builder
+    let call = fcx
+        .builder
         .build_call(
             keel_rt_call_ns,
             &[
@@ -257,8 +275,20 @@ pub(crate) fn emit_ns_call<'ctx>(
         )
         .map_err(llvm_err)?;
 
-    // M1 only wires Unit-returning methods (enforced by keel-kir's
-    // lower_ns_call), so the caller (expr::emit_call) never inspects this —
-    // same convention as a CallTarget::Fn void call.
-    Ok(fcx.context.bool_type().const_zero().into())
+    if matches!(ty, KirType::Unit) {
+        // No caller ever inspects a Unit-typed result (same convention as a
+        // void CallTarget::Fn call) — skip extracting/unboxing the payload.
+        return Ok(fcx.context.bool_type().const_zero().into());
+    }
+
+    let res = match call.try_as_basic_value() {
+        ValueKind::Basic(v) => v.into_struct_value(),
+        ValueKind::Instruction(_) => unreachable!("keel_rt_call_ns returns KeelRes, never void"),
+    };
+    let payload = fcx
+        .builder
+        .build_extract_value(res, 1, "ns_call.payload")
+        .map_err(llvm_err)?
+        .into_pointer_value();
+    crate::rt_call::unbox_value(fcx, payload, ty)
 }

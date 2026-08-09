@@ -22,6 +22,23 @@ task main() {
 }
 ```
 
+### The native backend no longer miscompiles a scalar-returning namespace call
+
+`emit_ns_call` was written for M1's `io.show`/`log.*`-only calls and always
+returned a hardcoded `i1 false`, discarding the real result — but nothing in
+`keel-kir`'s lowering restricted `CallTarget::Ns` to `Unit` results, so a
+scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used as a
+value passed lowering and then panicked codegen on a type mismatch. It now
+unboxes the namespace call's payload to its real result type, matching the
+interpreter:
+
+```keel
+use std/math
+use std/io
+
+io.show("{math.sqrt(4.0)}")   # now compiles and runs — was a codegen panic
+```
+
 ---
 
 ## v0.3.0 — 2026-08-06
