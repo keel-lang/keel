@@ -84,3 +84,26 @@ pub(crate) fn block_on_namespace_call(
         handle.block_on(host.call_namespace_method(ns, method, args))
     })
 }
+
+/// Dispatches a value-method call (`xs.map`, `s.upper`, …) through the
+/// current thread's `CompiledHost`, blocking this (synchronous, LLVM-emitted)
+/// call site until the async dispatch completes. Used by
+/// [`crate::value_dispatch::keel_rt_call_value_method`].
+///
+/// # Panics
+///
+/// If called from a thread `keel_rt_start` never ran on.
+pub(crate) fn block_on_value_method_call(
+    obj: Value,
+    method: &str,
+    args: Vec<CallArgValue>,
+) -> miette::Result<Value> {
+    CONTEXT.with(|c| {
+        let mut binding = c.borrow_mut();
+        let (host, handle) = binding
+            .as_mut()
+            .expect("keel_rt_call_value_method invoked on a thread keel_rt_start never ran on");
+        let handle = handle.clone();
+        handle.block_on(host.call_method_on_value(obj, method, args))
+    })
+}

@@ -8,7 +8,18 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Lambdas are now formally non-capturing, closing a check-vs-run soundness gap, and the LLVM backend gains full-type namespace-call results toward M3.
+%%TAGLINE%% The LLVM backend closes the gap on stdlib calls and string methods, and lambdas get formal non-capturing semantics.
+
+### Added
+
+- **The native backend compiles `str` value methods** (`s.upper()`, `s.contains(x)`, `s.length()`, `s.is_empty()`, `s.lower()`, `s.trim()`/`.strip()`, `s.starts_with(x)`, `s.ends_with(x)`, `s.replace(a, b)`) — previously rejected outright by `keel build --emit=kir` with a generic "method call" error, even though `keel check`/`keel run` supported them. A new `keel_rt_call_value_method` FFI entry point dispatches through the exact same `call_method_on_value` match arms the interpreter uses (issue #213), so the compiled and interpreted paths can't drift. Closure-taking methods (`.map`/`.filter`/…) and non-`str` receivers still aren't lowered — that needs lambdas as values first (#114):
+
+```keel
+use std/io
+
+io.show("keel".upper())               # KEEL — now compiles
+io.show("{"hello world".contains("world")}")  # true — now compiles
+```
 
 ### Fixed
 

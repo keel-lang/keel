@@ -4,6 +4,24 @@
 
 ## Unreleased
 
+### The native backend compiles `str` value methods
+
+`keel build --emit=kir` used to reject any `str` value method
+(`s.upper()`, `s.contains(x)`, …) outright with a generic "method call"
+error, even though `keel check`/`keel run` supported them fine. A new
+runtime dispatch entry point routes a compiled call through the exact same
+match arms the interpreter uses, so the two paths can't drift:
+
+```keel
+use std/io
+
+io.show("keel".upper())                       # KEEL — now compiles
+io.show("{"hello world".contains("world")}")   # true — now compiles
+```
+
+Closure-taking methods (`.map`/`.filter`/…) and non-`str` receivers still
+aren't lowered yet — that needs lambdas as values first.
+
 ### A lambda reading an outer variable no longer passes `keel check`
 
 Closures have never captured anything at runtime — every lambda call built a

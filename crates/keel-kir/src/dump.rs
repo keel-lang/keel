@@ -242,7 +242,7 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
             format!("({}{})", unop_symbol(*op), fmt_expr(program, func, operand))
         }
         Expr::Call { target, args, .. } => {
-            let name = call_target_name(program, *target);
+            let name = call_target_name(program, target.clone());
             let args = args
                 .iter()
                 .map(|a| fmt_expr(program, func, a))
@@ -342,6 +342,7 @@ fn call_target_name(program: &KirProgram, target: CallTarget) -> String {
             .map(|m| format!("{}.{}", m.namespace, m.name))
             .unwrap_or_else(|| format!("ns#{ns_id}.method#{method_id}")),
         CallTarget::Rt(rt_fn) => format!("rt.{}", rt_fn_name(rt_fn)),
+        CallTarget::ValueMethod { method } => format!(".{method}"),
     }
 }
 

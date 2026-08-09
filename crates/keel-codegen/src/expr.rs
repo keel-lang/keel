@@ -57,7 +57,7 @@ pub(crate) fn emit_expr<'ctx>(
             args,
             ty,
             span,
-        } => emit_call(fcx, *target, args, *ty, *span),
+        } => emit_call(fcx, target.clone(), args, *ty, *span),
         Expr::MakeStruct { struct_id, fields } => emit_make_struct(fcx, *struct_id, fields),
         Expr::FieldGet {
             base,
@@ -226,6 +226,9 @@ fn emit_call<'ctx>(
             return crate::ns_call::emit_ns_call(fcx, ns_id, method_id, args, ty, span);
         }
         CallTarget::Rt(rt_fn) => return crate::rt_call::emit_rt_call(fcx, rt_fn, args, ty),
+        CallTarget::ValueMethod { method } => {
+            return crate::value_call::emit_value_method_call(fcx, &method, args, ty, span);
+        }
     };
     let callee = fcx.functions[func_id]
         .expect("declare_functions declares every non-toplevel FuncId before any body is emitted");

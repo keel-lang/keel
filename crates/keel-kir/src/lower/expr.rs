@@ -423,8 +423,11 @@ pub(crate) fn lower_expr(
             // shadowed by a local — mirrors the checker's "lexical locals
             // shadow globals" precedence (`db = db.connect(...)` rebinds
             // `db` to a connection value; see `checker/expr.rs`). Anything
-            // else (a real value method call, `xs.map(f)`) isn't lowered
-            // yet — value methods land alongside the container ABI (M2+).
+            // else is a real value method call, dispatched below by the
+            // receiver's KirType — list/map/set through the container ABI,
+            // str through `CallTarget::ValueMethod` (issue #214). A
+            // closure-taking method (`xs.map(f)`) still isn't lowered:
+            // `ast::Expr::Lambda` itself is a flat rejection (issue #114).
             if let ast::Expr::Ident(obj_name) = &object.kind
                 && ctx.resolve(obj_name).is_none()
                 && let Some(namespace) = lcx.ns_bindings.get(obj_name)
@@ -441,6 +444,9 @@ pub(crate) fn lower_expr(
                 }
                 KirType::Set(_) => {
                     lower_set_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
+                }
+                KirType::Str => {
+                    lower_str_method_call(object_e, method, args, ctx, lcx, table, &expr.span)
                 }
                 _ => Err(LowerError::unsupported("method call", expr.span.clone())),
             }
@@ -1455,6 +1461,92 @@ fn lower_list_method_call(
             call_span.clone(),
         )),
     }
+}
+
+/// Lowers a value method call on a `str`-typed receiver (issue #214) via
+/// `CallTarget::ValueMethod` — dispatched at runtime through
+/// `keel_rt_call_value_method` to the exact same
+/// `keel_runtime::interpreter::call_method_on_value` match arms the
+/// interpreter uses (`crates/keel-runtime/src/interpreter/methods.rs`),
+/// unlike list/map/set methods above, which go through the dedicated
+/// container-ABI `CallTarget::Rt` ops instead.
+///
+/// Only the closure-free, `Fixed`-scalar-result subset lowers: everything
+/// else (`split`/`to_int`/`to_float`/… — list or nullable results need Value
+/// marshaling `rt_call::unbox_value` doesn't support yet) stays rejected
+/// with a clear "M3 concern" diagnostic, same convention as `lower_ns_call`.
+fn lower_str_method_call(
+    object_e: Expr,
+    method: &str,
+    args: &[ast::CallArg],
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    call_span: &Span,
+) -> Result<Expr, LowerError> {
+    debug_assert!(
+        matches!(object_e.ty(), KirType::Str),
+        "caller only invokes lower_str_method_call on a KirType::Str receiver"
+    );
+    for arg in args {
+        if arg.name.is_some() || arg.spread {
+            return Err(LowerError::unsupported(
+                "named or spread arguments to a str method call",
+                arg.value.span.clone(),
+            ));
+        }
+    }
+
+    let result_ty = match method {
+        "length" | "len" | "count" => KirType::I64,
+        "is_empty" | "contains" | "starts_with" | "ends_with" => KirType::Bool,
+        "upper" | "lower" | "trim" | "strip" | "replace" => KirType::Str,
+        other => {
+            return Err(LowerError::unsupported(
+                &format!(
+                    "str method `{other}` (only length/len/count/is_empty/upper/lower/trim/\
+                     strip/contains/starts_with/ends_with/replace are lowered so far)"
+                ),
+                call_span.clone(),
+            ));
+        }
+    };
+    let expected_arity: usize = match method {
+        "length" | "len" | "count" | "is_empty" | "upper" | "lower" | "trim" | "strip" => 0,
+        "contains" | "starts_with" | "ends_with" => 1,
+        "replace" => 2,
+        _ => unreachable!("every method arm above is covered by the result_ty match"),
+    };
+    if args.len() != expected_arity {
+        return Err(LowerError::new(
+            format!(
+                "`{method}` takes {expected_arity} argument(s), got {}",
+                args.len()
+            ),
+            call_span.clone(),
+        ));
+    }
+
+    let span_id = table.intern(call_span.clone());
+    // The receiver was lowered before any argument, so it's their left
+    // sibling in evaluation order — same hoist-ordering convention as
+    // `lower_ns_call`'s argument loop.
+    let mut lowered_args = vec![object_e];
+    for arg in args {
+        let mark = ctx.hoist_mark();
+        let arg_e = lower_expr_expecting(&arg.value, KirType::Str, ctx, lcx, table)?;
+        ctx.keep_order(mark, &mut lowered_args, &arg.value.span)?;
+        lowered_args.push(arg_e);
+    }
+
+    Ok(Expr::Call {
+        target: CallTarget::ValueMethod {
+            method: method.to_string(),
+        },
+        args: lowered_args,
+        ty: result_ty,
+        span: span_id,
+    })
 }
 
 /// Lowers a value method call on a `map[str, V]`-typed receiver (`m.get(k)`,

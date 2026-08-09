@@ -25,6 +25,7 @@ mod nullable;
 mod raise;
 mod rt_call;
 mod stmt;
+mod value_call;
 
 use std::path::PathBuf;
 

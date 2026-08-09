@@ -10,7 +10,9 @@ pub mod abi;
 pub mod host;
 pub mod ns_dispatch;
 mod scheduler;
+pub mod value_dispatch;
 
 pub use host::CompiledHost;
 pub use ns_dispatch::{KeelRes, keel_rt_call_ns};
 pub use scheduler::keel_rt_start;
+pub use value_dispatch::keel_rt_call_value_method;
