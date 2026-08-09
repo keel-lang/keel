@@ -35,5 +35,6 @@ pub(crate) use error::{RuntimeError, RuntimeErrorKind, runtime_error};
 pub use host::Host;
 #[cfg(test)]
 pub use host::MockHost;
+pub use methods::call_method_on_value;
 pub use state::{BuiltinFn, CallArgValue, Event, Interpreter, Namespace};
 pub use stmt::StmtOutcome;
