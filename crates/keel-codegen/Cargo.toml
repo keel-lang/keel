@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 keel-kir = { path = "../keel-kir" }
-inkwell = { version = "0.9.0", features = ["llvm22-1"] }
+inkwell = { version = "0.10.0", features = ["llvm22-1"] }
 
 [dev-dependencies]
 keel-compiler = { path = "../keel-compiler" }
