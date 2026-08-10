@@ -1,7 +1,7 @@
 use tokio::sync::mpsc::error::TrySendError;
 
 use crate::interpreter::value::Value;
-use crate::interpreter::{CallArgValue, Event, Host, Namespace};
+use crate::interpreter::{CallArgValue, Event, Host, Namespace, find_fn_value};
 use crate::runtime::args::{expect_duration, expect_str};
 use crate::runtime::namespace::ns;
 
@@ -49,19 +49,14 @@ async fn schedule_at(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Re
     let now = host.runtime().clock.now_utc();
     let delay_secs = (target - now).num_seconds().max(0) as f64;
 
-    let (params, body) = args
-        .iter()
-        .find_map(|a| match &a.value {
-            Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
-            _ => None,
-        })
+    let f = find_fn_value(&args)
         .ok_or_else(|| miette::miette!("schedule.at: missing closure argument"))?;
 
     let agent_name = host
         .current_agent_name()
         .ok_or_else(|| miette::miette!("schedule.at must be called from within an agent"))?;
 
-    let closure_id = host.register_closure(agent_name.clone(), params, body);
+    let closure_id = host.register_closure(agent_name.clone(), f);
     let tx = host.background_event_tx();
     tokio::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs_f64(delay_secs)).await;
@@ -108,19 +103,14 @@ pub(crate) fn parse_datetime(s: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 async fn schedule_cron(host: &mut dyn Host, args: Vec<CallArgValue>) -> miette::Result<Value> {
     let expr_str = expect_str(&args, 0, "schedule.cron")?.to_owned();
 
-    let (params, body) = args
-        .iter()
-        .find_map(|a| match &a.value {
-            Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
-            _ => None,
-        })
+    let f = find_fn_value(&args)
         .ok_or_else(|| miette::miette!("schedule.cron: missing closure argument"))?;
 
     let agent_name = host
         .current_agent_name()
         .ok_or_else(|| miette::miette!("schedule.cron must be called from within an agent"))?;
 
-    let closure_id = host.register_closure(agent_name.clone(), params, body);
+    let closure_id = host.register_closure(agent_name.clone(), f);
     let tx = host.background_event_tx();
     let clock = host.runtime().clock.clone();
 
@@ -281,19 +271,14 @@ async fn schedule_fire(
 ) -> miette::Result<Value> {
     let duration = expect_duration(&args, 0, "Schedule")?;
 
-    let (params, body) = args
-        .iter()
-        .find_map(|a| match &a.value {
-            Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
-            _ => None,
-        })
+    let f = find_fn_value(&args)
         .ok_or_else(|| miette::miette!("Schedule: missing closure argument"))?;
 
     let agent_name = host
         .current_agent_name()
         .ok_or_else(|| miette::miette!("Schedule must be called from within an agent"))?;
 
-    let closure_id = host.register_closure(agent_name.clone(), params, body);
+    let closure_id = host.register_closure(agent_name.clone(), f);
     let tx = host.background_event_tx();
     let dur = std::time::Duration::from_secs_f64(duration);
 

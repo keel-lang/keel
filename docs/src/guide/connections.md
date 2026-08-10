@@ -120,6 +120,7 @@ http.serve(8080, (request) => {
 
 - `request` — map with `method`, `path`, `body` (all strings)
 - Return a map with `status` (integer, 100–999) and `body` (string)
+- `http.serve` accepts a named task in place of the lambda literal shown above
 - The server runs in a background task; `http.serve` returns immediately
 - The event loop stays alive as long as at least one server is active, even with no running agents
 - **When the event queue is full**, incoming HTTP requests receive a `503 Service Unavailable` response automatically. No user code runs for that request.

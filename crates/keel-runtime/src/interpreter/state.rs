@@ -11,8 +11,8 @@ use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 use super::store::ProgramStore;
 use crate::ast::{
-    AttributeBody, AttributeDecl, Binding, Expr, LambdaBody, LambdaParam, Node, OnHandler, Param,
-    StateField, StringPart, TaskDecl, TaskSig, TypeExpr,
+    AttributeBody, AttributeDecl, Binding, Expr, Node, OnHandler, Param, StateField, StringPart,
+    TaskDecl, TaskSig, TypeExpr,
 };
 use crate::types::interface::TypeEnv;
 
@@ -160,13 +160,15 @@ pub enum Event {
     Shutdown,
 }
 
-/// A scheduled closure awaiting firing via an `Event::FireClosure`.
+/// A scheduled function value awaiting firing via an `Event::FireClosure`.
+/// `f` is `Value::Closure` for a lambda literal or `Value::Task` for a named
+/// task used as a value (SPEC §7) — dispatched uniformly via
+/// `call_fn_value` (issue #217).
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct ScheduledClosure {
     pub agent_name: String,
-    pub params: Vec<LambdaParam>,
-    pub body: LambdaBody,
+    pub f: Value,
 }
 
 pub struct Interpreter {
@@ -361,23 +363,13 @@ impl Interpreter {
             })
     }
 
-    /// Register a closure for later firing via `Event::FireClosure`.
+    /// Register a function value for later firing via `Event::FireClosure`.
     /// Returns the id to embed in scheduled events.
-    pub fn register_closure(
-        &mut self,
-        agent_name: String,
-        params: Vec<LambdaParam>,
-        body: LambdaBody,
-    ) -> u64 {
+    pub fn register_closure(&mut self, agent_name: String, f: Value) -> u64 {
         let id = self.next_closure_id.fetch_add(1, Ordering::Relaxed);
-        self.closures.lock().insert(
-            id,
-            ScheduledClosure {
-                agent_name,
-                params,
-                body,
-            },
-        );
+        self.closures
+            .lock()
+            .insert(id, ScheduledClosure { agent_name, f });
         id
     }
 
@@ -449,7 +441,7 @@ impl Interpreter {
         };
         let module_id = self.agent_module.get(agent_name).copied();
         let turn = self.begin_agent_turn(Some(agent_inst), module_id);
-        let result = self.call_closure(&c.params, &c.body, vec![]).await;
+        let result = super::methods::call_fn_value(self, &c.f, vec![]).await;
         self.end_agent_turn(turn);
         result.map(|_| ())
     }

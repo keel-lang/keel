@@ -9,7 +9,7 @@
 use std::sync::Arc;
 
 use crate::interpreter::value::Value;
-use crate::interpreter::{CallArgValue, Host};
+use crate::interpreter::{CallArgValue, Host, call_fn_value, is_fn_value};
 
 pub(crate) mod args;
 pub mod context;
@@ -141,36 +141,29 @@ fn install_min_max(host: &mut dyn Host) {
                     };
                     match by_val {
                         Some(by) => {
-                            let (params, body) = match by {
-                                Value::Closure(p, b) => (p, *b),
-                                _ => {
-                                    return Err(miette::miette!(
-                                        "`by:` argument must be a function"
-                                    ));
-                                }
-                            };
+                            if !is_fn_value(&by) {
+                                return Err(miette::miette!("`by:` argument must be a function"));
+                            }
                             let mut best = items[0].clone();
-                            let mut best_key = host
-                                .call_closure(
-                                    &params,
-                                    &body,
+                            let mut best_key = call_fn_value(
+                                host,
+                                &by,
+                                vec![CallArgValue {
+                                    name: None,
+                                    value: best.clone(),
+                                }],
+                            )
+                            .await?;
+                            for item in items.into_iter().skip(1) {
+                                let key = call_fn_value(
+                                    host,
+                                    &by,
                                     vec![CallArgValue {
                                         name: None,
-                                        value: best.clone(),
+                                        value: item.clone(),
                                     }],
                                 )
                                 .await?;
-                            for item in items.into_iter().skip(1) {
-                                let key = host
-                                    .call_closure(
-                                        &params,
-                                        &body,
-                                        vec![CallArgValue {
-                                            name: None,
-                                            value: item.clone(),
-                                        }],
-                                    )
-                                    .await?;
                                 if cmp_values(&key, &best_key)? == target {
                                     best = item;
                                     best_key = key;

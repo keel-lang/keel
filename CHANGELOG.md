@@ -44,6 +44,21 @@ task main() {
 }
 ```
 
+- **The same named-function-as-value gap also affected every closure-taking namespace method and the global `min`/`max`.** `control.retry`, `control.with_timeout`, `control.with_deadline`, `schedule.every`/`.at`/`.cron`/`.after`, `async.spawn`, `http.serve`, and `min`/`max(by:)` all extracted a `Value::Closure`'s `(params, body)` directly and rejected a `Value::Task`, so a named task worked as a `list.map` argument but not as a scheduler callback or retry body. `ScheduledClosure` (the record `Schedule.*`/`Http.serve` register for later firing) and `Host::spawn_closure` now hold the function value itself instead of pre-destructured params/body, and every site dispatches through the same `call_fn_value` helper `Value::Closure`/`Value::Task` share:
+
+```keel
+use std/control
+use std/io
+
+task work() -> int {
+  42
+}
+
+task main() {
+  io.show("{control.retry(3, work)}")   # now works — was "missing closure argument"
+}
+```
+
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
 
 ```keel

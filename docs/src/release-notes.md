@@ -24,6 +24,28 @@ task main() {
 }
 ```
 
+### Named tasks now work as scheduler, retry, and spawn callbacks too
+
+The same gap fixed above for value methods also affected `control.retry`,
+`control.with_timeout`, `control.with_deadline`, `schedule.every`/`.at`/
+`.cron`/`.after`, `async.spawn`, `http.serve`, and the global `min`/
+`max(by:)` — each one destructured a lambda literal's params/body directly
+and rejected a named task. A named task now works as a callback everywhere
+a lambda literal does:
+
+```keel
+use std/control
+use std/io
+
+task work() -> int {
+  42
+}
+
+task main() {
+  io.show("{control.retry(3, work)}")   # now works
+}
+```
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method

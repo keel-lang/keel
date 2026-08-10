@@ -36,5 +36,6 @@ pub use host::Host;
 #[cfg(test)]
 pub use host::MockHost;
 pub use methods::call_method_on_value;
+pub(crate) use methods::{call_fn_value, find_fn_value, is_fn_value};
 pub use state::{BuiltinFn, CallArgValue, Event, Interpreter, Namespace};
 pub use stmt::StmtOutcome;

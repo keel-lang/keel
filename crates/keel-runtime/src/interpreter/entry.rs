@@ -722,16 +722,15 @@ impl Interpreter {
                         // debugger's module/breakpoint tracking, nothing more.
                         let module_id = self.agent_module.get(&c.agent_name).copied();
                         let turn = self.begin_agent_turn(None, module_id);
-                        let result = self
-                            .call_closure(
-                                &c.params,
-                                &c.body,
-                                vec![CallArgValue {
-                                    name: None,
-                                    value: request_val,
-                                }],
-                            )
-                            .await;
+                        let result = super::methods::call_fn_value(
+                            self,
+                            &c.f,
+                            vec![CallArgValue {
+                                name: None,
+                                value: request_val,
+                            }],
+                        )
+                        .await;
                         self.end_agent_turn(turn);
                         // Serialize result back to JSON string
                         let resp_val = result.unwrap_or_else(|err| {
@@ -985,7 +984,10 @@ mod tests {
             ty: None,
         }];
         let body = LambdaBody::Expr(Box::new(Node::synthetic(Expr::Ident("req".to_string()))));
-        let closure_id = interp.register_closure("test_agent".to_string(), params, body);
+        let closure_id = interp.register_closure(
+            "test_agent".to_string(),
+            Value::Closure(params, Box::new(body)),
+        );
 
         // Keep event loop alive by faking an active server
         interp.active_http_servers.fetch_add(1, Ordering::Relaxed);
@@ -1075,7 +1077,10 @@ mod tests {
             ty: None,
         }];
         let body = LambdaBody::Expr(Box::new(Node::synthetic(Expr::Ident("req".to_string()))));
-        let closure_id = interp.register_closure("test_agent".to_string(), params, body);
+        let closure_id = interp.register_closure(
+            "test_agent".to_string(),
+            Value::Closure(params, Box::new(body)),
+        );
 
         interp.active_http_servers.fetch_add(1, Ordering::Relaxed);
 
@@ -1121,7 +1126,10 @@ mod tests {
             ty: None,
         }];
         let body = LambdaBody::Expr(Box::new(Node::synthetic(Expr::None_)));
-        let closure_id = interp.register_closure("test_agent".to_string(), params, body);
+        let closure_id = interp.register_closure(
+            "test_agent".to_string(),
+            Value::Closure(params, Box::new(body)),
+        );
 
         interp.active_http_servers.fetch_add(1, Ordering::Relaxed);
 
