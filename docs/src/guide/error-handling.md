@@ -203,6 +203,9 @@ try {
 }
 ```
 
+`control.retry`, `control.with_timeout`, and `control.with_deadline` all accept
+a named task in place of the lambda literal: `control.retry(3, send_email)`.
+
 ## Null-safe access — `?.`
 
 Returns `none` instead of crashing if the left side is `none`:

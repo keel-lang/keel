@@ -4,7 +4,7 @@ use miette::Result;
 
 use crate::ast::TaskDecl;
 
-use super::host::Host;
+use super::host::{Host, HostFuture};
 use super::runtime_error;
 use super::state::{CallArgValue, Interpreter};
 use super::value::{self, MapKey, Value};
@@ -25,8 +25,19 @@ const SET_LIST_METHODS: &[&str] = &[
 /// Whether `v` is something [`call_fn_value`] can invoke — used by
 /// closure-taking arms to fail fast, with their own specific message, before
 /// entering a loop that calls it repeatedly.
-fn is_fn_value(v: &Value) -> bool {
+pub(crate) fn is_fn_value(v: &Value) -> bool {
     matches!(v, Value::Closure(..) | Value::Task(..))
+}
+
+/// Finds the first function-value argument (`Value::Closure` or
+/// `Value::Task`) among `args`, regardless of position or name — the same
+/// search every closure-taking namespace method (`control.retry`,
+/// `schedule.every`, `async.spawn`, `http.serve`, …) used to run inline
+/// against `Value::Closure` alone (issue #217).
+pub(crate) fn find_fn_value(args: &[CallArgValue]) -> Option<Value> {
+    args.iter()
+        .find(|a| is_fn_value(&a.value))
+        .map(|a| a.value.clone())
 }
 
 /// Invokes a value used as a function argument to a closure-taking method
@@ -38,14 +49,22 @@ fn is_fn_value(v: &Value) -> bool {
 /// of being rejected. Callers that need a fast, specific "expects a
 /// function" error before their loop starts should check [`is_fn_value`]
 /// first; this function's own fallback message is generic.
-async fn call_fn_value(host: &mut dyn Host, f: &Value, args: Vec<CallArgValue>) -> Result<Value> {
+///
+/// Returns a boxed future rather than being `async fn` so callers that need
+/// to race it against something else (`tokio::time::timeout` in
+/// `control.with_timeout`/`control.with_deadline`) can do so directly.
+pub(crate) fn call_fn_value<'a>(
+    host: &'a mut dyn Host,
+    f: &'a Value,
+    args: Vec<CallArgValue>,
+) -> HostFuture<'a, Value> {
     match f {
-        Value::Closure(params, body) => host.call_closure(params, body, args).await,
-        Value::Task(name, decl) => host.call_task(name, decl, args).await,
-        other => Err(runtime_error(format!(
-            "expected a function, got {}",
-            other.type_name()
-        ))),
+        Value::Closure(params, body) => host.call_closure(params, body, args),
+        Value::Task(name, decl) => host.call_task(name, decl, args),
+        other => {
+            let msg = format!("expected a function, got {}", other.type_name());
+            Box::pin(async move { Err(runtime_error(msg)) })
+        }
     }
 }
 

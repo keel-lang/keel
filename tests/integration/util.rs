@@ -264,6 +264,33 @@ run(A)
 }
 
 #[test]
+fn control_with_timeout_rejects_missing_duration_with_a_named_task() {
+    let src = r#"
+use std/control
+
+task work() -> str {
+    "ok"
+}
+
+agent A {
+    @on_start {
+        control.with_timeout(work)
+    }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(
+        !ok,
+        "expected non-zero exit for missing duration with a named task"
+    );
+    assert!(
+        stderr.contains("missing duration"),
+        "expected 'missing duration' error:\n{stderr}"
+    );
+}
+
+#[test]
 fn control_with_timeout_rejects_missing_closure() {
     let src = r#"
 use std/control
@@ -1071,4 +1098,153 @@ run(AsyncTest)
         stdout.contains("42"),
         "spawned closure should be able to call user-defined task 'double':\n{stdout}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// A named task works everywhere a lambda does, in closure-taking namespace
+// methods and the global min/max — issue #217. #216 fixed the 9 value
+// methods (`list.map`, …); these are the remaining sites that destructured
+// the argument into `Value::Closure`'s `(params, body)` directly and
+// rejected `Value::Task`.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn control_retry_accepts_a_named_task() {
+    let src = r#"
+use std/control
+use std/io
+
+task work() -> int {
+  42
+}
+
+task main() {
+  io.show("{control.retry(3, work)}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected clean run:\n{stderr}");
+    assert!(stdout.contains("42"), "control.retry(work):\n{stdout}");
+}
+
+#[test]
+fn control_with_timeout_accepts_a_named_task() {
+    let src = r#"
+use std/control
+use std/io
+
+task work() -> int {
+  42
+}
+
+task main() {
+  io.show("{control.with_timeout(5.seconds, work)}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected clean run:\n{stderr}");
+    assert!(
+        stdout.contains("42"),
+        "control.with_timeout(work):\n{stdout}"
+    );
+}
+
+#[test]
+fn control_with_deadline_accepts_a_named_task() {
+    let src = r#"
+use std/control
+use std/io
+
+task work() -> int {
+  42
+}
+
+task main() {
+  result = control.with_deadline("2099-01-01T00:00:00Z", work)
+  io.show("{result}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected clean run:\n{stderr}");
+    assert!(
+        stdout.contains("42"),
+        "control.with_deadline(work):\n{stdout}"
+    );
+}
+
+#[test]
+fn schedule_every_accepts_a_named_task() {
+    let src = r#"
+use std/io
+use std/schedule
+
+task tick() {
+  io.show("tick")
+}
+
+agent Ticker {
+  @tools [io]
+  @on_start {
+    schedule.every(3.seconds, tick)
+  }
+}
+run(Ticker)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected clean run:\n{stderr}");
+    assert!(stdout.contains("tick"), "schedule.every(tick):\n{stdout}");
+}
+
+#[test]
+fn async_spawn_accepts_a_named_task() {
+    let src = r#"
+use std/async
+use std/io
+
+task work() -> int {
+  42
+}
+
+agent AsyncTest {
+    @tools [io]
+    @on_start {
+        h = async.spawn(work)
+        results = async.join_all([h])
+        io.show("{results}")
+        stop(self)
+    }
+}
+run(AsyncTest)
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected clean run:\n{stderr}");
+    assert!(stdout.contains("42"), "async.spawn(work):\n{stdout}");
+}
+
+#[test]
+fn min_and_max_by_accept_a_named_task() {
+    let src = r#"
+use std/io
+
+task negate(x: int) -> int {
+  0 - x
+}
+
+task main() {
+  io.show("{min([1, 2, 3], by: negate)}")
+  io.show("{max([1, 2, 3], by: negate)}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "expected clean run:\n{stderr}");
+    assert!(stdout.contains('3'), "min(by: negate):\n{stdout}");
+    assert!(stdout.contains('1'), "max(by: negate):\n{stdout}");
 }

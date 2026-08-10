@@ -101,6 +101,8 @@ min(people, by: p => p.age)            # {name: "Bob", age: 25}
 max(people, by: p => p.age)            # {name: "Alice", age: 30}
 ```
 
+`by:` accepts a named task in place of the lambda literal shown above: `min(people, by: age_of)`.
+
 ## Random
 
 `Random` produces non-cryptographic pseudo-random values for simulation, sampling, games, and tests where security is not involved. Use `Crypto` for tokens, secrets, signatures, or key material.
@@ -295,6 +297,8 @@ winner = async.select([task1, task2])
 ```
 
 `async.select` cancels any handles that haven't completed yet once a winner is found.
+
+`async.spawn` accepts a named task in place of the lambda literal shown above: `async.spawn(fetch_price)`.
 
 > **v0.1 scope.** Anything marked ⏳ is reserved in the grammar but not yet wired. 🟡 means partial: something works, but not everything. `Search` is registered and raises a clear "planned for v0.2" error; `ai.embed` returns an empty list. The status column in the table above is authoritative.
 

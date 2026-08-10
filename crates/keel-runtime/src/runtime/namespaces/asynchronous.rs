@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::task::Poll;
 
 use crate::interpreter::value::{MapKey, Value};
-use crate::interpreter::{CallArgValue, Namespace};
+use crate::interpreter::{CallArgValue, Namespace, find_fn_value};
 use crate::runtime::args::expect_duration;
 use crate::runtime::namespace::{ns, positional};
 
@@ -13,12 +13,10 @@ pub(crate) fn namespace() -> Namespace {
         // Async.spawn(fn) — spawn fn as an independent Tokio task.
         // Returns a handle map with `_id` and `_status` fields.
         "spawn" => |host, args| Box::pin(async move {
-            let (params, body) = args.iter().find_map(|a| match &a.value {
-                Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
-                _ => None,
-            }).ok_or_else(|| miette::miette!("async.spawn: missing closure argument"))?;
+            let f = find_fn_value(&args)
+                .ok_or_else(|| miette::miette!("async.spawn: missing closure argument"))?;
 
-            let handle_id = host.spawn_closure(params, body).await?;
+            let handle_id = host.spawn_closure(f).await?;
 
             let mut handle_map = HashMap::new();
             handle_map.insert(MapKey::Str("_id".into()), Value::Integer(handle_id as i64));

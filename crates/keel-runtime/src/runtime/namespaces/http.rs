@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crate::interpreter::value::{MapKey, Value};
-use crate::interpreter::{Namespace, RuntimeErrorKind};
+use crate::interpreter::{Namespace, RuntimeErrorKind, find_fn_value};
 use crate::runtime::args::{expect_int, expect_str, expect_str_value};
 use crate::runtime::convert::value_to_json;
 use crate::runtime::namespace::{find_arg, make_typed_report, ns, positional};
@@ -95,13 +95,11 @@ pub(crate) fn namespace() -> Namespace {
                 }
             };
 
-            // Extract closure from args
-            let (params, body) = args.iter().find_map(|a| match &a.value {
-                Value::Closure(p, b) => Some((p.clone(), (**b).clone())),
-                _ => None,
-            }).ok_or_else(|| miette::miette!("http.serve: missing closure argument"))?;
+            // Extract the function value from args
+            let f = find_fn_value(&args)
+                .ok_or_else(|| miette::miette!("http.serve: missing closure argument"))?;
 
-            let closure_id = host.register_closure("__http_serve__".to_string(), params, body);
+            let closure_id = host.register_closure("__http_serve__".to_string(), f);
             let event_tx = host.background_event_tx();
             let server_counter = host.active_http_servers().clone();
 

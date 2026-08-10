@@ -4,6 +4,9 @@ The `schedule` module (`use std/schedule`) provides recurring, delayed, and one-
 
 Under the hood, `schedule` sits on top of the runtime's timer primitives and the agent mailbox, and emits events into whichever agent registered the schedule.
 
+> `schedule.every`, `schedule.after`, `schedule.at`, and `schedule.cron` all accept a
+> named task in place of the lambda literal shown below: `schedule.every(5.minutes, check_inbox)`.
+
 ## `schedule.every` — recurring execution
 
 ```keel

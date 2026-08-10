@@ -199,20 +199,11 @@ impl Host for CompiledHost {
         todo!("Http.serve is not compiled yet")
     }
 
-    fn register_closure(
-        &mut self,
-        _agent_name: String,
-        _params: Vec<LambdaParam>,
-        _body: LambdaBody,
-    ) -> u64 {
+    fn register_closure(&mut self, _agent_name: String, _f: Value) -> u64 {
         todo!("closures are not compiled yet")
     }
 
-    fn spawn_closure<'a>(
-        &'a mut self,
-        _params: Vec<LambdaParam>,
-        _body: LambdaBody,
-    ) -> HostFuture<'a, u64> {
+    fn spawn_closure<'a>(&'a mut self, _f: Value) -> HostFuture<'a, u64> {
         todo!("Async.spawn is not compiled yet")
     }
 

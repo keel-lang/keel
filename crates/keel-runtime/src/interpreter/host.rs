@@ -159,26 +159,19 @@ pub trait Host: Send {
     /// Counter tracking active `Http.serve` listeners.
     fn active_http_servers(&self) -> &Arc<AtomicU64>;
 
-    /// Register a closure for later firing via `Event::FireClosure`.
+    /// Register a function value (`Value::Closure` or `Value::Task`, SPEC §7)
+    /// for later firing via `Event::FireClosure`.
     ///
     /// Returns the closure id to embed in scheduled events.
-    fn register_closure(
-        &mut self,
-        agent_name: String,
-        params: Vec<LambdaParam>,
-        body: LambdaBody,
-    ) -> u64;
+    fn register_closure(&mut self, agent_name: String, f: Value) -> u64;
 
-    /// Spawn a closure as an independent Tokio task with a snapshotted interpreter state.
+    /// Spawn a function value as an independent Tokio task with a snapshotted
+    /// interpreter state.
     ///
     /// Returns the async handle id that callers can pass to `Async.join_all` or
     /// `Async.select`. The concrete implementation constructs a child interpreter
     /// sharing the parent's event infrastructure and symbol tables.
-    fn spawn_closure<'a>(
-        &'a mut self,
-        params: Vec<LambdaParam>,
-        body: LambdaBody,
-    ) -> HostFuture<'a, u64>;
+    fn spawn_closure<'a>(&'a mut self, f: Value) -> HostFuture<'a, u64>;
 
     // ── prelude installation ──────────────────────────────────────────────
 
@@ -329,20 +322,11 @@ impl Host for Interpreter {
         &self.active_http_servers
     }
 
-    fn register_closure(
-        &mut self,
-        agent_name: String,
-        params: Vec<LambdaParam>,
-        body: LambdaBody,
-    ) -> u64 {
-        Interpreter::register_closure(self, agent_name, params, body)
+    fn register_closure(&mut self, agent_name: String, f: Value) -> u64 {
+        Interpreter::register_closure(self, agent_name, f)
     }
 
-    fn spawn_closure<'a>(
-        &'a mut self,
-        params: Vec<LambdaParam>,
-        body: LambdaBody,
-    ) -> HostFuture<'a, u64> {
+    fn spawn_closure<'a>(&'a mut self, f: Value) -> HostFuture<'a, u64> {
         Box::pin(async move {
             let handle_id = self.runtime.next_async_handle_id();
             let runtime = self.runtime.clone();
@@ -387,8 +371,7 @@ impl Host for Interpreter {
                 local_interp.program_name = program_name;
                 local_interp.installed_provider = installed_provider;
                 local_interp.active_providers = active_providers;
-                local_interp
-                    .call_closure(&params, &body, vec![])
+                super::methods::call_fn_value(&mut local_interp, &f, vec![])
                     .await
                     .map_err(|err| err.to_string())
             });
@@ -567,20 +550,11 @@ impl Host for MockHost {
         unimplemented!("MockHost does not support active_http_servers")
     }
 
-    fn register_closure(
-        &mut self,
-        _agent_name: String,
-        _params: Vec<LambdaParam>,
-        _body: LambdaBody,
-    ) -> u64 {
+    fn register_closure(&mut self, _agent_name: String, _f: Value) -> u64 {
         unimplemented!("MockHost does not support register_closure")
     }
 
-    fn spawn_closure<'a>(
-        &'a mut self,
-        _params: Vec<LambdaParam>,
-        _body: LambdaBody,
-    ) -> HostFuture<'a, u64> {
+    fn spawn_closure<'a>(&'a mut self, _f: Value) -> HostFuture<'a, u64> {
         unimplemented!("MockHost does not support spawn_closure")
     }
 
