@@ -482,26 +482,6 @@ task f(n: int) -> int {
 }
 
 #[test]
-fn when_expression_in_a_short_circuit_operand_is_rejected() {
-    // `and`/`or` may not evaluate their right operand at all; a hoisted
-    // chain would run unconditionally.
-    let msg = lower_err(
-        r#"
-task f(n: int, flag: bool) -> bool {
-  return flag and when n {
-    0 => true
-    _ => false
-  }
-}
-"#,
-    );
-    assert!(
-        msg.contains("right-hand operand of `and`/`or`"),
-        "unexpected message: {msg}"
-    );
-}
-
-#[test]
 fn when_expression_in_a_null_coalesce_fallback_is_rejected() {
     // Same conditional-evaluation problem as `and`/`or`: the fallback runs
     // only when the left-hand side is null.
@@ -1243,21 +1223,6 @@ task f(n: int, c: bool) -> int {
     );
     assert!(
         msg.contains("`while` condition"),
-        "unexpected message: {msg}"
-    );
-}
-
-#[test]
-fn if_expression_in_a_short_circuit_operand_is_rejected() {
-    let msg = lower_err(
-        r#"
-task f(n: int, flag: bool) -> bool {
-  return flag and if n == 0 { true } else { false }
-}
-"#,
-    );
-    assert!(
-        msg.contains("right-hand operand of `and`/`or`"),
         "unexpected message: {msg}"
     );
 }

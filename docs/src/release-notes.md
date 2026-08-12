@@ -94,6 +94,28 @@ too — compiled and interpreted programs now agree on this example, and on
 any other short-circuited `and`/`or`, everywhere the operator is used
 (`while` conditions included).
 
+### A `when`/`if`-expression now works as the right operand of `and`/`or`
+
+`keel build --emit=kir` used to reject `flag and when n {...}` outright,
+even though `keel check`/`keel run` supported it fine — a nested
+`when`/`if`'s own compiled form couldn't be evaluated conditionally the way
+short-circuiting requires. It now composes correctly: the guarded
+expression's side effects genuinely don't run when short-circuited, in both
+the interpreter and the native backend.
+
+```keel
+use std/io
+
+task f(n: int, flag: bool) -> bool {
+  return flag and when n {
+    0 => true
+    _ => false
+  }
+}
+
+io.show("{f(0, true)}")   # now compiles
+```
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method

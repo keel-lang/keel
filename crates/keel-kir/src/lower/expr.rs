@@ -136,6 +136,88 @@ pub(crate) fn infer_binop_ty(
     }
 }
 
+/// Lowers `left and right` / `left or right` (issue #193, following #224's
+/// interpreter fix and #225's `keel-codegen` fix).
+///
+/// When `right` doesn't need to hoist anything — the common case, a plain
+/// expression with no nested `when`/`if` — this lowers to the same flat
+/// `Expr::BinOp{And|Or}` node it always did; `keel-codegen`'s
+/// `emit_short_circuit` (#225) handles the actual branching, so this
+/// composes with every position, `while` conditions included, exactly as
+/// before this issue.
+///
+/// When `right` *does* hoist — a nested `when`/`if`-expression, which can't
+/// be evaluated unconditionally — this instead desugars to the same
+/// declare-temp + `if`-chain shape `if`/`when`-as-expression use
+/// ([`super::stmt::lower_if_expr_value`]/[`super::stmt::lower_when_expr_value`]),
+/// with `right`'s hoisted statements embedded *inside* the branch that
+/// actually runs it, rather than spliced ahead of the whole enclosing
+/// statement. That desugaring itself hoists, so it inherits every
+/// position's existing hoist restrictions — in particular, a `while`
+/// condition still rejects it (`lower_while`'s `forbid_hoist`), since a
+/// hoisted chain can only run once, ahead of the loop, not once per
+/// iteration. That case needs a `break`-guarded prelude and remains out of
+/// scope (#193's `while` case).
+fn lower_and_or(
+    left: &ast::SpannedExpr,
+    kir_op: ir::BinOp,
+    right: &ast::SpannedExpr,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    span: &Span,
+) -> Result<Expr, LowerError> {
+    let left_e = lower_expr(left, ctx, lcx, table)?;
+
+    // Isolate whatever `right` hoists — it's evaluated conditionally, so
+    // anything it hoists belongs inside the branch that runs it, not the
+    // buffer for the statement enclosing this whole expression.
+    let outer = ctx.begin_hoist();
+    let right_e = lower_expr(right, ctx, lcx, table)?;
+    let right_hoisted = ctx.end_hoist(outer);
+
+    let ty = infer_binop_ty(kir_op, left_e.ty(), right_e.ty(), span)?;
+
+    if right_hoisted.is_empty() {
+        return Ok(Expr::BinOp {
+            op: kir_op,
+            left: Box::new(left_e),
+            right: Box::new(right_e),
+            ty,
+        });
+    }
+
+    let name = if matches!(kir_op, ir::BinOp::And) {
+        "<and.result>"
+    } else {
+        "<or.result>"
+    };
+    let local = ctx.declare_temp(name, ty);
+    ctx.hoist(ir::Stmt::Let { local, init: None });
+
+    let mut right_branch = right_hoisted;
+    right_branch.push(ir::Stmt::Assign {
+        local,
+        value: right_e,
+    });
+    let short_branch = vec![ir::Stmt::Assign {
+        local,
+        value: Expr::ConstBool(matches!(kir_op, ir::BinOp::Or)),
+    }];
+    let (then_branch, else_branch) = match kir_op {
+        ir::BinOp::And => (right_branch, short_branch),
+        ir::BinOp::Or => (short_branch, right_branch),
+        _ => unreachable!("caller only passes And/Or"),
+    };
+    ctx.hoist(ir::Stmt::If {
+        cond: left_e,
+        then_branch,
+        else_branch,
+    });
+
+    Ok(Expr::Local { id: local, ty })
+}
+
 pub(crate) fn lower_expr(
     expr: &SpannedExpr,
     ctx: &mut FnCtx,
@@ -154,26 +236,17 @@ pub(crate) fn lower_expr(
             let ty = ctx.locals[local].ty;
             Ok(Expr::Local { id: local, ty })
         }
+        ast::Expr::BinaryOp { left, op, right }
+            if matches!(op, ast::BinOp::And | ast::BinOp::Or) =>
+        {
+            lower_and_or(left, convert_binop(*op), right, ctx, lcx, table, &expr.span)
+        }
         ast::Expr::BinaryOp { left, op, right } => {
             let mut left_e = [lower_expr(left, ctx, lcx, table)?];
             let mark = ctx.hoist_mark();
             let right_e = lower_expr(right, ctx, lcx, table)?;
             let kir_op = convert_binop(*op);
-            // `and`/`or` short-circuit: the right operand runs only when the
-            // left didn't already decide the result, so a hoisted chain — which
-            // would run unconditionally, ahead of the whole statement — can't
-            // model it. Every other operator evaluates both operands exactly
-            // once, left to right, which a spill of the left one preserves.
-            if matches!(kir_op, ir::BinOp::And | ir::BinOp::Or) {
-                ctx.forbid_hoist(
-                    mark,
-                    "the right-hand operand of `and`/`or` (short-circuiting means it may not \
-                     be evaluated at all)",
-                    &right.span,
-                )?;
-            } else {
-                ctx.keep_order(mark, &mut left_e, &expr.span)?;
-            }
+            ctx.keep_order(mark, &mut left_e, &expr.span)?;
             let [left_e] = left_e;
             let ty = infer_binop_ty(kir_op, left_e.ty(), right_e.ty(), &expr.span)?;
             Ok(Expr::BinOp {

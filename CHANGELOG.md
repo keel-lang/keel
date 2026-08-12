@@ -98,6 +98,21 @@ flag = false
 flag and side_effect()   # compiled and interpreted now agree: "evaluated" never prints
 ```
 
+- **The native backend rejected a `when`/`if`-expression as the right operand of `and`/`or`.** `keel-kir`'s lowering hoists a nested `when`/`if`'s declare+`if`-chain ahead of the whole enclosing statement — valid only where the sub-expression is evaluated exactly once, which an `and`/`or` right operand isn't (it may not run at all). `keel check` accepted `flag and when n {...}` and `keel run` executed it correctly; `keel build --emit=kir` rejected it outright. The right operand now lowers into its own isolated scope: when it doesn't need to hoist anything (the common case), it's still the same flat node #225's short-circuit codegen already handles; when it does (a nested `when`/`if`), it desugars to the same declare-temp + `if`-chain shape `if`/`when`-as-expression already use, with the hoisted statements embedded inside the branch that actually runs — so the guarded operand's side effects don't run when short-circuited, interpreted or compiled:
+
+```keel
+use std/io
+
+task f(n: int, flag: bool) -> bool {
+  return flag and when n {
+    0 => true
+    _ => false
+  }
+}
+
+io.show("{f(0, true)}")   # now compiles — was rejected by keel build --emit=kir
+```
+
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
 
 ```keel
