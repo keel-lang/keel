@@ -1,0 +1,40 @@
+fn classify(n: int, flag: bool) -> bool {
+  let <and.result>: bool
+  if flag {
+    let <when.result>: bool
+    if (n == 0) {
+      <when.result> = true
+    } else {
+      if true {
+        <when.result> = false
+      }
+    }
+    <and.result> = <when.result>
+  } else {
+    <and.result> = false
+  }
+  return <and.result>
+}
+
+fn classify_or(n: int, flag: bool) -> bool {
+  let <or.result>: bool
+  if flag {
+    <or.result> = true
+  } else {
+    let <if.result>: bool
+    if (n == 0) {
+      <if.result> = true
+    } else {
+      <if.result> = false
+    }
+    <or.result> = <if.result>
+  }
+  return <or.result>
+}
+
+fn plain(a: bool, b: bool) -> bool {
+  return (a and b)
+}
+
+fn <toplevel>() -> none {
+}

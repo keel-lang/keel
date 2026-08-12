@@ -1,0 +1,19 @@
+task classify(n: int, flag: bool) -> bool {
+  return flag and when n {
+    0 => true
+    _ => false
+  }
+}
+
+task classify_or(n: int, flag: bool) -> bool {
+  return flag or if n == 0 { true } else { false }
+}
+
+# Pins that an `and`/`or` whose right operand needs no hoisting still lowers
+# to the flat `(a and b)` node, not the declare+`if` desugaring above — that
+# flat shape is what keel-codegen's short-circuit codegen (#225) handles,
+# and it's what lets an ordinary `and`/`or` keep working inside a `while`
+# condition (which rejects anything hoisted out of it).
+task plain(a: bool, b: bool) -> bool {
+  return a and b
+}

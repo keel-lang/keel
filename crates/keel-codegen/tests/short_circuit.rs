@@ -1,7 +1,9 @@
 //! Exit criterion for issue #225: `and`/`or` short-circuit in compiled code
 //! the same way #224 made them short-circuit in the interpreter — a
 //! side-effecting right operand must not run when the left operand already
-//! decides the result.
+//! decides the result. Also covers #228: a `when`/`if`-expression as the
+//! right operand of `and`/`or`, previously rejected outright by
+//! `keel build --emit=kir`.
 
 use std::process::Command;
 
@@ -156,4 +158,46 @@ result = flag and (check_a() or check_b())
 io.show("{result}")
 "#;
     assert_matches_interpreter(source, b"  a\n  true\n");
+}
+
+#[test]
+fn a_when_expression_as_the_right_operand_of_and_does_not_run_when_short_circuited() {
+    // Exit criterion for #228: `keel build --emit=kir` used to reject a
+    // `when`/`if`-expression as the right operand of `and`/`or` outright.
+    // `n` is chosen so the `when`'s side-effecting arm *would* fire if it
+    // ran — proving it doesn't run at all when `flag` short-circuits `and`.
+    let source = r#"
+use std/io
+
+flag = false
+n = 0
+result = flag and when n {
+  0 => {
+    io.show("evaluated")
+    true
+  }
+  _ => false
+}
+io.show("{result}")
+"#;
+    assert_matches_interpreter(source, b"  false\n");
+}
+
+#[test]
+fn a_when_expression_as_the_right_operand_of_and_runs_when_not_short_circuited() {
+    let source = r#"
+use std/io
+
+flag = true
+n = 0
+result = flag and when n {
+  0 => {
+    io.show("evaluated")
+    true
+  }
+  _ => false
+}
+io.show("{result}")
+"#;
+    assert_matches_interpreter(source, b"  evaluated\n  true\n");
 }
