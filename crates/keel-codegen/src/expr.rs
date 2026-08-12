@@ -84,6 +84,8 @@ pub(crate) fn emit_expr<'ctx>(
             field_index,
             ty,
         } => crate::nullable::emit_null_field_get(fcx, base, *field_index, *ty),
+        Expr::IsNone { nullable, .. } => crate::nullable::emit_is_none_expr(fcx, nullable),
+        Expr::UnwrapSome { nullable, .. } => crate::nullable::emit_unwrap_some_expr(fcx, nullable),
     }
 }
 

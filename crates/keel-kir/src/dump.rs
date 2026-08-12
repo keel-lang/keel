@@ -322,6 +322,12 @@ fn fmt_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> String {
             let field_name = &program.structs[struct_id].fields[*field_index].0;
             format!("{}?.{field_name}", fmt_expr(program, func, base))
         }
+        Expr::IsNone { nullable, .. } => {
+            format!("({} is none)", fmt_expr(program, func, nullable))
+        }
+        Expr::UnwrapSome { nullable, .. } => {
+            format!("unwrap({})", fmt_expr(program, func, nullable))
+        }
     }
 }
 

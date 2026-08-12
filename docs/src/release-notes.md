@@ -116,6 +116,23 @@ task f(n: int, flag: bool) -> bool {
 io.show("{f(0, true)}")   # now compiles
 ```
 
+### A `when`/`if`-expression now works as the fallback of `??`
+
+The same fix, applied to `??`. A nested `when`/`if`-expression as the
+right-hand side of `??` used to be rejected by `keel build --emit=kir` for
+the same reason as `and`/`or`'s right operand — now it composes correctly,
+and the fallback's side effects don't run when the left-hand side is
+non-`none`:
+
+```keel
+task g(maybe: int?, n: int) -> int {
+  return maybe ?? when n {
+    0 => 1
+    _ => 2
+  }
+}
+```
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method

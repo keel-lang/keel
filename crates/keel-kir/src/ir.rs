@@ -444,6 +444,31 @@ pub enum Expr {
         field_index: usize,
         ty: KirType,
     },
+    /// Tests whether a nullable-typed expression is `none` — `ty` is always
+    /// `KirType::Bool`. Exposes `keel-codegen`'s existing `emit_is_none` as a
+    /// first-class KIR expression (issue #230) so lowering can build a
+    /// boolean condition for a hoisted `if`-chain — the `??`-fallback
+    /// analogue of `and`/`or` using its own left operand as the condition
+    /// (#228), which a nullable's plain non-boolean value can't do directly.
+    IsNone {
+        nullable: Box<Expr>,
+        ty: KirType,
+    },
+    /// Unwraps a nullable-typed expression to its inner value (`ty`),
+    /// assuming — by construction, not a runtime check — that it is `Some`.
+    /// The `??`-fallback-hoisting desugaring's non-`none` branch (#230):
+    /// only ever constructed where an `Expr::IsNone` test on the same
+    /// `nullable` has already gated the branch this appears in. Using it
+    /// anywhere else is a lowering bug, not a user-reachable error —
+    /// `keel-codegen` emits it as a raw unwrap with no null check.
+    /// `passes/verify.rs` checks that `nullable`'s type and the claimed
+    /// `ty` agree, but cannot check the gating invariant itself (that would
+    /// require tracing back to an enclosing branch condition) — this is a
+    /// lowering-side invariant only, not something verify enforces.
+    UnwrapSome {
+        nullable: Box<Expr>,
+        ty: KirType,
+    },
 }
 
 /// What an `Expr::Call` invokes.
@@ -550,7 +575,9 @@ impl Expr {
             | Expr::NullLit { ty }
             | Expr::NullSome { ty, .. }
             | Expr::NullCoalesce { ty, .. }
-            | Expr::NullFieldGet { ty, .. } => *ty,
+            | Expr::NullFieldGet { ty, .. }
+            | Expr::IsNone { ty, .. }
+            | Expr::UnwrapSome { ty, .. } => *ty,
         }
     }
 }

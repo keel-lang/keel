@@ -162,6 +162,34 @@ fn emit_unwrap_some<'ctx>(
     }
 }
 
+/// `Expr::IsNone` codegen — issue #230. Evaluates `nullable`, then reuses
+/// the same [`emit_is_none`] check `??`'s own codegen (`emit_null_coalesce`)
+/// uses, so the two can never drift on what "none" means for a given
+/// representation.
+pub(crate) fn emit_is_none_expr<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    nullable: &Expr,
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let inner_ty = nullable_inner(fcx, nullable.ty());
+    let nullable_v = crate::expr::emit_expr(fcx, nullable)?;
+    Ok(emit_is_none(fcx, nullable_v, inner_ty)?.into())
+}
+
+/// `Expr::UnwrapSome` codegen — issue #230. Evaluates `nullable`, then
+/// reuses [`emit_unwrap_some`]. No null check of its own: `keel-kir`'s
+/// lowering only ever constructs `Expr::UnwrapSome` where an `Expr::IsNone`
+/// test on the same `nullable` has already gated the branch this appears
+/// in (see `ir.rs`'s doc on the variant) — a wrong or missing guard is a
+/// lowering bug, not something this function can detect at codegen time.
+pub(crate) fn emit_unwrap_some_expr<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    nullable: &Expr,
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    let inner_ty = nullable_inner(fcx, nullable.ty());
+    let nullable_v = crate::expr::emit_expr(fcx, nullable)?;
+    emit_unwrap_some(fcx, nullable_v, inner_ty)
+}
+
 /// Builds the nullable-`{ty}`'s "some" representation from a known-present,
 /// plain `inner_ty`-typed value — the inverse of [`emit_unwrap_some`].
 pub(crate) fn emit_wrap_some<'ctx>(

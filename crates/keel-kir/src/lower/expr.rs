@@ -218,6 +218,81 @@ fn lower_and_or(
     Ok(Expr::Local { id: local, ty })
 }
 
+/// Lowers `nullable ?? fallback` (issue #230, following #228's `and`/`or`
+/// fix).
+///
+/// When `fallback` doesn't need to hoist anything — the common case, a
+/// plain expression — this lowers to the same flat `Expr::NullCoalesce`
+/// node it always did; `keel-codegen`'s `emit_null_coalesce` handles the
+/// actual branching, unaffected by this change.
+///
+/// When `fallback` *does* hoist (a nested `when`/`if`), this desugars to
+/// the same declare-temp + `if`-chain shape `and`/`or`'s hoisting case uses
+/// (#228), branching on a new `Expr::IsNone` test instead of a plain
+/// boolean, with `Expr::UnwrapSome` producing the non-`none` branch's
+/// value. `nullable_e` is spilled into a temp first — unlike `and`/`or`'s
+/// left operand, it's read twice here (the `IsNone` test and the
+/// `UnwrapSome` unwrap), so a side-effecting nullable (a call, …) must not
+/// run twice.
+fn lower_null_coalesce(
+    nullable_e: Expr,
+    inner_ty: KirType,
+    fallback: &ast::SpannedExpr,
+    ctx: &mut FnCtx,
+    lcx: &LowerCtx<'_>,
+    table: &mut SpanTable,
+    span: &Span,
+) -> Result<Expr, LowerError> {
+    // Isolate whatever `fallback` hoists — it's evaluated conditionally, so
+    // anything it hoists belongs inside the branch that runs it, not the
+    // buffer for the statement enclosing this whole expression.
+    let outer = ctx.begin_hoist();
+    let fallback_e = lower_expr_expecting(fallback, inner_ty, ctx, lcx, table)?;
+    let fallback_hoisted = ctx.end_hoist(outer);
+
+    if fallback_hoisted.is_empty() {
+        return Ok(Expr::NullCoalesce {
+            nullable: Box::new(nullable_e),
+            fallback: Box::new(fallback_e),
+            ty: inner_ty,
+        });
+    }
+
+    let mut nullable_slot = nullable_e;
+    if let Some(spill_stmt) = ctx.spill("<nullcoalesce.nullable>", &mut nullable_slot, span)? {
+        ctx.hoist(spill_stmt);
+    }
+
+    let local = ctx.declare_temp("<nullcoalesce.result>", inner_ty);
+    ctx.hoist(ir::Stmt::Let { local, init: None });
+
+    let mut fallback_branch = fallback_hoisted;
+    fallback_branch.push(ir::Stmt::Assign {
+        local,
+        value: fallback_e,
+    });
+    let unwrap_branch = vec![ir::Stmt::Assign {
+        local,
+        value: Expr::UnwrapSome {
+            nullable: Box::new(nullable_slot.clone()),
+            ty: inner_ty,
+        },
+    }];
+    ctx.hoist(ir::Stmt::If {
+        cond: Expr::IsNone {
+            nullable: Box::new(nullable_slot),
+            ty: KirType::Bool,
+        },
+        then_branch: fallback_branch,
+        else_branch: unwrap_branch,
+    });
+
+    Ok(Expr::Local {
+        id: local,
+        ty: inner_ty,
+    })
+}
+
 pub(crate) fn lower_expr(
     expr: &SpannedExpr,
     ctx: &mut FnCtx,
@@ -469,20 +544,7 @@ pub(crate) fn lower_expr(
                 ));
             };
             let inner_ty = lcx.nullables.borrow()[nullable_id];
-            // The fallback runs only when the left-hand side is null — same
-            // conditional-evaluation problem as an `and`/`or` right operand.
-            let mark = ctx.hoist_mark();
-            let fallback_e = lower_expr_expecting(fallback, inner_ty, ctx, lcx, table)?;
-            ctx.forbid_hoist(
-                mark,
-                "a `??` fallback (it is evaluated only when the left-hand side is null)",
-                &fallback.span,
-            )?;
-            Ok(Expr::NullCoalesce {
-                nullable: Box::new(nullable_e),
-                fallback: Box::new(fallback_e),
-                ty: inner_ty,
-            })
+            lower_null_coalesce(nullable_e, inner_ty, fallback, ctx, lcx, table, &expr.span)
         }
         ast::Expr::Pipeline(..) => Err(LowerError::unsupported("`|>` pipeline", expr.span.clone())),
         ast::Expr::Range(..) => Err(LowerError::unsupported("range", expr.span.clone())),
@@ -854,6 +916,9 @@ fn expr_is_order_transparent(expr: &Expr) -> bool {
         Expr::FieldGet { base, .. }
         | Expr::TupleGet { base, .. }
         | Expr::NullFieldGet { base, .. } => expr_is_order_transparent(base),
+        Expr::IsNone { nullable, .. } | Expr::UnwrapSome { nullable, .. } => {
+            expr_is_order_transparent(nullable)
+        }
         Expr::MakeStruct { fields, .. } => fields.iter().all(expr_is_order_transparent),
         Expr::MakeTuple { elems, .. } => elems.iter().all(expr_is_order_transparent),
     }

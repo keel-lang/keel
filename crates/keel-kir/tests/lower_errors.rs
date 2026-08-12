@@ -482,33 +482,45 @@ task f(n: int) -> int {
 }
 
 #[test]
-fn when_expression_in_a_null_coalesce_fallback_is_rejected() {
-    // Same conditional-evaluation problem as `and`/`or`: the fallback runs
-    // only when the left-hand side is null.
+fn out_of_order_effectful_struct_literal_in_a_conditional_position_is_rejected() {
+    // A struct literal whose fields are written out of declared order pins
+    // each field value into a temp bound ahead of the enclosing statement
+    // (issue #190) — rejected in a position with no enclosing statement to
+    // hoist ahead of, such as a parameter default, rather than silently
+    // evaluated in the wrong order. (A `??` fallback used to be this test's
+    // vehicle too, but #230 taught it to hoist into the branch that guards
+    // it — see `out_of_order_effectful_struct_literal_in_a_null_coalesce_
+    // fallback_now_lowers` below.)
     let msg = lower_err(
         r#"
-task f(maybe: int?, n: int) -> int {
-  return maybe ?? when n {
-    0 => 1
-    _ => 2
-  }
+type P { x: int, y: int }
+
+task note(n: int) -> int {
+  return n
+}
+
+task f(p: P = { y: note(1), x: note(2) }) -> P {
+  return p
 }
 "#,
     );
-    assert!(msg.contains("`??` fallback"), "unexpected message: {msg}");
+    assert!(
+        msg.contains("parameter default"),
+        "unexpected message: {msg}"
+    );
+    assert!(
+        msg.contains("must be evaluated ahead of the enclosing statement"),
+        "unexpected message: {msg}"
+    );
 }
 
 #[test]
-fn out_of_order_effectful_struct_literal_in_a_conditional_position_is_rejected() {
-    // A struct literal whose fields are written out of declared order pins
-    // each field value into a temp bound ahead of the enclosing statement, so
-    // it hits the same conditional-evaluation wall a nested `when` does
-    // (issue #190): the fallback runs only when the left-hand side is null,
-    // but the pinned `note` calls would run unconditionally. Rejected rather
-    // than silently evaluated in the wrong order — which is what the compiled
-    // backend used to do.
-    let msg = lower_err(
-        r#"
+fn out_of_order_effectful_struct_literal_in_a_null_coalesce_fallback_now_lowers() {
+    // #230: a `??` fallback now hoists correctly, so the out-of-order
+    // struct-literal pinning issue #190 rejects elsewhere (see the test
+    // above) lowers cleanly here — the pin temps land inside the `none`
+    // branch, not ahead of the whole statement.
+    let source = r#"
 type P { x: int, y: int }
 
 task note(n: int) -> int {
@@ -518,13 +530,11 @@ task note(n: int) -> int {
 task f(maybe: P?) -> P {
   return maybe ?? { y: note(1), x: note(2) }
 }
-"#,
-    );
-    assert!(msg.contains("`??` fallback"), "unexpected message: {msg}");
-    assert!(
-        msg.contains("must be evaluated ahead of the enclosing statement"),
-        "unexpected message: {msg}"
-    );
+"#;
+    let (program, _named) = keel_syntax::parse_source(source, "t.keel").expect("must parse");
+    let (_diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    keel_kir::lower(&program, "t.keel", &artifacts).expect("must lower");
 }
 
 #[test]
@@ -1225,18 +1235,6 @@ task f(n: int, c: bool) -> int {
         msg.contains("`while` condition"),
         "unexpected message: {msg}"
     );
-}
-
-#[test]
-fn if_expression_in_a_null_coalesce_fallback_is_rejected() {
-    let msg = lower_err(
-        r#"
-task g(maybe: int?, n: int) -> int {
-  return maybe ?? if n == 0 { 1 } else { 2 }
-}
-"#,
-    );
-    assert!(msg.contains("`??` fallback"), "unexpected message: {msg}");
 }
 
 #[test]

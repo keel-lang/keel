@@ -113,6 +113,17 @@ task f(n: int, flag: bool) -> bool {
 io.show("{f(0, true)}")   # now compiles — was rejected by keel build --emit=kir
 ```
 
+- **The native backend rejected a `when`/`if`-expression as the fallback of `??`.** Same class of gap as the `and`/`or` fix above, but `??` needed more than reusing that shape directly: the hoisted branch has to test whether the nullable is `none` and, on the non-`none` path, unwrap it, neither of which existed as a first-class KIR expression before now. Two new `keel-kir` nodes — `Expr::IsNone`/`Expr::UnwrapSome` — thin wrappers around the codegen logic `??` already used internally, let the fallback desugar the same way `and`/`or`'s right operand does when it needs to hoist. The nullable operand is evaluated exactly once even though the desugaring reads it twice (the `none` test and the unwrap):
+
+```keel
+task g(maybe: int?, n: int) -> int {
+  return maybe ?? when n {
+    0 => 1
+    _ => 2
+  }
+}
+```
+
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
 
 ```keel
