@@ -2260,6 +2260,20 @@ planned.
 | `+=` `-=` `*=` `/=` | Augmented assignment — desugars to `x = x op rhs` |
 | `...expr` | Spread — expands `list[T]` or `set[T]` into variadic slots at a call site |
 
+`and`/`or` short-circuit: the right operand is evaluated only when the
+left one doesn't already decide the result (`false` for `and`, `true` for
+`or`). A right operand with a side effect does not run when short-circuited:
+
+```keel
+task log_and_true() -> bool {
+  io.show("evaluated")
+  true
+}
+
+false and log_and_true()   # "evaluated" never prints — result is false
+true or log_and_true()     # "evaluated" never prints — result is true
+```
+
 ### `as T` coercion rules
 
 `expr as T` coerces the value at runtime. Unsupported conversions raise.
