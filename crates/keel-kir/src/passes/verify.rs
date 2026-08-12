@@ -336,6 +336,11 @@ fn verify_stmt(program: &KirProgram, func: &KirFunction, stmt: &Stmt) -> Result<
             verify_user_raised_shape(program, struct_id)?;
             verify_block(program, func, handler)
         }
+        // Both are payload-free; the "must be inside a loop" invariant is
+        // enforced at lowering time (issue #232), not re-checked here —
+        // there's no structural property of a bare `Break`/`Continue` to
+        // verify in isolation.
+        Stmt::Break | Stmt::Continue => Ok(()),
     }
 }
 

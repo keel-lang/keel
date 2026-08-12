@@ -1,0 +1,32 @@
+task while_break(n: int) -> int {
+  i = 0
+  while i < n {
+    if i == 3 {
+      break
+    }
+    i += 1
+  }
+  return i
+}
+
+task for_index_continue() -> int {
+  seen = 0
+  for i in 1..5 {
+    if i == 3 {
+      continue
+    }
+    seen += 1
+  }
+  return seen
+}
+
+task for_each_continue(xs: list[int]) -> int {
+  seen = 0
+  for x in xs {
+    if x == 3 {
+      continue
+    }
+    seen += 1
+  }
+  return seen
+}

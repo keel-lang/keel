@@ -202,6 +202,12 @@ pub(crate) struct FnCtx {
     /// [`FnCtx::hoist`] for the full rationale; [`stmt::lower_stmt`] installs
     /// a fresh buffer per statement and drains it.
     hoisted: Vec<crate::ir::Stmt>,
+    /// How many `While`/`ForIndex`/`ForEach` loops lexically enclose the
+    /// statement currently being lowered — a bare count rather than a stack
+    /// of targets, since `Break`/`Continue` always mean "the nearest
+    /// enclosing loop" and carry no explicit target of their own (issue
+    /// #232; see [`FnCtx::in_loop`]).
+    loop_depth: usize,
 }
 
 impl FnCtx {
@@ -211,7 +217,28 @@ impl FnCtx {
             scopes: vec![HashMap::new()],
             ret_ty,
             hoisted: Vec::new(),
+            loop_depth: 0,
         }
+    }
+
+    /// Marks that lowering has entered a loop body — paired with
+    /// [`FnCtx::exit_loop`] around each of `While`/`ForIndex`/`ForEach`'s
+    /// body. Lets [`FnCtx::in_loop`] tell a bare `break`/`continue` apart
+    /// from one outside any loop (issue #232).
+    pub(crate) fn enter_loop(&mut self) {
+        self.loop_depth += 1;
+    }
+
+    pub(crate) fn exit_loop(&mut self) {
+        self.loop_depth -= 1;
+    }
+
+    /// Whether the statement currently being lowered is inside a loop body
+    /// — `Break`/`Continue` outside one are rejected at lowering rather than
+    /// left to the interpreter's runtime-error treatment of the same case
+    /// (`SPEC.md` §8.8; issue #232).
+    pub(crate) fn in_loop(&self) -> bool {
+        self.loop_depth > 0
     }
 
     pub(crate) fn push_scope(&mut self) {
@@ -879,6 +906,7 @@ fn stmt_escapes_uncaught(stmt: &crate::ir::Stmt, try_depth: usize, can_raise: &[
         Stmt::Return(Some(e)) => expr_escapes_uncaught(e, try_depth, can_raise),
         Stmt::Return(None) => false,
         Stmt::Expr(e) => expr_escapes_uncaught(e, try_depth, can_raise),
+        Stmt::Break | Stmt::Continue => false,
     }
 }
 

@@ -87,6 +87,14 @@ pub(crate) struct FuncCtx<'ctx, 'a> {
     /// propagates via this function's own error return otherwise — see
     /// `stmt.rs`'s `emit_try_catch`.
     pub(crate) catch_stack: Vec<(BasicBlock<'ctx>, PointerValue<'ctx>)>,
+    /// Stack of currently active loops in this function, innermost last:
+    /// `(break target, continue target)`. `Stmt::Break`/`Stmt::Continue`
+    /// (`stmt.rs`'s `emit_break`/`emit_continue`) branch to the top entry.
+    /// Pushed/popped by each of `emit_while`/`emit_for_index`/`emit_for_each`
+    /// around their own body — `keel-kir`'s lowering already rejects a
+    /// `break`/`continue` outside any loop (issue #232), so this is never
+    /// empty when consulted.
+    pub(crate) loop_stack: Vec<(BasicBlock<'ctx>, BasicBlock<'ctx>)>,
 }
 
 /// Declares (signature only, no body) every `KirFunction` except
@@ -148,6 +156,7 @@ pub(crate) fn emit_function<'ctx>(
         ret_ty: func.ret,
         can_raise: func.can_raise,
         catch_stack: Vec::new(),
+        loop_stack: Vec::new(),
     };
 
     for (i, param) in func.params.iter().enumerate() {
@@ -200,6 +209,7 @@ pub(crate) fn emit_toplevel_function<'ctx>(
         // this is always `false` in practice, never read.
         can_raise: false,
         catch_stack: Vec::new(),
+        loop_stack: Vec::new(),
     };
     let last = stmt::emit_block(&mut fcx, &toplevel.body)?;
 

@@ -324,6 +324,15 @@ pub enum Stmt {
         binder_ty: KirType,
         handler: Block,
     },
+    /// `break` — exits the nearest enclosing `While`/`ForIndex`/`ForEach`.
+    /// Lowering rejects one that isn't inside a loop (issue #232) rather
+    /// than relying on the interpreter's runtime-error treatment of the
+    /// same case (`SPEC.md` §8.8).
+    Break,
+    /// `continue` — jumps to the nearest enclosing loop's next iteration
+    /// (its condition re-check for `While`, its increment step for
+    /// `ForIndex`/`ForEach`). Same out-of-loop rejection as `Break`.
+    Continue,
 }
 
 #[derive(Debug, Clone)]

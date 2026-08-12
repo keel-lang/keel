@@ -133,6 +133,36 @@ task g(maybe: int?, n: int) -> int {
 }
 ```
 
+### The native backend compiles `break` and `continue`
+
+`keel build --emit=kir` used to reject any program containing `break` or
+`continue` at all — in any loop shape, any position — with a generic "not
+supported by the scalar-subset KIR lowering" error, even though `keel check`
+accepted them and `keel run` executed them correctly (including bubbling out
+of a nested `try` body to the enclosing loop). Both now compile inside
+`while`, `for`-over-range, and `for`-over-`list[T]`:
+
+```keel
+use std/io
+
+task first_over(xs: list[int], limit: int) -> int {
+  for x in xs {
+    if x > limit {
+      return x
+    }
+    if x < 0 {
+      continue
+    }
+    io.show("{x}")
+  }
+  return -1
+}
+```
+
+A `break`/`continue` outside any loop is still rejected — by name, at
+compile time — rather than left to the interpreter's runtime-error handling
+of the same case.
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method
