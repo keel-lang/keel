@@ -84,6 +84,20 @@ task main() {
 main()
 ```
 
+- **The native backend's `and`/`or` codegen didn't short-circuit either, diverging from the interpreter fix above.** `keel-codegen` emitted `and`/`or` as an eager LLVM `and`/`or` instruction over two unconditionally-evaluated operands — the same bug the interpreter fix removes there, but codegen needed its own fix since it doesn't share the interpreter's evaluator. `emit_binop` now routes `And`/`Or` to a dedicated short-circuit path that branches on the left operand first and only emits the right operand's code inside the taken branch, mirroring the existing `??` short-circuit codegen (`nullable.rs`'s `emit_null_coalesce`). No `keel-kir` lowering changed — `Expr::BinOp{And|Or}` is still a flat node; the branching is entirely a `keel-codegen` concern, so a `while`/`??`/`when`-in-operand position that already compiled continues to:
+
+```keel
+use std/io
+
+task side_effect() -> bool {
+  io.show("evaluated")
+  true
+}
+
+flag = false
+flag and side_effect()   # compiled and interpreted now agree: "evaluated" never prints
+```
+
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
 
 ```keel

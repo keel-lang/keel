@@ -269,6 +269,13 @@ fn emit_binop<'ctx>(
     left: &Expr,
     right: &Expr,
 ) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    // `and`/`or` short-circuit (issue #225): the right operand must not be
+    // evaluated at all when the left one already decides the result, so it
+    // can't go through the eager "evaluate both, then dispatch on the
+    // operator" path below — branch on the left value first instead.
+    if matches!(op, BinOp::And | BinOp::Or) {
+        return emit_short_circuit(fcx, op, left, right);
+    }
     // Both operands share a type by construction (`infer_binop_ty`), so the
     // left operand's KIR type picks which LLVM instructions to emit.
     let operand_ty = left.ty();
@@ -374,8 +381,8 @@ fn emit_binop<'ctx>(
                     .build_int_compare(IntPredicate::NE, l, r, "bne")
                     .map_err(llvm_err)?
                     .into(),
-                BinOp::And => b.build_and(l, r, "and").map_err(llvm_err)?.into(),
-                BinOp::Or => b.build_or(l, r, "or").map_err(llvm_err)?.into(),
+                // `And`/`Or` never reach here — `emit_binop` routes them to
+                // `emit_short_circuit` before this match.
                 _ => return Err(unreachable_combo(op, operand_ty)),
             };
             Ok(result)
@@ -448,6 +455,85 @@ fn emit_binop<'ctx>(
         | KirType::Nullable(_)
         | KirType::Tuple(_) => Err(unreachable_combo(op, operand_ty)),
     }
+}
+
+/// `left and right` / `left or right` — short-circuits: `right` is only
+/// evaluated, and only its basic block entered, when the left operand
+/// doesn't already decide the result (`false` for `and`, `true` for `or`) —
+/// issue #225, matching the interpreter fix in #224. Uses an `alloca`'d
+/// result slot rather than a phi node, mirroring `nullable.rs`'s
+/// `emit_null_coalesce`: `right`'s own codegen may itself branch (a nested
+/// `and`/`or`, `??`, a call that can raise) and leave the builder positioned
+/// in a different block than the one this function creates, so the merge
+/// block just loads the slot instead of tracking which block to route a phi
+/// incoming from.
+fn emit_short_circuit<'ctx>(
+    fcx: &FuncCtx<'ctx, '_>,
+    op: BinOp,
+    left: &Expr,
+    right: &Expr,
+) -> Result<BasicValueEnum<'ctx>, CodegenError> {
+    // `keel-kir`'s `infer_binop_ty` only accepts `And`/`Or` over `bool`
+    // operands, so anything else reaching here is a codegen bug, not a bad
+    // program — check explicitly rather than letting a wrong-width value
+    // reach `build_conditional_branch`, which LLVM would reject with an
+    // opaque verifier error instead of this crate's own diagnostic.
+    if left.ty() != KirType::Bool {
+        return Err(unreachable_combo(op, left.ty()));
+    }
+    let lv = emit_expr(fcx, left)?.into_int_value();
+    let bool_ty = fcx.context.bool_type();
+
+    let result_ptr = fcx
+        .builder
+        .build_alloca(bool_ty, "shortcircuit.result")
+        .map_err(llvm_err)?;
+
+    let rhs_bb = fcx
+        .context
+        .append_basic_block(fcx.function, "shortcircuit.rhs");
+    let short_bb = fcx
+        .context
+        .append_basic_block(fcx.function, "shortcircuit.short");
+    let merge_bb = fcx
+        .context
+        .append_basic_block(fcx.function, "shortcircuit.merge");
+
+    // `and`: a true left still needs `right`; a false left already decided.
+    // `or`: a true left already decided; a false left still needs `right`.
+    let (true_dest, false_dest) = match op {
+        BinOp::And => (rhs_bb, short_bb),
+        BinOp::Or => (short_bb, rhs_bb),
+        _ => unreachable!("emit_binop only routes And/Or here"),
+    };
+    fcx.builder
+        .build_conditional_branch(lv, true_dest, false_dest)
+        .map_err(llvm_err)?;
+
+    fcx.builder.position_at_end(short_bb);
+    let short_value = match op {
+        BinOp::And => bool_ty.const_int(0, false),
+        BinOp::Or => bool_ty.const_int(1, false),
+        _ => unreachable!("emit_binop only routes And/Or here"),
+    };
+    fcx.builder
+        .build_store(result_ptr, short_value)
+        .map_err(llvm_err)?;
+    fcx.builder
+        .build_unconditional_branch(merge_bb)
+        .map_err(llvm_err)?;
+
+    fcx.builder.position_at_end(rhs_bb);
+    let rv = emit_expr(fcx, right)?;
+    fcx.builder.build_store(result_ptr, rv).map_err(llvm_err)?;
+    fcx.builder
+        .build_unconditional_branch(merge_bb)
+        .map_err(llvm_err)?;
+
+    fcx.builder.position_at_end(merge_bb);
+    fcx.builder
+        .build_load(bool_ty, result_ptr, "shortcircuit.load")
+        .map_err(llvm_err)
 }
 
 fn emit_unop<'ctx>(
