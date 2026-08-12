@@ -89,6 +89,11 @@ task main() {
 main()
 ```
 
+The native backend's `and`/`or` codegen had the identical bug and is fixed
+too — compiled and interpreted programs now agree on this example, and on
+any other short-circuited `and`/`or`, everywhere the operator is used
+(`while` conditions included).
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method
