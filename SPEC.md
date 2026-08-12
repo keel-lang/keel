@@ -506,7 +506,7 @@ The Keel standard library lives in a set of modules imported with `use std/<name
 | `std/log` | Structured logging | `info`, `warn`, `error`, `debug` |
 | `std/random` | Pseudo-random generation | `float()`, `int(min:, max:)`, `bool()` |
 | `std/uuid` | UUID constructors (the `Uuid` *type* is built in) | `v4()`, `v7()`, `v5(ns:, name:)`, `parse(s)` |
-| `std/crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(data, key:)`, `token(bytes:)`, `random_bytes(n)` |
+| `std/crypto` | Cryptographic primitives | `sha256(data)`, `hmac_sha256(key, data)`, `token(bytes:)`, `random_bytes(n)` |
 | `std/math` | Transcendental and power functions | `PI()`, `E()`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `log(x)`, `log2(x)`, `log10(x)`, `sin(x)`, `cos(x)`, `tan(x)`, `asin(x)`, `acos(x)`, `atan(x)`, `atan2(y, x)` |
 | `std/csv` | CSV serialization | `parse(text)`, `parse_records(text)`, `stringify(rows)` |
 | `std/testing` | Test doubles | `mock(module.method)` (§19) |
@@ -1929,19 +1929,19 @@ id.format(as: "simple")                            # "f47ac10b58cc4372a5670e02b2
 | `crypto.sha512(data)` | `str` | SHA-512 hex digest |
 | `crypto.sha512_224(data)` | `str` | SHA-512/224 hex digest |
 | `crypto.sha512_256(data)` | `str` | SHA-512/256 hex digest |
-| `crypto.hmac_sha224(data, key:)` | `str` | HMAC-SHA-224 hex signature |
-| `crypto.hmac_sha256(data, key:)` | `str` | HMAC-SHA-256 hex signature |
-| `crypto.hmac_sha384(data, key:)` | `str` | HMAC-SHA-384 hex signature |
-| `crypto.hmac_sha512(data, key:)` | `str` | HMAC-SHA-512 hex signature |
-| `crypto.hmac_sha512_224(data, key:)` | `str` | HMAC-SHA-512/224 hex signature |
-| `crypto.hmac_sha512_256(data, key:)` | `str` | HMAC-SHA-512/256 hex signature |
+| `crypto.hmac_sha224(key, data)` | `str` | HMAC-SHA-224 hex signature |
+| `crypto.hmac_sha256(key, data)` | `str` | HMAC-SHA-256 hex signature |
+| `crypto.hmac_sha384(key, data)` | `str` | HMAC-SHA-384 hex signature |
+| `crypto.hmac_sha512(key, data)` | `str` | HMAC-SHA-512 hex signature |
+| `crypto.hmac_sha512_224(key, data)` | `str` | HMAC-SHA-512/224 hex signature |
+| `crypto.hmac_sha512_256(key, data)` | `str` | HMAC-SHA-512/256 hex signature |
 | `crypto.token(bytes: 32)` | `str` | Cryptographically secure random hex token |
 | `crypto.random_bytes(n)` | `list[int]` | `n` CSPRNG bytes |
 
 ```keel
 crypto.sha256("hello")                        # "2cf24db..."
 crypto.sha384("hello")
-crypto.hmac_sha256("msg", key: secret)
+crypto.hmac_sha256(secret, "msg")
 crypto.token()                                # 64-char hex string (32 bytes)
 crypto.token(bytes: 16)                       # 32-char hex string
 crypto.random_bytes(16)                       # list[int] of 16 bytes

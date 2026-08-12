@@ -8,7 +8,7 @@ use OrderSide, TradeRecord, TradingDecision, Portfolio from "./types.keel"
 
 task sign_payload(side: OrderSide, qty: float, price: float) -> str {
   payload = "side={side}&qty={qty:.8f}&price={price:.2f}&ts={time.epoch_ms()}"
-  crypto.hmac_sha256(payload, key: "paper-trading-secret")
+  crypto.hmac_sha256("paper-trading-secret", payload)
 }
 
 task simulate_fill(decision: TradingDecision, side: OrderSide, qty: float, price: float) -> TradeRecord {

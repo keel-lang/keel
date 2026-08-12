@@ -6,7 +6,7 @@ agent CryptoDemo {
   @on_start {
     digest = crypto.sha256("hello")
     wide = crypto.sha384("hello")
-    sig = crypto.hmac_sha256("message", key: "secret")
+    sig = crypto.hmac_sha256("secret", "message")
     token = crypto.token(bytes: 16)
     bytes = crypto.random_bytes(8)
     io.show("digest={digest} wide={wide} sig={sig} token={token} bytes={bytes}")
@@ -22,7 +22,7 @@ test "sha256 of a known input" {
 }
 
 test "hmac-sha256 with a known key" {
-  assert crypto.hmac_sha256("message", key: "secret") == "8b5f48702995c1598c573db1e21866a9b825d4a794d169d7060a03605796360b"
+  assert crypto.hmac_sha256("secret", "message") == "8b5f48702995c1598c573db1e21866a9b825d4a794d169d7060a03605796360b"
 }
 
 test "token length follows the byte count" {

@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Named functions now work everywhere a lambda does, lambdas get formal non-capturing semantics, and the LLVM backend closes the gap on stdlib calls and string methods.
+%%TAGLINE%% Named functions now work everywhere a lambda does, lambdas get formal non-capturing semantics, `crypto.hmac_*` gets a breaking argument-order fix, and the LLVM backend closes the gap on stdlib calls and string methods.
 
 ### Added
 
@@ -57,6 +57,15 @@ task work() -> int {
 task main() {
   io.show("{control.retry(3, work)}")   # now works — was "missing closure argument"
 }
+```
+
+- **`crypto.hmac_sha224`/`hmac_sha256`/`hmac_sha384`/`hmac_sha512`/`hmac_sha512_224`/`hmac_sha512_256` read arguments in the opposite order from what the catalog declared.** The catalog (`keel-catalog`) has always declared both params required and positional, in the order `key, data` — and `keel check` validated calls against that — but the runtime read `data` positionally at index 0 and `key` by name only, so `crypto.hmac_sha256("k", "d")` passed `keel check` and then failed at `keel run` with `` missing `key:` argument ``; the only call that actually worked was `crypto.hmac_sha256("d", key: "k")`, which contradicted the declared order and every other namespace method's "required params are positional" convention. Both arguments are now read positionally, `key` then `data`, matching the catalog and `keel check`. **Breaking:** any call passing `key:` by name (`crypto.hmac_sha256(data, key: secret)`) must switch to positional order (`crypto.hmac_sha256(secret, data)`).
+
+```keel
+use std/crypto
+use std/io
+
+io.show(crypto.hmac_sha256("secret", "message"))   # now the only valid call — was key:-named
 ```
 
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:

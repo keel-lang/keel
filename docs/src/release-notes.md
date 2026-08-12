@@ -46,6 +46,26 @@ task main() {
 }
 ```
 
+### `crypto.hmac_*` now takes `key, data` positionally — no more `key:`
+
+The HMAC family (`hmac_sha224`/`hmac_sha256`/`hmac_sha384`/`hmac_sha512`/
+`hmac_sha512_224`/`hmac_sha512_256`) read arguments in the opposite order
+from what the catalog declared: `key` was name-only and `data` was
+positional, even though `keel check` validated calls against the declared
+`key, data` positional order. `crypto.hmac_sha256("k", "d")` passed `keel
+check` and then failed at `keel run`. Both arguments are now positional,
+`key` then `data`, matching what `keel check` always expected.
+
+```keel
+use std/crypto
+use std/io
+
+io.show(crypto.hmac_sha256("secret", "message"))
+```
+
+**Breaking:** replace `crypto.hmac_sha256(data, key: secret)` with
+`crypto.hmac_sha256(secret, data)`.
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method

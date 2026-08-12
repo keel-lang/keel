@@ -2,7 +2,7 @@ use sha2::{Digest, Sha224, Sha256, Sha384, Sha512, Sha512_224, Sha512_256};
 
 use crate::interpreter::value::Value;
 use crate::interpreter::{CallArgValue, Namespace};
-use crate::runtime::args::{expect_int, expect_str, expect_str_named};
+use crate::runtime::args::{expect_int, expect_str};
 use crate::runtime::namespace::{find_arg, ns, positional};
 
 const DEFAULT_TOKEN_BYTES: usize = 32;
@@ -83,9 +83,8 @@ fn hash_call(args: Vec<CallArgValue>, algo: HashAlgo, context: &str) -> miette::
 }
 
 fn hmac_call(args: Vec<CallArgValue>, algo: HashAlgo, context: &str) -> miette::Result<Value> {
-    let data = expect_str(&args, 0, context)?;
-    let key = expect_str_named(&args, "key", context)?
-        .ok_or_else(|| miette::miette!("{context}: missing `key:` argument"))?;
+    let key = expect_str(&args, 0, context)?;
+    let data = expect_str(&args, 1, context)?;
     Ok(Value::String(hmac_hex(
         key.as_bytes(),
         data.as_bytes(),

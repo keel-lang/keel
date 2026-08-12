@@ -146,7 +146,7 @@ simple = id.format(as: "simple")
 ```keel
 digest = crypto.sha256("hello")
 wide = crypto.sha384("hello")
-sig = crypto.hmac_sha256("message", key: secret)
+sig = crypto.hmac_sha256(secret, "message")
 token = crypto.token(bytes: 32)
 bytes = crypto.random_bytes(16)
 ```
