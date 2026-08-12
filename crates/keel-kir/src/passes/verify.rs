@@ -602,6 +602,37 @@ fn verify_expr(program: &KirProgram, func: &KirFunction, expr: &Expr) -> Result<
             }
             Ok(())
         }
+        Expr::IsNone { nullable, ty } => {
+            verify_expr(program, func, nullable)?;
+            let KirType::Nullable(id) = nullable.ty() else {
+                return Err(format!(
+                    "IsNone operand is {}, expected a nullable",
+                    nullable.ty()
+                ));
+            };
+            check_nullable(program, id)?;
+            if *ty != KirType::Bool {
+                return Err(format!("IsNone claims type {ty}, expected bool"));
+            }
+            Ok(())
+        }
+        Expr::UnwrapSome { nullable, ty } => {
+            verify_expr(program, func, nullable)?;
+            let KirType::Nullable(id) = nullable.ty() else {
+                return Err(format!(
+                    "UnwrapSome operand is {}, expected a nullable",
+                    nullable.ty()
+                ));
+            };
+            check_nullable(program, id)?;
+            let inner = program.nullables[id];
+            if inner != *ty {
+                return Err(format!(
+                    "UnwrapSome claims type {ty} but the nullable's inner type is {inner}"
+                ));
+            }
+            Ok(())
+        }
     }
 }
 

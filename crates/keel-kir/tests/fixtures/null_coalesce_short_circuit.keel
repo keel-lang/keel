@@ -1,0 +1,16 @@
+task pick(maybe: int?, n: int) -> int {
+  return maybe ?? when n {
+    0 => 1
+    _ => 2
+  }
+}
+
+task pick_if(maybe: int?, n: int) -> int {
+  return maybe ?? if n == 0 { 1 } else { 2 }
+}
+
+# Pins that a `??` whose fallback needs no hoisting still lowers to the flat
+# `(maybe ?? fallback)` node, not the IsNone/UnwrapSome desugaring above.
+task plain(maybe: int?, fallback: int) -> int {
+  return maybe ?? fallback
+}

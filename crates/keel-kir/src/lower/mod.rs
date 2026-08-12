@@ -341,8 +341,11 @@ impl FnCtx {
     ///
     /// Shared by [`FnCtx::keep_order`] (which splices the `Let`s in ahead of
     /// a hoisted chain) and [`FnCtx::pin_order`] (which appends them), so
-    /// both agree on exactly which values are spillable.
-    fn spill(
+    /// both agree on exactly which values are spillable. Also called
+    /// directly by `lower_null_coalesce`, to evaluate a `??` left-hand
+    /// nullable exactly once when its desugaring needs to read it twice
+    /// (once for `IsNone`, once for `UnwrapSome`).
+    pub(crate) fn spill(
         &mut self,
         name: &str,
         slot: &mut crate::ir::Expr,
@@ -916,6 +919,9 @@ fn expr_escapes_uncaught(expr: &crate::ir::Expr, try_depth: usize, can_raise: &[
         Expr::FieldGet { base, .. }
         | Expr::NullFieldGet { base, .. }
         | Expr::TupleGet { base, .. } => expr_escapes_uncaught(base, try_depth, can_raise),
+        Expr::IsNone { nullable, .. } | Expr::UnwrapSome { nullable, .. } => {
+            expr_escapes_uncaught(nullable, try_depth, can_raise)
+        }
         Expr::MakeStruct { fields, .. } => fields
             .iter()
             .any(|f| expr_escapes_uncaught(f, try_depth, can_raise)),
