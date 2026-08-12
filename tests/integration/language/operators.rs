@@ -471,3 +471,115 @@ run(A)
         "expected spread/variadic error:\n{stderr}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// `and`/`or` short-circuit evaluation (issue #224)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn and_does_not_evaluate_right_operand_when_left_is_falsy() {
+    let src = r#"
+use std/io
+
+task side_effect() -> bool {
+  io.show("evaluated")
+  true
+}
+
+task main() {
+  flag = false
+  result = flag and side_effect()
+  io.show("{result}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        !stdout.contains("evaluated"),
+        "right operand of `and` must not run when the left is falsy:\n{stdout}"
+    );
+    assert!(stdout.contains("false"), "expected false:\n{stdout}");
+}
+
+#[test]
+fn or_does_not_evaluate_right_operand_when_left_is_truthy() {
+    let src = r#"
+use std/io
+
+task side_effect() -> bool {
+  io.show("evaluated")
+  true
+}
+
+task main() {
+  flag = true
+  result = flag or side_effect()
+  io.show("{result}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        !stdout.contains("evaluated"),
+        "right operand of `or` must not run when the left is truthy:\n{stdout}"
+    );
+    assert!(stdout.contains("true"), "expected true:\n{stdout}");
+}
+
+#[test]
+fn and_still_evaluates_right_operand_when_left_is_truthy() {
+    let src = r#"
+use std/io
+
+task side_effect() -> bool {
+  io.show("evaluated")
+  false
+}
+
+task main() {
+  flag = true
+  result = flag and side_effect()
+  io.show("{result}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("evaluated"),
+        "right operand of `and` must still run when the left is truthy:\n{stdout}"
+    );
+    assert!(stdout.contains("false"), "expected false:\n{stdout}");
+}
+
+#[test]
+fn or_still_evaluates_right_operand_when_left_is_falsy() {
+    let src = r#"
+use std/io
+
+task side_effect() -> bool {
+  io.show("evaluated")
+  true
+}
+
+task main() {
+  flag = false
+  result = flag or side_effect()
+  io.show("{result}")
+}
+
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    assert!(
+        stdout.contains("evaluated"),
+        "right operand of `or` must still run when the left is falsy:\n{stdout}"
+    );
+    assert!(stdout.contains("true"), "expected true:\n{stdout}");
+}

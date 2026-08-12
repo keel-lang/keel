@@ -4,7 +4,9 @@ use std::pin::Pin;
 
 use miette::Result;
 
-use crate::ast::{CallArg, Expr, Node, SpannedExpr, StringPart, TypeExpr, UnOp, tuple_index};
+use crate::ast::{
+    BinOp, CallArg, Expr, Node, SpannedExpr, StringPart, TypeExpr, UnOp, tuple_index,
+};
 
 use super::environment::Environment;
 use super::host::Host;
@@ -568,6 +570,19 @@ impl Interpreter {
                         ExprFlow::Value(v) => v,
                         early => return Ok(early),
                     };
+                    // `and`/`or` short-circuit: the right operand is only
+                    // evaluated when the left one didn't already decide the
+                    // result (issue #224). Every other operator evaluates
+                    // both operands unconditionally.
+                    match op {
+                        BinOp::And if !l.is_truthy() => {
+                            return Ok(ExprFlow::Value(Value::Bool(false)));
+                        }
+                        BinOp::Or if l.is_truthy() => {
+                            return Ok(ExprFlow::Value(Value::Bool(true)));
+                        }
+                        _ => {}
+                    }
                     let r = match self.eval_expr(right, env).await? {
                         ExprFlow::Value(v) => v,
                         early => return Ok(early),

@@ -66,6 +66,29 @@ io.show(crypto.hmac_sha256("secret", "message"))
 **Breaking:** replace `crypto.hmac_sha256(data, key: secret)` with
 `crypto.hmac_sha256(secret, data)`.
 
+### `and`/`or` now short-circuit
+
+The right operand of `and`/`or` used to run unconditionally — even after
+the left operand already decided the result — in the interpreter itself,
+not just the native backend. `flag and side_effect()` ran `side_effect()`
+even when `flag` was `false`. `and`/`or` now short-circuit like every other
+language's boolean operators: the right operand only runs when the left one
+doesn't already determine the result.
+
+```keel
+task side_effect() -> bool {
+  io.show("evaluated")
+  true
+}
+
+task main() {
+  flag = false
+  flag and side_effect()   # "evaluated" no longer prints
+}
+
+main()
+```
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method

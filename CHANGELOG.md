@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Named functions now work everywhere a lambda does, lambdas get formal non-capturing semantics, `crypto.hmac_*` gets a breaking argument-order fix, and the LLVM backend closes the gap on stdlib calls and string methods.
+%%TAGLINE%% Named functions now work everywhere a lambda does, `and`/`or` finally short-circuit, `crypto.hmac_*` gets a breaking argument-order fix, and the LLVM backend closes the gap on stdlib calls and string methods.
 
 ### Added
 
@@ -66,6 +66,22 @@ use std/crypto
 use std/io
 
 io.show(crypto.hmac_sha256("secret", "message"))   # now the only valid call — was key:-named
+```
+
+- **`and`/`or` never short-circuited — the right operand always ran, even when the left already decided the result.** `Expr::BinaryOp` evaluated both operands unconditionally before ever looking at the operator, so `flag and side_effect()` ran `side_effect()` even with `flag = false`, and likewise for `or` with a truthy left operand. This affected the interpreter itself, not just the native backend — `keel run` was wrong, not just `keel build`. `and`/`or` now short-circuit: the right operand is only evaluated when the left one doesn't already determine the result, matching every other language's boolean operators and the assumption `keel-kir`'s own `when`-lowering already made about this behavior.
+
+```keel
+task side_effect() -> bool {
+  io.show("evaluated")
+  true
+}
+
+task main() {
+  flag = false
+  flag and side_effect()   # "evaluated" no longer prints — was printing unconditionally
+}
+
+main()
 ```
 
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
