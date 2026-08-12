@@ -330,7 +330,9 @@ fn emit_for_each<'ctx>(
     let body_bb = fcx.context.append_basic_block(fcx.function, "foreach.body");
     // See `emit_for_index`'s `latch_bb` doc — same reason: `continue` must
     // still run the index increment, not just jump back to the condition.
-    let latch_bb = fcx.context.append_basic_block(fcx.function, "foreach.latch");
+    let latch_bb = fcx
+        .context
+        .append_basic_block(fcx.function, "foreach.latch");
     let end_bb = fcx.context.append_basic_block(fcx.function, "foreach.end");
 
     fcx.builder
