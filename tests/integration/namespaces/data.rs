@@ -151,7 +151,7 @@ agent A {
     @on_start {
         digest = crypto.sha256("hello")
         wide = crypto.sha384("hello")
-        sig = crypto.hmac_sha256("The quick brown fox jumps over the lazy dog", key: "key")
+        sig = crypto.hmac_sha256("key", "The quick brown fox jumps over the lazy dog")
         token = crypto.token(bytes: 16)
         bytes = crypto.random_bytes(4)
         if digest == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" and wide == "59e1748777448c69de6b800d7a33bbfb9ff1b463e44354c3553bcdb9c666fa90125a3c79f90397bdf5f6a13de828684f" and sig == "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8" and token.len() == 32 and bytes.len() == 4 {
@@ -168,6 +168,31 @@ run(A)
         "Crypto namespace program failed\nstdout: {stdout}\nstderr: {stderr}"
     );
     assert!(stdout.contains("crypto-ok"), "{stdout}");
+}
+
+// Regression: hmac_sha256 read `data` positionally and `key` by name only,
+// diverging from the catalog's declared `key, data` positional order —
+// `keel check` accepted `hmac_sha256("k", "d")` and `keel run` rejected it
+// with "missing `key:` argument" (issue #211).
+#[test]
+fn hmac_sha256_takes_key_then_data_positionally_matching_the_checker() {
+    let src = r#"
+use std/crypto
+use std/io
+task main() {
+    io.show(crypto.hmac_sha256("key", "The quick brown fox jumps over the lazy dog"))
+}
+main()
+"#;
+    let (ok, stdout, stderr) = run_inline(src, false);
+    assert!(
+        ok,
+        "hmac_sha256(key, data) should run cleanly\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"),
+        "expected the known HMAC-SHA256 test vector:\n{stdout}"
+    );
 }
 
 #[test]
