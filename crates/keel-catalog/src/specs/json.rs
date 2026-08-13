@@ -11,6 +11,7 @@ pub const SPEC: &[BuiltinMethod] = &[
             name: "s",
             ty: TySpec::Str,
             optional: false,
+            binding: ParamBinding::PositionalOnly,
         }],
         // Unknown (ExternalDynamic): the JSON structure depends on runtime input and is
         // not statically knowable. `keel check --strict` will flag unannotated bindings;
@@ -26,6 +27,7 @@ pub const SPEC: &[BuiltinMethod] = &[
             name: "value",
             ty: TySpec::Dynamic,
             optional: false,
+            binding: ParamBinding::PositionalOnly,
         }],
         result: BuiltinResult::Fixed(TySpec::Str),
         doc: "Serialize a value to a JSON string.",

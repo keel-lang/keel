@@ -10,6 +10,7 @@ pub const SPEC: &[BuiltinMethod] = &[BuiltinMethod {
         name: "url",
         ty: TySpec::Str,
         optional: false,
+        binding: ParamBinding::PositionalOnly,
     }],
     result: BuiltinResult::Fixed(TySpec::DbConnection),
     doc: "Open a database connection and return a DbConnection.",

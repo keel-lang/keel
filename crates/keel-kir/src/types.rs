@@ -163,7 +163,8 @@ impl KirType {
             | TySpec::ListOfListOfStr
             | TySpec::ListOfMapStrStr
             | TySpec::ListOfMapStrDynamic
-            | TySpec::Unknown => None,
+            | TySpec::Unknown
+            | TySpec::Callback => None,
         }
     }
 

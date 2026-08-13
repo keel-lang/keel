@@ -7,9 +7,14 @@ pub const SPEC: &[BuiltinMethod] = &[
         namespace: "time",
         name: "now",
         method_id: 0,
-        params: &[],
+        params: &[BuiltinParam {
+            name: "tz",
+            ty: TySpec::Str,
+            optional: true,
+            binding: ParamBinding::NamedOnly,
+        }],
         result: BuiltinResult::Fixed(TySpec::Datetime),
-        doc: "Return the current UTC datetime.",
+        doc: "Return the current datetime, optionally offset-shifted to an IANA timezone.",
     },
     BuiltinMethod {
         namespace: "time",
@@ -23,12 +28,21 @@ pub const SPEC: &[BuiltinMethod] = &[
         namespace: "time",
         name: "parse",
         method_id: 2,
-        params: &[BuiltinParam {
-            name: "s",
-            ty: TySpec::Str,
-            optional: false,
-        }],
+        params: &[
+            BuiltinParam {
+                name: "s",
+                ty: TySpec::Str,
+                optional: false,
+                binding: ParamBinding::PositionalOnly,
+            },
+            BuiltinParam {
+                name: "tz",
+                ty: TySpec::Str,
+                optional: true,
+                binding: ParamBinding::NamedOnly,
+            },
+        ],
         result: BuiltinResult::Fixed(TySpec::NullableDatetime),
-        doc: "Parse a datetime string, returning none on failure.",
+        doc: "Parse a datetime string, returning none on failure. `tz` coerces a naive (no-offset) string into the given timezone.",
     },
 ];

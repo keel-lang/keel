@@ -11,7 +11,9 @@
 //! }
 //! ```
 
-pub use keel_catalog::builtins::{BuiltinMethod, BuiltinParam, BuiltinResult, TySpec};
+pub use keel_catalog::builtins::{
+    BuiltinMethod, BuiltinParam, BuiltinResult, ParamBinding, TySpec,
+};
 
 /// Iterate every built-in namespace method registered in the stdlib catalog.
 ///
