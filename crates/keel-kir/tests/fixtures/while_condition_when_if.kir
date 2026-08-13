@@ -1,0 +1,45 @@
+fn while_when(n: int) -> int {
+  while true {
+    let <when.result>: bool
+    if (n == 0) {
+      <when.result> = true
+    } else {
+      if true {
+        <when.result> = false
+      }
+    }
+    if <when.result> {
+      n = (n + 1)
+    } else {
+      break
+    }
+  }
+  return n
+}
+
+fn while_if(n: int, c: bool) -> int {
+  while true {
+    let <if.result>: bool
+    if c {
+      <if.result> = (n < 3)
+    } else {
+      <if.result> = false
+    }
+    if <if.result> {
+      n = (n + 1)
+    } else {
+      break
+    }
+  }
+  return n
+}
+
+fn plain(n: int) -> int {
+  while (n < 5) {
+    n = (n + 1)
+  }
+  return n
+}
+
+fn <toplevel>() -> none {
+}

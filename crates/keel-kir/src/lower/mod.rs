@@ -327,10 +327,13 @@ impl FnCtx {
     /// Rejects a sub-expression that hoisted, at a position where the hoisted
     /// statements cannot legally be moved ahead of the enclosing statement:
     /// either because the sub-expression isn't evaluated exactly once there
-    /// (a `while` condition runs per iteration; an `and`/`or` right operand,
-    /// a `??` fallback and a `when` arm's own pattern test are all
-    /// conditional), or because there is no enclosing statement at all (a
-    /// task's parameter default, lowered standalone).
+    /// (a `when` arm's own pattern test is conditional — every other
+    /// once-per-iteration or conditionally-evaluated position that used to
+    /// go through here, a `while` condition, an `and`/`or` right operand, a
+    /// `??` fallback, now has its own isolated hoist scope instead, see
+    /// [`FnCtx::begin_hoist`]/[`FnCtx::end_hoist`]), or because there is no
+    /// enclosing statement at all (a task's parameter default, lowered
+    /// standalone).
     ///
     /// This is the *default* posture: any site that lowers a sub-expression
     /// and does not explicitly opt into [`FnCtx::keep_order`] calls this

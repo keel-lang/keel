@@ -152,12 +152,11 @@ pub(crate) fn infer_binop_ty(
 /// ([`super::stmt::lower_if_expr_value`]/[`super::stmt::lower_when_expr_value`]),
 /// with `right`'s hoisted statements embedded *inside* the branch that
 /// actually runs it, rather than spliced ahead of the whole enclosing
-/// statement. That desugaring itself hoists, so it inherits every
-/// position's existing hoist restrictions — in particular, a `while`
-/// condition still rejects it (`lower_while`'s `forbid_hoist`), since a
-/// hoisted chain can only run once, ahead of the loop, not once per
-/// iteration. That case needs a `break`-guarded prelude and remains out of
-/// scope (#193's `while` case).
+/// statement. That desugaring itself hoists, so it inherits whatever
+/// position it lands in — including a `while` condition, which now handles
+/// a hoisted chain correctly by moving it inside the loop body behind a
+/// `break` guard (issue #193), so `while flag and when n {...} { }` lowers
+/// like any other position.
 fn lower_and_or(
     left: &ast::SpannedExpr,
     kir_op: ir::BinOp,
@@ -870,8 +869,11 @@ fn lower_struct_lit(
 /// Skipping the pin for an all-transparent
 /// literal is not just an optimization: pinning emits hoisted statements,
 /// which are rejected outright in the positions [`FnCtx::forbid_hoist`]
-/// guards (a `while` condition, a `??` fallback, …), so an unconditional pin
-/// would stop `x ?? { y: n, x: m }` from compiling at all.
+/// still guards (a `when` arm's pattern test, a parameter default — `while`
+/// conditions and `??` fallbacks moved to their own isolated hoist scopes in
+/// #193/#230 and no longer go through `forbid_hoist` at all), so an
+/// unconditional pin would stop a reordered struct literal from compiling
+/// in those positions.
 fn needs_order_pinning(values: &[Expr], slots: impl Iterator<Item = usize>) -> bool {
     let reorders = slots
         .enumerate()

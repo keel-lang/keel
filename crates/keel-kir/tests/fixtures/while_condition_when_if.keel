@@ -1,0 +1,25 @@
+task while_when(n: int) -> int {
+  while when n {
+    0 => true
+    _ => false
+  } {
+    n += 1
+  }
+  return n
+}
+
+task while_if(n: int, c: bool) -> int {
+  while if c { n < 3 } else { false } {
+    n += 1
+  }
+  return n
+}
+
+# Pins that a `while` condition needing no hoisting still lowers to the flat
+# `while cond { ... }` node, not the break-guarded desugaring above.
+task plain(n: int) -> int {
+  while n < 5 {
+    n += 1
+  }
+  return n
+}
