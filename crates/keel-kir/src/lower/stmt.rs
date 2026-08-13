@@ -296,17 +296,19 @@ fn lower_stmt_inner(
         }
         ast::Stmt::While { cond, body } => {
             // Unlike an `if` condition, a `while` condition is re-evaluated
-            // once per iteration — hoisting out of it would emit the chain
-            // ahead of the loop and evaluate it exactly once, so it's
-            // rejected rather than silently miscompiled.
-            let mark = ctx.hoist_mark();
+            // once per iteration — a bare hoist ahead of the loop would run
+            // the chain exactly once instead. Lowered into its own isolated
+            // hoist scope (issue #193; same shape #228/#230 used for
+            // `and`/`or`'s right operand and `??`'s fallback): if nothing
+            // hoists, the condition stays the flat node below, unaffected.
+            // If it does, the desugaring re-runs the hoisted prelude and the
+            // condition test every iteration by moving both *inside* the
+            // loop body, guarded by a `break` — `while true { <prelude>; if
+            // cond { <body> } else { break } }` — which now works end to
+            // end since #232 landed `Stmt::Break`.
+            let outer = ctx.begin_hoist();
             let cond_expr = lower_expr(cond, ctx, lcx, table)?;
-            ctx.forbid_hoist(
-                mark,
-                "a `while` condition (the condition is re-evaluated once per iteration, but \
-                 the hoisted arms would run only once, ahead of the loop)",
-                &cond.span,
-            )?;
+            let prelude = ctx.end_hoist(outer);
             if cond_expr.ty() != KirType::Bool {
                 return Err(LowerError::new(
                     format!("`while` condition is `{}`, expected `bool`", cond_expr.ty()),
@@ -314,11 +316,23 @@ fn lower_stmt_inner(
                 ));
             }
             ctx.enter_loop();
-            let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
+            let lowered_body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
             ctx.exit_loop();
-            Ok(vec![ir::Stmt::While {
+            if prelude.is_empty() {
+                return Ok(vec![ir::Stmt::While {
+                    cond: cond_expr,
+                    body: lowered_body,
+                }]);
+            }
+            let mut guarded_body = prelude;
+            guarded_body.push(ir::Stmt::If {
                 cond: cond_expr,
-                body,
+                then_branch: lowered_body,
+                else_branch: vec![ir::Stmt::Break],
+            });
+            Ok(vec![ir::Stmt::While {
+                cond: ir::Expr::ConstBool(true),
+                body: guarded_body,
             }])
         }
         ast::Stmt::Expr(expr) => match sink {
@@ -461,8 +475,9 @@ fn lower_stmt_inner(
 /// rejected by [`FnCtx::forbid_hoist`] where there is no enclosing statement
 /// to run ahead of (a parameter default — see `decl.rs`'s
 /// `lower_param_defaults`) or where the subject would not be evaluated
-/// exactly once (a `while` condition, an `and`/`or` right operand, a `??`
-/// fallback, a `when` arm's own pattern test).
+/// exactly once (a `when` arm's own pattern test — a `while` condition, an
+/// `and`/`or` right operand, and a `??` fallback each have their own
+/// isolated hoist scope now and compose with this normally).
 fn lower_when_stmt(
     subject: &ast::SpannedExpr,
     arms: &[ast::WhenArm],
@@ -866,10 +881,11 @@ fn lower_if_expr_let(
 ///
 /// Because it hoists, an `if`-expression inherits every positional
 /// restriction the hoist buffer already enforces — [`FnCtx::forbid_hoist`]
-/// rejects it in a `while` condition, an `and`/`or` right operand, a `??`
-/// fallback, a `when` arm's pattern test, and a parameter default. Those
-/// guards key off the buffer growing, not off any particular syntax, so they
-/// needed no change to cover this construct.
+/// still rejects it in a `when` arm's pattern test and a parameter default.
+/// A `while` condition, an `and`/`or` right operand, and a `??` fallback
+/// each moved to their own isolated hoist scope instead, so an `if`-expression
+/// composes there too. These guards key off the buffer growing, not off any
+/// particular syntax, so they needed no change to cover this construct.
 ///
 /// `expected` is the type the surrounding syntax pins, when it pins one; with
 /// `None` the result type falls back to the same discarded `then`-branch

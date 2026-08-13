@@ -145,6 +145,31 @@ task first_over(xs: list[int], limit: int) -> int {
 
   A `break`/`continue` outside any loop is still rejected at lowering, by name, rather than deferred to the interpreter's runtime-error treatment of the same case (`SPEC.md` §8.8).
 
+- **The native backend rejected a `when`/`if`-expression as a `while` condition.** The last of the positions this family of fixes covers: a `while` condition is re-evaluated once per iteration, so a bare hoist ahead of the loop (the mechanism `when`/`if`-as-expression normally uses) would run the chain exactly once instead — `keel build --emit=kir` rejected it outright rather than get that wrong. It now moves the hoisted chain *inside* the loop body, guarded by a `break`, so it re-runs every iteration along with the condition itself — made possible by `break` finally compiling (previous entry):
+
+```keel
+use std/io
+
+task check(n: int) -> bool {
+  io.show("check {n}")
+  return when n {
+    0 => true
+    1 => true
+    _ => false
+  }
+}
+
+task f() -> int {
+  n = 0
+  while check(n) {
+    n += 1
+  }
+  return n
+}
+
+io.show("{f()}")   # check 0 / check 1 / check 2 / 2 — checked once per iteration
+```
+
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
 
 ```keel

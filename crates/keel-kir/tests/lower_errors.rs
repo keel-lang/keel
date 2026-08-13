@@ -458,11 +458,14 @@ task f(n: int) -> str {
 }
 
 #[test]
-fn when_expression_in_a_while_condition_is_rejected() {
+fn when_expression_in_a_while_condition_now_lowers() {
     // A `while` condition is re-evaluated once per iteration, but a hoisted
-    // `when`-chain runs exactly once, ahead of the loop — no spill can
-    // recover that, so it's rejected rather than miscompiled (issue #170).
-    let msg = lower_err(
+    // `when`-chain used to run exactly once, ahead of the loop — no spill
+    // could recover that, so this was rejected outright (issue #170). Fixed
+    // in #193 by moving the hoisted chain inside the loop body behind a
+    // `break` guard instead, so it re-runs every iteration like the
+    // condition itself.
+    let (program, _named) = keel_syntax::parse_source(
         r#"
 task f(n: int) -> int {
   while when n {
@@ -474,11 +477,13 @@ task f(n: int) -> int {
   return n
 }
 "#,
-    );
-    assert!(
-        msg.contains("`while` condition"),
-        "unexpected message: {msg}"
-    );
+        "t.keel",
+    )
+    .expect("must parse");
+    let (diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    assert!(diagnostics.is_empty(), "must type-check: {diagnostics:?}");
+    keel_kir::lower(&program, "t.keel", &artifacts).expect("must lower");
 }
 
 #[test]
@@ -1220,8 +1225,9 @@ task f(c: bool) -> int {
 }
 
 #[test]
-fn if_expression_in_a_while_condition_is_rejected() {
-    let msg = lower_err(
+fn if_expression_in_a_while_condition_now_lowers() {
+    // Same fix as `when_expression_in_a_while_condition_now_lowers`, #193.
+    let (program, _named) = keel_syntax::parse_source(
         r#"
 task f(n: int, c: bool) -> int {
   while if c { true } else { false } {
@@ -1230,11 +1236,13 @@ task f(n: int, c: bool) -> int {
   return n
 }
 "#,
-    );
-    assert!(
-        msg.contains("`while` condition"),
-        "unexpected message: {msg}"
-    );
+        "t.keel",
+    )
+    .expect("must parse");
+    let (diagnostics, artifacts) =
+        keel_compiler::types::checker::check_program_with_artifacts(&program, false);
+    assert!(diagnostics.is_empty(), "must type-check: {diagnostics:?}");
+    keel_kir::lower(&program, "t.keel", &artifacts).expect("must lower");
 }
 
 #[test]

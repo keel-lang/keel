@@ -163,6 +163,39 @@ A `break`/`continue` outside any loop is still rejected — by name, at
 compile time — rather than left to the interpreter's runtime-error handling
 of the same case.
 
+### A `when`/`if`-expression now works as a `while` condition
+
+The last position this series of fixes covers. A `while` condition is
+re-evaluated once per iteration, so the hoist `when`/`if`-as-expression
+normally uses (moving the chain ahead of the whole statement, to run
+exactly once) was wrong here — `keel build --emit=kir` rejected it rather
+than get that wrong. It now moves the hoisted chain inside the loop body
+instead, guarded by a `break`, so it re-runs every iteration along with the
+condition:
+
+```keel
+use std/io
+
+task check(n: int) -> bool {
+  io.show("check {n}")
+  return when n {
+    0 => true
+    1 => true
+    _ => false
+  }
+}
+
+task f() -> int {
+  n = 0
+  while check(n) {
+    n += 1
+  }
+  return n
+}
+
+io.show("{f()}")   # check 0 / check 1 / check 2 / 2
+```
+
 ### The native backend compiles `str` value methods
 
 `keel build --emit=kir` used to reject any `str` value method
