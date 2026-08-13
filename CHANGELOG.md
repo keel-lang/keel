@@ -124,6 +124,27 @@ task g(maybe: int?, n: int) -> int {
 }
 ```
 
+- **The native backend rejected `break`/`continue` outright, in every position.** `keel check` accepted them and `keel run` executed them correctly (they bubble up through the interpreter's block execution, including out of a nested `try`), but `keel build --emit=kir` rejected any program containing either, with a generic "not supported by the scalar-subset KIR lowering" error — not limited to any particular loop shape. Both now lower inside `while`, `for`-over-range, and `for`-over-`list[T]`, including out of a nested `try` body:
+
+```keel
+use std/io
+
+task first_over(xs: list[int], limit: int) -> int {
+  for x in xs {
+    if x > limit {
+      return x
+    }
+    if x < 0 {
+      continue
+    }
+    io.show("{x}")
+  }
+  return -1
+}
+```
+
+  A `break`/`continue` outside any loop is still rejected at lowering, by name, rather than deferred to the interpreter's runtime-error treatment of the same case (`SPEC.md` §8.8).
+
 - **The native backend miscompiled any namespace call with a non-`Unit` result used as a value.** `emit_ns_call` (`keel-codegen`) was written for M1's `io.show`/`log.*`-only namespace calls and unconditionally returned a hardcoded `i1 false`, discarding the real `KeelRes` payload — but nothing in `keel-kir`'s lowering ever restricted `CallTarget::Ns` to `Unit` results, so a scalar-returning stdlib call (`math.sqrt`, `crypto.sha256`, …) used in value position passed lowering and then panicked codegen on a type mismatch. It now unboxes the payload to the call's real result type, matching the interpreter:
 
 ```keel

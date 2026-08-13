@@ -9,10 +9,11 @@
 //! over the shared [`lower_if_expr_chain`]), and `for x in xs` over a
 //! `list[T]` (lowered to
 //! [`keel_kir::ir::Stmt::ForEach`]): `let`/assign, `if`/`else`, `while`,
-//! `for x in a..b`, `for x in xs`, `return`, `when`, and bare expression
-//! statements. Everything else (`assert`, `break`/`continue`,
-//! `self.field = ...`, `for` with a `where` filter or a non-range, non-list
-//! iterable) is rejected; see module docs on `lower/mod.rs`. An `if` used as
+//! `for x in a..b`, `for x in xs`, `return`, `when`, `break`/`continue`
+//! inside a loop (issue #232), and bare expression statements. Everything
+//! else (`assert`, `break`/`continue` outside a loop, `self.field = ...`,
+//! `for` with a `where` filter or a non-range, non-list iterable) is
+//! rejected; see module docs on `lower/mod.rs`. An `if` used as
 //! an expression with no `else` is rejected too, but as a *diagnostic* rather
 //! than an unsupported-construct notice: `SPEC.md` §8.1 calls that a compile
 //! error, and this is the first engine to enforce it (see [`require_else`]).
@@ -312,7 +313,9 @@ fn lower_stmt_inner(
                     cond.span.clone(),
                 ));
             }
+            ctx.enter_loop();
             let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
+            ctx.exit_loop();
             Ok(vec![ir::Stmt::While {
                 cond: cond_expr,
                 body,
@@ -370,7 +373,9 @@ fn lower_stmt_inner(
                 let elem_ty = lcx.lists.borrow()[list_id];
                 ctx.push_scope();
                 let var = ctx.declare(name, elem_ty);
+                ctx.enter_loop();
                 let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
+                ctx.exit_loop();
                 ctx.pop_scope();
                 return Ok(vec![ir::Stmt::ForEach {
                     var,
@@ -402,7 +407,9 @@ fn lower_stmt_inner(
             }
             ctx.push_scope();
             let var = ctx.declare(name, KirType::I64);
+            ctx.enter_loop();
             let body = lower_block(body, ctx, lcx, table, TailSink::Discard)?;
+            ctx.exit_loop();
             ctx.pop_scope();
             Ok(vec![ir::Stmt::ForIndex {
                 var,
@@ -419,8 +426,16 @@ fn lower_stmt_inner(
         )?]),
         ast::Stmt::Raise(message) => Ok(vec![lower_raise(message, ctx, lcx, table)?]),
         ast::Stmt::Assert { .. } => Err(LowerError::unsupported("assert", stmt.span.clone())),
-        ast::Stmt::Break => Err(LowerError::unsupported("break", stmt.span.clone())),
-        ast::Stmt::Continue => Err(LowerError::unsupported("continue", stmt.span.clone())),
+        ast::Stmt::Break if !ctx.in_loop() => Err(LowerError::unsupported(
+            "`break` outside a loop",
+            stmt.span.clone(),
+        )),
+        ast::Stmt::Break => Ok(vec![ir::Stmt::Break]),
+        ast::Stmt::Continue if !ctx.in_loop() => Err(LowerError::unsupported(
+            "`continue` outside a loop",
+            stmt.span.clone(),
+        )),
+        ast::Stmt::Continue => Ok(vec![ir::Stmt::Continue]),
     }
 }
 

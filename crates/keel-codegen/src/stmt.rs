@@ -18,9 +18,9 @@ use crate::layout;
 /// value *only* if that last statement was a bare `Stmt::Expr` — see
 /// `func.rs`'s module doc for why `emit_main` needs this. Stops emitting
 /// (but keeps returning `Ok`) once the current block is terminated: any
-/// statement after a `return` is unreachable and — since KIR is structured,
-/// not CFG-based — dead code that would otherwise try to build IR after a
-/// terminator, which LLVM rejects.
+/// statement after a `return`, `break`, or `continue` is unreachable and —
+/// since KIR is structured, not CFG-based — dead code that would otherwise
+/// try to build IR after a terminator, which LLVM rejects.
 pub(crate) fn emit_block<'ctx>(
     fcx: &mut FuncCtx<'ctx, '_>,
     block: &Block,
@@ -119,6 +119,26 @@ fn emit_stmt<'ctx>(
             emit_try_catch(fcx, body, *binder, *binder_ty, handler)?;
             Ok(None)
         }
+        Stmt::Break => {
+            let (break_bb, _) = *fcx
+                .loop_stack
+                .last()
+                .expect("verified KIR: break only lowers inside a loop (issue #232)");
+            fcx.builder
+                .build_unconditional_branch(break_bb)
+                .map_err(llvm_err)?;
+            Ok(None)
+        }
+        Stmt::Continue => {
+            let (_, continue_bb) = *fcx
+                .loop_stack
+                .last()
+                .expect("verified KIR: continue only lowers inside a loop (issue #232)");
+            fcx.builder
+                .build_unconditional_branch(continue_bb)
+                .map_err(llvm_err)?;
+            Ok(None)
+        }
     }
 }
 
@@ -178,7 +198,11 @@ fn emit_while<'ctx>(
         .map_err(llvm_err)?;
 
     fcx.builder.position_at_end(body_bb);
+    // `while`'s own re-check is already the `continue` target — no separate
+    // latch block needed, unlike the indexed `for` shapes below.
+    fcx.loop_stack.push((end_bb, cond_bb));
     emit_block(fcx, body)?;
+    fcx.loop_stack.pop();
     if !block_is_terminated(fcx.builder) {
         fcx.builder
             .build_unconditional_branch(cond_bb)
@@ -217,6 +241,11 @@ fn emit_for_index<'ctx>(
 
     let cond_bb = fcx.context.append_basic_block(fcx.function, "for.cond");
     let body_bb = fcx.context.append_basic_block(fcx.function, "for.body");
+    // A dedicated latch block for the increment, rather than inlining it
+    // after the body: `continue` needs somewhere to jump that still runs
+    // the increment (jumping straight to `cond_bb` would skip it and spin
+    // on the same index forever).
+    let latch_bb = fcx.context.append_basic_block(fcx.function, "for.latch");
     let end_bb = fcx.context.append_basic_block(fcx.function, "for.end");
 
     fcx.builder
@@ -238,22 +267,29 @@ fn emit_for_index<'ctx>(
         .map_err(llvm_err)?;
 
     fcx.builder.position_at_end(body_bb);
+    fcx.loop_stack.push((end_bb, latch_bb));
     emit_block(fcx, body)?;
+    fcx.loop_stack.pop();
     if !block_is_terminated(fcx.builder) {
-        let cur = fcx
-            .builder
-            .build_load(i64_type, var_ptr, "for.cur")
-            .map_err(llvm_err)?
-            .into_int_value();
-        let next = fcx
-            .builder
-            .build_int_add(cur, i64_type.const_int(1, false), "for.next")
-            .map_err(llvm_err)?;
-        fcx.builder.build_store(var_ptr, next).map_err(llvm_err)?;
         fcx.builder
-            .build_unconditional_branch(cond_bb)
+            .build_unconditional_branch(latch_bb)
             .map_err(llvm_err)?;
     }
+
+    fcx.builder.position_at_end(latch_bb);
+    let cur = fcx
+        .builder
+        .build_load(i64_type, var_ptr, "for.cur")
+        .map_err(llvm_err)?
+        .into_int_value();
+    let next = fcx
+        .builder
+        .build_int_add(cur, i64_type.const_int(1, false), "for.next")
+        .map_err(llvm_err)?;
+    fcx.builder.build_store(var_ptr, next).map_err(llvm_err)?;
+    fcx.builder
+        .build_unconditional_branch(cond_bb)
+        .map_err(llvm_err)?;
 
     fcx.builder.position_at_end(end_bb);
     Ok(())
@@ -292,6 +328,11 @@ fn emit_for_each<'ctx>(
 
     let cond_bb = fcx.context.append_basic_block(fcx.function, "foreach.cond");
     let body_bb = fcx.context.append_basic_block(fcx.function, "foreach.body");
+    // See `emit_for_index`'s `latch_bb` doc — same reason: `continue` must
+    // still run the index increment, not just jump back to the condition.
+    let latch_bb = fcx
+        .context
+        .append_basic_block(fcx.function, "foreach.latch");
     let end_bb = fcx.context.append_basic_block(fcx.function, "foreach.end");
 
     fcx.builder
@@ -322,22 +363,29 @@ fn emit_for_each<'ctx>(
     let elem_v = crate::rt_call::unbox_value(fcx, elem_boxed, elem_ty)?;
     fcx.builder.build_store(var_ptr, elem_v).map_err(llvm_err)?;
 
+    fcx.loop_stack.push((end_bb, latch_bb));
     emit_block(fcx, body)?;
+    fcx.loop_stack.pop();
     if !block_is_terminated(fcx.builder) {
-        let idx = fcx
-            .builder
-            .build_load(i64_type, idx_ptr, "foreach.idx.cur")
-            .map_err(llvm_err)?
-            .into_int_value();
-        let next = fcx
-            .builder
-            .build_int_add(idx, i64_type.const_int(1, false), "foreach.idx.next")
-            .map_err(llvm_err)?;
-        fcx.builder.build_store(idx_ptr, next).map_err(llvm_err)?;
         fcx.builder
-            .build_unconditional_branch(cond_bb)
+            .build_unconditional_branch(latch_bb)
             .map_err(llvm_err)?;
     }
+
+    fcx.builder.position_at_end(latch_bb);
+    let idx = fcx
+        .builder
+        .build_load(i64_type, idx_ptr, "foreach.idx.cur")
+        .map_err(llvm_err)?
+        .into_int_value();
+    let next = fcx
+        .builder
+        .build_int_add(idx, i64_type.const_int(1, false), "foreach.idx.next")
+        .map_err(llvm_err)?;
+    fcx.builder.build_store(idx_ptr, next).map_err(llvm_err)?;
+    fcx.builder
+        .build_unconditional_branch(cond_bb)
+        .map_err(llvm_err)?;
 
     fcx.builder.position_at_end(end_bb);
     Ok(())

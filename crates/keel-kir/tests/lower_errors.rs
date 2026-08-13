@@ -1259,3 +1259,39 @@ task f(label: str = if sub() == 2 { "yes" } else { "no" }) -> str {
         "unexpected message: {msg}"
     );
 }
+
+#[test]
+fn break_outside_a_loop_is_rejected() {
+    // `break`/`continue` lower fine inside a loop (issue #232) — this pins
+    // that a bare one at the top level of a task body is still rejected at
+    // lowering, rather than deferred to the interpreter's runtime-error
+    // treatment of the same case (`SPEC.md` §8.8).
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  break
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("`break` outside a loop"),
+        "unexpected message: {msg}"
+    );
+}
+
+#[test]
+fn continue_outside_a_loop_is_rejected() {
+    let msg = lower_err(
+        r#"
+task f() -> int {
+  continue
+  return 0
+}
+"#,
+    );
+    assert!(
+        msg.contains("`continue` outside a loop"),
+        "unexpected message: {msg}"
+    );
+}

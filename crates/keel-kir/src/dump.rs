@@ -214,6 +214,12 @@ fn dump_stmt(
             indent(out, depth);
             out.push_str("}\n");
         }
+        Stmt::Break => {
+            out.push_str("break\n");
+        }
+        Stmt::Continue => {
+            out.push_str("continue\n");
+        }
     }
 }
 
