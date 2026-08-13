@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Named functions now work everywhere a lambda does, `and`/`or` finally short-circuit, `crypto.hmac_*` gets a breaking argument-order fix, and the LLVM backend closes the gap on stdlib calls and string methods.
+%%TAGLINE%% Named functions now work everywhere a lambda does, `and`/`or` finally short-circuit, `crypto.hmac_*` gets a breaking argument-order fix, the LLVM backend closes the gap on stdlib calls and string methods, and the stdlib catalog's parameter metadata is audited against runtime reality across all 23 namespaces.
 
 ### Added
 
@@ -191,6 +191,19 @@ use std/io
 
 io.show("{math.sqrt(4.0)}")   # now compiles and runs — was a codegen panic
 ```
+
+- **The stdlib catalog's declared parameter shapes drifted from what each namespace method actually accepts at runtime**, across most of the 23 `std/*` namespaces — not just isolated cases. `BuiltinParam` had only `optional`, which conflates two independent axes: `email.send`'s `to` is required *and* name-only (`find_arg`, no positional fallback), while `http.serve`'s `port` is optional *and* position-only (defaults when omitted) — neither shape was expressible. Several params were missing from the catalog entirely and silently accepted anyway (`shell.run`'s `stdin:`/`cwd:`, `memory.recall`'s `limit:`, `time.now`/`time.parse`'s `tz:`, all of `ai.*`'s named arguments), and trailing task/closure arguments (`control.with_timeout`/`with_deadline`, `schedule.every`/`after`/`at`/`cron`, `http.serve`) had no representation at all:
+
+```keel
+use std/email
+
+task notify(to: str) {
+  email.send("reminder body", to: to)   # `to:` now matches the catalog —
+}                                        # previously declared as a 2nd required
+                                         # positional argument it never was
+```
+
+  `BuiltinParam` gains a `binding: ParamBinding` field (`PositionalOnly` / `NamedOnly` / `Either`), independent of `optional`, plus a `TySpec::Callback` variant for the closure-taking methods above. Every namespace was re-audited against its actual `expect_*`/`find_arg` usage and corrected; a new test (`catalog_named_params_match_runtime_named_arg_lookups`) regexes each namespace's source for named-argument lookups and cross-checks them against the catalog so this can't silently drift again. Data-only — the type checker does not yet validate namespace-call arguments against the catalog (tracked separately); this is the prerequisite the checker work needs before it can turn on.
 
 ---
 

@@ -20,11 +20,13 @@ pub const SPEC: &[BuiltinMethod] = &[
                 name: "min",
                 ty: TySpec::Int,
                 optional: false,
+                binding: ParamBinding::NamedOnly,
             },
             BuiltinParam {
                 name: "max",
                 ty: TySpec::Int,
                 optional: false,
+                binding: ParamBinding::NamedOnly,
             },
         ],
         result: BuiltinResult::Fixed(TySpec::Int),

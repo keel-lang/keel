@@ -130,6 +130,7 @@ fn ty_spec_to_keel_str(spec: TySpec) -> &'static str {
         TySpec::ListOfMapStrStr => "list[map[str, str]]",
         TySpec::ListOfMapStrDynamic => "list[map[str, dynamic]]",
         TySpec::Unknown => "unknown",
+        TySpec::Callback => "fn",
     }
 }
 

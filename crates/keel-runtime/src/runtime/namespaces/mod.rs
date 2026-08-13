@@ -166,4 +166,130 @@ mod tests {
             );
         }
     }
+
+    /// Every namespace source file below, keyed by the `ns!("name", { .. })`
+    /// name it actually registers under (not its filename — `asynchronous.rs`
+    /// registers as `"async"`). `include_str!` embeds each file's source at
+    /// compile time so this test has no filesystem dependency at runtime.
+    fn namespace_sources() -> &'static [&'static str] {
+        &[
+            include_str!("ai.rs"),
+            include_str!("asynchronous.rs"),
+            include_str!("cache.rs"),
+            include_str!("control.rs"),
+            include_str!("crypto.rs"),
+            include_str!("csv.rs"),
+            include_str!("db.rs"),
+            include_str!("email.rs"),
+            include_str!("env.rs"),
+            include_str!("file.rs"),
+            include_str!("http.rs"),
+            include_str!("io.rs"),
+            include_str!("json.rs"),
+            include_str!("log.rs"),
+            include_str!("math.rs"),
+            include_str!("memory.rs"),
+            include_str!("random.rs"),
+            include_str!("schedule.rs"),
+            include_str!("search.rs"),
+            include_str!("shell.rs"),
+            include_str!("testing.rs"),
+            include_str!("time.rs"),
+            include_str!("uuid.rs"),
+        ]
+    }
+
+    /// Issue #236: catalog `params` drifted from the runtime's actual
+    /// `find_arg`/`expect_*_named` argument-name lookups (undeclared params
+    /// silently accepted, e.g. `shell.run`'s `stdin:`/`cwd:` before this
+    /// fix). This test regexes each namespace source for the literal name in
+    /// every named-argument lookup call and asserts it is declared
+    /// *somewhere* in that namespace's catalog params (and vice versa: every
+    /// catalog param bound `NamedOnly`/`Either` must be looked up somewhere
+    /// in that namespace's source) — catching root-cause #3 ("undeclared
+    /// params entirely") without parsing Rust or tying a name to one
+    /// specific method. It cannot catch a purely positional/binding-mode
+    /// mismatch (e.g. required-vs-optional); the `examples/` corpus check
+    /// under #222 is the backstop for those.
+    #[test]
+    fn catalog_named_params_match_runtime_named_arg_lookups() {
+        let lookup_re = regex::Regex::new(
+            r#"(?:find_arg|expect_str_named|expect_bool_named|expect_duration_named)\(\s*&?args,\s*"([A-Za-z_][A-Za-z0-9_]*)""#,
+        )
+        .expect("valid regex");
+        let ns_name_re = regex::Regex::new(r#"ns!\(\s*"([A-Za-z_]+)""#).expect("valid regex");
+
+        let mut catalog_named: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for m in keel_catalog::catalog() {
+            for p in m.params {
+                if !matches!(
+                    p.binding,
+                    keel_catalog::builtins::ParamBinding::PositionalOnly
+                ) {
+                    catalog_named.entry(m.namespace).or_default().insert(p.name);
+                }
+            }
+        }
+
+        for src in namespace_sources() {
+            let Some(ns_name) = ns_name_re.captures(src).map(|c| c[1].to_string()) else {
+                continue;
+            };
+            let runtime_named: HashSet<&str> = lookup_re
+                .captures_iter(src)
+                .map(|c| c.get(1).unwrap().as_str())
+                .collect();
+            let declared = catalog_named
+                .get(ns_name.as_str())
+                .cloned()
+                .unwrap_or_default();
+
+            let undeclared: Vec<&str> = runtime_named.difference(&declared).copied().collect();
+            assert!(
+                undeclared.is_empty(),
+                "{ns_name}: runtime looks up named argument(s) {undeclared:?} that no \
+                 catalog param declares (add them to specs/{ns_name}.rs, or to the file \
+                 matching this namespace if the filename differs)"
+            );
+
+            let stale: Vec<&str> = declared
+                .difference(&runtime_named)
+                .copied()
+                .filter(|name| !KNOWN_GAPS.contains(&(ns_name.as_str(), *name)))
+                .collect();
+            assert!(
+                stale.is_empty(),
+                "{ns_name}: catalog declares named param(s) {stale:?} that the runtime \
+                 never looks up by name — stale entry, or the runtime reads it through a \
+                 helper this test doesn't recognize"
+            );
+        }
+    }
+
+    /// `(namespace, param)` pairs where the catalog correctly declares a
+    /// named param a real `examples/` call site passes, but this test's
+    /// `find_arg`/`expect_*_named`-only regex can't confirm the runtime
+    /// reads it — either because it's a genuine no-op (tracked separately;
+    /// not a documentation slip) or because the runtime reads it through a
+    /// different mechanism this test doesn't parse for.
+    const KNOWN_GAPS: &[(&str, &str)] = &[
+        // examples/multi_agent_inbox.keel passes `context:`; ai.draft never
+        // folds it into the prompt — genuine no-op.
+        ("ai", "context"),
+        // examples/data_pipeline.keel and examples/struct_types.keel pass
+        // `format:`; ai.draft never reads it — genuine no-op.
+        ("ai", "format"),
+        // examples/multi_agent_inbox.keel passes `limit:`; memory.recall has
+        // no result-limiting behavior at all — genuine no-op.
+        ("memory", "limit"),
+        // http.request reads these via `cfg.get(&MapKey::Str("name".into()))`
+        // against a map assembled from `args` (SPEC.md §17.2's all-named
+        // calling convention), not `find_arg`/`expect_*_named` — read, just
+        // not through a pattern this regex recognizes.
+        ("http", "method"),
+        ("http", "url"),
+        // SPEC.md §17.2 documents `timeout:` for http.request; the runtime
+        // never reads it at all — genuine no-op.
+        ("http", "timeout"),
+    ];
 }

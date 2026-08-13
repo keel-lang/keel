@@ -43,6 +43,14 @@ pub enum TySpec {
     ListOfMapStrDynamic,
     /// Caller must handle this case contextually (type is unknown statically).
     Unknown,
+    /// A trailing task/closure argument (`control.with_timeout(duration, fn)`,
+    /// `schedule.every(interval, fn)`, `http.serve(port, fn)`, …). The
+    /// runtime matches these by value shape (`find_fn_value`) rather than by
+    /// name or position, so there is no scalar/collection shape to declare —
+    /// this variant exists purely so the parameter is *present* in `params`
+    /// (arity-visible to docs/hover/future checker work) instead of being
+    /// silently absent like an undeclared param.
+    Callback,
 }
 
 // ---------------------------------------------------------------------------
@@ -70,6 +78,38 @@ pub enum BuiltinResult {
 }
 
 // ---------------------------------------------------------------------------
+// ParamBinding
+// ---------------------------------------------------------------------------
+
+/// How a parameter's argument is looked up by the runtime, independent of
+/// whether it's required.
+///
+/// The naive assumption — required params are read positionally, optional
+/// ones by name — holds for some namespaces (`file`, `cache`'s `key`) but not
+/// others: `email.send`'s `to` is required *and* named-only
+/// (`find_arg(args, "to")`, no positional fallback), while `http.serve`'s
+/// `port` is optional *and* positional-only (`positional(args, 0)`, defaults
+/// when absent). This field records the runtime's actual lookup strategy so
+/// the two axes (required/optional, positional/named) don't get conflated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParamBinding {
+    /// Only a bare positional argument at this parameter's declared slot
+    /// binds. The runtime reads it via `positional(args, idx)`
+    /// (`expect_str`/`expect_int`/`expect_list`/`expect_duration` and their
+    /// hand-rolled equivalents) — a `name: value` form is invisible to it.
+    PositionalOnly,
+    /// Only `name: value` binds. The runtime reads it via
+    /// `find_arg(args, name)` (`expect_*_named` and hand-rolled equivalents)
+    /// with no positional fallback — a bare positional value is invisible to
+    /// it.
+    NamedOnly,
+    /// Either form binds. The runtime checks the name first and falls back
+    /// to position (`find_arg(args, name).or_else(|| positional(args, idx))`),
+    /// e.g. `crypto.token`'s `bytes` and `uuid.v5`'s `ns`.
+    Either,
+}
+
+// ---------------------------------------------------------------------------
 // BuiltinParam
 // ---------------------------------------------------------------------------
 
@@ -81,7 +121,17 @@ pub struct BuiltinParam {
     /// Declared type of the parameter.
     pub ty: TySpec,
     /// Whether the parameter may be omitted by the caller.
+    ///
+    /// Convention: `false` when the call is not meaningful without it, even
+    /// if the runtime currently degrades silently instead of erroring on
+    /// omission (e.g. `io.ask`'s `prompt`, `ai.prompt`'s `system`/`user`) —
+    /// that silent-default is treated as a runtime bug to fix, not a
+    /// contract to document as optional. `true` is reserved for a
+    /// deliberate default (`http.serve`'s `port` defaulting to 8080,
+    /// `cache.set`'s `ttl` meaning "never expire").
     pub optional: bool,
+    /// How the runtime actually looks this argument up. See [`ParamBinding`].
+    pub binding: ParamBinding,
 }
 
 // ---------------------------------------------------------------------------

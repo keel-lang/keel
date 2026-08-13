@@ -55,6 +55,11 @@ pub(crate) fn ty_from_spec(spec: TySpec) -> Ty {
         // Runtime-dynamic: the return type depends on external data (JSON
         // payloads, LLM outputs, etc.) and cannot be determined statically.
         TySpec::Unknown => Ty::Unknown(UnknownReason::ExternalDynamic),
+        // A trailing task/closure argument — no scalar/collection shape to
+        // declare; matched by value shape at the call site, not by static
+        // type. `UnsupportedFeature` (not `ExternalDynamic`) because this is
+        // a checker modeling gap, not runtime-dependent data.
+        TySpec::Callback => Ty::Unknown(UnknownReason::UnsupportedFeature("callback parameter")),
     }
 }
 
@@ -506,6 +511,7 @@ mod tests {
             TySpec::ListOfMapStrStr,
             TySpec::ListOfMapStrDynamic,
             TySpec::Unknown,
+            TySpec::Callback,
         ];
         for spec in specs {
             let _ = ty_from_spec(spec); // must not panic
