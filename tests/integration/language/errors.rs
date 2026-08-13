@@ -70,6 +70,32 @@ run(A)
     );
 }
 
+// Issue #235: a call omitting a required (no-default) parameter used to pass
+// `keel check` silently, with the interpreter binding the missing param to
+// `none` rather than erroring — `keel run` would then either crash on an
+// unrelated type error deep inside the task body, or (worse, with no
+// observable effect at all) succeed silently.
+#[test]
+fn missing_required_arg_is_a_check_error_not_a_silent_none() {
+    let src = r#"
+task f(a: int, b: int) -> int {
+  return a + b
+}
+agent A {
+  @on_start {
+    r = f(1)
+  }
+}
+run(A)
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected a missing-argument type error");
+    assert!(
+        stderr.contains('b'),
+        "error should name the missing param `b`:\n{stderr}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Regressions
 // ---------------------------------------------------------------------------

@@ -171,6 +171,14 @@ impl Checker<'_, '_> {
                 (name, self.resolve_type(&p.ty.kind))
             })
             .collect();
+        // A variadic param's own slot is never required — omitting the rest
+        // entirely (zero variadic args) is legal — regardless of whether it
+        // happens to carry a `default` in the AST.
+        let required = t
+            .params
+            .iter()
+            .map(|p| !p.variadic && p.default.is_none())
+            .collect();
         let return_type = t
             .return_type
             .as_ref()
@@ -178,6 +186,7 @@ impl Checker<'_, '_> {
             .unwrap_or(Ty::None_);
         TaskSig {
             params,
+            required,
             return_type,
             variadic,
         }

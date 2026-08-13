@@ -23,6 +23,19 @@ io.show("{"hello world".contains("world")}")  # true — now compiles
 
 ### Fixed
 
+- **A task call omitting a required parameter passed `keel check` silently, and the interpreter bound the missing argument to `none` instead of erroring** — violating the parameter's declared type, not just leaving it unset. Failures downstream were confusing (`Cannot apply `Add` to int and none`) or, worse, entirely silent if the missing value was never used:
+
+```keel
+task f(a: int, b: int) -> int {
+  return a + b
+}
+
+f(1)   # now a check error: task `f`: missing required argument `b`
+       # previously: keel check passed, keel run silently bound b = none
+```
+
+  `keel check` now rejects the call directly, naming the missing parameter — covering plain task calls, `self.task(...)` agent-task calls, generic tasks, and calls through a local module binding. The interpreter's own param-binding fallback (silently reaching for `Value::None` when nothing else matched) is now a hard error too, as defense in depth for any call shape the checker can't see by name (a destructuring `{a, b}` parameter). A parameter with a declared default is unaffected — omitting it still uses the default, exactly as before.
+
 - **A lambda reading an outer local variable passed `keel check` and then failed at `keel run`.** The interpreter's closures have never captured anything — `call_closure_inner` builds a fresh, disconnected environment for every call — but the checker type-checked a lambda body as a nested scope of the enclosing function, so it silently accepted a read of an outer local that would fail at runtime with `Undefined: <name>`. Lambdas are now formally non-capturing (SPEC §7): the checker rejects a lambda body that reads a name bound only in an enclosing local scope, with a diagnostic pointing at the identifier. `self.<field>` access inside a lambda is unaffected — it resolves through ambient per-call agent state, not lexical capture.
 
 ```keel

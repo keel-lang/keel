@@ -4,6 +4,26 @@
 
 ## Unreleased
 
+### A task call missing a required argument is now a check-time error
+
+Omitting a required (no-default) parameter used to pass `keel check`
+silently — the interpreter bound the missing argument to `none` instead of
+erroring, violating its declared type. The failure that followed was often
+confusing (a type error far from the real cause) or, if the value happened
+to go unused, completely silent:
+
+```keel
+task f(a: int, b: int) -> int {
+  return a + b
+}
+
+f(1)   # now: task `f`: missing required argument `b`
+```
+
+Covers plain task calls, `self.task(...)` agent-task calls, generic tasks,
+and calls through a local module binding. A parameter with a declared
+default is unaffected — omitting it still uses the default.
+
 ### A named task now works everywhere a lambda does
 
 `results = emails.map(triage)` — SPEC §7's own documented "named function as

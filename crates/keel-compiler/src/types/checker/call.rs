@@ -16,13 +16,24 @@ impl Checker<'_, '_> {
     /// When `variadic` is true the last param is a rest-parameter (`...name: T`):
     ///   - plain positional args beyond the fixed params are each checked as `T`
     ///   - spread args (`...expr`) must be `list[T]` or `set[T]`
+    ///
+    /// `required` is parallel to `params`: a `true` entry with no matching
+    /// named or positional arg is a missing-argument error (issue #235) —
+    /// previously this silently `continue`d, so the interpreter's own
+    /// param-binding fallback (`Value::None` for a param with no default)
+    /// was the only thing that ran, undetected by `keel check`. `span` is
+    /// the call site's own span, used for that diagnostic since a missing
+    /// argument has no argument-level span of its own to point at.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn check_call_args(
         &mut self,
         params: &[(String, Ty)],
+        required: &[bool],
         variadic: bool,
         args: &[CallArg],
         arg_tys: &[Ty],
         callee: &str,
+        span: crate::lexer::Span,
     ) {
         if !variadic && args.iter().any(|a| a.spread) {
             self.err(format!(
@@ -48,15 +59,22 @@ impl Checker<'_, '_> {
         } else {
             params
         };
+        let fixed_required = &required[..fixed_params.len()];
 
         let mut pos_idx = 0;
-        for (param_name, param_ty) in fixed_params {
+        for ((param_name, param_ty), is_required) in fixed_params.iter().zip(fixed_required) {
             let (arg_ty, arg) = if let Some((ty, arg)) = named.get(param_name.as_str()) {
                 (*ty, *arg)
             } else if let Some((ty, arg)) = positional.get(pos_idx) {
                 pos_idx += 1;
                 (*ty, *arg)
             } else {
+                if *is_required {
+                    self.err_at(
+                        format!("{callee}: missing required argument `{param_name}`"),
+                        span.clone(),
+                    );
+                }
                 continue;
             };
             self.expect_at(
