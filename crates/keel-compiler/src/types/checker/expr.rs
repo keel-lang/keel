@@ -565,10 +565,12 @@ impl Checker<'_, '_> {
                     }
                     self.check_call_args(
                         &sig.params,
+                        &sig.required,
                         sig.variadic,
                         args,
                         &arg_tys,
                         &format!("task `{agent_name}.{task_name}`"),
+                        spanned.span.clone(),
                     );
                     return sig.return_type;
                 }
@@ -637,12 +639,19 @@ impl Checker<'_, '_> {
                                             )
                                         })
                                         .collect();
+                                    let resolved_required: Vec<bool> = td
+                                        .params
+                                        .iter()
+                                        .map(|p| !p.variadic && p.default.is_none())
+                                        .collect();
                                     self.check_call_args(
                                         &resolved_params,
+                                        &resolved_required,
                                         td_variadic,
                                         args,
                                         &arg_tys,
                                         &format!("task `{name}`"),
+                                        spanned.span.clone(),
                                     );
                                     if let Some(ret_node) = &td.return_type {
                                         return self
@@ -652,10 +661,12 @@ impl Checker<'_, '_> {
                                 }
                                 self.check_call_args(
                                     &sig.params,
+                                    &sig.required,
                                     sig.variadic,
                                     args,
                                     &arg_tys,
                                     &format!("task `{name}`"),
+                                    spanned.span.clone(),
                                 );
                                 return sig.return_type.clone();
                             }
@@ -848,10 +859,12 @@ impl Checker<'_, '_> {
                     }
                     self.check_call_args(
                         &sig.params,
+                        &sig.required,
                         sig.variadic,
                         args,
                         &arg_tys,
                         &format!("task `{agent_name}.{method}`"),
+                        spanned.span.clone(),
                     );
                     return sig.return_type;
                 }
@@ -1305,10 +1318,12 @@ impl Checker<'_, '_> {
                     if let Some(sig) = self.top_tasks.get(method).cloned() {
                         self.check_call_args(
                             &sig.params,
+                            &sig.required,
                             sig.variadic,
                             args,
                             arg_tys,
                             &format!("task `{module_name}.{method}`"),
+                            span.clone(),
                         );
                         return sig.return_type;
                     }

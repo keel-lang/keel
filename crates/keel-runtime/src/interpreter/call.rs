@@ -174,7 +174,19 @@ impl Interpreter {
                     ExprFlow::Value(v) | ExprFlow::Return(v) => v,
                 }
             } else {
-                Value::None
+                // No default and no matching arg. `keel check` rejects this
+                // call shape (issue #235's checker fix), so this is a defense-
+                // in-depth guard against reaching here at all — via a
+                // destructuring param (unnamed, so uncheckable by name) or a
+                // caller that skipped the checker. Previously fell through to
+                // `Value::None`, silently violating the param's declared type
+                // rather than erroring.
+                let label = param_name.unwrap_or("<destructured>");
+                return Err(miette::miette!(
+                    "task `{}`: missing required argument `{}`",
+                    decl.name,
+                    label
+                ));
             };
             let v = promote_value(v, &p.ty.kind, &self.struct_types, &self.struct_aliases);
             bind_value(&p.name, v, &mut env)?;

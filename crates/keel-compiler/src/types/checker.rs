@@ -43,6 +43,11 @@ use crate::types::scope::Scope;
 #[derive(Debug, Clone)]
 struct TaskSig {
     params: Vec<(String, Ty)>,
+    /// Parallel to `params`: `true` where that parameter has no default
+    /// value, so a call site must supply it (issue #235) — a variadic
+    /// param's own slot is always `false` here, since omitting it entirely
+    /// (zero rest-args) is legal.
+    required: Vec<bool>,
     return_type: Ty,
     /// True if the last param is variadic (`...name: T`).
     variadic: bool,
@@ -1921,6 +1926,57 @@ task call_it() {
 }
 "#,
             "argument",
+        );
+    }
+
+    // Issue #235: a call omitting a required (no-default) parameter used to
+    // pass `keel check` silently, with the interpreter binding the missing
+    // param to `none` rather than erroring.
+    #[test]
+    fn error_missing_required_arg() {
+        expect_error(
+            r#"
+task f(a: int, b: int) -> int {
+  return a + b
+}
+
+task call_it() {
+  x = f(1)
+}
+"#,
+            "missing required argument `b`",
+        );
+    }
+
+    #[test]
+    fn valid_missing_arg_with_a_default_value() {
+        type_ok(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  x = f(1)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn error_missing_required_arg_on_self_task_call() {
+        expect_error(
+            r#"
+agent A {
+    task f(a: int, b: int) -> int {
+        return a + b
+    }
+    @on_start {
+        x = self.f(1)
+    }
+}
+"#,
+            "missing required argument `b`",
         );
     }
 
