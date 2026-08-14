@@ -690,6 +690,12 @@ impl Checker<'_, '_> {
                                 ) {
                                     return Ty::Error;
                                 }
+                                self.check_builtin_args(
+                                    entry,
+                                    args,
+                                    &arg_tys,
+                                    spanned.span.clone(),
+                                );
                                 return self.catalog_result_ty(entry, args);
                             }
                             // Validate delegate(...) targets at compile time.
@@ -1299,8 +1305,9 @@ impl Checker<'_, '_> {
                         return Ty::Error;
                     }
                     if ns == "ai" && method == "install" {
-                        self.check_ai_install_arg(args, span);
+                        self.check_ai_install_arg(args, span.clone());
                     }
+                    self.check_builtin_args(entry, args, arg_tys, span.clone());
                     self.catalog_result_ty(entry, args)
                 }
                 None => {

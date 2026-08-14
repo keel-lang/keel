@@ -209,6 +209,18 @@ pub const SPEC: &[BuiltinMethod] = &[
                 optional: true,
                 binding: ParamBinding::NamedOnly,
             },
+            // Not read by the runtime (`ai.decide` always returns a fixed
+            // `{choice, reason, confidence}` map) — declared here purely so
+            // the checker's `BuiltinResult::AiExtract` handling can resolve
+            // it to the call's inferred result type, same as `ai.extract`'s
+            // `as`. A pre-existing checker/runtime behavior gap, not
+            // introduced by this arg-validation pass — tracked as #244.
+            BuiltinParam {
+                name: "as",
+                ty: TySpec::Dynamic,
+                optional: true,
+                binding: ParamBinding::NamedOnly,
+            },
             BuiltinParam {
                 name: "using",
                 ty: TySpec::Str,

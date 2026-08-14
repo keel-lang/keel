@@ -3004,6 +3004,68 @@ task go(text: str) {
         );
     }
 
+    // Issue #222's own canonical repro: both `file.write` params are
+    // `PositionalOnly` (the runtime reads them via `positional(args, idx)`,
+    // never `find_arg`), so passing either by name must be rejected even
+    // though the call otherwise "looks" complete.
+    #[test]
+    fn invalid_namespace_call_required_arg_passed_by_name() {
+        expect_error(
+            r#"
+use std/file
+task main() {
+  file.write(content: "hi", path: "/tmp/x.txt")
+}
+"#,
+            "must be passed positionally",
+        );
+    }
+
+    #[test]
+    fn invalid_namespace_call_unknown_keyword_arg() {
+        expect_error(
+            r#"
+use std/file
+task main() {
+  file.write("/tmp/x.txt", "hi", bogus: true)
+}
+"#,
+            "unknown argument `bogus:`",
+        );
+    }
+
+    // The unqualified-import call path (`use parse from std/json`) is a
+    // separate `catalog_result_ty` call site from `module_method_call`
+    // (`file.write(...)` above) — both need `check_builtin_args` wired in.
+    #[test]
+    fn invalid_unqualified_namespace_call_missing_required_arg() {
+        expect_error(
+            r#"
+use parse from std/json
+task main() {
+  x = parse()
+}
+"#,
+            "missing required argument `s`",
+        );
+    }
+
+    // SPEC.md §14: "All [Math] functions accept `int` or `float`
+    // arguments" — `math.sqrt`'s `x` param is declared `TySpec::Float`, but
+    // an `int` literal must still be accepted, matching the runtime's
+    // `num_arg` helper (which takes either and returns `f64`).
+    #[test]
+    fn valid_math_namespace_call_accepts_int_for_float_param() {
+        type_ok(
+            r#"
+use std/math
+task go() {
+  x = math.sqrt(4)
+}
+"#,
+        );
+    }
+
     #[test]
     fn valid_implicit_return_expression_matches_declared() {
         type_ok(

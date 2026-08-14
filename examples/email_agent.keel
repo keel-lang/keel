@@ -26,7 +26,7 @@ task brief(email: { body: str }) -> str {
 }
 
 task compose(email: { body: str, from: str }, guidance: str? = none) -> str {
-  if guidance != none { ai.draft("response to {email.body}", tone: "professional", guidance: guidance) } else { ai.draft("response to {email.body}", tone: "friendly", max_length: 150) } ?? "(no draft generated)"
+  if guidance != none { ai.draft("response to {email.body}", tone: "professional", guidance: guidance!) } else { ai.draft("response to {email.body}", tone: "friendly", max_length: 150) } ?? "(no draft generated)"
 }
 
 test "triage uses mocked urgency" {
@@ -79,7 +79,8 @@ agent EmailAssistant {
         }
       }
     }
-    memory.remember({ contact: email.from, subject: email.subject, urgency: urgency, handled_at: time.now() })
+    handled_at = time.now()
+    memory.remember("{email.from}:{handled_at}", { contact: email.from, subject: email.subject, urgency: urgency, handled_at: handled_at })
     self.handled_count = self.handled_count + 1
   }
   @on_start {

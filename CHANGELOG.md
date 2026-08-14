@@ -8,7 +8,7 @@ All notable changes to Keel.
 
 ## [Unreleased]
 
-%%TAGLINE%% Named functions now work everywhere a lambda does, `and`/`or` finally short-circuit, `crypto.hmac_*` gets a breaking argument-order fix, the LLVM backend closes the gap on stdlib calls and string methods, and the stdlib catalog's parameter metadata is audited against runtime reality across all 23 namespaces.
+%%TAGLINE%% Named functions now work everywhere a lambda does, `and`/`or` finally short-circuit, `crypto.hmac_*` gets a breaking argument-order fix, the LLVM backend closes the gap on stdlib calls and string methods, the stdlib catalog's parameter metadata is audited against runtime reality across all 23 namespaces, and `keel check` now validates namespace-call arguments against that catalog.
 
 ### Added
 
@@ -204,6 +204,19 @@ task notify(to: str) {
 ```
 
   `BuiltinParam` gains a `binding: ParamBinding` field (`PositionalOnly` / `NamedOnly` / `Either`), independent of `optional`, plus a `TySpec::Callback` variant for the closure-taking methods above. Every namespace was re-audited against its actual `expect_*`/`find_arg` usage and corrected; a new test (`catalog_named_params_match_runtime_named_arg_lookups`) regexes each namespace's source for named-argument lookups and cross-checks them against the catalog so this can't silently drift again. Data-only — the type checker does not yet validate namespace-call arguments against the catalog (tracked separately); this is the prerequisite the checker work needs before it can turn on.
+
+- **`keel check` never validated a `std/*` namespace call's arguments against the catalog's declared `params`** — arity, parameter names, and positional-vs-keyword-ness of every one of the 23 namespaces went unchecked at compile time, with only the runtime's own `expect_*`/`expect_*_named` helpers enforcing anything, using runtime-only error messages:
+
+```keel
+use std/file
+task main() {
+  file.write(content: "hi", path: "/tmp/x.txt")   # now a check error:
+}                                                  # `file.write`: missing required argument `path`
+main()                                             # previously: keel check passed,
+                                                    # keel run failed with "missing argument at position 0"
+```
+
+  The checker now walks each catalog entry's `BuiltinParam` list, keyed off the `binding: ParamBinding` field the stdlib catalog audit above added: a `PositionalOnly` param can only be filled positionally, `NamedOnly` only by `name:`, `Either` by either — matching the runtime's own `positional(args, idx)`/`find_arg(args, name)` lookup split exactly, so a required param passed the wrong way, an unknown keyword name, or a missing required argument are all caught before the program runs. `http.request`'s single-map-literal calling convention (`http.request({method: "GET", url: "..."})`, sugar for passing all of its named args at once) is recognized structurally and exempted from static validation, since no `ParamBinding` shape captures "one map argument stands in for every named param." Surfaced two real bugs in the example corpus along the way: `email_agent.keel`'s `memory.remember` call was missing its required `key` argument entirely (issue #237), and both `email_agent.keel` and `multi_agent_inbox.keel` passed a `str?` local to `ai.draft`'s non-nullable `guidance:` param without narrowing it first — both now fixed.
 
 ---
 

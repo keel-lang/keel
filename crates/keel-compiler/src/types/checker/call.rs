@@ -4,6 +4,8 @@
 //! handling positional, named, variadic, and spread arguments.
 
 use crate::ast::CallArg;
+use crate::builtins::{BuiltinMethod, BuiltinParam, ParamBinding, TySpec};
+use crate::types::prelude::ty_from_spec;
 use crate::types::ty::{Ty, describe_ty};
 
 use super::Checker;
@@ -118,5 +120,168 @@ impl Checker<'_, '_> {
                 }
             }
         }
+    }
+
+    /// Validate a `std/*` namespace call's arguments against its catalog
+    /// entry's declared `params` (issue #222).
+    ///
+    /// Each param's [`ParamBinding`] records how the runtime actually looks
+    /// it up: `PositionalOnly` reads it via `positional(args, idx)`, where
+    /// `idx` is the param's rank among `PositionalOnly`/`Either` params in
+    /// declared order (named args are filtered out before that index is
+    /// taken, so it does not shift no matter what else is passed by name);
+    /// `NamedOnly` reads it via `find_arg(args, name)` with no positional
+    /// fallback; `Either` accepts both. So positional args and named args
+    /// are validated as two independent passes here, exactly mirroring how
+    /// the runtime's two lookup helpers never consult each other.
+    ///
+    /// A method whose catalog entry declares zero params is skipped
+    /// entirely — that means either a true zero-arg method or one not
+    /// statically validated yet (`ai.embed`'s free-form input, `db.query`'s
+    /// driver-specific args). A `TySpec::Callback` param (trailing
+    /// task/closure argument) needs no special-casing: `ty_from_spec` maps
+    /// it to an opaque `Ty::Unknown`, which `expect_at` already skips.
+    ///
+    /// A method whose params are *all* `NamedOnly` (`http.request`) can
+    /// additionally be called with a single positional map/struct literal
+    /// as sugar for all of its named args at once
+    /// (`http.request({method: "GET", url: "..."})`,
+    /// `crates/keel-runtime/src/runtime/namespaces/http.rs`'s `"request"`
+    /// handler) — a calling convention `ParamBinding` has no way to
+    /// represent, since it is not any one param's binding but the whole
+    /// call's shape. Recognized structurally (one struct-typed positional
+    /// arg, no named args, every declared param `NamedOnly`) rather than a
+    /// hardcoded namespace/method list, so it is not tied to `http.request`
+    /// specifically. The struct literal's individual keys are left for the
+    /// runtime to validate, same as any other value of statically-unknown
+    /// shape.
+    pub(crate) fn check_builtin_args(
+        &mut self,
+        entry: &'static BuiltinMethod,
+        args: &[CallArg],
+        arg_tys: &[Ty],
+        span: crate::lexer::Span,
+    ) {
+        let params = entry.params;
+        if params.is_empty() {
+            return;
+        }
+        if let [arg] = args
+            && arg.name.is_none()
+            && matches!(arg_tys.first(), Some(Ty::Struct { .. }))
+            && params.iter().all(|p| p.binding == ParamBinding::NamedOnly)
+        {
+            return;
+        }
+        let callee = format!("`{}.{}`", entry.namespace, entry.name);
+
+        if args.iter().any(|a| a.spread) {
+            self.err_at(
+                format!("{callee}: spread args (`...`) are not supported here"),
+                span,
+            );
+            return;
+        }
+
+        let mut covered: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut misplaced: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        // Positional pass: zip the call's unnamed args against the params
+        // eligible for positional binding, in declared order.
+        let positional_params: Vec<_> = params
+            .iter()
+            .filter(|p| p.binding != ParamBinding::NamedOnly)
+            .collect();
+        let positional_args: Vec<(&Ty, &CallArg)> = args
+            .iter()
+            .zip(arg_tys.iter())
+            .filter(|(a, _)| a.name.is_none())
+            .map(|(a, ty)| (ty, a))
+            .collect();
+
+        if positional_args.len() > positional_params.len() {
+            self.err_at(
+                format!(
+                    "{callee} takes {} positional argument(s), got {}",
+                    positional_params.len(),
+                    positional_args.len()
+                ),
+                span.clone(),
+            );
+        }
+
+        for (param, (ty, arg)) in positional_params.iter().zip(positional_args.iter()) {
+            self.expect_builtin_arg(
+                ty,
+                param,
+                &format!("{callee} arg `{}`", param.name),
+                arg.value.span.clone(),
+            );
+            covered.insert(param.name);
+        }
+
+        // Named pass: each name must match a declared param that accepts a
+        // named form — a `PositionalOnly` param is never read by name.
+        for (arg, ty) in args.iter().zip(arg_tys.iter()) {
+            let Some(name) = arg.name.as_deref() else {
+                continue;
+            };
+            let Some(param) = params.iter().find(|p| p.name == name) else {
+                self.err_at(
+                    format!("{callee}: unknown argument `{name}:`"),
+                    arg.value.span.clone(),
+                );
+                continue;
+            };
+            if param.binding == ParamBinding::PositionalOnly {
+                self.err_at(
+                    format!("{callee}: `{name}` must be passed positionally, not as `{name}:`"),
+                    arg.value.span.clone(),
+                );
+                misplaced.insert(name);
+                continue;
+            }
+            self.expect_builtin_arg(
+                ty,
+                param,
+                &format!("{callee} arg `{name}`"),
+                arg.value.span.clone(),
+            );
+            covered.insert(name);
+        }
+
+        for param in params {
+            if !param.optional && !covered.contains(param.name) && !misplaced.contains(param.name) {
+                self.err_at(
+                    format!("{callee}: missing required argument `{}`", param.name),
+                    span.clone(),
+                );
+            }
+        }
+    }
+
+    /// Type-check one builtin-call argument against its declared param,
+    /// widening `int` to a `float`-typed param first.
+    ///
+    /// SPEC.md §14: "All [Math] functions accept `int` or `float`
+    /// arguments" — the runtime's `num_arg` helper
+    /// (`crates/keel-runtime/src/runtime/namespaces/math.rs`) accepts both
+    /// and always returns `f64`. Every current `TySpec::Float` *parameter*
+    /// (as opposed to a `TySpec::Float` *result*) belongs to `math`, so
+    /// this widening is scoped by the spec's own meaning, not a namespace
+    /// hardcode — a future non-math `TySpec::Float` param would get the
+    /// same leniency, which is the correct reading of what `TySpec::Float`
+    /// as a parameter type means today.
+    fn expect_builtin_arg(
+        &mut self,
+        actual: &Ty,
+        param: &BuiltinParam,
+        context: &str,
+        span: crate::lexer::Span,
+    ) {
+        if param.ty == TySpec::Float && matches!(actual, Ty::Int) {
+            return;
+        }
+        self.expect_at(actual, &ty_from_spec(param.ty), context, span);
     }
 }

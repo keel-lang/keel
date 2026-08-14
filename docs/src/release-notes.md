@@ -269,6 +269,34 @@ use std/io
 io.show("{math.sqrt(4.0)}")   # now compiles and runs — was a codegen panic
 ```
 
+### `keel check` now validates a namespace call's arguments against the stdlib catalog
+
+Arity, parameter names, and positional-vs-keyword-ness of `std/*` calls
+went entirely unchecked at compile time — only the runtime's own
+`expect_*`/`expect_*_named` helpers enforced anything, with runtime-only
+error messages:
+
+```keel
+use std/file
+task main() {
+  file.write(content: "hi", path: "/tmp/x.txt")
+}
+main()
+```
+
+```
+# now: `file.write`: missing required argument `path`
+# previously: keel check passed, keel run failed with
+# "missing argument at position 0"
+```
+
+Covers every namespace with a catalog-declared parameter list: a param
+that can only ever be filled positionally, only by `name:`, or by either,
+now gets the check its runtime lookup already implied. `http.request`'s
+single-map-literal form (`http.request({method: "GET", url: "..."})`) is
+recognized as sugar for its named args and left to the runtime, since it
+isn't representable as any one parameter's shape.
+
 ---
 
 ## v0.3.0 — 2026-08-06
