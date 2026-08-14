@@ -235,7 +235,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing closure");
     assert!(
-        stderr.contains("missing closure"),
+        stderr.contains("`control.retry`: missing required argument `fn`"),
         "expected 'missing closure' error:\n{stderr}"
     );
 }
@@ -258,7 +258,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing duration");
     assert!(
-        stderr.contains("missing duration"),
+        stderr.contains("`control.with_timeout` arg `duration`: expected duration, got function"),
         "expected 'missing duration' error:\n{stderr}"
     );
 }
@@ -285,7 +285,7 @@ run(A)
         "expected non-zero exit for missing duration with a named task"
     );
     assert!(
-        stderr.contains("missing duration"),
+        stderr.contains("`control.with_timeout` arg `duration`: expected duration, got function"),
         "expected 'missing duration' error:\n{stderr}"
     );
 }
@@ -304,7 +304,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing closure");
     assert!(
-        stderr.contains("missing closure"),
+        stderr.contains("`control.with_timeout`: missing required argument `fn`"),
         "expected 'missing closure' error:\n{stderr}"
     );
 }
@@ -412,7 +412,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing datetime");
     assert!(
-        stderr.contains("control.with_deadline: missing argument at position 0"),
+        stderr.contains("`control.with_deadline`: missing required argument `deadline`"),
         "expected missing argument error:\n{stderr}"
     );
 }
@@ -452,7 +452,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for missing closure");
     assert!(
-        stderr.contains("missing closure"),
+        stderr.contains("`control.with_deadline`: missing required argument `fn`"),
         "expected 'missing closure' error:\n{stderr}"
     );
 }
@@ -1061,7 +1061,7 @@ run(AsyncTest)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "expected non-zero exit for spawn without closure");
     assert!(
-        stderr.contains("missing closure"),
+        stderr.contains("`async.spawn`: missing required argument `fn`"),
         "expected 'missing closure' error:\n{stderr}"
     );
 }

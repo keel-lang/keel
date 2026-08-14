@@ -120,7 +120,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "http.request without URL should fail");
     assert!(
-        stderr.contains("http.request: missing `url`"),
+        stderr.contains("`http.request`: missing required argument `url`"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -187,7 +187,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "http.get without URL should fail");
     assert!(
-        stderr.contains("http.get: missing argument at position 0"),
+        stderr.contains("`http.get`: missing required argument `url`"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -207,7 +207,7 @@ run(A)
     let (ok, _stdout, stderr) = run_inline(src, false);
     assert!(!ok, "http.post without URL should fail");
     assert!(
-        stderr.contains("http.post: missing argument at position 0"),
+        stderr.contains("`http.post`: missing required argument `url`"),
         "expected missing URL diagnostic:\n{stderr}"
     );
 }
@@ -287,7 +287,7 @@ run(A)
     );
     assert!(!ok, "email.send without body should fail");
     assert!(
-        stderr.contains("email.send: missing message body"),
+        stderr.contains("`email.send`: missing required argument `body`"),
         "expected missing body diagnostic:\n{stderr}"
     );
 }
@@ -314,7 +314,7 @@ run(A)
     );
     assert!(!ok, "email.send without recipient should fail");
     assert!(
-        stderr.contains("email.send: missing `to:` argument"),
+        stderr.contains("`email.send`: missing required argument `to`"),
         "expected missing recipient diagnostic:\n{stderr}"
     );
 }

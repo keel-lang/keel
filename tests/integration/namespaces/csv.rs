@@ -147,29 +147,28 @@ run(A)
     assert!(stdout.contains("name=Alice"), "roundtrip data: {stdout}");
 }
 
+// `csv.stringify` takes `rows: list[list[str]]` — a bare `list[str]` like
+// `["not a row"]` no longer reaches the runtime's own shape validation
+// (`stringify_non_list_row_raises` in
+// `crates/keel-runtime/src/runtime/namespaces/csv.rs` still covers that
+// path directly for `dynamic`-typed data), it is rejected by `keel check`
+// as a static type mismatch instead.
 #[test]
-fn csv_stringify_invalid_row_type_raises() {
+fn csv_stringify_invalid_row_type_is_a_check_error() {
     let src = r#"
 use std/csv
-use std/io
 agent A {
-    @tools [io]
     @on_start {
-        try {
-            csv.stringify(["not a row"])
-        } catch e: Error {
-            io.show("caught={e.message.len() > 0}")
-        }
-        stop(self)
+        csv.stringify(["not a row"])
     }
 }
 run(A)
 "#;
-    let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected a type error:\n{stderr}");
     assert!(
-        stdout.contains("caught=true"),
-        "expected error to be caught: {stdout}"
+        stderr.contains("`csv.stringify` arg `rows`"),
+        "expected a `rows` type mismatch:\n{stderr}"
     );
 }
 
@@ -251,30 +250,29 @@ run(A)
     );
 }
 
+// Same rationale as `csv_stringify_invalid_row_type_is_a_check_error`: a
+// non-string cell makes `rows`' inferred type `list[list[int]]`, which
+// `keel check` now rejects against the declared `list[list[str]]` before
+// this ever reaches the runtime (`stringify_non_string_cell_raises` in
+// `crates/keel-runtime/src/runtime/namespaces/csv.rs` covers the runtime
+// path directly).
 #[test]
-fn csv_stringify_non_string_cell_raises() {
+fn csv_stringify_non_string_cell_is_a_check_error() {
     let src = r#"
 use std/csv
-use std/io
 agent A {
-    @tools [io]
     @on_start {
-        try {
-            rows = [[1, "ok"]]
-            csv.stringify(rows)
-        } catch e: Error {
-            io.show("caught={e.message.len() > 0}")
-        }
-        stop(self)
+        rows = [[1, "ok"]]
+        csv.stringify(rows)
     }
 }
 run(A)
 "#;
-    let (ok, stdout, stderr) = run_inline(src, false);
-    assert!(ok, "program failed\nstdout: {stdout}\nstderr: {stderr}");
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected a type error:\n{stderr}");
     assert!(
-        stdout.contains("caught=true"),
-        "expected non-string cell error: {stdout}"
+        stderr.contains("`csv.stringify` arg `rows`"),
+        "expected a `rows` type mismatch:\n{stderr}"
     );
 }
 
@@ -318,7 +316,7 @@ agent A {
     @tools [io]
     @on_start {
         try {
-            csv.stringify(["not a row"])
+            csv.parse_records("name,name\nAlice,Bob")
         } catch e: CsvError {
             io.show("specific=true")
         } catch e: Error {
