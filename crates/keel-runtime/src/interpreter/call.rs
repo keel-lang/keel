@@ -49,6 +49,23 @@ impl Interpreter {
         body: &LambdaBody,
         args: Vec<CallArgValue>,
     ) -> Result<Value> {
+        // `LambdaParam` has no default value, so a missing arg is always a
+        // bug. `keel check` rejects this for a direct call expression
+        // (issue #238's checker fix), so this is defense-in-depth against
+        // reaching here at all — a callback dispatched from Rust (`map`,
+        // `reduce`, `control.retry`, …) with too few args, or a caller that
+        // skipped the checker. `<`, not `!=`: unlike a direct call
+        // expression, a builtin callback's arg count is fixed by the
+        // builtin, not the checker, and a closure may legitimately declare
+        // fewer params than it's handed — ignoring a trailing arg it
+        // doesn't need — so only a genuine shortfall is a bug.
+        if args.len() < params.len() {
+            return Err(miette::miette!(
+                "closure: expected {} argument(s), got {}",
+                params.len(),
+                args.len()
+            ));
+        }
         let mut env = Environment::new();
         for (i, p) in params.iter().enumerate() {
             let v = args.get(i).map(|a| a.value.clone()).unwrap_or(Value::None);

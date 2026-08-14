@@ -191,7 +191,7 @@ impl KirType {
             | Ty::Set(_)
             | Ty::Struct { .. }
             | Ty::Tuple(_)
-            | Ty::Func(_, _)
+            | Ty::Func(..)
             | Ty::Enum(_, _)
             | Ty::DbConnection
             | Ty::Dynamic

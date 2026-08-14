@@ -61,6 +61,13 @@ pub enum Ty {
         fields: Vec<(String, Ty)>,
     },
     Tuple(Vec<Ty>),
+    /// Function type. This alone can't tell a lambda from a named task
+    /// exposed as a value (`g = my_task`) — both flatten to the same
+    /// shape, but a task's `TaskSig` may hide a defaulted or variadic
+    /// param this type can't represent. A checker site that needs to know
+    /// a call's exact required arity (issue #238) can't get it from this
+    /// type; see `Scope::is_exact_lambda`, which tracks that fact
+    /// out-of-band, per-binding, instead.
     Func(Vec<Ty>, Box<Ty>),
     /// Enum type.  The second field carries resolved type arguments for
     /// generic enums (`Pair[str, int]` → `Enum("Pair", [Str, Int])`).
@@ -173,7 +180,7 @@ pub(crate) fn describe_ty(ty: &Ty) -> String {
             let s: Vec<String> = items.iter().map(describe_ty).collect();
             format!("({})", s.join(", "))
         }
-        Ty::Func(_, _) => "function".into(),
+        Ty::Func(..) => "function".into(),
         Ty::Enum(name, _) => name.clone(),
         Ty::DbConnection => "DbConnection".into(),
         Ty::Dynamic => "dynamic".into(),

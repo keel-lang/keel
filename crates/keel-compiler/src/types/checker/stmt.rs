@@ -611,7 +611,20 @@ impl Checker<'_, '_> {
                         inferred
                     }
                 };
-                self.bind_to_scope(binding, &bound, scope);
+                // A plain `x = (a, b) => a + b` (no annotation) binds `x`'s
+                // type straight from the lambda's own inferred `Ty::Func`,
+                // with no merge in between — the one place a call through
+                // `x` can be soundly arity-checked later (issue #238; see
+                // `Scope::is_exact_lambda`'s doc for why this can't just
+                // live on `Ty::Func` itself).
+                if ty.is_none()
+                    && let Binding::Ident(name) = binding
+                    && matches!(value.kind, Expr::Lambda { .. })
+                {
+                    scope.define_exact_lambda(name.clone(), bound);
+                } else {
+                    self.bind_to_scope(binding, &bound, scope);
+                }
             }
             Stmt::SelfAssign { field, value, .. } => {
                 // An `impl` receiver is passed by value, so a write to

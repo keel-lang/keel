@@ -772,7 +772,36 @@ impl Checker<'_, '_> {
                         _ => {}
                     }
                 }
-                let _ = self.infer_expr(callee, scope);
+                let callee_ty = self.infer_expr(callee, scope);
+                // A closure call (`add(1)` where `add`'s inferred type is
+                // `Ty::Func`) has no named-callee branch above to catch it —
+                // `NameKind::Local` falls straight through. `Ty::Func` alone
+                // can't tell a lambda from a task exposed as a value (which
+                // may hide a defaulted/variadic param), so trust
+                // `Scope::is_exact_lambda` instead of the type (issue #238)
+                // — it's only set for a name bound directly from a lambda
+                // literal, never laundered through a list/for-loop/etc.
+                // merge. An immediately-invoked lambda literal is exact too,
+                // straight from its own AST params, no lookup needed.
+                match &callee.as_ref().kind {
+                    Expr::Ident(name) if scope.is_exact_lambda(name) => {
+                        if let Ty::Func(param_tys, _) = &callee_ty {
+                            self.check_closure_call_arity(
+                                param_tys.len(),
+                                args,
+                                spanned.span.clone(),
+                            );
+                        }
+                    }
+                    Expr::Lambda { params, .. } => {
+                        self.check_closure_call_arity(params.len(), args, spanned.span.clone());
+                    }
+                    // Any other callee shape (a non-lambda-marked local, a
+                    // list/map index, a method call's result, …) has no
+                    // provable arity — skip rather than risk a false
+                    // positive.
+                    _ => {}
+                }
                 // Callee type not resolved — return type is also indeterminate.
                 Ty::Unknown(UnknownReason::InferenceLimitation)
             }

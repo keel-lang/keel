@@ -122,6 +122,39 @@ impl Checker<'_, '_> {
         }
     }
 
+    /// Check a call whose callee resolved to a lambda literal's own
+    /// `Ty::Func` — a binding `Scope::is_exact_lambda` confirmed is exact,
+    /// or an immediately-invoked lambda literal (see both call sites).
+    /// Unlike a task, `LambdaParam` has no default, named, or
+    /// variadic/spread concept, so every parameter is required and matched
+    /// strictly by position — a call omitting one previously passed `keel
+    /// check` silently and let the interpreter's own param-binding
+    /// fallback bind it to `Value::None` (issue #238).
+    pub(crate) fn check_closure_call_arity(
+        &mut self,
+        expected: usize,
+        args: &[CallArg],
+        span: crate::lexer::Span,
+    ) {
+        // A spread arg's expanded length isn't known statically — e.g.
+        // `add(...pair)` is a valid call today when `pair` has exactly
+        // `expected` elements, since argument evaluation flattens it into
+        // positional runtime args before the closure ever binds them.
+        // Skip the check rather than reject an already-working call shape.
+        if args.iter().any(|a| a.spread) {
+            return;
+        }
+        if args.len() != expected {
+            self.err_at(
+                format!(
+                    "closure call: expected {expected} argument(s), got {}",
+                    args.len()
+                ),
+                span,
+            );
+        }
+    }
+
     /// Validate a `std/*` namespace call's arguments against its catalog
     /// entry's declared `params` (issue #222).
     ///

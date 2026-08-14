@@ -96,6 +96,58 @@ run(A)
     );
 }
 
+// Issue #238: same bug class as #235 above, but for a lambda call — a
+// different code path (`Ty::Func`-typed callee, not a named task lookup)
+// with its own checker story, since `LambdaParam` has no default field at
+// all: every lambda parameter is unconditionally required.
+#[test]
+fn closure_call_missing_arg_is_a_check_error_not_a_silent_none() {
+    let src = r#"
+use std/io
+
+task main() {
+  add = (a, b) => a + b
+  io.show("{add(1)}")
+}
+main()
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(!ok, "expected a closure-call arity type error");
+    assert!(
+        stderr.contains("expected 2 argument(s), got 1"),
+        "error should report the expected/actual arg counts:\n{stderr}"
+    );
+}
+
+// A spread arg's expanded length isn't known at check time, so the checker
+// deliberately skips the arity check for `add(...pair)` — this reaches
+// `call_closure_inner` with too few args despite passing `keel check`,
+// exercising its own defense-in-depth guard (issue #238) rather than the
+// checker's.
+#[test]
+fn closure_call_missing_arg_via_undersized_spread_is_a_runtime_error() {
+    let src = r#"
+task main() {
+  add = (a, b) => a + b
+  pair = [1]
+  x = add(...pair)
+}
+main()
+"#;
+    let (ok, _stdout, stderr) = check_inline_output(src);
+    assert!(
+        ok,
+        "checker should not flag an undersized spread:\n{stderr}"
+    );
+
+    let (ok, _stdout, stderr) = run_inline(src, false);
+    assert!(!ok, "expected a runtime error, not a silent none binding");
+    assert!(
+        stderr.contains("expected 2 argument(s), got 1"),
+        "error should report the expected/actual arg counts:\n{stderr}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Regressions
 // ---------------------------------------------------------------------------
