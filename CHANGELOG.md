@@ -36,6 +36,18 @@ f(1)   # now a check error: task `f`: missing required argument `b`
 
   `keel check` now rejects the call directly, naming the missing parameter — covering plain task calls, `self.task(...)` agent-task calls, generic tasks, and calls through a local module binding. The interpreter's own param-binding fallback (silently reaching for `Value::None` when nothing else matched) is now a hard error too, as defense in depth for any call shape the checker can't see by name (a destructuring `{a, b}` parameter). A parameter with a declared default is unaffected — omitting it still uses the default, exactly as before.
 
+- **Same bug as above, for a lambda call — `keel check` never validated a closure call's arity at all.** `LambdaParam` has no default field, so every lambda parameter is unconditionally required, but a call through a closure-typed local (`Ty::Func`) had no arity check anywhere, and `call_closure_inner` bound a missing argument to `Value::None`:
+
+```keel
+task main() {
+  add = (a, b) => a + b
+  add(1)   # now a check error: closure call: expected 2 argument(s), got 1
+           # previously: keel check passed, keel run silently bound b = none
+}
+```
+
+  Only checked for a call through a local bound *directly* to a lambda literal (`add = (a, b) => a + b`) or an immediately-invoked one (`((a, b) => a + b)(1)`) — the one shape the checker can prove is exact. A function value obtained any other way is left unchecked: a named task used as a value (`g = my_task`) or a `(T, T) -> T`-annotated local, since neither can soundly rule out a hidden defaulted or variadic parameter; or an element pulled out of a list/`for` loop, since the checker doesn't track per-element provenance through those — even when every element happens to be a lambda. `call_closure_inner` also now raises rather than silently binding `none` for any closure call that still reaches it with too few args (a builtin callback, or a spread argument whose expanded length the checker can't know statically).
+
 - **A lambda reading an outer local variable passed `keel check` and then failed at `keel run`.** The interpreter's closures have never captured anything — `call_closure_inner` builds a fresh, disconnected environment for every call — but the checker type-checked a lambda body as a nested scope of the enclosing function, so it silently accepted a read of an outer local that would fail at runtime with `Undefined: <name>`. Lambdas are now formally non-capturing (SPEC §7): the checker rejects a lambda body that reads a name bound only in an enclosing local scope, with a diagnostic pointing at the identifier. `self.<field>` access inside a lambda is unaffected — it resolves through ambient per-call agent state, not lexical capture.
 
 ```keel

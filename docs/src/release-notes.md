@@ -24,6 +24,30 @@ Covers plain task calls, `self.task(...)` agent-task calls, generic tasks,
 and calls through a local module binding. A parameter with a declared
 default is unaffected — omitting it still uses the default.
 
+### A closure call missing a required argument is now a check-time error too
+
+Same bug as above, for a lambda call — a different code path with its own
+gap: `LambdaParam` has no default field at all, so every lambda parameter is
+unconditionally required, but `keel check` never validated a closure call's
+arity, and the interpreter's own binding fallback silently reached for
+`none`:
+
+```keel
+task main() {
+  add = (a, b) => a + b
+  add(1)   # now: closure call: expected 2 argument(s), got 1
+}
+```
+
+Only checked for a call through a local bound directly to a lambda literal,
+or an immediately-invoked one — the one shape the checker can prove is
+exact. A function value obtained any other way is left unchecked: a named
+task used as a value (`g = my_task`) or a function-typed annotation, since
+neither can rule out a hidden defaulted or variadic parameter; or an
+element pulled out of a list/`for` loop, since the checker doesn't track
+per-element provenance through those — even when every element happens to
+be a lambda.
+
 ### A named task now works everywhere a lambda does
 
 `results = emails.map(triage)` — SPEC §7's own documented "named function as

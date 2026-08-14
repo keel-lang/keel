@@ -1980,6 +1980,205 @@ agent A {
         );
     }
 
+    // Issue #238: a lambda call omitting a required parameter used to pass
+    // `keel check` silently — `LambdaParam` has no default field at all, so
+    // the checker's `Ty::Func` fallthrough for a closure-typed callee never
+    // validated arity, and the interpreter's own binding fallback quietly
+    // reached for `Value::None`. Checked here via `Scope::is_exact_lambda`:
+    // `add` is bound directly from a lambda literal with no annotation, so
+    // its arity is provably exact.
+    #[test]
+    fn error_closure_call_missing_arg() {
+        expect_error(
+            r#"
+task call_it() {
+  add = (a, b) => a + b
+  x = add(1)
+}
+"#,
+            "closure call: expected 2 argument(s), got 1",
+        );
+    }
+
+    #[test]
+    fn error_closure_call_too_many_args() {
+        expect_error(
+            r#"
+task call_it() {
+  add = (a, b) => a + b
+  x = add(1, 2, 3)
+}
+"#,
+            "closure call: expected 2 argument(s), got 3",
+        );
+    }
+
+    #[test]
+    fn valid_closure_call_with_exact_args() {
+        type_ok(
+            r#"
+task call_it() {
+  add = (a, b) => a + b
+  x = add(1, 2)
+}
+"#,
+        );
+    }
+
+    #[test]
+    fn valid_closure_call_with_spread_arg_skips_arity_check() {
+        // A spread's expanded length isn't known statically — this must not
+        // be flagged even though a single syntactic arg is supplied for two
+        // params.
+        type_ok(
+            r#"
+task call_it() {
+  add = (a, b) => a + b
+  pair = [1, 2]
+  x = add(...pair)
+}
+"#,
+        );
+    }
+
+    // A task referenced as a value (`g = f`) is bound via the plain
+    // `bind_to_scope` path, not `define_exact_lambda` — so `g` is never
+    // marked exact, and `TaskSig`'s hidden default on `f`'s second param
+    // can't be falsely flagged (issue #238).
+    #[test]
+    fn valid_task_as_value_call_relying_on_default_not_flagged() {
+        type_ok(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  g = f
+  x = g(1)
+}
+"#,
+        );
+    }
+
+    // Same reasoning through a `(T, T) -> T` annotation: `ty.is_some()`
+    // skips `define_exact_lambda` entirely, so a defaulted task assigned to
+    // an annotated local isn't flagged either (issue #238).
+    #[test]
+    fn valid_task_as_value_call_through_annotation_relying_on_default_not_flagged() {
+        type_ok(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  g: (int, int) -> int = f
+  x = g(1)
+}
+"#,
+        );
+    }
+
+    // A list literal's element type is approximated by its *first*
+    // element's type (this checker doesn't unify per-element types) — so a
+    // heterogeneous `[lambda, task_with_a_default]` must not let indexing
+    // into the second element inherit the first's exactness. Embedding
+    // exactness in `Ty::Func` itself (an earlier version of this fix) broke
+    // exactly this case; `Scope::is_exact_lambda` doesn't, since nothing
+    // ever marks `fns[1]` as exact in the first place (issue #238).
+    #[test]
+    fn valid_indexed_task_as_value_from_mixed_list_relying_on_default_not_flagged() {
+        type_ok(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  fns = [(a, b) => a + b, f]
+  x = fns[1](1)
+}
+"#,
+        );
+    }
+
+    // Same soundness requirement, reached through a `for` loop instead of
+    // indexing: the loop variable's type comes from the same approximated
+    // list-element type, and must not be treated as exact either.
+    #[test]
+    fn valid_task_as_value_from_mixed_list_for_loop_relying_on_default_not_flagged() {
+        type_ok(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  fns = [(a, b) => a + b, f]
+  for g in fns {
+    x = g(1)
+  }
+}
+"#,
+        );
+    }
+
+    // An immediately-invoked lambda literal is exact straight from its own
+    // AST params — no `Scope` lookup needed, so no reassignment/laundering
+    // risk applies to it at all.
+    #[test]
+    fn error_iife_missing_arg() {
+        expect_error(
+            r#"
+task call_it() {
+  x = ((a, b) => a + b)(1)
+}
+"#,
+            "closure call: expected 2 argument(s), got 1",
+        );
+    }
+
+    // Reassigning a name away from a lambda literal must clear its exact
+    // mark — `x` ends up holding `f` (a task with a default), so `x(1)`
+    // must not be flagged.
+    #[test]
+    fn valid_reassignment_away_from_lambda_clears_exact_mark() {
+        type_ok(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  x = (a, b) => a + b
+  x = f
+  y = x(1)
+}
+"#,
+        );
+    }
+
+    // The opposite direction: reassigning a name *to* a lambda literal must
+    // mark it exact even though its earlier binding wasn't.
+    #[test]
+    fn error_reassignment_to_lambda_sets_exact_mark() {
+        expect_error(
+            r#"
+task f(a: int, b: int = 2) -> int {
+  return a + b
+}
+
+task call_it() {
+  x = f
+  x = (a, b) => a + b
+  y = x(1)
+}
+"#,
+            "closure call: expected 2 argument(s), got 1",
+        );
+    }
+
     #[test]
     fn valid_out_of_order_named_args_use_matching_literal_types() {
         type_ok(
